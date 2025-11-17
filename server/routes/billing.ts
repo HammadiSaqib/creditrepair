@@ -1335,13 +1335,23 @@ router.post('/finalize-checkout-session', authenticateToken, async (req, res) =>
         const unit = item?.price?.unit_amount || 0;
         amount = unit / 100;
       } catch {}
-      const affiliateIdNumeric = metadata?.affiliateId ? parseInt(String(metadata.affiliateId), 10) : undefined;
+      let affiliateIdResolved: number | undefined = undefined;
+      if (metadata?.affiliateId) {
+        const rawAffiliate = String(metadata.affiliateId);
+        const parsed = parseInt(rawAffiliate, 10);
+        if (!Number.isNaN(parsed)) {
+          affiliateIdResolved = parsed;
+        } else {
+          const resolved = await commissionService.resolveAffiliateId(rawAffiliate);
+          affiliateIdResolved = resolved || undefined;
+        }
+      }
       const result = await commissionService.processPurchase({
         userId: userId || 0,
         planId: planIdMeta || 0,
         amount,
         transactionId: session.id,
-        affiliateId: !Number.isNaN(affiliateIdNumeric as any) ? affiliateIdNumeric : undefined,
+        affiliateId: affiliateIdResolved,
         paymentMethod: 'stripe'
       });
       if (result?.commissionIds && result.commissionIds.length > 0) {
@@ -1513,8 +1523,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               if (txnRows[0].metadata) {
                 const metadataObj = JSON.parse(txnRows[0].metadata);
                 if (metadataObj && metadataObj.affiliateId) {
-                  const parsed = parseInt(metadataObj.affiliateId, 10);
-                  affiliateIdFromMetadata = Number.isNaN(parsed) ? undefined : parsed;
+                  const raw = String(metadataObj.affiliateId);
+                  const parsed = parseInt(raw, 10);
+                  if (!Number.isNaN(parsed)) {
+                    affiliateIdFromMetadata = parsed;
+                  } else {
+                    const commissionService = new CommissionService();
+                    const resolved = await commissionService.resolveAffiliateId(raw);
+                    affiliateIdFromMetadata = resolved || undefined;
+                  }
                 }
                 if (metadataObj && metadataObj.referralSource) {
                   referralSourceFromMetadata = metadataObj.referralSource === 'affiliate' ? 'affiliate' : 'main';
