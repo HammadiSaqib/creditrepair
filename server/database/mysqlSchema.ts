@@ -1597,6 +1597,23 @@ async function createMySQLTables(): Promise<void> {
     }
   }
 
+  // Add unique key to prevent duplicate transactions per intent/session
+  try {
+    await executeQuery(`
+      ALTER TABLE billing_transactions 
+      ADD UNIQUE KEY uniq_stripe_intent (stripe_payment_intent_id)
+    `);
+    console.log('✅ Added uniq_stripe_intent unique key to billing_transactions');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_KEYNAME') {
+      console.log('ℹ️  uniq_stripe_intent key already exists');
+    } else if (error.code === 'ER_DUP_ENTRY') {
+      console.log('⚠️  Could not add uniq_stripe_intent due to existing duplicates');
+    } else {
+      console.log('⚠️  Error adding uniq_stripe_intent:', error.message);
+    }
+  }
+
   // Add phone column if it doesn't exist
   try {
     await executeQuery(`

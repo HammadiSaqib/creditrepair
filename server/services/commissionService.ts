@@ -753,6 +753,17 @@ class CommissionService {
             safeMethod
           ]
         );
+      } else {
+        // Update pending checkout transaction to succeeded
+        const allowedMethods = ['stripe', 'manual'];
+        const rawMethod = (purchaseData.paymentMethod || 'stripe').toLowerCase();
+        const safeMethod = allowedMethods.includes(rawMethod) ? rawMethod : 'stripe';
+        await executeQuery(
+          `UPDATE billing_transactions 
+           SET status = 'succeeded', amount = ?, payment_method = ?, updated_at = NOW()
+           WHERE stripe_payment_intent_id = ?`,
+          [purchaseData.amount, safeMethod, purchaseData.transactionId]
+        );
       }
     } catch (error) {
       console.error('Error recording purchase transaction:', error);

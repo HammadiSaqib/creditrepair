@@ -595,13 +595,14 @@ router.post('/create-subscription-checkout', authenticateToken, async (req, res)
       idempotencyKey: `subchk_${userId}_${planId}_${billingCycle}`
     });
 
-    // Optionally store a pending transaction record for tracking
+    // Store a pending transaction record keyed by Checkout Session for later update
     await executeQuery(
       `INSERT INTO billing_transactions 
        (user_id, stripe_payment_intent_id, stripe_customer_id, amount, currency, status, plan_name, plan_type, description, metadata)
-       VALUES (?, NULL, ?, ?, 'USD', 'pending', ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, 'USD', 'pending', ?, ?, ?, ?)`,
       [
         userId,
+        session.id,
         customerId,
         pendingAmount,
         plan.name,
@@ -1664,6 +1665,16 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
               incomplete_expired: 'incomplete'
             };
             const normalizedStatus = statusMap[stripeSub.status] || 'active';
+
+            // Update pending billing transaction (by Checkout Session ID) to succeeded for this user
+            try {
+              await executeQuery(
+                `UPDATE billing_transactions 
+                 SET status = 'succeeded', updated_at = NOW() 
+                 WHERE stripe_payment_intent_id = ?`,
+                [String(session.id)]
+              );
+            } catch {}
 
         if (userId) {
           const existing = await executeQuery<any[]>(
