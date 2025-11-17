@@ -1549,10 +1549,22 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
             });
             // Explicit upsert for referrals/commissions to ensure fields and paid status
             try {
-              if (affiliateIdFromMetadata) {
+              let affiliateIdEffective: number | undefined = affiliateIdFromMetadata;
+              if (!affiliateIdEffective) {
+                const refRows = await executeQuery(
+                  `SELECT affiliate_id, id FROM affiliate_referrals 
+                   WHERE referred_user_id = ? ORDER BY created_at ASC LIMIT 1`,
+                  [txnRows[0].user_id]
+                ) as any[];
+                if (refRows && refRows.length > 0) {
+                  affiliateIdEffective = refRows[0].affiliate_id;
+                }
+              }
+
+              if (affiliateIdEffective) {
                 const affRows = await executeQuery(
                   'SELECT commission_rate FROM affiliates WHERE id = ? AND status = "active" LIMIT 1',
-                  [affiliateIdFromMetadata]
+                  [affiliateIdEffective]
                 ) as any[];
                 const commissionRate = affRows && affRows.length > 0 ? parseFloat(affRows[0].commission_rate) || 0 : 0;
                 const commissionAmount = (txnRows[0].amount * commissionRate) / 100;
@@ -1562,7 +1574,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                   `SELECT id FROM affiliate_referrals 
                    WHERE affiliate_id = ? AND referred_user_id = ? AND (transaction_id IS NULL OR transaction_id = '') 
                    ORDER BY created_at ASC LIMIT 1`,
-                  [affiliateIdFromMetadata, txnRows[0].user_id]
+                  [affiliateIdEffective, txnRows[0].user_id]
                 ) as any[];
 
                 let referralIdToUse: number | undefined = undefined;
@@ -1579,8 +1591,8 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                   const existingRef = await executeQuery(
                     `SELECT id FROM affiliate_referrals 
                      WHERE affiliate_id = ? AND referred_user_id = ? AND transaction_id = ? LIMIT 1`,
-                    [affiliateIdFromMetadata, txnRows[0].user_id, paymentIntent.id]
-                  ) as any[];
+                  [affiliateIdEffective, txnRows[0].user_id, paymentIntent.id]
+                ) as any[];
                   if (existingRef && existingRef.length > 0) {
                     referralIdToUse = existingRef[0].id;
                     await executeQuery(
@@ -1596,7 +1608,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                          affiliate_id, referred_user_id, commission_amount, commission_rate,
                          transaction_id, status, referral_date, conversion_date, payment_date, notes, created_at, updated_at
                        ) VALUES (?, ?, ?, ?, ?, 'paid', NOW(), NOW(), NOW(), ?, NOW(), NOW())`,
-                      [affiliateIdFromMetadata, txnRows[0].user_id, commissionAmount, commissionRate, paymentIntent.id, 'Subscription purchase']
+                      [affiliateIdEffective, txnRows[0].user_id, commissionAmount, commissionRate, paymentIntent.id, 'Subscription purchase']
                     ) as any;
                     referralIdToUse = ins.insertId;
                   }
@@ -1629,7 +1641,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                          order_value, commission_rate, commission_amount, status, tier, product,
                          order_date, payment_date, tracking_code, commission_type, created_at, updated_at
                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'Bronze', 'Subscription', NOW(), NOW(), ?, 'signup', NOW(), NOW())`,
-                      [affiliateIdFromMetadata, referralIdToUse, txnRows[0].user_id, customerName, customerEmail, txnRows[0].amount, commissionRate, commissionAmount, paymentIntent.id]
+                      [affiliateIdEffective, referralIdToUse, txnRows[0].user_id, customerName, customerEmail, txnRows[0].amount, commissionRate, commissionAmount, paymentIntent.id]
                     );
                   }
                 }
