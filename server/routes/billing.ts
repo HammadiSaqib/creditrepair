@@ -599,7 +599,17 @@ router.post('/create-subscription-checkout', authenticateToken, async (req, res)
     await executeQuery(
       `INSERT INTO billing_transactions 
        (user_id, stripe_payment_intent_id, stripe_customer_id, amount, currency, status, plan_name, plan_type, description, metadata)
-       VALUES (?, ?, ?, ?, 'USD', 'pending', ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, 'USD', 'pending', ?, ?, ?, ?) 
+       ON DUPLICATE KEY UPDATE 
+         stripe_customer_id = VALUES(stripe_customer_id),
+         amount = VALUES(amount),
+         currency = VALUES(currency),
+         plan_name = VALUES(plan_name),
+         plan_type = VALUES(plan_type),
+         description = VALUES(description),
+         metadata = VALUES(metadata),
+         status = IF(status = 'succeeded', 'succeeded', 'pending'),
+         updated_at = CURRENT_TIMESTAMP`,
       [
         userId,
         session.id,
