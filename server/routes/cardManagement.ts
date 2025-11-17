@@ -248,7 +248,7 @@ router.get('/export', authenticateToken, async (req: Request, res: Response) => 
     const rows = await executeQuery(query, queryParams) as RowDataPacket[];
 
     const header = [
-      'id','bank_id','bank_name','card_name','card_link','card_type','funding_type','credit_bureaus','states','state','is_active','created_at','updated_at'
+      'id','bank_id','bank_name','card_name','card_image','card_link','card_type','funding_type','credit_bureaus','states','state','is_active','created_at','updated_at'
     ];
     const csvRows = [header.join(',')];
     rows.forEach((r) => {
@@ -263,6 +263,7 @@ router.get('/export', authenticateToken, async (req: Request, res: Response) => 
         r.bank_id,
         r.bank_name || '',
         r.card_name || '',
+        r.card_image || '',
         r.card_link || '',
         r.card_type || '',
         r.funding_type || '',
