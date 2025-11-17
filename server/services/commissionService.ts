@@ -436,47 +436,99 @@ class CommissionService {
   /**
    * Record multiple commissions for hierarchical structure
    */
-   async recordHierarchicalCommissions(commissions: CommissionCalculation[], userId: number): Promise<number[]> {
-     try {
-       const commissionIds: number[] = [];
+  async recordHierarchicalCommissions(commissions: CommissionCalculation[], userId: number): Promise<number[]> {
+    try {
+      const commissionIds: number[] = [];
 
-       for (const commission of commissions) {
-        const result = await executeQuery(
-          `INSERT INTO affiliate_referrals (
-             affiliate_id, referred_user_id, commission_amount, commission_rate,
-             transaction_id, status, referral_date, conversion_date, notes, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
-          [
-            commission.affiliateId,
-            userId,
-            commission.commissionAmount,
-            commission.commissionRate,
-            commission.transactionId,
-            'Subscription purchase'
-          ]
-        ) as ResultSetHeader;
+      for (const commission of commissions) {
+        // Prefer updating an existing pending referral without transaction_id
+        const pendingReferralRows = await executeQuery(
+          `SELECT id FROM affiliate_referrals 
+           WHERE affiliate_id = ? AND referred_user_id = ? AND (transaction_id IS NULL OR transaction_id = '') 
+           ORDER BY created_at ASC LIMIT 1`,
+          [commission.affiliateId, userId]
+        ) as any[];
 
-         commissionIds.push(result.insertId);
+        let referralId: number;
+        if (pendingReferralRows && pendingReferralRows.length > 0) {
+          referralId = pendingReferralRows[0].id;
+          await executeQuery(
+            `UPDATE affiliate_referrals 
+             SET commission_amount = ?, commission_rate = ?, transaction_id = ?, 
+                 purchase_amount = ?, notes = ?, conversion_date = NOW(), updated_at = NOW()
+             WHERE id = ?`,
+            [
+              commission.commissionAmount,
+              commission.commissionRate,
+              commission.transactionId,
+              commission.amount,
+              'Subscription purchase',
+              referralId
+            ]
+          );
+        } else {
+          // If a referral for this exact transaction exists, reuse it
+          const existingReferralRows = await executeQuery(
+            `SELECT id FROM affiliate_referrals WHERE affiliate_id = ? AND referred_user_id = ? AND transaction_id = ? LIMIT 1`,
+            [commission.affiliateId, userId, commission.transactionId]
+          ) as any[];
 
-         // Also insert into affiliate_commissions for dashboard metrics
-         await executeQuery(
-           `INSERT INTO affiliate_commissions (
-              affiliate_id, referral_id, customer_id, customer_name, customer_email,
-              order_value, commission_rate, commission_amount, status, tier, product,
-              order_date, tracking_code, commission_type, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'Bronze', 'Subscription', NOW(), ?, 'signup', NOW(), NOW())`,
-           [
-             commission.affiliateId,
-             result.insertId,
-             userId,
-             'Unknown',
-             'unknown@example.com',
-             commission.amount,
-             commission.commissionRate,
-             commission.commissionAmount,
-             commission.transactionId || null
-           ]
-         );
+          if (existingReferralRows && existingReferralRows.length > 0) {
+            referralId = existingReferralRows[0].id;
+          } else {
+            const result = await executeQuery(
+              `INSERT INTO affiliate_referrals (
+                 affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate,
+                 transaction_id, status, referral_date, conversion_date, notes, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
+              [
+                commission.affiliateId,
+                userId,
+                commission.amount,
+                commission.commissionAmount,
+                commission.commissionRate,
+                commission.transactionId,
+                'Subscription purchase'
+              ]
+            ) as ResultSetHeader;
+            referralId = result.insertId;
+          }
+        }
+
+        commissionIds.push(referralId);
+
+        const userInfoRows = await executeQuery(
+          `SELECT first_name, last_name, email FROM users WHERE id = ? LIMIT 1`,
+          [userId]
+        ) as any[];
+        const customerName = userInfoRows && userInfoRows.length > 0 ? `${userInfoRows[0].first_name || ''} ${userInfoRows[0].last_name || ''}`.trim() || 'Unknown' : 'Unknown';
+        const customerEmail = userInfoRows && userInfoRows.length > 0 ? userInfoRows[0].email || 'unknown@example.com' : 'unknown@example.com';
+
+        const existingCommissionRows = await executeQuery(
+          `SELECT id FROM affiliate_commissions WHERE referral_id = ? LIMIT 1`,
+          [referralId]
+        ) as any[];
+
+        if (!existingCommissionRows || existingCommissionRows.length === 0) {
+          await executeQuery(
+            `INSERT INTO affiliate_commissions (
+               affiliate_id, referral_id, customer_id, customer_name, customer_email,
+               order_value, commission_rate, commission_amount, status, tier, product,
+               order_date, tracking_code, commission_type, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'Bronze', 'Subscription', NOW(), ?, 'signup', NOW(), NOW())`,
+            [
+              commission.affiliateId,
+              referralId,
+              userId,
+              customerName,
+              customerEmail,
+              commission.amount,
+              commission.commissionRate,
+              commission.commissionAmount,
+              commission.transactionId || null
+            ]
+          );
+        }
 
          // Update affiliate's total earnings and paid referrals count
          await executeQuery(
@@ -520,40 +572,92 @@ class CommissionService {
         throw new Error(`Cannot create referral record: Affiliate with ID ${calculation.affiliateId} does not exist`);
       }
 
-      const result = await executeQuery(
-        `INSERT INTO affiliate_referrals (
-           affiliate_id, referred_user_id, commission_amount, commission_rate,
-           transaction_id, status, referral_date, conversion_date, notes, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
-        [
-          calculation.affiliateId,
-          userId,
-          calculation.commissionAmount,
-          calculation.commissionRate,
-          calculation.transactionId,
-          'Subscription purchase'
-        ]
-      ) as ResultSetHeader;
+      // Prefer updating an existing pending referral without transaction_id
+      const pendingReferralRows = await executeQuery(
+        `SELECT id FROM affiliate_referrals 
+         WHERE affiliate_id = ? AND referred_user_id = ? AND (transaction_id IS NULL OR transaction_id = '') 
+         ORDER BY created_at ASC LIMIT 1`,
+        [calculation.affiliateId, userId]
+      ) as any[];
 
-      // Also insert into affiliate_commissions for dashboard metrics
-      await executeQuery(
-        `INSERT INTO affiliate_commissions (
-           affiliate_id, referral_id, customer_id, customer_name, customer_email,
-           order_value, commission_rate, commission_amount, status, tier, product,
-           order_date, tracking_code, commission_type, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'Bronze', 'Subscription', NOW(), ?, 'signup', NOW(), NOW())`,
-        [
-          calculation.affiliateId,
-          result.insertId,
-          userId,
-          'Unknown',
-          'unknown@example.com',
-          calculation.amount,
-          calculation.commissionRate,
-          calculation.commissionAmount,
-          calculation.transactionId || null
-        ]
-      );
+      let referralId: number;
+      if (pendingReferralRows && pendingReferralRows.length > 0) {
+        referralId = pendingReferralRows[0].id;
+        await executeQuery(
+          `UPDATE affiliate_referrals 
+           SET commission_amount = ?, commission_rate = ?, transaction_id = ?, 
+               purchase_amount = ?, notes = ?, conversion_date = NOW(), updated_at = NOW()
+           WHERE id = ?`,
+          [
+            calculation.commissionAmount,
+            calculation.commissionRate,
+            calculation.transactionId,
+            calculation.amount,
+            'Subscription purchase',
+            referralId
+          ]
+        );
+      } else {
+        // If a referral for this exact transaction exists, reuse it
+        const existingReferralRows = await executeQuery(
+          `SELECT id FROM affiliate_referrals WHERE affiliate_id = ? AND referred_user_id = ? AND transaction_id = ? LIMIT 1`,
+          [calculation.affiliateId, userId, calculation.transactionId]
+        ) as any[];
+
+        if (existingReferralRows && existingReferralRows.length > 0) {
+          referralId = existingReferralRows[0].id;
+        } else {
+          const result = await executeQuery(
+            `INSERT INTO affiliate_referrals (
+               affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate,
+               transaction_id, status, referral_date, conversion_date, notes, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
+            [
+              calculation.affiliateId,
+              userId,
+              calculation.amount,
+              calculation.commissionAmount,
+              calculation.commissionRate,
+              calculation.transactionId,
+              'Subscription purchase'
+            ]
+          ) as ResultSetHeader;
+          referralId = result.insertId;
+        }
+      }
+
+      const userInfoRows = await executeQuery(
+        `SELECT first_name, last_name, email FROM users WHERE id = ? LIMIT 1`,
+        [userId]
+      ) as any[];
+      const customerName = userInfoRows && userInfoRows.length > 0 ? `${userInfoRows[0].first_name || ''} ${userInfoRows[0].last_name || ''}`.trim() || 'Unknown' : 'Unknown';
+      const customerEmail = userInfoRows && userInfoRows.length > 0 ? userInfoRows[0].email || 'unknown@example.com' : 'unknown@example.com';
+
+      const existingCommissionRows = await executeQuery(
+        `SELECT id FROM affiliate_commissions WHERE referral_id = ? LIMIT 1`,
+        [referralId]
+      ) as any[];
+
+      if (!existingCommissionRows || existingCommissionRows.length === 0) {
+        await executeQuery(
+          `INSERT INTO affiliate_commissions (
+             affiliate_id, referral_id, customer_id, customer_name, customer_email,
+             order_value, commission_rate, commission_amount, status, tier, product,
+             order_date, tracking_code, commission_type, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'Bronze', 'Subscription', NOW(), ?, 'signup', NOW(), NOW())`,
+          [
+            calculation.affiliateId,
+            referralId,
+            userId,
+            customerName,
+            customerEmail,
+            calculation.amount,
+            calculation.commissionRate,
+            calculation.commissionAmount,
+            calculation.transactionId || null
+          ]
+        );
+      }
 
       // Update affiliate's total earnings
       await executeQuery(
@@ -561,7 +665,7 @@ class CommissionService {
         [calculation.commissionAmount, calculation.affiliateId]
       );
 
-      return result.insertId;
+      return referralId;
     } catch (error) {
       console.error('Error recording commission:', error);
       throw error;

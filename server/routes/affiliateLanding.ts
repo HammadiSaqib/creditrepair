@@ -196,22 +196,42 @@ router.post('/track-conversion', async (req, res) => {
     const finalCommissionRate = commissionRate || affiliateData.commission_rate;
     const commissionAmount = (amount * finalCommissionRate) / 100;
 
-    // Create referral record
-    const insertReferralQuery = `
-      INSERT INTO affiliate_referrals (
-        affiliate_id, referred_user_id, commission_amount, 
-        commission_rate, status, referral_date, conversion_date,
-        notes, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())
-    `;
+    // Upsert referral record without transaction_id; will be updated at payment time
+    const existingPending = await executeQuery(
+      `SELECT id FROM affiliate_referrals 
+       WHERE affiliate_id = ? AND referred_user_id = ? AND (transaction_id IS NULL OR transaction_id = '') 
+       ORDER BY created_at ASC LIMIT 1`,
+      [affiliateId, userId]
+    );
 
-    const referralResult = await executeQuery(insertReferralQuery, [
-      affiliateId,
-      userId,
-      commissionAmount,
-      finalCommissionRate,
-      `Plan: ${planId}, Amount: $${amount}`
-    ]);
+    let referralId: number;
+    if (existingPending && existingPending.length > 0) {
+      referralId = existingPending[0].id;
+      await executeQuery(
+        `UPDATE affiliate_referrals 
+         SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, 
+             notes = ?, conversion_date = NOW(), updated_at = NOW() 
+         WHERE id = ?`,
+        [amount, commissionAmount, finalCommissionRate, `Plan: ${planId}, Amount: $${amount}`, referralId]
+      );
+    } else {
+      const insertReferralQuery = `
+        INSERT INTO affiliate_referrals (
+          affiliate_id, referred_user_id, purchase_amount, commission_amount, 
+          commission_rate, status, referral_date, conversion_date,
+          notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())
+      `;
+      const referralResult = await executeQuery(insertReferralQuery, [
+        affiliateId,
+        userId,
+        amount,
+        commissionAmount,
+        finalCommissionRate,
+        `Plan: ${planId}, Amount: $${amount}`
+      ]);
+      referralId = referralResult.insertId;
+    }
 
     // Update affiliate totals
     const updateAffiliateQuery = `
@@ -241,11 +261,11 @@ router.post('/track-conversion', async (req, res) => {
       success: true,
       message: 'Conversion tracked successfully',
       data: {
-        referralId: referralResult.insertId,
-        commissionAmount,
-        commissionRate: finalCommissionRate
-      }
-    });
+      referralId,
+      commissionAmount,
+      commissionRate: finalCommissionRate
+    }
+  });
 
   } catch (error) {
     console.error('Error tracking conversion:', error);

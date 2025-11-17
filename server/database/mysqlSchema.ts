@@ -1643,6 +1643,34 @@ async function createMySQLTables(): Promise<void> {
     }
   }
 
+  try {
+    await executeQuery(`
+      ALTER TABLE affiliate_referrals 
+      ADD UNIQUE KEY uniq_affiliate_user_txn (affiliate_id, referred_user_id, transaction_id)
+    `);
+    console.log('✅ Added uniq_affiliate_user_txn unique key to affiliate_referrals');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_KEYNAME') {
+      console.log('ℹ️  uniq_affiliate_user_txn key already exists');
+    } else {
+      console.log('⚠️  Error adding uniq_affiliate_user_txn:', error.message);
+    }
+  }
+
+  try {
+    await executeQuery(`
+      ALTER TABLE affiliate_commissions 
+      ADD UNIQUE KEY uniq_referral_commission (referral_id)
+    `);
+    console.log('✅ Added uniq_referral_commission unique key to affiliate_commissions');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_KEYNAME') {
+      console.log('ℹ️  uniq_referral_commission key already exists');
+    } else {
+      console.log('⚠️  Error adding uniq_referral_commission:', error.message);
+    }
+  }
+
   // Add must_change_password column if it doesn't exist
   try {
     await executeQuery(`
