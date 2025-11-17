@@ -474,6 +474,8 @@ async function createMySQLTables(): Promise<void> {
       first_name VARCHAR(100) NOT NULL,
       last_name VARCHAR(100) NOT NULL,
       company_name VARCHAR(255),
+      phone VARCHAR(20) NULL,
+      address TEXT NULL,
       role ENUM('user', 'admin', 'support', 'super_admin', 'funding_manager') NOT NULL DEFAULT 'user',
       status ENUM('active', 'inactive', 'locked', 'pending') NOT NULL DEFAULT 'active',
       email_verified BOOLEAN NOT NULL DEFAULT FALSE,
@@ -1592,6 +1594,36 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  stripe_customer_id column already exists');
     } else {
       console.log('⚠️  Error adding stripe_customer_id column:', error.message);
+    }
+  }
+
+  // Add phone column if it doesn't exist
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN phone VARCHAR(20) NULL
+    `);
+    console.log('✅ Added phone column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  phone column already exists');
+    } else {
+      console.log('⚠️  Error adding phone column:', error.message);
+    }
+  }
+
+  // Add address column if it doesn't exist
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN address TEXT NULL
+    `);
+    console.log('✅ Added address column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  address column already exists');
+    } else {
+      console.log('⚠️  Error adding address column:', error.message);
     }
   }
 
