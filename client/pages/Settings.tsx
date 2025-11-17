@@ -868,11 +868,13 @@ export default function Settings() {
                       onClick={async () => {
                         const firstName = (document.getElementById('firstName') as HTMLInputElement)?.value;
                         const lastName = (document.getElementById('lastName') as HTMLInputElement)?.value;
+                        const company = (document.getElementById('company') as HTMLInputElement)?.value;
 
                         if (firstName && lastName) {
                           await saveProfile({
                             first_name: firstName,
                             last_name: lastName,
+                            company_name: company || undefined,
                           });
                         }
                       }}
