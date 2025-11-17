@@ -740,9 +740,6 @@ export default function Settings() {
                           defaultValue={userProfile?.email || ""}
                           className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
                         />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Email cannot be changed
-                        </p>
                       </div>
                     </>
                   )}
@@ -869,13 +866,36 @@ export default function Settings() {
                         const firstName = (document.getElementById('firstName') as HTMLInputElement)?.value;
                         const lastName = (document.getElementById('lastName') as HTMLInputElement)?.value;
                         const company = (document.getElementById('company') as HTMLInputElement)?.value;
+                        const phone = (document.getElementById('phone') as HTMLInputElement)?.value;
+                        const emailVal = (document.getElementById('email') as HTMLInputElement)?.value;
 
                         if (firstName && lastName) {
-                          await saveProfile({
+                          const payload: any = {
                             first_name: firstName,
                             last_name: lastName,
                             company_name: company || undefined,
-                          });
+                            phone: phone || undefined,
+                          };
+
+                          const emailChanged = emailVal && emailVal !== (userProfile?.email || '');
+                          if (emailChanged) {
+                            try {
+                              // Use dedicated change-email endpoint to handle verification flow
+                              const res: any = await authApi.changeEmail({ oldEmail: userProfile?.email || '', newEmail: emailVal });
+                              if (res?.success === false || res?.error) {
+                                toast({ title: 'Error', description: res?.message || res?.error || 'Failed to change email', variant: 'destructive' });
+                              } else {
+                                toast({ title: 'Email Updated', description: 'Verification sent to new email. Please verify and re-login to see the change.' });
+                              }
+                              // Update other profile fields without forcing refresh (token still has old email)
+                              await authApi.updateProfile(payload);
+                              toast({ title: 'Success', description: 'Profile updated successfully' });
+                            } catch (err: any) {
+                              toast({ title: 'Error', description: err?.response?.data?.message || 'Failed to update profile', variant: 'destructive' });
+                            }
+                          } else {
+                            await saveProfile(payload);
+                          }
                         }
                       }}
                     >
