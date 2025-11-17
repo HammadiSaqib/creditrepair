@@ -209,23 +209,22 @@ router.post('/track-conversion', async (req, res) => {
       referralId = existingPending[0].id;
       await executeQuery(
         `UPDATE affiliate_referrals 
-         SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, 
+         SET commission_amount = ?, commission_rate = ?, 
              notes = ?, conversion_date = NOW(), updated_at = NOW() 
          WHERE id = ?`,
-        [amount, commissionAmount, finalCommissionRate, `Plan: ${planId}, Amount: $${amount}`, referralId]
+        [commissionAmount, finalCommissionRate, `Plan: ${planId}, Amount: $${amount}`, referralId]
       );
     } else {
       const insertReferralQuery = `
         INSERT INTO affiliate_referrals (
-          affiliate_id, referred_user_id, purchase_amount, commission_amount, 
+          affiliate_id, referred_user_id, commission_amount, 
           commission_rate, status, referral_date, conversion_date,
           notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())
+        ) VALUES (?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())
       `;
       const referralResult = await executeQuery(insertReferralQuery, [
         affiliateId,
         userId,
-        amount,
         commissionAmount,
         finalCommissionRate,
         `Plan: ${planId}, Amount: $${amount}`

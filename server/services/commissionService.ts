@@ -455,13 +455,12 @@ class CommissionService {
           await executeQuery(
             `UPDATE affiliate_referrals 
              SET commission_amount = ?, commission_rate = ?, transaction_id = ?, 
-                 purchase_amount = ?, notes = ?, conversion_date = NOW(), updated_at = NOW()
+                 notes = ?, conversion_date = NOW(), updated_at = NOW()
              WHERE id = ?`,
             [
               commission.commissionAmount,
               commission.commissionRate,
               commission.transactionId,
-              commission.amount,
               'Subscription purchase',
               referralId
             ]
@@ -478,13 +477,12 @@ class CommissionService {
           } else {
             const result = await executeQuery(
               `INSERT INTO affiliate_referrals (
-                 affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate,
+                 affiliate_id, referred_user_id, commission_amount, commission_rate,
                  transaction_id, status, referral_date, conversion_date, notes, created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
+               ) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
               [
                 commission.affiliateId,
                 userId,
-                commission.amount,
                 commission.commissionAmount,
                 commission.commissionRate,
                 commission.transactionId,
@@ -586,13 +584,12 @@ class CommissionService {
         await executeQuery(
           `UPDATE affiliate_referrals 
            SET commission_amount = ?, commission_rate = ?, transaction_id = ?, 
-               purchase_amount = ?, notes = ?, conversion_date = NOW(), updated_at = NOW()
+               notes = ?, conversion_date = NOW(), updated_at = NOW()
            WHERE id = ?`,
           [
             calculation.commissionAmount,
             calculation.commissionRate,
             calculation.transactionId,
-            calculation.amount,
             'Subscription purchase',
             referralId
           ]
@@ -609,13 +606,12 @@ class CommissionService {
         } else {
           const result = await executeQuery(
             `INSERT INTO affiliate_referrals (
-               affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate,
+               affiliate_id, referred_user_id, commission_amount, commission_rate,
                transaction_id, status, referral_date, conversion_date, notes, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
+             ) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
             [
               calculation.affiliateId,
               userId,
-              calculation.amount,
               calculation.commissionAmount,
               calculation.commissionRate,
               calculation.transactionId,

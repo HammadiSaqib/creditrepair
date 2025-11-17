@@ -1570,10 +1570,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                   referralIdToUse = pendingRef[0].id;
                   await executeQuery(
                     `UPDATE affiliate_referrals 
-                     SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, transaction_id = ?,
+                     SET commission_amount = ?, commission_rate = ?, transaction_id = ?,
                          status = 'paid', payment_date = NOW(), conversion_date = NOW(), updated_at = NOW()
                      WHERE id = ?`,
-                    [txnRows[0].amount, commissionAmount, commissionRate, paymentIntent.id, referralIdToUse]
+                    [commissionAmount, commissionRate, paymentIntent.id, referralIdToUse]
                   );
                 } else {
                   const existingRef = await executeQuery(
@@ -1585,18 +1585,18 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                     referralIdToUse = existingRef[0].id;
                     await executeQuery(
                       `UPDATE affiliate_referrals 
-                       SET purchase_amount = ?, commission_amount = ?, commission_rate = ?,
+                       SET commission_amount = ?, commission_rate = ?,
                            status = 'paid', payment_date = NOW(), conversion_date = NOW(), updated_at = NOW()
                        WHERE id = ?`,
-                      [txnRows[0].amount, commissionAmount, commissionRate, referralIdToUse]
+                      [commissionAmount, commissionRate, referralIdToUse]
                     );
                   } else {
                     const ins = await executeQuery(
                       `INSERT INTO affiliate_referrals (
-                         affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate,
+                         affiliate_id, referred_user_id, commission_amount, commission_rate,
                          transaction_id, status, referral_date, conversion_date, payment_date, notes, created_at, updated_at
-                       ) VALUES (?, ?, ?, ?, ?, ?, 'paid', NOW(), NOW(), NOW(), ?, NOW(), NOW())`,
-                      [affiliateIdFromMetadata, txnRows[0].user_id, txnRows[0].amount, commissionAmount, commissionRate, paymentIntent.id, 'Subscription purchase']
+                       ) VALUES (?, ?, ?, ?, ?, 'paid', NOW(), NOW(), NOW(), ?, NOW(), NOW())`,
+                      [affiliateIdFromMetadata, txnRows[0].user_id, commissionAmount, commissionRate, paymentIntent.id, 'Subscription purchase']
                     ) as any;
                     referralIdToUse = ins.insertId;
                   }
@@ -1839,10 +1839,10 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                   referralIdToUse = pendingRef[0].id;
                   await executeQuery(
                     `UPDATE affiliate_referrals 
-                     SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, transaction_id = ?,
+                     SET commission_amount = ?, commission_rate = ?, transaction_id = ?,
                          status = 'paid', payment_date = NOW(), conversion_date = NOW(), updated_at = NOW()
                      WHERE id = ?`,
-                    [amount, commissionAmount, commissionRate, String(session.id), referralIdToUse]
+                    [commissionAmount, commissionRate, String(session.id), referralIdToUse]
                   );
                 } else {
                   const existingRef = await executeQuery(
@@ -1854,18 +1854,18 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                     referralIdToUse = existingRef[0].id;
                     await executeQuery(
                       `UPDATE affiliate_referrals 
-                       SET purchase_amount = ?, commission_amount = ?, commission_rate = ?,
+                       SET commission_amount = ?, commission_rate = ?,
                            status = 'paid', payment_date = NOW(), conversion_date = NOW(), updated_at = NOW()
                        WHERE id = ?`,
-                      [amount, commissionAmount, commissionRate, referralIdToUse]
+                      [commissionAmount, commissionRate, referralIdToUse]
                     );
                   } else {
                     const ins = await executeQuery(
                       `INSERT INTO affiliate_referrals (
-                         affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate,
+                         affiliate_id, referred_user_id, commission_amount, commission_rate,
                          transaction_id, status, referral_date, conversion_date, payment_date, notes, created_at, updated_at
-                       ) VALUES (?, ?, ?, ?, ?, ?, 'paid', NOW(), NOW(), NOW(), ?, NOW(), NOW())`,
-                      [affiliateIdEffective, userId, amount, commissionAmount, commissionRate, String(session.id), 'Subscription purchase']
+                       ) VALUES (?, ?, ?, ?, ?, 'paid', NOW(), NOW(), NOW(), ?, NOW(), NOW())`,
+                      [affiliateIdEffective, userId, commissionAmount, commissionRate, String(session.id), 'Subscription purchase']
                     ) as any;
                     referralIdToUse = ins.insertId;
                   }
