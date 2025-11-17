@@ -1,0 +1,275 @@
+import React from 'react';
+
+interface CreditFactor {
+  label: string;
+  value: number;
+  color: string;
+}
+
+interface CircularScoreChartProps {
+  score: number;
+  scoreType: 'FICO' | 'VantageScore';
+  creditFactors?: CreditFactor[];
+  size?: number;
+}
+
+const CircularScoreChart: React.FC<CircularScoreChartProps> = ({ 
+  score, 
+  scoreType, 
+  creditFactors,
+  size = 320 
+}) => {
+  const radius = (size - 80) / 2;
+  const center = size / 2;
+  const strokeWidth = 40;
+  
+  // Score breakdown data - use provided creditFactors or fallback to defaults
+  const getScoreBreakdown = (): CreditFactor[] => {
+    if (creditFactors && creditFactors.length > 0) {
+      return creditFactors;
+    }
+
+    // Fallback to default values if no creditFactors provided
+    if (scoreType === 'FICO') {
+      return [
+        { label: 'Payment History', value: 35, color: '#1E40AF' },
+        { label: 'Amounts Owed', value: 30, color: '#10B981' },
+        { label: 'Length of Credit History', value: 15, color: '#84CC16' },
+        { label: 'New Credit', value: 10, color: '#6B7280' },
+        { label: 'Credit Mix', value: 10, color: '#84CC16' }
+      ];
+    } else {
+      return [
+        { label: 'Payment History', value: 41, color: '#F97316' },
+        { label: 'Age/Mix', value: 20, color: '#3B82F6' },
+        { label: 'Utilization', value: 20, color: '#06B6D4' },
+        { label: 'New Credit', value: 11, color: '#F59E0B' },
+        { label: 'Balance', value: 6, color: '#6B7280' },
+        { label: 'Available Credit', value: 2, color: '#9CA3AF' }
+      ];
+    }
+  };
+
+  const breakdown = getScoreBreakdown();
+
+  // Calculate pie chart segments
+  const createPieSegments = () => {
+    let cumulativePercentage = 0;
+    
+    return breakdown.map((item, index) => {
+      const startAngle = (cumulativePercentage / 100) * 360;
+      const endAngle = ((cumulativePercentage + item.value) / 100) * 360;
+      cumulativePercentage += item.value;
+
+      // Convert angles to radians
+      const startAngleRad = (startAngle - 90) * (Math.PI / 180);
+      const endAngleRad = (endAngle - 90) * (Math.PI / 180);
+
+      // Calculate arc path
+      const largeArcFlag = item.value > 50 ? 1 : 0;
+      
+      const x1 = center + radius * Math.cos(startAngleRad);
+      const y1 = center + radius * Math.sin(startAngleRad);
+      const x2 = center + radius * Math.cos(endAngleRad);
+      const y2 = center + radius * Math.sin(endAngleRad);
+
+      const pathData = [
+        `M ${center} ${center}`,
+        `L ${x1} ${y1}`,
+        `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
+        'Z'
+      ].join(' ');
+
+      return {
+        ...item,
+        pathData,
+        startAngle,
+        endAngle
+      };
+    });
+  };
+
+  const segments = createPieSegments();
+
+  return (
+    <div className="flex flex-col items-center">
+      {/* Circular Chart */}
+      <div className="relative drop-shadow-2xl" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="filter drop-shadow-lg">
+          {/* Background circle for depth */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius + 8}
+            fill="url(#backgroundGradient)"
+            className="opacity-20"
+          />
+          
+          {/* Pie chart segments */}
+          {segments.map((segment, index) => (
+            <g key={index}>
+              {/* Shadow layer */}
+              <path
+                d={segment.pathData}
+                fill="rgba(0,0,0,0.1)"
+                transform="translate(2,2)"
+                className="opacity-50"
+              />
+              {/* Main segment with gradient */}
+              <path
+                d={segment.pathData}
+                fill={`url(#gradient${index})`}
+                stroke="white"
+                strokeWidth="3"
+                className="transition-all duration-500 hover:scale-105 hover:brightness-110 cursor-pointer"
+                style={{ transformOrigin: `${size/2}px ${size/2}px` }}
+              />
+              {/* Highlight overlay */}
+              <path
+                d={segment.pathData}
+                fill="url(#highlightGradient)"
+                className="opacity-0 hover:opacity-30 transition-opacity duration-300"
+              />
+            </g>
+          ))}
+          
+          {/* Gradient definitions */}
+          <defs>
+            <radialGradient id="backgroundGradient" cx="50%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.8)" />
+              <stop offset="100%" stopColor="rgba(0,0,0,0.1)" />
+            </radialGradient>
+            
+            <radialGradient id="highlightGradient" cx="50%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.8)" />
+              <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+            </radialGradient>
+            
+            {segments.map((segment, index) => (
+              <radialGradient key={index} id={`gradient${index}`} cx="50%" cy="30%" r="70%">
+                <stop offset="0%" stopColor={segment.color} stopOpacity="0.9" />
+                <stop offset="70%" stopColor={segment.color} stopOpacity="1" />
+                <stop offset="100%" stopColor={segment.color} stopOpacity="0.8" />
+              </radialGradient>
+            ))}
+          </defs>
+        </svg>
+        
+        {/* Floating labels around the chart */}
+        {segments.map((segment, index) => {
+          const midAngle = (segment.startAngle + segment.endAngle) / 2;
+          const labelRadius = radius + 45;
+          const midAngleRad = (midAngle - 90) * (Math.PI / 180);
+          const labelX = center + labelRadius * Math.cos(midAngleRad);
+          const labelY = center + labelRadius * Math.sin(midAngleRad);
+          
+          return (
+            <div
+              key={`label-${index}`}
+              className="absolute transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+              style={{
+                left: labelX,
+                top: labelY,
+              }}
+            >
+              <div className="bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border border-gray-200 text-center min-w-[80px] hover:bg-white hover:shadow-xl transition-all duration-300">
+                <div className="text-lg font-bold text-gray-900 leading-none">
+                  {segment.value}%
+                </div>
+                <div className="text-xs text-gray-600 font-medium mt-1 leading-tight">
+                  {segment.label}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        
+        {/* Center content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className="text-center bg-gradient-to-br from-white via-gray-50 to-white rounded-full p-6 shadow-2xl border-4 border-white ring-4 ring-gray-100 ring-opacity-50 backdrop-blur-sm" style={{ width: size * 0.45, height: size * 0.45 }}>
+            {scoreType === 'FICO' ? (
+              <div className="mb-2 flex flex-col items-center">
+                <div className="relative">
+                  <img 
+                    src="/FICO_Score_RGB_Blue.png" 
+                    alt="FICO Score" 
+                    className="h-20 w-auto mb-2 object-contain filter drop-shadow-md hover:scale-110 transition-transform duration-300"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white opacity-20 rounded-lg"></div>
+                </div>
+                <div className="text-xs text-gray-600 uppercase tracking-widest font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">SCORE</div>
+              </div>
+            ) : (
+              <div className="mb-2 flex flex-col items-center">
+                <div className="relative">
+                  <img 
+                    src="/VantageScore.png" 
+                    alt="VantageScore" 
+                    className="h-22 w-auto mb-1 object-contain filter drop-shadow-md hover:scale-110 transition-transform duration-300"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white opacity-20 rounded-lg"></div>
+                </div>
+              </div>
+            )}
+            <div className="text-3xl font-black text-transparent bg-gradient-to-br from-gray-800 via-gray-900 to-black bg-clip-text mb-1 hover:scale-105 transition-transform duration-300 cursor-default">
+              {score}
+            </div>
+            <div className="text-xs text-gray-500 font-semibold tracking-wide bg-gray-100 px-3 py-1 rounded-full">300-850</div>
+          </div>
+        </div>
+
+        
+      </div>
+
+      {/* Score breakdown legend */}
+      <div className="mt-8 w-full">
+        <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-lg border border-gray-200 p-6">
+          <h4 className="text-lg font-bold text-gray-800 mb-6 text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Credit Factors Breakdown
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {breakdown.map((item, index) => (
+              <div key={index} className="group relative bg-white rounded-lg p-4 shadow-sm border border-gray-100 hover:shadow-md hover:border-gray-200 transition-all duration-300 transform hover:-translate-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div 
+                        className="w-5 h-5 rounded-full shadow-md border-2 border-white ring-2 ring-gray-100 group-hover:ring-gray-200 transition-all duration-300" 
+                        style={{ backgroundColor: item.color }}
+                      ></div>
+                      <div 
+                        className="absolute inset-0 w-5 h-5 rounded-full opacity-20 animate-pulse" 
+                        style={{ backgroundColor: item.color }}
+                      ></div>
+                    </div>
+                    <span className="text-gray-700 font-semibold text-sm group-hover:text-gray-900 transition-colors">
+                      {item.label}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-bold text-gray-900 text-xl group-hover:text-2xl transition-all duration-300">
+                      {item.value}
+                    </span>
+                    <span className="text-gray-500 text-sm font-medium">%</span>
+                  </div>
+                </div>
+                <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full rounded-full transition-all duration-1000 ease-out"
+                    style={{ 
+                      backgroundColor: item.color, 
+                      width: `${item.value}%`,
+                      boxShadow: `0 0 10px ${item.color}40`
+                    }}
+                  ></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CircularScoreChart;

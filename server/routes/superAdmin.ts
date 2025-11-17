@@ -1,0 +1,3400 @@
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import { getDatabaseAdapter } from '../database/databaseAdapter.js';
+import { authenticateToken } from '../middleware/authMiddleware.js';
+import { SubscriptionPlan, AdminProfile, AdminSubscription, UserActivity, SystemSettings, AdminNotification } from '../database/superAdminSchema.js';
+import { getWebSocketService } from '../services/websocketService.js';
+
+const router = Router();
+
+// Middleware functions - must be defined before use
+const requireSuperAdmin = async (req: any, res: Response, next: any) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const db = getDatabaseAdapter();
+    const user = await db.getQuery(
+      'SELECT * FROM users WHERE id = ? AND (role = "admin" OR role = "super_admin")',
+      [userId]
+    );
+
+    if (!user) {
+      return res.status(403).json({ success: false, error: 'Super admin access required' });
+    }
+
+    // Create a mock admin profile for compatibility
+    req.adminProfile = {
+      id: user.id,
+      user_id: user.id,
+      access_level: 'super_admin',
+      is_active: true
+    };
+    next();
+  } catch (error) {
+    console.error('Super admin check error:', error);
+    res.status(500).json({ success: false, error: 'Authorization check failed' });
+  }
+};
+
+// Middleware to check admin access (admin or above)
+const requireAdmin = async (req: any, res: Response, next: any) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+
+    const db = getDatabaseAdapter();
+    const user = await db.getQuery(
+      'SELECT * FROM users WHERE id = ? AND (role = "admin" OR role = "super_admin")',
+      [userId]
+    );
+
+    if (!user) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+
+    // Create a mock admin profile for compatibility
+    req.adminProfile = {
+      id: user.id,
+      user_id: user.id,
+      access_level: user.role === 'super_admin' ? 'super_admin' : 'admin',
+      is_active: true
+    };
+    next();
+  } catch (error) {
+    console.error('Admin check error:', error);
+    res.status(500).json({ success: false, error: 'Authorization check failed' });
+  }
+};
+
+// Validation schemas
+const createPlanSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().nullish(),
+  price: z.coerce.number().min(0),
+  billing_cycle: z.enum(['monthly', 'yearly', 'lifetime']),
+  features: z.array(z.string()),
+  page_permissions: z.array(z.string()).optional(),
+  assigned_courses: z.array(z.number()).optional(),
+  stripe_monthly_price_id: z.string().optional(),
+  stripe_yearly_price_id: z.string().optional(),
+  stripe_product_id: z.string().optional(),
+  max_users: z.coerce.number().min(0).optional(),
+  max_clients: z.coerce.number().min(0).optional(),
+  max_disputes: z.coerce.number().min(0).optional(),
+  is_active: z.boolean().default(true),
+  sort_order: z.coerce.number().default(0)
+});
+
+// Create new support user
+router.post('/support-users', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { first_name, last_name, email, password, department = 'Support', title = 'Support Agent' } = req.body;
+
+    if (!first_name || !last_name || !email || !password) {
+      return res.status(400).json({ success: false, error: 'All fields are required' });
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Check if user already exists
+    const existingUser = await db.getQuery('SELECT id FROM users WHERE email = ?', [email]);
+    if (existingUser) {
+      return res.status(400).json({ success: false, error: 'User with this email already exists' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Create support user
+    const dbType = db.getType();
+    let insertQuery, insertParams;
+    
+    if (dbType === 'mysql') {
+      insertQuery = `INSERT INTO users (first_name, last_name, email, password_hash, role, status, created_at, updated_at) 
+                     VALUES (?, ?, ?, ?, 'support', 'active', NOW(), NOW())`;
+      insertParams = [first_name, last_name, email, hashedPassword];
+    } else {
+      insertQuery = `INSERT INTO users (first_name, last_name, email, password_hash, role, is_active, created_at, updated_at) 
+                     VALUES (?, ?, ?, ?, 'support', 1, datetime('now'), datetime('now'))`;
+      insertParams = [first_name, last_name, email, hashedPassword];
+    }
+
+    const result = await db.executeQuery(insertQuery, insertParams);
+    
+    res.json({
+      success: true,
+      message: 'Support user created successfully',
+      data: {
+        id: result.lastID || result.insertId,
+        first_name,
+        last_name,
+        email,
+        role: 'support',
+        status: 'active'
+      }
+    });
+  } catch (error) {
+    console.error('Error creating support user:', error);
+    res.status(500).json({ success: false, error: 'Failed to create support user' });
+  }
+});
+
+// Update support user
+router.put('/support-users/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { first_name, last_name, email, department, title } = req.body;
+
+    if (!first_name || !last_name || !email) {
+      return res.status(400).json({ success: false, error: 'First name, last name, and email are required' });
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Check if user exists and is a support user
+    const existingUser = await db.getQuery('SELECT id, role FROM users WHERE id = ?', [userId]);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: 'Support user not found' });
+    }
+    
+    if (existingUser.role !== 'support') {
+      return res.status(400).json({ success: false, error: 'User is not a support user' });
+    }
+
+    // Check if email is already taken by another user
+    const emailCheck = await db.getQuery('SELECT id FROM users WHERE email = ? AND id != ?', [email, userId]);
+    if (emailCheck) {
+      return res.status(400).json({ success: false, error: 'Email is already taken by another user' });
+    }
+
+    // Update user
+    const dbType = db.getType();
+    let updateQuery;
+    
+    if (dbType === 'mysql') {
+      updateQuery = `UPDATE users SET first_name = ?, last_name = ?, email = ?, updated_at = NOW() WHERE id = ?`;
+    } else {
+      updateQuery = `UPDATE users SET first_name = ?, last_name = ?, email = ?, updated_at = datetime('now') WHERE id = ?`;
+    }
+
+    await db.executeQuery(updateQuery, [first_name, last_name, email, userId]);
+    
+    res.json({
+      success: true,
+      message: 'Support user updated successfully',
+      data: {
+        id: userId,
+        first_name,
+        last_name,
+        email,
+        role: 'support'
+      }
+    });
+  } catch (error) {
+    console.error('Error updating support user:', error);
+    res.status(500).json({ success: false, error: 'Failed to update support user' });
+  }
+});
+
+// Change support user password
+router.put('/support-users/:id/password', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { password } = req.body;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long' });
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Check if user exists and is a support user
+    const existingUser = await db.getQuery('SELECT id, role FROM users WHERE id = ?', [userId]);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: 'Support user not found' });
+    }
+    
+    if (existingUser.role !== 'support') {
+      return res.status(400).json({ success: false, error: 'User is not a support user' });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Update password
+    const dbType = db.getType();
+    let updateQuery;
+    
+    if (dbType === 'mysql') {
+      updateQuery = `UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?`;
+    } else {
+      updateQuery = `UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`;
+    }
+
+    await db.executeQuery(updateQuery, [hashedPassword, userId]);
+    
+    res.json({
+      success: true,
+      message: 'Password updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating password:', error);
+    res.status(500).json({ success: false, error: 'Failed to update password' });
+  }
+});
+
+// Delete support user
+router.delete('/support-users/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id);
+
+    const db = getDatabaseAdapter();
+    
+    // Check if user exists and is a support user
+    const existingUser = await db.getQuery('SELECT id, role FROM users WHERE id = ?', [userId]);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: 'Support user not found' });
+    }
+    
+    if (existingUser.role !== 'support') {
+      return res.status(400).json({ success: false, error: 'User is not a support user' });
+    }
+
+    // Delete user
+    await db.executeQuery('DELETE FROM users WHERE id = ?', [userId]);
+    
+    res.json({
+      success: true,
+      message: 'Support user deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting support user:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete support user' });
+  }
+});
+
+// Login as specific support user (for super admin)
+router.post('/support-users/:id/login', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    console.log('🔍 Login as support user endpoint called with ID:', req.params.id);
+    console.log('🔍 Request method:', req.method);
+    console.log('🔍 Request path:', req.path);
+    console.log('🔍 Full URL:', req.url);
+    
+    const userId = parseInt(req.params.id);
+
+    const db = getDatabaseAdapter();
+    
+    // Get the specific support user
+    const supportUser = await db.getQuery('SELECT * FROM users WHERE id = ? AND role = "support"', [userId]);
+    
+    if (!supportUser) {
+      console.log('❌ Support user not found for ID:', userId);
+      return res.status(404).json({ error: 'Support user not found' });
+    }
+
+    // Check if user is active
+    const dbType = db.getType();
+    const isActive = dbType === 'mysql' ? supportUser.status === 'active' : supportUser.is_active === 1;
+    
+    if (!isActive) {
+      console.log('❌ Support user account is deactivated for ID:', userId);
+      return res.status(403).json({ error: 'Support user account is deactivated' });
+    }
+
+    // Generate token for the support user
+    const token = jwt.sign(
+      { 
+        userId: supportUser.id, 
+        email: supportUser.email, 
+        role: supportUser.role 
+      },
+      process.env.JWT_SECRET || 'your-super-secret-jwt-key-for-development',
+      { expiresIn: '24h' }
+    );
+
+    // Update last login
+    const updateQuery = dbType === 'mysql' 
+      ? 'UPDATE users SET last_login = NOW() WHERE id = ?'
+      : 'UPDATE users SET last_login = datetime("now") WHERE id = ?';
+    
+    await db.executeQuery(updateQuery, [supportUser.id]);
+
+    // Return support user data (without password)
+    const supportData = {
+      id: supportUser.id,
+      email: supportUser.email,
+      first_name: supportUser.first_name,
+      last_name: supportUser.last_name,
+      role: supportUser.role,
+      last_login: new Date().toISOString(),
+    };
+
+    console.log('✅ Login as support user successful for ID:', userId);
+    res.json({
+      message: 'Login as support user successful',
+      token,
+      user: supportData
+    });
+  } catch (error) {
+    console.error('❌ Error logging in as support user:', error);
+    res.status(500).json({ error: 'Failed to login as support user' });
+  }
+});
+
+const updatePlanSchema = createPlanSchema.partial();
+
+const createAdminProfileSchema = z.object({
+  name: z.string().min(1).max(255),
+  email: z.string().email(),
+  password: z.string().min(6),
+  role: z.string(),
+  permissions: z.array(z.string()),
+  accessLevel: z.enum(['full', 'limited', 'read-only']),
+  status: z.enum(['active', 'inactive', 'suspended']).default('active'),
+  department: z.string().optional(),
+  title: z.string().optional(),
+  phone: z.string().optional(),
+  emergency_contact: z.string().optional(),
+  notes: z.string().optional()
+});
+
+const updateAdminProfileSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  email: z.string().email().optional(),
+  password: z.string().min(6).optional(),
+  role: z.string().optional(),
+  permissions: z.array(z.string()).optional(),
+  accessLevel: z.enum(['full', 'limited', 'read-only']).optional(),
+  status: z.enum(['active', 'inactive', 'suspended']).optional(),
+  department: z.string().optional(),
+  title: z.string().optional(),
+  phone: z.string().optional(),
+  emergency_contact: z.string().optional(),
+  notes: z.string().optional()
+});
+
+
+
+const createAdminSubscriptionSchema = z.object({
+  admin_id: z.number().positive(),
+  plan_id: z.number().positive(),
+  status: z.enum(['active', 'inactive', 'cancelled', 'expired', 'pending']).default('pending'),
+  start_date: z.string(),
+  end_date: z.string().optional(),
+  auto_renew: z.boolean().default(true),
+  payment_method: z.string().optional(),
+  billing_address: z.string().optional(),
+  payment_amount: z.number().positive().optional(),
+  currency: z.string().length(3).default('USD'),
+  trial_end_date: z.string().optional()
+});
+
+const updateAdminSubscriptionSchema = createAdminSubscriptionSchema.partial().omit({ admin_id: true, plan_id: true });
+
+const systemSettingSchema = z.object({
+  setting_key: z.string().min(1).max(255),
+  setting_value: z.string(),
+  setting_type: z.enum(['string', 'number', 'boolean', 'json']).default('string'),
+  category: z.enum(['general', 'security', 'billing', 'notifications', 'features']).default('general'),
+  description: z.string().optional(),
+  is_public: z.boolean().default(false)
+});
+
+// Routes start here
+
+// SUBSCRIPTION PLANS ROUTES
+
+// Get all subscription plans
+router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10, search, is_active } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+
+    if (search) {
+      whereClause += ' AND (name LIKE ? OR description LIKE ?)';
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm);
+    }
+
+    if (is_active !== undefined) {
+      whereClause += ' AND is_active = ?';
+      params.push(is_active === 'true');
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Get total count
+    const countResult = await db.getQuery(
+      `SELECT COUNT(*) as total FROM subscription_plans ${whereClause}`,
+      params
+    );
+
+    // Get plans with pagination
+    const safeLimit = Math.max(1, Math.min(100, Number(limit)));
+    const safeOffset = Math.max(0, offset);
+    const plans = await db.allQuery(
+      `SELECT sp.*, u1.first_name as created_by_name, u1.last_name as created_by_lastname,
+              u2.first_name as updated_by_name, u2.last_name as updated_by_lastname
+       FROM subscription_plans sp
+       LEFT JOIN users u1 ON sp.created_by = u1.id
+       LEFT JOIN users u2 ON sp.updated_by = u2.id
+       ${whereClause}
+       ORDER BY sp.sort_order ASC, sp.created_at DESC
+       LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+      params
+    );
+
+    // Parse features and page_permissions JSON for each plan and get assigned courses
+    const plansWithFeatures = await Promise.all(plans.map(async (plan) => {
+      // Get assigned courses for this plan
+      const assignedCourses = await db.allQuery(
+        'SELECT course_id FROM plan_course_associations WHERE plan_id = ?',
+        [plan.id]
+      );
+
+      return {
+        ...plan,
+        features: plan.features ? JSON.parse(plan.features) : [],
+        page_permissions: plan.page_permissions ? JSON.parse(plan.page_permissions) : [],
+        assigned_courses: assignedCourses.map(row => row.course_id)
+      };
+    }));
+
+    res.json({
+      success: true,
+      data: plansWithFeatures,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: countResult?.total || 0,
+        pages: Math.ceil((countResult?.total || 0) / Number(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching subscription plans:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch subscription plans' });
+  }
+});
+
+// Get single subscription plan
+router.get('/plans/:id', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const planId = parseInt(req.params.id);
+    
+    const db = getDatabaseAdapter();
+    const plan = await db.getQuery(
+      `SELECT sp.*, u1.first_name as created_by_name, u1.last_name as created_by_lastname,
+              u2.first_name as updated_by_name, u2.last_name as updated_by_lastname
+       FROM subscription_plans sp
+       LEFT JOIN users u1 ON sp.created_by = u1.id
+       LEFT JOIN users u2 ON sp.updated_by = u2.id
+       WHERE sp.id = ?`,
+      [planId]
+    );
+
+    if (!plan) {
+      return res.status(404).json({ success: false, error: 'Subscription plan not found' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...plan,
+        features: plan.features ? JSON.parse(plan.features) : [],
+        page_permissions: plan.page_permissions ? JSON.parse(plan.page_permissions) : []
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching subscription plan:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch subscription plan' });
+  }
+});
+
+// Create subscription plan
+router.post('/plans', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const planData = createPlanSchema.parse(req.body);
+
+    const db = getDatabaseAdapter();
+    const result = await db.executeQuery(
+      `INSERT INTO subscription_plans (name, description, price, billing_cycle, features, page_permissions, stripe_monthly_price_id, stripe_yearly_price_id, stripe_product_id, max_users, max_clients, max_disputes, is_active, sort_order, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        planData.name,
+        planData.description || null,
+        planData.price,
+        planData.billing_cycle,
+        JSON.stringify(planData.features),
+        planData.page_permissions ? JSON.stringify(planData.page_permissions) : null,
+        planData.stripe_monthly_price_id || null,
+        planData.stripe_yearly_price_id || null,
+        planData.stripe_product_id || null,
+        planData.max_users ?? null,
+        planData.max_clients ?? null,
+        planData.max_disputes ?? null,
+        planData.is_active,
+        planData.sort_order,
+        userId,
+        userId
+      ]
+    );
+
+    const planId = result.insertId;
+
+    // Handle course assignments
+    if (planData.assigned_courses && planData.assigned_courses.length > 0) {
+      const courseAssignments = planData.assigned_courses.map(courseId => [
+        planId,
+        courseId,
+        userId
+      ]);
+
+      await db.executeQuery(
+        `INSERT INTO plan_course_associations (plan_id, course_id, created_by) VALUES ${courseAssignments.map(() => '(?, ?, ?)').join(', ')}`,
+        courseAssignments.flat()
+      );
+    }
+
+    // Fetch the created plan with course assignments
+    const createdPlan = await db.getQuery(
+      'SELECT * FROM subscription_plans WHERE id = ?',
+      [planId]
+    );
+
+    // Get assigned courses
+    const assignedCourses = await db.allQuery(
+      'SELECT course_id FROM plan_course_associations WHERE plan_id = ?',
+      [planId]
+    );
+
+    const planResponse = {
+      ...createdPlan,
+      features: createdPlan.features ? JSON.parse(createdPlan.features) : [],
+      page_permissions: createdPlan.page_permissions ? JSON.parse(createdPlan.page_permissions) : [],
+      assigned_courses: assignedCourses.map(row => row.course_id)
+    };
+
+    // Broadcast plan creation to connected clients
+    const websocketService = getWebSocketService();
+    if (websocketService) {
+      websocketService.broadcastPlanUpdate({
+        action: 'created',
+        plan: planResponse
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      data: planResponse
+    });
+  } catch (error) {
+    console.error('Error creating subscription plan:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid plan data',
+        details: error.errors
+      });
+    }
+
+    res.status(500).json({ success: false, error: 'Failed to create subscription plan' });
+  }
+});
+
+// Update subscription plan
+router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const planId = parseInt(req.params.id);
+    const userId = (req as any).user.id;
+    const planData = updatePlanSchema.parse(req.body);
+
+    // Check if plan exists
+    const db = getDatabaseAdapter();
+    const existingPlan = await db.getQuery(
+      'SELECT * FROM subscription_plans WHERE id = ?',
+      [planId]
+    );
+
+    if (!existingPlan) {
+      return res.status(404).json({ success: false, error: 'Subscription plan not found' });
+    }
+
+    // Handle course assignments separately
+    if (planData.assigned_courses !== undefined) {
+      // Remove existing course assignments
+      await db.executeQuery(
+        'DELETE FROM plan_course_associations WHERE plan_id = ?',
+        [planId]
+      );
+
+      // Add new course assignments
+      if (planData.assigned_courses.length > 0) {
+        const courseAssignments = planData.assigned_courses.map(courseId => [
+          planId,
+          courseId,
+          userId
+        ]);
+
+        await db.executeQuery(
+          `INSERT INTO plan_course_associations (plan_id, course_id, created_by) VALUES ${courseAssignments.map(() => '(?, ?, ?)').join(', ')}`,
+          courseAssignments.flat()
+        );
+      }
+    }
+
+    // Build dynamic update query (exclude assigned_courses as it's handled separately)
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+
+    Object.entries(planData).forEach(([key, value]) => {
+      if (value !== undefined && key !== 'assigned_courses') {
+        if (key === 'features' || key === 'page_permissions') {
+          updateFields.push(`${key} = ?`);
+          updateValues.push(JSON.stringify(value));
+        } else {
+          updateFields.push(`${key} = ?`);
+          updateValues.push(value);
+        }
+      }
+    });
+
+    if (updateFields.length > 0) {
+      updateFields.push('updated_by = ?');
+      updateValues.push(userId);
+
+      await db.executeQuery(
+        `UPDATE subscription_plans SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [...updateValues, planId]
+      );
+    }
+
+    // Fetch updated plan with course assignments
+    const updatedPlan = await db.getQuery(
+      'SELECT * FROM subscription_plans WHERE id = ?',
+      [planId]
+    );
+
+    // Get assigned courses
+    const assignedCourses = await db.allQuery(
+      'SELECT course_id FROM plan_course_associations WHERE plan_id = ?',
+      [planId]
+    );
+
+    const planResponse = {
+      ...updatedPlan,
+      features: JSON.parse(updatedPlan.features),
+      page_permissions: updatedPlan.page_permissions ? JSON.parse(updatedPlan.page_permissions) : [],
+      assigned_courses: assignedCourses.map(row => row.course_id)
+    };
+
+    // Broadcast plan update to connected clients
+    const websocketService = getWebSocketService();
+    if (websocketService) {
+      websocketService.broadcastPlanUpdate({
+        action: 'updated',
+        plan: planResponse
+      });
+    }
+
+    res.json({
+      success: true,
+      data: planResponse
+    });
+  } catch (error) {
+    console.error('Error updating subscription plan:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid plan data',
+        details: error.errors
+      });
+    }
+
+    res.status(500).json({ success: false, error: 'Failed to update subscription plan' });
+  }
+});
+
+// Delete subscription plan
+router.delete('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const planId = parseInt(req.params.id);
+
+    // Check if plan exists
+    const db = getDatabaseAdapter();
+    const existingPlan = await db.getQuery(
+      'SELECT * FROM subscription_plans WHERE id = ?',
+      [planId]
+    );
+
+    if (!existingPlan) {
+      return res.status(404).json({ success: false, error: 'Subscription plan not found' });
+    }
+
+    // Check if plan is being used by any subscriptions
+    const subscriptionCount = await db.getQuery(
+      'SELECT COUNT(*) as count FROM admin_subscriptions WHERE plan_id = ?',
+      [planId]
+    );
+
+    if (subscriptionCount && subscriptionCount.count > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete plan that is currently being used by subscriptions'
+      });
+    }
+
+    await db.executeQuery('DELETE FROM subscription_plans WHERE id = ?', [planId]);
+
+    res.json({ success: true, message: 'Subscription plan deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting subscription plan:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete subscription plan' });
+  }
+});
+
+// ADMIN PROFILE ROUTES
+
+// Get all support users
+router.get('/support-users', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10, search, is_active } = req.query;
+    console.log('🔍 Support Users API called with params:', { page, limit, search, is_active });
+    const pageNum = Math.max(1, parseInt(String(page)) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(String(limit)) || 10));
+    const safeOffset = (pageNum - 1) * limitNum;
+
+    let whereClause = 'WHERE u.role = "support"';
+    const params: any[] = [];
+
+    if (search) {
+      whereClause += ' AND (u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ?)';
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    if (is_active !== undefined) {
+      const db = getDatabaseAdapter();
+      const dbType = db.getType();
+      if (dbType === 'mysql') {
+        whereClause += ' AND u.status = ?';
+        params.push(is_active === 'true' ? 'active' : 'inactive');
+      } else {
+        whereClause += ' AND u.is_active = ?';
+        params.push(is_active === 'true' ? 1 : 0);
+      }
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Get total count
+    const countResult = await db.getQuery(
+      `SELECT COUNT(*) as total FROM users u ${whereClause}`,
+      params
+    );
+
+    // Get support users (handle both MySQL and SQLite schemas)
+    const dbType = db.getType();
+    const statusColumn = dbType === 'mysql' ? 'u.status' : 'CASE WHEN u.is_active = 1 THEN "active" ELSE "inactive" END';
+    
+    const supportUsers = await db.allQuery(
+      `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ${statusColumn} as status,
+              u.last_login, u.created_at, u.updated_at,
+              'Support Team' as department, 'Support Agent' as title
+       FROM users u
+       ${whereClause}
+       ORDER BY u.created_at DESC
+       LIMIT ${limitNum} OFFSET ${safeOffset}`,
+      params
+    );
+
+    const total = countResult?.total || 0;
+    const totalPages = Math.ceil(total / limitNum);
+
+    console.log(`📊 Found ${supportUsers.length} support users out of ${total} total`);
+
+    res.json({
+      success: true,
+      data: supportUsers,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching support users:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch support users' });
+  }
+});
+
+// Get all admin profiles
+router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10, search, is_active, access_level } = req.query;
+    console.log('🔍 Admin API called with params:', { page, limit, search, is_active, access_level });
+    const offset = (Number(page) - 1) * Number(limit);
+
+    let whereClause = 'WHERE (u.role = "admin" OR u.role = "super_admin")';
+    const params: any[] = [];
+
+    // Handle role/access_level filtering
+    if (access_level && access_level !== 'all') {
+      if (access_level === 'super_admin') {
+        whereClause = 'WHERE u.role = "super_admin"';
+      } else if (access_level === 'admin') {
+        whereClause = 'WHERE u.role = "admin"';
+      }
+    }
+
+    if (search) {
+      whereClause += ' AND (u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ?)';
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    if (is_active !== undefined) {
+      const db = getDatabaseAdapter();
+      const dbType = db.getType();
+      if (dbType === 'mysql') {
+        whereClause += ' AND u.status = ?';
+        params.push(is_active === 'true' ? 'active' : 'inactive');
+      } else {
+        whereClause += ' AND u.is_active = ?';
+        params.push(is_active === 'true' ? 1 : 0);
+      }
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Get total count
+    const countResult = await db.getQuery(
+      `SELECT COUNT(*) as total FROM users u ${whereClause}`,
+      params
+    );
+
+    // Get admin users (handle both MySQL and SQLite schemas)
+    const dbType = db.getType();
+    const statusColumn = dbType === 'mysql' ? 'u.status' : 'CASE WHEN u.is_active = 1 THEN "active" ELSE "inactive" END';
+    
+    const safeLimitAdmins = Math.max(1, Math.min(100, Number(limit)));
+    const safeOffsetAdmins = Math.max(0, offset);
+    const admins = await db.allQuery(
+      `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ${statusColumn} as status,
+              u.last_login, u.created_at, u.updated_at,
+              u.role as access_level, 'General' as department, 1 as is_active,
+              CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title, 
+              '{}' as permissions
+       FROM users u
+       ${whereClause}
+       ORDER BY u.created_at DESC
+       LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`,
+      params
+    );
+
+    // Parse permissions JSON for each admin (default empty permissions)
+    const adminsWithPermissions = admins.map(admin => ({
+      ...admin,
+      permissions: {}
+    }));
+
+    res.json({
+      success: true,
+      data: adminsWithPermissions,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: countResult?.total || 0,
+        pages: Math.ceil((countResult?.total || 0) / Number(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching admin profiles:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch admin profiles' });
+  }
+});
+
+// Get single admin profile
+router.get('/admins/:id', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminId = parseInt(req.params.id);
+    
+    const db = getDatabaseAdapter();
+    const dbType = db.getType();
+    const statusColumn = dbType === 'mysql' ? 'u.status' : 'CASE WHEN u.is_active = 1 THEN "active" ELSE "inactive" END as status';
+    
+    let admin;
+    const queryWithAudit = `SELECT u.*, 'admin' as access_level, 'General' as department,
+              'Admin User' as title, '{}' as permissions, 1 as is_active,
+              u.created_at as user_created_at,
+              u1.first_name as created_by_name, u1.last_name as created_by_lastname,
+              u2.first_name as updated_by_name, u2.last_name as updated_by_lastname
+       FROM users u
+       LEFT JOIN users u1 ON u.created_by = u1.id
+       LEFT JOIN users u2 ON u.updated_by = u2.id
+       WHERE u.id = ? AND u.role = 'admin'`;
+    const queryWithoutAudit = `SELECT u.*, 'admin' as access_level, 'General' as department,
+              'Admin User' as title, '{}' as permissions, 1 as is_active,
+              u.created_at as user_created_at
+       FROM users u
+       WHERE u.id = ? AND u.role = 'admin'`;
+
+    try {
+      admin = await db.getQuery(queryWithAudit, [adminId]);
+    } catch (selectErr: any) {
+      const msg: string = selectErr?.sqlMessage || selectErr?.message || '';
+      const code: string = selectErr?.code || '';
+      if (code === 'ER_BAD_FIELD_ERROR' || msg.includes("Unknown column 'created_by'")) {
+        console.warn('⚠️  users.created_by/updated_by missing; fetching admin without audit joins');
+        admin = await db.getQuery(queryWithoutAudit, [adminId]);
+      } else {
+        throw selectErr;
+      }
+    }
+
+    if (!admin) {
+      return res.status(404).json({ success: false, error: 'Admin profile not found' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...admin,
+        permissions: JSON.parse(admin.permissions)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching admin profile:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch admin profile' });
+  }
+});
+
+// Create admin profile
+router.post('/admins', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    console.log('🔵 POST /admins - Request body:', JSON.stringify(req.body, null, 2));
+    const userId = (req as any).user.id;
+    const adminData = createAdminProfileSchema.parse(req.body);
+    console.log('🔵 POST /admins - Parsed admin data:', JSON.stringify(adminData, null, 2));
+
+    const db = getDatabaseAdapter();
+    
+    // Check if email already exists
+    const existingUser = await db.getQuery(
+      'SELECT * FROM users WHERE email = ?',
+      [adminData.email]
+    );
+
+    if (existingUser) {
+      return res.status(400).json({ success: false, error: 'Email already exists' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(adminData.password, 10);
+
+    // Split name into first and last name
+    const nameParts = adminData.name.trim().split(' ');
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    // Normalize status for MySQL enum compatibility (use 'inactive' for 'suspended')
+    const normalizedStatus = adminData.status === 'suspended' ? 'inactive' : adminData.status;
+
+    // Create new user with admin role, with safe fallback if audit columns are missing
+    let result;
+    try {
+      result = await db.executeQuery(
+        `INSERT INTO users (first_name, last_name, email, password_hash, role, status, created_by, updated_by)
+         VALUES (?, ?, ?, ?, 'admin', ?, ?, ?)`,
+        [firstName, lastName, adminData.email, hashedPassword, normalizedStatus, userId, userId]
+      );
+    } catch (insertErr: any) {
+      // Fallback for MySQL databases missing audit columns
+      const msg: string = insertErr?.sqlMessage || insertErr?.message || '';
+      const code: string = insertErr?.code || '';
+      if (code === 'ER_BAD_FIELD_ERROR' || msg.includes("Unknown column 'created_by'")) {
+        console.warn('⚠️  users.created_by/updated_by missing; inserting without audit columns');
+        result = await db.executeQuery(
+          `INSERT INTO users (first_name, last_name, email, password_hash, role, status)
+           VALUES (?, ?, ?, ?, 'admin', ?)`,
+          [firstName, lastName, adminData.email, hashedPassword, normalizedStatus]
+        );
+      } else {
+        throw insertErr;
+      }
+    }
+
+    const newUserId = result.insertId;
+
+    // Auto-create affiliate profile for this new admin with same email and password
+    try {
+      // Check if an affiliate with this email already exists
+      const existingAffiliate = await db.getQuery(
+        'SELECT id, admin_id FROM affiliates WHERE email = ?',
+        [adminData.email]
+      );
+
+      if (!existingAffiliate) {
+        const dbType = db.getType();
+        const emailVerifiedValue = dbType === 'mysql' ? true : 1;
+
+        // Minimal insert to avoid unknown column issues across adapters
+        await db.executeQuery(
+          `INSERT INTO affiliates (
+             admin_id, email, password_hash, first_name, last_name,
+             commission_rate, status, email_verified
+           ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`,
+          [
+            newUserId,
+            adminData.email,
+            hashedPassword,
+            firstName,
+            lastName,
+            10.0,
+            emailVerifiedValue
+          ]
+        );
+        console.log('🟢 Auto-created affiliate profile for admin ID:', newUserId);
+      } else {
+        // Sync existing affiliate to this admin and ensure password matches
+        const dbType = db.getType();
+        const emailVerifiedValue = dbType === 'mysql' ? true : 1;
+        await db.executeQuery(
+          `UPDATE affiliates 
+             SET admin_id = ?, password_hash = ?, status = 'active', email_verified = ?
+           WHERE id = ?`,
+          [newUserId, hashedPassword, emailVerifiedValue, (existingAffiliate as any).id]
+        );
+        console.log('🟢 Updated existing affiliate to link admin and sync password. Admin ID:', newUserId);
+      }
+    } catch (affiliateError) {
+      console.error('⚠️ Failed to auto-create/update affiliate profile for new admin:', affiliateError);
+      // Continue without failing the admin creation
+    }
+
+    // Create admin profile entry if admin_profiles table exists
+    try {
+      await db.executeQuery(
+        `INSERT INTO admin_profiles (user_id, permissions, access_level, department, title, phone, emergency_contact, notes, is_active, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          newUserId,
+          JSON.stringify(adminData.permissions),
+          adminData.accessLevel === 'full' ? 'admin' : adminData.accessLevel === 'limited' ? 'manager' : 'support',
+          adminData.department || 'General',
+          adminData.title || 'Admin User',
+          adminData.phone || null,
+          adminData.emergency_contact || null,
+          adminData.notes || null,
+          adminData.status === 'active' ? 1 : 0,
+          userId,
+          userId
+        ]
+      );
+    } catch (profileError) {
+      console.log('Admin profiles table may not exist, skipping profile creation');
+    }
+
+    // Fetch the created user
+    const createdAdmin = await db.getQuery(
+      `SELECT u.*, 
+              COALESCE(ap.access_level, 'admin') as access_level,
+              COALESCE(ap.department, 'General') as department,
+              COALESCE(ap.title, 'Admin User') as title,
+              COALESCE(ap.permissions, '[]') as permissions,
+              CASE WHEN u.status = 'active' THEN 1 ELSE 0 END as is_active
+       FROM users u
+       LEFT JOIN admin_profiles ap ON u.id = ap.user_id
+       WHERE u.id = ?`,
+      [newUserId]
+    );
+
+    // Remove sensitive data
+    const { password_hash, ...sanitizedAdmin } = createdAdmin;
+
+    console.log('🟢 POST /admins - Admin created successfully with ID:', newUserId);
+    res.status(201).json({
+      success: true,
+      data: {
+        ...sanitizedAdmin,
+        permissions: typeof createdAdmin.permissions === 'string' ? JSON.parse(createdAdmin.permissions) : createdAdmin.permissions
+      }
+    });
+  } catch (error) {
+    console.error('🔴 POST /admins - Error creating admin profile:', error);
+    
+    if (error instanceof z.ZodError) {
+      console.error('🔴 POST /admins - Validation error:', error.errors);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid admin data',
+        details: error.errors
+      });
+    }
+
+    res.status(500).json({ success: false, error: 'Failed to create admin profile' });
+  }
+});
+
+// Update admin profile
+router.put('/admins/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    console.log('🔵 PUT /admins/:id - Request body:', JSON.stringify(req.body, null, 2));
+    const adminId = parseInt(req.params.id);
+    const userId = (req as any).user.id;
+    const adminData = updateAdminProfileSchema.parse(req.body);
+    console.log('🔵 PUT /admins/:id - Parsed admin data:', JSON.stringify(adminData, null, 2));
+
+    const db = getDatabaseAdapter();
+    
+    // Check if user exists and is admin
+    const existingAdmin = await db.getQuery(
+      'SELECT * FROM users WHERE id = ? AND role = "admin"',
+      [adminId]
+    );
+
+    if (!existingAdmin) {
+      return res.status(404).json({ success: false, error: 'Admin user not found' });
+    }
+
+    // Check if email is being updated and if it already exists
+    if (adminData.email && adminData.email !== existingAdmin.email) {
+      const existingUser = await db.getQuery(
+        'SELECT * FROM users WHERE email = ? AND id != ?',
+        [adminData.email, adminId]
+      );
+
+      if (existingUser) {
+        return res.status(400).json({ success: false, error: 'Email already exists' });
+      }
+    }
+
+    // Prepare user table updates
+    const userUpdates = [];
+    const userValues = [];
+
+    if (adminData.name) {
+      const nameParts = adminData.name.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      userUpdates.push('first_name = ?', 'last_name = ?');
+      userValues.push(firstName, lastName);
+    }
+
+    if (adminData.email) {
+      userUpdates.push('email = ?');
+      userValues.push(adminData.email);
+    }
+
+    if (adminData.password) {
+      const hashedPassword = await bcrypt.hash(adminData.password, 10);
+      userUpdates.push('password_hash = ?');
+      userValues.push(hashedPassword);
+    }
+
+    if (adminData.status) {
+      const normalizedStatus = adminData.status === 'suspended' ? 'inactive' : adminData.status;
+      userUpdates.push('status = ?');
+      userValues.push(normalizedStatus);
+    }
+
+    if (adminData.role) {
+      userUpdates.push('role = ?');
+      userValues.push(adminData.role);
+    }
+
+    // Update users table if there are changes
+    if (userUpdates.length > 0) {
+      const updatesWithAudit = [...userUpdates, 'updated_by = ?', 'updated_at = CURRENT_TIMESTAMP'];
+      const valuesWithAudit = [...userValues, userId, adminId];
+      
+      try {
+        await db.executeQuery(
+          `UPDATE users SET ${updatesWithAudit.join(', ')} WHERE id = ?`,
+          valuesWithAudit
+        );
+      } catch (updateErr: any) {
+        const msg: string = updateErr?.sqlMessage || updateErr?.message || '';
+        const code: string = updateErr?.code || '';
+        if (code === 'ER_BAD_FIELD_ERROR' || msg.includes("Unknown column 'updated_by'")) {
+          console.warn('⚠️  users.updated_by missing; updating without audit column');
+          const updatesWithoutAudit = [...userUpdates, 'updated_at = CURRENT_TIMESTAMP'];
+          const valuesWithoutAudit = [...userValues, adminId];
+          await db.executeQuery(
+            `UPDATE users SET ${updatesWithoutAudit.join(', ')} WHERE id = ?`,
+            valuesWithoutAudit
+          );
+        } else {
+          throw updateErr;
+        }
+      }
+    }
+
+    // Update admin_profiles table if it exists
+    try {
+      const profileUpdates = [];
+      const profileValues = [];
+
+      if (adminData.permissions) {
+        profileUpdates.push('permissions = ?');
+        profileValues.push(JSON.stringify(adminData.permissions));
+      }
+
+      if (adminData.accessLevel) {
+        const accessLevelMap = {
+          'full': 'admin',
+          'limited': 'manager',
+          'read-only': 'support'
+        };
+        profileUpdates.push('access_level = ?');
+        profileValues.push(accessLevelMap[adminData.accessLevel] || 'admin');
+      }
+
+      if (adminData.department) {
+        profileUpdates.push('department = ?');
+        profileValues.push(adminData.department);
+      }
+
+      if (adminData.title) {
+        profileUpdates.push('title = ?');
+        profileValues.push(adminData.title);
+      }
+
+      if (adminData.phone) {
+        profileUpdates.push('phone = ?');
+        profileValues.push(adminData.phone);
+      }
+
+      if (adminData.emergency_contact) {
+        profileUpdates.push('emergency_contact = ?');
+        profileValues.push(adminData.emergency_contact);
+      }
+
+      if (adminData.notes) {
+        profileUpdates.push('notes = ?');
+        profileValues.push(adminData.notes);
+      }
+
+      if (adminData.status) {
+        profileUpdates.push('is_active = ?');
+        profileValues.push(adminData.status === 'active' ? 1 : 0);
+      }
+
+      if (profileUpdates.length > 0) {
+        const profileUpdatesWithAudit = [...profileUpdates, 'updated_by = ?', 'updated_at = CURRENT_TIMESTAMP'];
+        const profileValuesWithAudit = [...profileValues, userId, adminId];
+        
+        try {
+          await db.executeQuery(
+            `UPDATE admin_profiles SET ${profileUpdatesWithAudit.join(', ')} WHERE user_id = ?`,
+            profileValuesWithAudit
+          );
+        } catch (profileUpdateErr: any) {
+          const msg: string = profileUpdateErr?.sqlMessage || profileUpdateErr?.message || '';
+          const code: string = profileUpdateErr?.code || '';
+          if (code === 'ER_BAD_FIELD_ERROR' || msg.includes("Unknown column 'updated_by'")) {
+            console.warn('⚠️  admin_profiles.updated_by missing; updating without audit column');
+            const profileUpdatesWithoutAudit = [...profileUpdates, 'updated_at = CURRENT_TIMESTAMP'];
+            const profileValuesWithoutAudit = [...profileValues, adminId];
+            await db.executeQuery(
+              `UPDATE admin_profiles SET ${profileUpdatesWithoutAudit.join(', ')} WHERE user_id = ?`,
+              profileValuesWithoutAudit
+            );
+          } else {
+            throw profileUpdateErr;
+          }
+        }
+      }
+    } catch (profileError) {
+      console.log('Admin profiles table may not exist, skipping profile update');
+    }
+
+    // Fetch updated admin user
+    const updatedAdmin = await db.getQuery(
+      `SELECT u.*, 
+              COALESCE(ap.access_level, 'admin') as access_level,
+              COALESCE(ap.department, 'General') as department,
+              COALESCE(ap.title, 'Admin User') as title,
+              COALESCE(ap.permissions, '[]') as permissions,
+              CASE WHEN u.status = 'active' THEN 1 ELSE 0 END as is_active
+       FROM users u
+       LEFT JOIN admin_profiles ap ON u.id = ap.user_id
+       WHERE u.id = ?`,
+      [adminId]
+    );
+
+    // Remove sensitive data
+    const { password_hash, ...sanitizedAdmin } = updatedAdmin;
+
+    console.log('🟢 PUT /admins/:id - Admin updated successfully with ID:', adminId);
+    res.json({
+      success: true,
+      data: {
+        ...sanitizedAdmin,
+        permissions: typeof updatedAdmin.permissions === 'string' ? JSON.parse(updatedAdmin.permissions) : updatedAdmin.permissions
+      }
+    });
+  } catch (error) {
+    console.error('🔴 PUT /admins/:id - Error updating admin profile:', error);
+    
+    if (error instanceof z.ZodError) {
+      console.error('🔴 PUT /admins/:id - Validation error:', error.errors);
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid admin data',
+        details: error.errors
+      });
+    }
+
+    res.status(500).json({ success: false, error: 'Failed to update admin profile' });
+  }
+});
+
+// Delete admin profile
+router.delete('/admins/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminId = parseInt(req.params.id);
+    const currentUserId = (req as any).user.id;
+
+    const db = getDatabaseAdapter();
+    
+    // Check if user exists and is admin
+    const existingAdmin = await db.getQuery(
+      'SELECT * FROM users WHERE id = ? AND role = "admin"',
+      [adminId]
+    );
+
+    if (!existingAdmin) {
+      return res.status(404).json({ success: false, error: 'Admin user not found' });
+    }
+
+    // Prevent self-deletion
+    if (existingAdmin.id === currentUserId) {
+      return res.status(400).json({ success: false, error: 'Cannot delete your own admin profile' });
+    }
+
+    // Change user role from admin to user instead of deleting
+    await db.executeQuery('UPDATE users SET role = "user", updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [currentUserId, adminId]);
+
+    res.json({ success: true, message: 'Admin profile deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting admin profile:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete admin profile' });
+  }
+});
+
+// USER MANAGEMENT ROUTES
+
+// Get all users with enhanced filtering
+router.get('/users', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10, search, role, status, created_from, created_to } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+
+    if (search) {
+      whereClause += ' AND (first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR company_name LIKE ?)';
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    if (role) {
+      whereClause += ' AND role = ?';
+      params.push(role);
+    }
+
+    if (status) {
+      whereClause += ' AND status = ?';
+      params.push(status);
+    }
+
+    if (created_from) {
+      whereClause += ' AND DATE(created_at) >= ?';
+      params.push(created_from);
+    }
+
+    if (created_to) {
+      whereClause += ' AND DATE(created_at) <= ?';
+      params.push(created_to);
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Get total count
+    const countResult = await db.getQuery(
+      `SELECT COUNT(*) as total FROM users ${whereClause}`,
+      params
+    );
+
+    // Get users with additional stats
+    const safeLimitUsers = Math.max(1, Math.min(100, Number(limit)));
+    const safeOffsetUsers = Math.max(0, offset);
+    const users = await db.allQuery(
+      `SELECT u.*, 
+              (SELECT COUNT(*) FROM clients WHERE user_id = u.id) as client_count,
+              (SELECT COUNT(*) FROM disputes d JOIN clients c ON d.client_id = c.id WHERE c.user_id = u.id) as dispute_count,
+              CASE WHEN u.role = 'admin' THEN 'admin' ELSE NULL END as access_level,
+              CASE WHEN u.role = 'admin' THEN 'General' ELSE NULL END as department,
+              CASE WHEN u.role = 'admin' THEN 'Admin User' ELSE NULL END as title
+       FROM users u
+       ${whereClause}
+       ORDER BY u.created_at DESC
+       LIMIT ${safeLimitUsers} OFFSET ${safeOffsetUsers}`,
+      params
+    );
+
+    // Remove sensitive data
+    const sanitizedUsers = users.map(user => {
+      const { password_hash, ...sanitizedUser } = user;
+      return sanitizedUser;
+    });
+
+    res.json({
+      success: true,
+      data: sanitizedUsers,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: countResult?.total || 0,
+        pages: Math.ceil((countResult?.total || 0) / Number(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch users' });
+  }
+});
+
+// Get user activity logs
+router.get('/users/:id/activity', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { page = 1, limit = 20, activity_type, resource_type, date_from, date_to } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    let whereClause = 'WHERE user_id = ?';
+    const params: any[] = [userId];
+
+    if (activity_type) {
+      whereClause += ' AND activity_type = ?';
+      params.push(activity_type);
+    }
+
+    if (resource_type) {
+      whereClause += ' AND resource_type = ?';
+      params.push(resource_type);
+    }
+
+    if (date_from) {
+      whereClause += ' AND DATE(created_at) >= ?';
+      params.push(date_from);
+    }
+
+    if (date_to) {
+      whereClause += ' AND DATE(created_at) <= ?';
+      params.push(date_to);
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Get total count
+    const countResult = await db.getQuery(
+      `SELECT COUNT(*) as total FROM user_activities ${whereClause}`,
+      params
+    );
+
+    // Get activity logs
+    const activities = await db.allQuery(
+      `SELECT * FROM user_activities ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, Number(limit), offset]
+    );
+
+    res.json({
+      success: true,
+      data: activities,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: countResult?.total || 0,
+        pages: Math.ceil((countResult?.total || 0) / Number(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user activity:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch user activity' });
+  }
+});
+
+// Update user status
+router.patch('/users/:id/status', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { status } = req.body;
+    const currentUserId = (req as any).user.id;
+
+    if (!['active', 'inactive', 'locked', 'pending'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid status' });
+    }
+
+    // Prevent self-status change
+    if (userId === currentUserId) {
+      return res.status(400).json({ success: false, error: 'Cannot change your own status' });
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Check if user exists
+    const user = await db.getQuery(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    await db.executeQuery(
+      'UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [status, userId]
+    );
+
+    // Log the activity
+    await db.executeQuery(
+      `INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description)
+       VALUES (?, 'update', 'user', ?, ?)`,
+      [currentUserId, userId, `Changed user status to ${status}`]
+    );
+
+    res.json({ success: true, message: 'User status updated successfully' });
+  } catch (error) {
+    console.error('Error updating user status:', error);
+    res.status(500).json({ success: false, error: 'Failed to update user status' });
+  }
+});
+
+// SUBSCRIPTION MANAGEMENT ROUTES
+
+// Get all admin subscriptions
+router.get('/subscriptions', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10, search, plan_id, status, expires_from, expires_to } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+
+    if (search) {
+      whereClause += ' AND (u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ? OR asub.plan_name LIKE ?)';
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    if (plan_id) {
+      whereClause += ' AND asub.plan_name = ?';
+      params.push(plan_id);
+    }
+
+    if (status) {
+      whereClause += ' AND asub.status = ?';
+      params.push(status);
+    }
+
+    if (expires_from) {
+      whereClause += ' AND DATE(asub.current_period_end) >= ?';
+      params.push(expires_from);
+    }
+
+    if (expires_to) {
+      whereClause += ' AND DATE(asub.current_period_end) <= ?';
+      params.push(expires_to);
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Add admin filter if provided
+    if (req.query.admin) {
+      whereClause += ' AND (u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ?)';
+      const adminTerm = `%${req.query.admin}%`;
+      params.push(adminTerm, adminTerm, adminTerm);
+    }
+
+    // Get total count
+    const countResult = await db.getQuery(
+      `SELECT COUNT(*) as total FROM subscriptions asub
+       JOIN users u ON asub.user_id = u.id
+       ${whereClause}`,
+      params
+    );
+
+    // Sanitize pagination and inline LIMIT/OFFSET (MySQL doesn't allow placeholders)
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 10));
+    const safeOffset = (pageNum - 1) * limitNum;
+
+    // Get subscriptions with user and plan info
+    const subscriptions = await db.allQuery(
+      `SELECT asub.*, u.first_name, u.last_name, u.email,
+              asub.plan_name, asub.plan_type
+       FROM subscriptions asub
+       JOIN users u ON asub.user_id = u.id
+       ${whereClause}
+       ORDER BY asub.created_at DESC
+       LIMIT ${limitNum} OFFSET ${safeOffset}`,
+      params
+    );
+
+    // Return subscriptions as-is since we don't have features in the subscriptions table
+    const subscriptionsWithFeatures = subscriptions;
+
+    res.json({
+      success: true,
+      data: subscriptionsWithFeatures,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: countResult?.total || 0,
+        pages: Math.ceil((countResult?.total || 0) / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch subscriptions' });
+  }
+});
+
+// Get upcoming renewals (must be before /subscriptions/:id route)
+router.get('/subscriptions/upcoming-renewals', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10, days = 30 } = req.query;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 10));
+    const safeDays = Math.max(0, parseInt(String(days), 10) || 30);
+    const safeOffset = (pageNum - 1) * limitNum;
+    
+    const db = getDatabaseAdapter();
+    
+    console.log('Fetching upcoming renewals with params:', { page: pageNum, limit: limitNum, days: safeDays, offset: safeOffset });
+    
+    // First, let's check if subscriptions table exists and has data
+    const tableCheck = await db.allQuery('SHOW TABLES LIKE "subscriptions"');
+    console.log('Subscriptions table exists:', tableCheck.length > 0);
+    
+    if (tableCheck.length === 0) {
+      // Table doesn't exist, return empty result
+      return res.json({
+        success: true,
+        data: [],
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: 0,
+          totalPages: 0
+        }
+      });
+    }
+    
+    // Check if there are any subscriptions at all
+    const allSubscriptions = await db.allQuery('SELECT COUNT(*) as count FROM subscriptions');
+    console.log('Total subscriptions in database:', allSubscriptions[0]?.count || 0);
+    
+    // Get subscriptions that are due for renewal within the specified days
+    const renewals = await db.allQuery(
+      `SELECT s.*, u.first_name, u.last_name, u.email,
+              DATEDIFF(s.current_period_end, NOW()) as days_until_renewal
+       FROM subscriptions s
+       LEFT JOIN users u ON s.user_id = u.id
+       WHERE s.status = 'active' 
+         AND s.current_period_end >= NOW()
+         AND s.current_period_end <= DATE_ADD(NOW(), INTERVAL ? DAY)
+         AND (s.cancel_at_period_end = 0 OR s.cancel_at_period_end IS NULL)
+       ORDER BY s.current_period_end ASC
+       LIMIT ${limitNum} OFFSET ${safeOffset}`,
+      [safeDays]
+    );
+
+    console.log('Found renewals:', renewals.length);
+
+    // Get total count for pagination
+    const countResult = await db.getQuery(
+      `SELECT COUNT(*) as total FROM subscriptions s
+       WHERE s.status = 'active' 
+         AND s.current_period_end >= NOW()
+         AND s.current_period_end <= DATE_ADD(NOW(), INTERVAL ? DAY)
+         AND (s.cancel_at_period_end = 0 OR s.cancel_at_period_end IS NULL)`,
+      [safeDays]
+    );
+
+    const total = countResult?.total || 0;
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      success: true,
+      data: renewals,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching upcoming renewals:', error);
+    console.error('Error details:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to fetch upcoming renewals', details: error.message });
+  }
+});
+
+// Get recent cancellations (must be before /subscriptions/:id to avoid route conflict)
+router.get('/subscriptions/recent-cancellations', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10, days = 30 } = req.query;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 10));
+    const safeDays = Math.max(0, parseInt(String(days), 10) || 30);
+    const safeOffset = (pageNum - 1) * limitNum;
+    
+    console.log('Fetching recent cancellations with params:', { page: pageNum, limit: limitNum, days: safeDays, offset: safeOffset });
+    
+    const db = getDatabaseAdapter();
+    
+    try {
+      // Get recently cancelled subscriptions within the specified days
+      const cancellations = await db.allQuery(
+        `SELECT s.*, u.first_name, u.last_name, u.email,
+                DATEDIFF(NOW(), s.updated_at) as days_since_cancellation
+         FROM subscriptions s
+         JOIN users u ON s.user_id = u.id
+         WHERE s.status = ? 
+           AND s.updated_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+         ORDER BY s.updated_at DESC
+         LIMIT ${limitNum} OFFSET ${safeOffset}`,
+        ['canceled', safeDays]
+      );
+
+      console.log('Found cancellations:', cancellations ? cancellations.length : 'null/undefined');
+      console.log('Cancellations data:', JSON.stringify(cancellations, null, 2));
+
+      // Get total count for pagination
+      const countResult = await db.getQuery(
+        `SELECT COUNT(*) as total FROM subscriptions s
+         WHERE s.status = ? 
+           AND s.updated_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+        ['canceled', safeDays]
+      );
+
+      console.log('Count result:', JSON.stringify(countResult, null, 2));
+
+      const total = countResult?.total || 0;
+      const totalPages = Math.ceil(total / limitNum);
+
+      console.log('Returning cancellations response:', { total, totalPages, dataCount: cancellations ? cancellations.length : 0 });
+
+      res.json({
+        success: true,
+        data: cancellations || [],
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages
+        }
+      });
+    } catch (queryError) {
+      console.error('Query error in recent cancellations:', queryError);
+      throw queryError;
+    }
+  } catch (error) {
+    console.error('Error fetching recent cancellations:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch recent cancellations' });
+  }
+});
+
+// Get single subscription
+router.get('/subscriptions/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const subscriptionId = parseInt(req.params.id);
+    
+    const db = getDatabaseAdapter();
+    const subscription = await db.getQuery(
+      `SELECT asub.*, u.first_name, u.last_name, u.email,
+              asub.plan_name, asub.plan_type
+       FROM subscriptions asub
+       JOIN users u ON asub.user_id = u.id
+       WHERE asub.id = ?`,
+      [subscriptionId]
+    );
+
+    if (!subscription) {
+      return res.status(404).json({ success: false, error: 'Subscription not found' });
+    }
+
+    res.json({
+      success: true,
+      data: subscription
+    });
+  } catch (error) {
+    console.error('Error fetching subscription:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch subscription' });
+  }
+});
+
+// Create admin subscription
+router.post('/subscriptions', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id;
+    const subscriptionData = createAdminSubscriptionSchema.parse(req.body);
+
+    const db = getDatabaseAdapter();
+    
+    // Check if user exists
+    const user = await db.getQuery(
+      'SELECT * FROM users WHERE id = ?',
+      [subscriptionData.user_id]
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Check if plan exists
+    const plan = await db.getQuery(
+      'SELECT * FROM subscription_plans WHERE id = ? AND is_active = true',
+      [subscriptionData.plan_id]
+    );
+
+    if (!plan) {
+      return res.status(404).json({ success: false, error: 'Subscription plan not found or inactive' });
+    }
+
+    // Check for existing active subscription
+    const existingSubscription = await db.getQuery(
+      'SELECT * FROM subscriptions WHERE user_id = ? AND status = "active"',
+      [subscriptionData.user_id]
+    );
+
+    if (existingSubscription) {
+      return res.status(400).json({ success: false, error: 'User already has an active subscription' });
+    }
+
+    const result = await db.executeQuery(
+      `INSERT INTO subscriptions (user_id, plan_name, plan_type, status, current_period_start, current_period_end, cancel_at_period_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        subscriptionData.user_id,
+        subscriptionData.plan_name || 'Professional',
+        subscriptionData.plan_type || 'monthly',
+        subscriptionData.status,
+        subscriptionData.current_period_start || new Date(),
+        subscriptionData.current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        subscriptionData.cancel_at_period_end || 0
+      ]
+    );
+
+    const subscriptionId = result.insertId;
+
+    // Fetch the created subscription
+    const createdSubscription = await db.getQuery(
+      `SELECT asub.*, u.first_name, u.last_name, u.email
+       FROM subscriptions asub
+       JOIN users u ON asub.user_id = u.id
+       WHERE asub.id = ?`,
+      [subscriptionId]
+    );
+
+    res.status(201).json({
+      success: true,
+      data: createdSubscription
+    });
+  } catch (error) {
+    console.error('Error creating subscription:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid subscription data',
+        details: error.errors
+      });
+    }
+
+    res.status(500).json({ success: false, error: 'Failed to create subscription' });
+  }
+});
+
+// Update subscription
+router.put('/subscriptions/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const subscriptionId = parseInt(req.params.id);
+    const userId = (req as any).user.id;
+    const subscriptionData = updateAdminSubscriptionSchema.parse(req.body);
+
+    const db = getDatabaseAdapter();
+    
+    // Check if subscription exists
+    const existingSubscription = await db.getQuery(
+      'SELECT * FROM subscriptions WHERE id = ?',
+      [subscriptionId]
+    );
+
+    if (!existingSubscription) {
+      return res.status(404).json({ success: false, error: 'Subscription not found' });
+    }
+
+    // Skip plan validation since we're using plan_name directly
+
+    // Build dynamic update query
+    const updateFields: string[] = [];
+    const updateValues: any[] = [];
+
+    Object.entries(subscriptionData).forEach(([key, value]) => {
+      if (value !== undefined) {
+        updateFields.push(`${key} = ?`);
+        updateValues.push(value);
+      }
+    });
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid fields to update' });
+    }
+
+    await db.executeQuery(
+      `UPDATE subscriptions SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [...updateValues, subscriptionId]
+    );
+
+    // Fetch updated subscription
+    const updatedSubscription = await db.getQuery(
+      `SELECT asub.*, u.first_name, u.last_name, u.email
+       FROM subscriptions asub
+       JOIN users u ON asub.user_id = u.id
+       WHERE asub.id = ?`,
+      [subscriptionId]
+    );
+
+    res.json({
+      success: true,
+      data: updatedSubscription
+    });
+  } catch (error) {
+    console.error('Error updating subscription:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid subscription data',
+        details: error.errors
+      });
+    }
+
+    res.status(500).json({ success: false, error: 'Failed to update subscription' });
+  }
+});
+
+// Cancel subscription
+router.patch('/subscriptions/:id/cancel', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const subscriptionId = parseInt(req.params.id);
+    const userId = (req as any).user.id;
+    const { reason } = req.body;
+
+    const db = getDatabaseAdapter();
+    
+    // Check if subscription exists
+    const existingSubscription = await db.getQuery(
+      'SELECT * FROM subscriptions WHERE id = ?',
+      [subscriptionId]
+    );
+
+    if (!existingSubscription) {
+      return res.status(404).json({ success: false, error: 'Subscription not found' });
+    }
+
+    if (existingSubscription.status === 'cancelled') {
+      return res.status(400).json({ success: false, error: 'Subscription is already cancelled' });
+    }
+
+    await db.executeQuery(
+      `UPDATE subscriptions SET status = 'cancelled', cancel_at_period_end = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [subscriptionId]
+    );
+
+    res.json({ success: true, message: 'Subscription cancelled successfully' });
+  } catch (error) {
+    console.error('Error cancelling subscription:', error);
+    res.status(500).json({ success: false, error: 'Failed to cancel subscription' });
+  }
+});
+
+// Renew subscription
+router.patch('/subscriptions/:id/renew', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const subscriptionId = parseInt(req.params.id);
+    const userId = (req as any).user.id;
+    const { expires_at } = req.body;
+
+    if (!expires_at) {
+      return res.status(400).json({ success: false, error: 'New expiration date is required' });
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Check if subscription exists
+    const existingSubscription = await db.getQuery(
+      'SELECT * FROM subscriptions WHERE id = ?',
+      [subscriptionId]
+    );
+
+    if (!existingSubscription) {
+      return res.status(404).json({ success: false, error: 'Subscription not found' });
+    }
+
+    await db.executeQuery(
+      `UPDATE subscriptions SET status = 'active', current_period_end = ?, cancel_at_period_end = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [expires_at, subscriptionId]
+    );
+
+    res.json({ success: true, message: 'Subscription renewed successfully' });
+  } catch (error) {
+    console.error('Error renewing subscription:', error);
+    res.status(500).json({ success: false, error: 'Failed to renew subscription' });
+  }
+});
+
+// Get subscription analytics
+router.get('/analytics/subscriptions', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    
+    // Get total subscriptions count
+    const totalResult = await db.getQuery(
+      `SELECT COUNT(*) as count FROM subscriptions`
+    );
+    const totalSubscriptions = totalResult?.count || 0;
+
+    // Get subscription status counts
+    const statusCounts = await db.allQuery(
+      `SELECT status, COUNT(*) as count FROM subscriptions GROUP BY status`
+    );
+
+    // Extract specific status counts
+    const activeSubscriptions = statusCounts.find(s => s.status === 'active')?.count || 0;
+    const cancelledSubscriptions = statusCounts.find(s => s.status === 'cancelled')?.count || 0;
+    const expiredSubscriptions = statusCounts.find(s => s.status === 'expired')?.count || 0;
+
+    // Get monthly revenue (active subscriptions) - simplified since we don't have price in subscriptions table
+    const revenueResult = await db.getQuery(
+      `SELECT COUNT(*) * 29.99 as total_revenue
+       FROM subscriptions
+       WHERE status = 'active' AND plan_type = 'monthly'`
+    );
+    const monthlyRevenue = revenueResult?.total_revenue || 0;
+
+    // Calculate renewal rate (active vs total)
+    const renewalRate = totalSubscriptions > 0 ? (activeSubscriptions / totalSubscriptions) * 100 : 0;
+    
+    // Calculate churn rate (cancelled vs total)
+    const churnRate = totalSubscriptions > 0 ? (cancelledSubscriptions / totalSubscriptions) * 100 : 0;
+
+    // Calculate average lifetime (simplified - days between start and end for completed subscriptions)
+    const lifetimeResult = await db.getQuery(
+      `SELECT AVG(DATEDIFF(COALESCE(current_period_end, NOW()), current_period_start)) as avg_days
+       FROM subscriptions
+       WHERE current_period_start IS NOT NULL`
+    );
+    const averageLifetime = Math.round(lifetimeResult?.avg_days || 0);
+
+    res.json({
+      success: true,
+      data: {
+        totalSubscriptions,
+        activeSubscriptions,
+        cancelledSubscriptions,
+        expiredSubscriptions,
+        monthlyRevenue,
+        renewalRate,
+        churnRate,
+        averageLifetime
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching subscription analytics:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch subscription analytics' });
+  }
+});
+
+// Stripe Configuration Management
+
+// Get current Stripe configuration
+router.get('/stripe-config', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const config = await db.getQuery(
+      'SELECT * FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1'
+    );
+    
+    if (config) {
+      res.json({
+        success: true,
+        config: {
+          stripe_publishable_key: config.stripe_publishable_key,
+          webhook_endpoint_secret: config.webhook_endpoint_secret,
+          is_active: config.is_active
+        }
+      });
+    } else {
+      res.json({ success: true, config: null });
+    }
+  } catch (error) {
+    console.error('Error fetching Stripe config:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch Stripe configuration' });
+  }
+});
+
+// Alternative route path for frontend compatibility
+router.get('/stripe/config', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    
+    const config = await db.getQuery(
+      'SELECT * FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1'
+    );
+    
+    // Don't send secret keys to frontend, only show if they exist
+    const safeConfig = config ? {
+      id: config.id,
+      stripe_publishable_key: config.stripe_publishable_key,
+      has_secret_key: !!config.stripe_secret_key,
+      has_webhook_secret: !!config.webhook_endpoint_secret,
+      is_active: config.is_active,
+      created_at: config.created_at,
+      updated_at: config.updated_at
+    } : null;
+    
+    res.json({
+      success: true,
+      config: safeConfig
+    });
+  } catch (error) {
+    console.error('Error fetching Stripe config:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch Stripe configuration' });
+  }
+});
+
+// Update Stripe configuration
+router.post('/stripe-config', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { stripe_publishable_key, stripe_secret_key, webhook_endpoint_secret } = req.body;
+    
+    if (!stripe_publishable_key || !stripe_secret_key) {
+      return res.status(400).json({ success: false, error: 'Publishable key and secret key are required' });
+    }
+    
+    // Validate that the keys look correct
+    if (!stripe_publishable_key.startsWith('pk_')) {
+      return res.status(400).json({ success: false, error: 'Invalid publishable key format' });
+    }
+    
+    if (!stripe_secret_key.startsWith('sk_')) {
+      return res.status(400).json({ success: false, error: 'Invalid secret key format' });
+    }
+    
+    const db = getDatabaseAdapter();
+    
+    // Deactivate existing configurations
+    await db.executeQuery(
+      'UPDATE stripe_config SET is_active = FALSE WHERE is_active = TRUE'
+    );
+    
+    // Insert new configuration
+    await db.executeQuery(
+      `INSERT INTO stripe_config 
+       (stripe_publishable_key, stripe_secret_key, webhook_endpoint_secret, is_active, created_by, updated_by)
+       VALUES (?, ?, ?, TRUE, ?, ?)`,
+      [stripe_publishable_key, stripe_secret_key, webhook_endpoint_secret || null, (req as any).user.id, (req as any).user.id]
+    );
+    
+    res.json({
+      success: true,
+      message: 'Stripe configuration updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating Stripe config:', error);
+    res.status(500).json({ success: false, error: 'Failed to update Stripe configuration' });
+  }
+});
+
+// Update individual Stripe configuration setting (PUT route for frontend compatibility)
+router.put('/stripe/config', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { setting_key, setting_value } = req.body;
+    
+    if (!setting_key || !setting_value) {
+      return res.status(400).json({ success: false, error: 'Setting key and value are required' });
+    }
+    
+    const db = getDatabaseAdapter();
+    
+    // Get current configuration
+    const currentConfig = await db.getQuery(
+      'SELECT * FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1'
+    );
+    
+    if (!currentConfig) {
+      return res.status(404).json({ success: false, error: 'No active Stripe configuration found' });
+    }
+    
+    // Prepare update data based on setting_key
+    let updateData: any = {
+      updated_by: (req as any).user.id,
+      updated_at: new Date().toISOString()
+    };
+    
+    switch (setting_key) {
+      case 'publishable_key':
+        if (!setting_value.startsWith('pk_')) {
+          return res.status(400).json({ success: false, error: 'Invalid publishable key format' });
+        }
+        updateData.stripe_publishable_key = setting_value;
+        break;
+      case 'secret_key':
+        if (!setting_value.startsWith('sk_')) {
+          return res.status(400).json({ success: false, error: 'Invalid secret key format' });
+        }
+        updateData.stripe_secret_key = setting_value;
+        break;
+      case 'webhook_secret':
+        updateData.webhook_endpoint_secret = setting_value;
+        break;
+      default:
+        return res.status(400).json({ success: false, error: 'Invalid setting key' });
+    }
+    
+    // Update the configuration
+    await db.executeQuery(
+      `UPDATE stripe_config SET 
+       stripe_publishable_key = COALESCE(?, stripe_publishable_key),
+       stripe_secret_key = COALESCE(?, stripe_secret_key),
+       webhook_endpoint_secret = COALESCE(?, webhook_endpoint_secret),
+       updated_by = ?, 
+       updated_at = NOW()
+       WHERE id = ?`,
+      [
+        updateData.stripe_publishable_key || null,
+        updateData.stripe_secret_key || null,
+        updateData.webhook_endpoint_secret || null,
+        updateData.updated_by,
+        currentConfig.id
+      ]
+    );
+    
+    res.json({
+      success: true,
+      message: 'Stripe configuration updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating Stripe config:', error);
+    res.status(500).json({ success: false, error: 'Failed to update Stripe configuration' });
+  }
+});
+
+// Get all billing transactions (super admin view)
+router.get('/billing-transactions', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 50, status, user_id } = req.query;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 50));
+    const safeOffset = (pageNum - 1) * limitNum;
+    
+    const db = getDatabaseAdapter();
+    
+    let query = `
+      SELECT bt.*, u.email, u.first_name, u.last_name
+      FROM billing_transactions bt
+      LEFT JOIN users u ON bt.user_id = u.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    
+    if (status) {
+      query += ' AND bt.status = ?';
+      params.push(status);
+    }
+    
+    if (user_id) {
+      query += ' AND bt.user_id = ?';
+      params.push(user_id);
+    }
+    
+    query += ` ORDER BY bt.created_at DESC LIMIT ${limitNum} OFFSET ${safeOffset}`;
+    
+    const transactions = await db.allQuery(query, params);
+    
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as total FROM billing_transactions WHERE 1=1';
+    const countParams: any[] = [];
+    
+    if (status) {
+      countQuery += ' AND status = ?';
+      countParams.push(status);
+    }
+    
+    if (user_id) {
+      countQuery += ' AND user_id = ?';
+      countParams.push(user_id);
+    }
+    
+    const countResult = await db.getQuery(countQuery, countParams);
+    const total = countResult?.total || 0;
+    
+    res.json({
+      success: true,
+      transactions: transactions || [],
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching billing transactions:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch billing transactions' });
+  }
+});
+
+// Alternative route path for frontend compatibility - billing transactions
+router.get('/billing/transactions', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 50, user_id, status } = req.query;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 50));
+    const safeOffset = (pageNum - 1) * limitNum;
+    
+    const db = getDatabaseAdapter();
+    
+    let query = `
+      SELECT bt.*, u.email, u.first_name, u.last_name
+      FROM billing_transactions bt
+      LEFT JOIN users u ON bt.user_id = u.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    
+    if (user_id) {
+      query += ' AND bt.user_id = ?';
+      params.push(user_id);
+    }
+    
+    if (status) {
+      query += ' AND bt.status = ?';
+      params.push(status);
+    }
+    
+    query += ` ORDER BY bt.created_at DESC LIMIT ${limitNum} OFFSET ${safeOffset}`;
+    
+    const transactions = await db.allQuery(query, params);
+    
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as total FROM billing_transactions WHERE 1=1';
+    const countParams: any[] = [];
+    
+    if (user_id) {
+      countQuery += ' AND user_id = ?';
+      countParams.push(user_id);
+    }
+    
+    if (status) {
+      countQuery += ' AND status = ?';
+      countParams.push(status);
+    }
+    
+    const countResult = await db.getQuery(countQuery, countParams);
+    const total = countResult?.total || 0;
+    
+    res.json({
+      success: true,
+      transactions: transactions || [],
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching billing transactions:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch billing transactions' });
+  }
+});
+
+// Alternative route path for frontend compatibility - billing subscriptions
+router.get('/billing/subscriptions', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 50, status, plan_type } = req.query;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 50));
+    const safeOffset = (pageNum - 1) * limitNum;
+    
+    const db = getDatabaseAdapter();
+    
+    let query = `
+      SELECT s.*, u.email, u.first_name, u.last_name
+      FROM subscriptions s
+      LEFT JOIN users u ON s.user_id = u.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    
+    if (status) {
+      query += ' AND s.status = ?';
+      params.push(status);
+    }
+    
+    if (plan_type) {
+      query += ' AND s.plan_type = ?';
+      params.push(plan_type);
+    }
+    
+    query += ` ORDER BY s.created_at DESC LIMIT ${limitNum} OFFSET ${safeOffset}`;
+    
+    const subscriptions = await db.allQuery(query, params);
+    
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as total FROM subscriptions WHERE 1=1';
+    const countParams: any[] = [];
+    
+    if (status) {
+      countQuery += ' AND status = ?';
+      countParams.push(status);
+    }
+    
+    if (plan_type) {
+      countQuery += ' AND plan_type = ?';
+      countParams.push(plan_type);
+    }
+    
+    const countResult = await db.getQuery(countQuery, countParams);
+    const total = countResult?.total || 0;
+    
+    res.json({
+      success: true,
+      subscriptions: subscriptions || [],
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch subscriptions' });
+  }
+});
+
+// Get all subscriptions (super admin view)
+router.get('/user-subscriptions', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 50, status, plan_type } = req.query;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 50));
+    const safeOffset = (pageNum - 1) * limitNum;
+    
+    const db = getDatabaseAdapter();
+    
+    let query = `
+      SELECT s.*, u.email, u.first_name, u.last_name
+      FROM subscriptions s
+      LEFT JOIN users u ON s.user_id = u.id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    
+    if (status) {
+      query += ' AND s.status = ?';
+      params.push(status);
+    }
+    
+    if (plan_type) {
+      query += ' AND s.plan_type = ?';
+      params.push(plan_type);
+    }
+    
+    query += ` ORDER BY s.created_at DESC LIMIT ${limitNum} OFFSET ${safeOffset}`;
+    
+    const subscriptions = await db.allQuery(query, params);
+    
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as total FROM subscriptions WHERE 1=1';
+    const countParams: any[] = [];
+    
+    if (status) {
+      countQuery += ' AND status = ?';
+      countParams.push(status);
+    }
+    
+    if (plan_type) {
+      countQuery += ' AND plan_type = ?';
+      countParams.push(plan_type);
+    }
+    
+    const countResult = await db.getQuery(countQuery, countParams);
+    const total = countResult?.total || 0;
+    
+    res.json({
+      success: true,
+      subscriptions: subscriptions || [],
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching subscriptions:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch subscriptions' });
+  }
+});
+
+// Update subscription status (super admin)
+router.put('/user-subscription/:id', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, cancel_at_period_end } = req.body;
+    
+    const validStatuses = ['active', 'canceled', 'past_due', 'unpaid'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid status' });
+    }
+    
+    const db = getDatabaseAdapter();
+    
+    let query = 'UPDATE subscriptions SET';
+    const params: any[] = [];
+    const updates: string[] = [];
+    
+    if (status) {
+      updates.push(' status = ?');
+      params.push(status);
+    }
+    
+    if (typeof cancel_at_period_end === 'boolean') {
+      updates.push(' cancel_at_period_end = ?');
+      params.push(cancel_at_period_end);
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid updates provided' });
+    }
+    
+    query += updates.join(',') + ', updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+    params.push(id);
+    
+    await db.executeQuery(query, params);
+    
+    res.json({
+      success: true,
+      message: 'Subscription updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating subscription:', error);
+    res.status(500).json({ success: false, error: 'Failed to update subscription' });
+  }
+});
+
+// Get all clients across all admins
+// Get client statistics from all admins
+router.get('/client-statistics', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    
+    // Get aggregated client statistics from all admins
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_clients,
+        COUNT(CASE WHEN c.credit_score IS NOT NULL AND c.credit_score > 650 THEN 1 END) as fundable_clients,
+        COUNT(CASE WHEN c.credit_score IS NULL OR c.credit_score <= 650 THEN 1 END) as not_fundable_clients,
+        COUNT(CASE WHEN 
+          c.credit_score IS NOT NULL AND 
+          c.ssn_last_four IS NOT NULL AND 
+          c.date_of_birth IS NOT NULL AND 
+          c.address IS NOT NULL AND 
+          c.employment_status IS NOT NULL 
+        THEN 1 END) as ready_clients,
+        COUNT(CASE WHEN 
+          c.credit_score IS NULL OR 
+          c.ssn_last_four IS NULL OR 
+          c.date_of_birth IS NULL OR 
+          c.address IS NULL OR 
+          c.employment_status IS NULL 
+        THEN 1 END) as not_ready_clients
+      FROM clients c
+      LEFT JOIN users u ON c.user_id = u.id
+      WHERE u.role IN ('admin', 'super_admin')
+    `;
+    
+    const statsResult = await db.executeQuery(statsQuery);
+    const stats = statsResult[0];
+    
+    // Get statistics by admin
+    const adminStatsQuery = `
+      SELECT 
+        CONCAT(u.first_name, ' ', u.last_name) as admin_name,
+        u.email as admin_email,
+        ap.title as admin_title,
+        ap.department as admin_department,
+        COUNT(c.id) as total_clients,
+        COUNT(CASE WHEN c.credit_score IS NOT NULL AND c.credit_score > 650 THEN 1 END) as fundable_clients,
+        COUNT(CASE WHEN c.credit_score IS NULL OR c.credit_score <= 650 THEN 1 END) as not_fundable_clients,
+        COUNT(CASE WHEN 
+          c.credit_score IS NOT NULL AND 
+          c.ssn_last_four IS NOT NULL AND 
+          c.date_of_birth IS NOT NULL AND 
+          c.address IS NOT NULL AND 
+          c.employment_status IS NOT NULL 
+        THEN 1 END) as ready_clients,
+        COUNT(CASE WHEN 
+          c.credit_score IS NULL OR 
+          c.ssn_last_four IS NULL OR 
+          c.date_of_birth IS NULL OR 
+          c.address IS NULL OR 
+          c.employment_status IS NULL 
+        THEN 1 END) as not_ready_clients
+      FROM users u
+      LEFT JOIN admin_profiles ap ON u.id = ap.user_id
+      LEFT JOIN clients c ON u.id = c.user_id
+      WHERE u.role IN ('admin', 'super_admin')
+      GROUP BY u.id, u.first_name, u.last_name, u.email, ap.title, ap.department
+      ORDER BY total_clients DESC
+    `;
+    
+    const adminStats = await db.executeQuery(adminStatsQuery);
+    
+    res.json({
+      success: true,
+      data: {
+        overall: {
+          total: stats.total_clients || 0,
+          ready: stats.ready_clients || 0,
+          notReady: stats.not_ready_clients || 0,
+          fundable: stats.fundable_clients || 0,
+          notFundable: stats.not_fundable_clients || 0
+        },
+        byAdmin: adminStats
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching client statistics:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch client statistics' });
+  }
+});
+
+router.get('/clients', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 15;
+    const pageNum = Math.max(1, page || 1);
+    const limitNum = Math.max(1, Math.min(500, limit || 15));
+    const search = req.query.search as string || '';
+    const status = req.query.status as string || '';
+    const admin = req.query.admin as string || '';
+    const offset = (pageNum - 1) * limitNum;
+    
+    let whereConditions = [];
+    let params = [];
+    
+    if (search) {
+      whereConditions.push('(c.first_name LIKE ? OR c.last_name LIKE ? OR c.email LIKE ? OR c.phone LIKE ?)');
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+    
+    if (status) {
+      whereConditions.push('c.status = ?');
+      params.push(status);
+    }
+    
+    if (admin) {
+      whereConditions.push('CONCAT(u.first_name, " ", u.last_name) = ?');
+      params.push(admin);
+    }
+    
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM clients c
+      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN admin_profiles ap ON u.id = ap.user_id
+      ${whereClause}
+    `;
+    
+    const countResult = await db.executeQuery(countQuery, params);
+    const total = countResult[0].total;
+    
+    // Get paginated data
+    const dataQuery = `
+      SELECT 
+        c.*,
+        CONCAT(u.first_name, ' ', u.last_name) as admin_name,
+        u.email as admin_email,
+        ap.title as admin_title,
+        ap.department as admin_department
+      FROM clients c
+      LEFT JOIN users u ON c.user_id = u.id
+      LEFT JOIN admin_profiles ap ON u.id = ap.user_id
+      ${whereClause}
+      ORDER BY c.created_at DESC
+      LIMIT ${limitNum} OFFSET ${offset}
+    `;
+    
+    const clients = await db.executeQuery(dataQuery, params);
+    
+    res.json({
+      success: true,
+      data: clients,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching clients:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch clients' });
+  }
+});
+
+// Sales Analytics Endpoints
+router.get('/analytics/sales-chat', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    
+    // Get chat statistics across all users (using existing chat_messages table)
+    const chatStatsQuery = `
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as total_messages,
+        COUNT(DISTINCT sender_id) as active_users,
+        0 as avg_response_time
+      FROM chat_messages 
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      GROUP BY DATE(created_at)
+      ORDER BY date DESC
+    `;
+    
+    const chatStats = await db.executeQuery(chatStatsQuery);
+    
+    // Get top performing support agents (using existing users and chat_messages)
+    const topAgentsQuery = `
+      SELECT 
+        u.first_name,
+        u.last_name,
+        COUNT(cm.id) as messages_sent,
+        0 as avg_response_time,
+        COUNT(DISTINCT cm.receiver_id) as clients_helped
+      FROM users u
+      JOIN chat_messages cm ON u.id = cm.sender_id
+      WHERE u.role IN ('support', 'admin') AND cm.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      GROUP BY u.id
+      ORDER BY messages_sent DESC
+      LIMIT 10
+    `;
+    
+    const topAgents = await db.executeQuery(topAgentsQuery);
+    
+    // Get conversion metrics (using existing subscriptions table)
+    const conversionQuery = `
+      SELECT 
+        COUNT(DISTINCT cm.sender_id) as total_chat_users,
+        COUNT(DISTINCT s.user_id) as converted_users,
+        CASE 
+          WHEN COUNT(DISTINCT cm.sender_id) > 0 
+          THEN (COUNT(DISTINCT s.user_id) / COUNT(DISTINCT cm.sender_id)) * 100 
+          ELSE 0 
+        END as conversion_rate
+      FROM chat_messages cm
+      LEFT JOIN subscriptions s ON cm.sender_id = s.user_id 
+        AND s.created_at >= cm.created_at 
+        AND s.created_at <= DATE_ADD(cm.created_at, INTERVAL 7 DAY)
+      WHERE cm.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    `;
+    
+    const conversionStats = await db.executeQuery(conversionQuery);
+    
+    res.json({
+      success: true,
+      data: {
+        chatStats: chatStats || [],
+        topAgents: topAgents || [],
+        conversionStats: conversionStats[0] || { total_chat_users: 0, converted_users: 0, conversion_rate: 0 }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching sales chat analytics:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch sales chat analytics' });
+  }
+});
+
+router.get('/analytics/report-pulling', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    
+    // Get report pulling statistics (using existing credit_reports table)
+    const reportStatsQuery = `
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as total_reports,
+        COUNT(DISTINCT client_id) as unique_users,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_reports,
+        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_reports,
+        0 as avg_processing_time
+      FROM credit_reports 
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      GROUP BY DATE(created_at)
+      ORDER BY date DESC
+    `;
+    
+    const reportStats = await db.executeQuery(reportStatsQuery);
+    
+    // Get bureau-wise statistics (using existing bureau column)
+    const bureauStatsQuery = `
+      SELECT 
+        bureau as bureau_name,
+        COUNT(*) as total_pulls,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful_pulls,
+        0 as avg_processing_time,
+        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_pulls
+      FROM credit_reports 
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      GROUP BY bureau
+      ORDER BY total_pulls DESC
+    `;
+    
+    const bureauStats = await db.executeQuery(bureauStatsQuery);
+    
+    // Get user activity for report pulling (using existing clients and credit_reports)
+    const userActivityQuery = `
+      SELECT 
+        c.first_name,
+        c.last_name,
+        c.email,
+        COUNT(cr.id) as reports_pulled,
+        MAX(cr.created_at) as last_report_date,
+        0 as avg_processing_time
+      FROM clients c
+      JOIN credit_reports cr ON c.id = cr.client_id
+      WHERE cr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      GROUP BY c.id
+      ORDER BY reports_pulled DESC
+      LIMIT 20
+    `;
+    
+    const userActivity = await db.executeQuery(userActivityQuery);
+    
+    // Get error analysis (simplified since we don't have error_type column)
+    const errorAnalysisQuery = `
+      SELECT 
+        'general_error' as error_type,
+        COUNT(*) as error_count,
+        (COUNT(*) / (SELECT COUNT(*) FROM credit_reports WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY))) * 100 as error_percentage
+      FROM credit_reports 
+      WHERE status = 'error' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    `;
+    
+    const errorAnalysis = await db.executeQuery(errorAnalysisQuery);
+    
+    res.json({
+      success: true,
+      data: {
+        reportStats: reportStats || [],
+        bureauStats: bureauStats || [],
+        userActivity: userActivity || [],
+        errorAnalysis: errorAnalysis || []
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching report pulling analytics:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch report pulling analytics' });
+  }
+});
+
+router.get('/analytics/recent-alerts', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    
+    // Get recent alerts from existing tables (tickets and billing_transactions)
+    const alertsQuery = `
+      SELECT 
+        'support' as type,
+        title,
+        description as message,
+        priority as severity,
+        created_at,
+        status,
+        customer_id as user_id
+      FROM tickets 
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      
+      UNION ALL
+      
+      SELECT 
+        'payment' as type,
+        CONCAT('Payment ', status) as title,
+        CONCAT('Amount: $', amount, ' - ', payment_method) as message,
+        CASE WHEN status = 'failed' THEN 'high' ELSE 'medium' END as severity,
+        created_at,
+        status,
+        user_id
+      FROM billing_transactions 
+      WHERE status IN ('failed', 'canceled') 
+        AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      
+      ORDER BY created_at DESC
+      LIMIT 50
+    `;
+    
+    const alerts = await db.executeQuery(alertsQuery);
+    
+    // Get alert summary statistics
+    const alertSummaryQuery = `
+      SELECT 
+        COUNT(*) as total_alerts,
+        SUM(CASE WHEN severity IN ('high', 'urgent') THEN 1 ELSE 0 END) as critical_alerts,
+        SUM(CASE WHEN status IN ('open', 'pending') THEN 1 ELSE 0 END) as unresolved_alerts,
+        SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY) THEN 1 ELSE 0 END) as alerts_24h
+      FROM (
+        SELECT priority as severity, status, created_at FROM tickets WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        UNION ALL
+        SELECT 'medium' as severity, status, created_at FROM billing_transactions WHERE status IN ('failed', 'canceled') AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+      ) as all_alerts
+    `;
+    
+    const alertSummary = await db.executeQuery(alertSummaryQuery);
+    
+    res.json({
+      success: true,
+      data: {
+        alerts: alerts || [],
+        summary: alertSummary[0] || { total_alerts: 0, critical_alerts: 0, unresolved_alerts: 0, alerts_24h: 0 }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching recent alerts:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch recent alerts' });
+  }
+});
+
+// INVITATION MANAGEMENT ROUTES
+
+// Get recent invitations
+router.get('/invitations', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { page = 1, limit = 10, status, type } = req.query;
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 10));
+    const safeOffset = (pageNum - 1) * limitNum;
+
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+
+    if (status && status !== 'all') {
+      whereClause += ' AND status = ?';
+      params.push(status);
+    }
+
+    if (type && type !== 'all') {
+      whereClause += ' AND type = ?';
+      params.push(type);
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Get total count
+    const countResult = await db.getQuery(
+      `SELECT COUNT(*) as total FROM invitations ${whereClause}`,
+      params
+    );
+
+    // Get invitations with pagination
+    const invitations = await db.allQuery(
+      `SELECT i.*, u.first_name as sent_by_name, u.last_name as sent_by_lastname
+       FROM invitations i
+       LEFT JOIN users u ON i.sent_by = u.id
+       ${whereClause}
+       ORDER BY i.created_at DESC
+       LIMIT ${limitNum} OFFSET ${safeOffset}`,
+      params
+    );
+
+    const total = countResult?.total || 0;
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      success: true,
+      data: invitations,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching invitations:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch invitations' });
+  }
+});
+
+// Send individual invitation
+router.post('/invitations/send', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { email, type, name, meetingLink, bulkRecipients } = req.body;
+    const userId = req.user?.id;
+
+    if (!email || !type) {
+      return res.status(400).json({ success: false, error: 'Email and type are required' });
+    }
+
+    const db = getDatabaseAdapter();
+    
+    // Handle bulk recipients for meeting invitations
+    if (type === 'meeting' && bulkRecipients && bulkRecipients.length > 0) {
+      const results = [];
+      const errors = [];
+
+      // Get recipient lists based on bulk options
+      const recipientEmails = [];
+      
+      if (bulkRecipients.includes('all_admins')) {
+        const admins = await db.getQuery('SELECT email, name FROM users WHERE role = "admin"', []);
+        if (Array.isArray(admins)) {
+          recipientEmails.push(...admins.map(admin => ({ email: admin.email, name: admin.name })));
+        } else if (admins) {
+          recipientEmails.push({ email: admins.email, name: admins.name });
+        }
+      }
+      
+      if (bulkRecipients.includes('support_team')) {
+        const supportTeam = await db.getQuery('SELECT email, name FROM users WHERE role = "support"', []);
+        if (Array.isArray(supportTeam)) {
+          recipientEmails.push(...supportTeam.map(user => ({ email: user.email, name: user.name })));
+        } else if (supportTeam) {
+          recipientEmails.push({ email: supportTeam.email, name: supportTeam.name });
+        }
+      }
+      
+      if (bulkRecipients.includes('all_clients')) {
+        const clients = await db.getQuery('SELECT email, name FROM users WHERE role = "client"', []);
+        if (Array.isArray(clients)) {
+          recipientEmails.push(...clients.map(client => ({ email: client.email, name: client.name })));
+        } else if (clients) {
+          recipientEmails.push({ email: clients.email, name: clients.name });
+        }
+      }
+
+      // Remove duplicates and add the original email if provided
+      const uniqueEmails = new Map();
+      if (email) {
+        uniqueEmails.set(email, { email, name });
+      }
+      recipientEmails.forEach(recipient => {
+        uniqueEmails.set(recipient.email, recipient);
+      });
+
+      // Send invitations to all recipients
+      for (const [recipientEmail, recipientData] of uniqueEmails) {
+        try {
+          // Check if invitation already exists
+          const existingInvitation = await db.getQuery(
+            'SELECT * FROM invitations WHERE email = ? AND status IN ("sent", "pending")',
+            [recipientEmail]
+          );
+
+          if (existingInvitation) {
+            errors.push({ email: recipientEmail, error: 'Active invitation already exists' });
+            continue;
+          }
+
+          // Generate invitation token
+          const invitationToken = jwt.sign(
+            { email: recipientEmail, type, invitedBy: userId },
+            process.env.JWT_SECRET || 'your-super-secret-jwt-key-for-development',
+            { expiresIn: '7d' }
+          );
+
+          // Get the inviter's name for the email
+          let inviterName = 'System Administrator';
+          try {
+            const inviter = await db.getQuery('SELECT name, email FROM users WHERE id = ?', [userId]);
+            if (inviter) {
+              inviterName = inviter.name || inviter.email || 'System Administrator';
+            }
+          } catch (error) {
+            console.log('Could not fetch inviter details, using default');
+          }
+
+          // Send invitation email
+          const { emailService } = await import('../services/emailService');
+          const emailSent = await emailService.sendInvitationEmail({
+            email: recipientEmail,
+            name: recipientData.name,
+            type: type as 'admin' | 'client' | 'affiliate' | 'meeting',
+            token: invitationToken,
+            invitedBy: inviterName,
+            meetingLink
+          });
+
+          if (!emailSent) {
+            errors.push({ email: recipientEmail, error: 'Failed to send invitation email' });
+            continue;
+          }
+
+          // Create invitation record
+          const invitationId = await db.executeQuery(
+            `INSERT INTO invitations (email, name, type, token, meeting_link, status, sent_by, created_at, expires_at)
+             VALUES (?, ?, ?, ?, ?, 'sent', ?, NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY))`,
+            [recipientEmail, recipientData.name || null, type, invitationToken, meetingLink || null, userId]
+          );
+
+          results.push({
+            id: invitationId,
+            email: recipientEmail,
+            name: recipientData.name || null,
+            type,
+            status: 'sent'
+          });
+
+          console.log(`📧 Meeting invitation sent successfully to ${recipientEmail}`);
+        } catch (error) {
+          console.error(`Error sending invitation to ${recipientEmail}:`, error);
+          errors.push({ email: recipientEmail, error: 'Failed to send invitation' });
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          sent: results,
+          failed: errors,
+          summary: {
+            sent: results.length,
+            failed: errors.length
+          }
+        },
+        message: `Meeting invitations sent to ${results.length} recipients`
+      });
+    }
+    
+    // Handle single invitation (original logic)
+    // Check if invitation already exists for this email
+    const existingInvitation = await db.getQuery(
+      'SELECT * FROM invitations WHERE email = ? AND status IN ("sent", "pending")',
+      [email]
+    );
+
+    if (existingInvitation) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'An active invitation already exists for this email' 
+      });
+    }
+
+    // Generate invitation token
+    const invitationToken = jwt.sign(
+      { email, type, invitedBy: userId },
+      process.env.JWT_SECRET || 'your-super-secret-jwt-key-for-development',
+      { expiresIn: '7d' }
+    );
+
+    // Get the inviter's name for the email
+    let inviterName = 'System Administrator';
+    try {
+      const inviter = await db.getQuery('SELECT name, email FROM users WHERE id = ?', [userId]);
+      if (inviter) {
+        inviterName = inviter.name || inviter.email || 'System Administrator';
+      }
+    } catch (error) {
+      console.log('Could not fetch inviter details, using default');
+    }
+
+    // Send invitation email
+    const { emailService } = await import('../services/emailService');
+    const emailSent = await emailService.sendInvitationEmail({
+      email,
+      name,
+      type: type as 'admin' | 'client' | 'affiliate' | 'meeting',
+      token: invitationToken,
+      invitedBy: inviterName,
+      meetingLink
+    });
+
+    if (!emailSent) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to send invitation email. Please check email configuration.' 
+      });
+    }
+
+    // Create invitation record
+    const invitationId = await db.executeQuery(
+      `INSERT INTO invitations (email, name, type, token, meeting_link, status, sent_by, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, 'sent', ?, NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY))`,
+      [email, name || null, type, invitationToken, meetingLink || null, userId]
+    );
+
+    console.log(`📧 Invitation email sent successfully to ${email} (${type})`);
+
+    const newInvitation = {
+      id: invitationId,
+      email,
+      name: name || null,
+      type,
+      status: 'sent',
+      created_at: new Date().toISOString()
+    };
+
+    res.json({
+      success: true,
+      data: newInvitation,
+      message: `Invitation sent to ${email}`
+    });
+  } catch (error) {
+    console.error('Error sending invitation:', error);
+    res.status(500).json({ success: false, error: 'Failed to send invitation' });
+  }
+});
+
+// Send bulk invitations via CSV
+router.post('/invitations/bulk', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { invitations } = req.body; // Array of { email, name?, type }
+    const userId = req.user?.id;
+
+    if (!Array.isArray(invitations) || invitations.length === 0) {
+      return res.status(400).json({ success: false, error: 'Invitations array is required' });
+    }
+
+    const db = getDatabaseAdapter();
+    const results = [];
+    const errors = [];
+
+    for (const invitation of invitations) {
+      try {
+        const { email, type, name } = invitation;
+
+        if (!email || !type) {
+          errors.push({ email: email || 'unknown', error: 'Email and type are required' });
+          continue;
+        }
+
+        // Check if invitation already exists
+        const existingInvitation = await db.getQuery(
+          'SELECT * FROM invitations WHERE email = ? AND status IN ("sent", "pending")',
+          [email]
+        );
+
+        if (existingInvitation) {
+          errors.push({ email, error: 'Active invitation already exists' });
+          continue;
+        }
+
+        // Generate invitation token
+        const invitationToken = jwt.sign(
+          { email, type, invitedBy: userId },
+          process.env.JWT_SECRET || 'your-super-secret-jwt-key-for-development',
+          { expiresIn: '7d' }
+        );
+
+        // Get the inviter's name for the email (only once for bulk)
+        let inviterName = 'System Administrator';
+        if (results.length === 0) { // Only fetch once for the first invitation
+          try {
+            const inviter = await db.getQuery('SELECT name, email FROM users WHERE id = ?', [userId]);
+            if (inviter) {
+              inviterName = inviter.name || inviter.email || 'System Administrator';
+            }
+          } catch (error) {
+            console.log('Could not fetch inviter details, using default');
+          }
+        }
+
+        // Send invitation email
+        const { emailService } = await import('../services/emailService');
+        const emailSent = await emailService.sendInvitationEmail({
+          email,
+          name,
+          type: type as 'admin' | 'client' | 'affiliate' | 'meeting',
+          token: invitationToken,
+          invitedBy: inviterName
+        });
+
+        if (!emailSent) {
+          errors.push({ email, error: 'Failed to send invitation email' });
+          continue;
+        }
+
+        // Create invitation record
+        const invitationId = await db.executeQuery(
+          `INSERT INTO invitations (email, name, type, token, status, sent_by, created_at, expires_at)
+           VALUES (?, ?, ?, ?, 'sent', ?, NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY))`,
+          [email, name || null, type, invitationToken, userId]
+        );
+
+        results.push({
+          id: invitationId,
+          email,
+          name: name || null,
+          type,
+          status: 'sent'
+        });
+
+        console.log(`📧 Bulk invitation email sent successfully to ${email} (${type})`);
+      } catch (error) {
+        console.error(`Error sending invitation to ${invitation.email}:`, error);
+        errors.push({ email: invitation.email, error: 'Failed to send invitation' });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        sent: results,
+        errors: errors,
+        summary: {
+          total: invitations.length,
+          sent: results.length,
+          failed: errors.length
+        }
+      },
+      message: `Sent ${results.length} invitations, ${errors.length} failed`
+    });
+  } catch (error) {
+    console.error('Error sending bulk invitations:', error);
+    res.status(500).json({ success: false, error: 'Failed to send bulk invitations' });
+  }
+});
+
+export default router;

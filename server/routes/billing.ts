@@ -1,0 +1,1907 @@
+import express from 'express';
+import Stripe from 'stripe';
+import { ENV_CONFIG } from '../config/environment.js';
+import { authenticateToken } from '../middleware/authMiddleware.js';
+import { executeQuery, executeTransaction } from '../database/mysqlConfig.js';
+import { BillingTransaction, Subscription, StripeConfig } from '../database/mysqlSchema.js';
+import CommissionService from '../services/commissionService.js';
+import AffiliateUpgradeService from '../services/affiliateUpgradeService.js';
+import { emailService } from '../services/emailService.js';
+import crypto from 'crypto';
+import { createAffiliate } from '../controllers/authController.js';
+
+const router = express.Router();
+
+// Initialize Stripe (will be updated dynamically from database)
+let stripe: Stripe;
+
+// Get active Stripe configuration
+async function getStripeConfig(): Promise<StripeConfig | null> {
+  try {
+    const config = await executeQuery<StripeConfig[]>(
+      'SELECT * FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1'
+    );
+    return Array.isArray(config) && config.length > 0 ? config[0] : null;
+  } catch (error) {
+    console.error('Error fetching Stripe config:', error);
+    return null;
+  }
+}
+
+// Initialize Stripe with current config
+export async function initializeStripe() {
+  try {
+    console.log('🔧 Initializing Stripe...');
+    const config = await getStripeConfig();
+    if (config && config.stripe_secret_key) {
+      console.log('✅ Using Stripe config from database');
+      stripe = new Stripe(config.stripe_secret_key, {
+        apiVersion: '2024-06-20',
+      });
+    } else {
+      // Fallback to environment variables
+      const secretKey = process.env.STRIPE_SECRET_KEY;
+      if (secretKey) {
+        console.log('✅ Using Stripe config from environment variables');
+        stripe = new Stripe(secretKey, {
+          apiVersion: '2024-06-20',
+        });
+      } else {
+        console.error('❌ No Stripe configuration found in database or environment variables');
+      }
+    }
+    
+    if (stripe) {
+      console.log('🎉 Stripe initialized successfully');
+    } else {
+      console.error('❌ Failed to initialize Stripe');
+    }
+  } catch (error) {
+    console.error('❌ Error initializing Stripe:', error);
+  }
+}
+
+// Initialize Stripe on startup
+initializeStripe().catch(console.error);
+
+// Get billing history for authenticated user
+router.get('/history', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+    
+    const transactions = await executeQuery<BillingTransaction[]>(
+      `SELECT * FROM billing_transactions 
+       WHERE user_id = ? 
+       ORDER BY created_at DESC`,
+      [userId]
+    );
+    
+    res.json({
+      success: true,
+      transactions: Array.isArray(transactions) ? transactions : []
+    });
+  } catch (error) {
+    console.error('Error fetching billing history:', error);
+    res.status(500).json({ error: 'Failed to fetch billing history' });
+  }
+});
+
+// Get current subscription
+router.get('/subscription', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+    const userRole = (req as any).user.role;
+    
+    let subscription = null;
+    
+    if (userRole === 'affiliate') {
+      // For affiliate users, check if they have an admin_id and get subscription from that
+      console.log('🔍 [BILLING] Fetching subscription for affiliate user:', userId);
+      
+      // First get the affiliate's admin_id
+      const affiliateQuery = await executeQuery(
+        'SELECT admin_id FROM affiliates WHERE id = ?',
+        [userId]
+      );
+      
+      if (affiliateQuery && affiliateQuery.length > 0 && affiliateQuery[0].admin_id) {
+        const adminId = affiliateQuery[0].admin_id;
+        console.log('🔍 [BILLING] Found admin_id for affiliate:', adminId);
+        
+        // Get subscription using admin_id
+        const subscriptionResult = await executeQuery<Subscription[]>(
+          'SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+          [adminId]
+        );
+        
+        if (subscriptionResult && subscriptionResult.length > 0) {
+          subscription = subscriptionResult[0];
+          console.log('✅ [BILLING] Found subscription for affiliate via admin_id:', subscription.plan_name);
+        }
+      } else {
+        console.log('⚠️ [BILLING] Affiliate has no admin_id, checking direct subscription');
+        // Fallback: check if affiliate has direct subscription
+        const directSubscription = await executeQuery<Subscription[]>(
+          'SELECT * FROM subscriptions WHERE user_id = ?',
+          [userId]
+        );
+        if (directSubscription && directSubscription.length > 0) {
+          subscription = directSubscription[0];
+        }
+      }
+    } else if (userRole === 'user' || userRole === 'funding_manager' || userRole === 'employee') {
+      // Employees should see their admin's subscription
+      console.log('🔍 [BILLING] Resolving admin subscription for employee user:', userId);
+      const link = await executeQuery<any[]>(
+        'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+        [userId, 'active']
+      );
+
+      if (Array.isArray(link) && link.length > 0 && link[0]?.admin_id) {
+        const adminId = link[0].admin_id;
+        const subscriptionResult = await executeQuery<Subscription[]>(
+          'SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+          [adminId]
+        );
+        if (subscriptionResult && subscriptionResult.length > 0) {
+          subscription = subscriptionResult[0];
+          console.log('✅ [BILLING] Found subscription for employee via admin_id:', subscription.plan_name);
+        } else {
+          console.log('ℹ️ [BILLING] No subscription found for admin linked to employee');
+        }
+      } else {
+        // Fallback: check direct subscription for the employee (legacy behavior)
+        const directSubscription = await executeQuery<Subscription[]>(
+          'SELECT * FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+          [userId]
+        );
+        if (directSubscription && directSubscription.length > 0) {
+          subscription = directSubscription[0];
+          console.log('ℹ️ [BILLING] Using direct subscription for employee');
+        }
+      }
+    } else {
+      // For admin/super_admin users, use direct user_id lookup
+      console.log('🔍 [BILLING] Fetching subscription for admin user:', userId);
+      const subscriptionResult = await executeQuery<Subscription[]>(
+        'SELECT * FROM subscriptions WHERE user_id = ?',
+        [userId]
+      );
+      
+      if (subscriptionResult && subscriptionResult.length > 0) {
+        subscription = subscriptionResult[0];
+        console.log('✅ [BILLING] Found subscription for admin user:', subscription.plan_name);
+      }
+    }
+    
+    res.json({
+      success: true,
+      subscription: subscription
+    });
+  } catch (error) {
+    console.error('Error fetching subscription:', error);
+    res.status(500).json({ error: 'Failed to fetch subscription' });
+  }
+});
+
+// Create payment intent
+router.post('/create-payment-intent', authenticateToken, async (req, res) => {
+  try {
+    console.log('🔄 Creating payment intent...');
+    const userId = (req as any).user.id;
+    const { amount, currency = 'usd', planName, planType, course_id, affiliateId } = req.body;
+    
+    console.log('📋 Request data:', { userId, amount, currency, planName, planType, course_id, affiliateId });
+    if (!Number.isFinite(amount) || amount < 0.5) {
+      return res.status(400).json({ error: 'Invalid amount. Must be at least $0.50.' });
+    }
+    
+    // Try to initialize Stripe if not already initialized
+    if (!stripe) {
+      console.log('🔄 Stripe not initialized, attempting to initialize...');
+      await initializeStripe();
+    }
+    
+    if (!stripe) {
+      console.error('❌ Stripe not configured');
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+    
+    console.log('✅ Stripe initialized successfully');
+
+    // Resolve affiliateId from body, query, or referer using robust resolver
+    let resolvedAffiliateId: number | null = null;
+    let referralSource: 'affiliate' | 'main' = 'main';
+    try {
+      const commissionSvc = new CommissionService();
+      let candidate: string | number | undefined = affiliateId;
+      if (!candidate && (req as any).query && (req as any).query.ref) {
+        candidate = (req as any).query.ref;
+      }
+      if (!candidate && req.headers && (req.headers['referer'] || req.headers['origin'])) {
+        const referer = (req.headers['referer'] as string) || (req.headers['origin'] as string);
+        try {
+          const url = new URL(referer);
+          const refParam = url.searchParams.get('ref');
+          if (refParam) candidate = refParam;
+        } catch {}
+      }
+      if (candidate !== undefined && candidate !== null && candidate !== '') {
+        const resolved = await commissionSvc.resolveAffiliateId(String(candidate));
+        if (resolved) {
+          resolvedAffiliateId = resolved;
+          referralSource = 'affiliate';
+        }
+      }
+      // Dashboard fallback: if still not resolved, derive from user's affiliate parent chain
+      if (!resolvedAffiliateId) {
+        const hierarchy = await commissionSvc.getAffiliateHierarchy(userId);
+        if (Array.isArray(hierarchy) && hierarchy.length > 0 && hierarchy[0]?.id) {
+          resolvedAffiliateId = Number(hierarchy[0].id);
+          referralSource = 'affiliate';
+          console.log('🔁 Fallback resolved affiliate via hierarchy:', resolvedAffiliateId);
+        }
+      }
+    } catch (affErr) {
+      console.log('ℹ️ Affiliate resolution skipped due to parse/validation error');
+    }
+    
+    // Create or get Stripe customer
+    console.log('🔍 Fetching user data for ID:', userId);
+    let user = await executeQuery<any[]>(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+    
+    let userData = null;
+    let isAffiliate = false;
+    
+    if (!Array.isArray(user) || user.length === 0) {
+      console.log('🔍 User not found in users table, checking affiliates table for ID:', userId);
+      // Check if this is an affiliate user
+      const affiliate = await executeQuery<any[]>(
+        'SELECT * FROM affiliates WHERE id = ?',
+        [userId]
+      );
+      
+      if (!Array.isArray(affiliate) || affiliate.length === 0) {
+        console.error('❌ User not found in users or affiliates table for ID:', userId);
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      userData = affiliate[0];
+      isAffiliate = true;
+      console.log('👤 Affiliate data found:', { email: userData.email, name: `${userData.first_name} ${userData.last_name}` });
+    } else {
+      userData = user[0];
+      console.log('👤 User data found:', { email: userData.email, name: `${userData.first_name} ${userData.last_name}` });
+    }
+    let customerId = userData.stripe_customer_id;
+    console.log('💳 Existing customer ID:', customerId);
+    
+    if (!customerId) {
+      console.log('🆕 Creating new Stripe customer...');
+      const customer = await stripe.customers.create({
+        email: userData.email,
+        name: `${userData.first_name} ${userData.last_name}`,
+        metadata: {
+          userId: userId.toString()
+        }
+      });
+      customerId = customer.id;
+      console.log('✅ Stripe customer created:', customerId);
+      
+      // Update user/affiliate with Stripe customer ID
+      if (isAffiliate) {
+        await executeQuery(
+          'UPDATE affiliates SET stripe_customer_id = ? WHERE id = ?',
+          [customerId, userId]
+        );
+        console.log('💾 Updated affiliate with Stripe customer ID');
+      } else {
+        await executeQuery(
+          'UPDATE users SET stripe_customer_id = ? WHERE id = ?',
+          [customerId, userId]
+        );
+        console.log('💾 Updated user with Stripe customer ID');
+      }
+    }
+    
+    // Create payment intent
+    console.log('💰 Creating payment intent with amount:', Math.round(amount * 100), 'cents');
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // Convert to cents
+      currency,
+      customer: customerId,
+      metadata: {
+        userId: userId.toString(),
+        planName: planName || '',
+        planType: planType || '',
+        course_id: course_id ? course_id.toString() : '',
+        affiliateId: resolvedAffiliateId ? String(resolvedAffiliateId) : '',
+        referralSource
+      }
+    }, {
+      idempotencyKey: `pi_${userId}_${course_id || 'none'}_${Math.round(amount * 100)}`
+    });
+    console.log('✅ Payment intent created:', paymentIntent.id);
+    
+    // For affiliate users, create user record first to satisfy foreign key constraint
+    if (isAffiliate) {
+      console.log('👤 Creating user record for affiliate before saving transaction...');
+      
+      // Check if user already exists in users table
+      const existingUser = await executeQuery<any[]>(
+        'SELECT id FROM users WHERE id = ?',
+        [userId]
+      );
+      
+      if (!Array.isArray(existingUser) || existingUser.length === 0) {
+        // Create user record with affiliate data
+        await executeQuery(
+          `INSERT INTO users (id, email, password_hash, first_name, last_name, company_name, role, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'user', 'active', NOW(), NOW())`,
+          [
+            userId,
+            userData.email,
+            userData.password_hash || '', // Use existing password hash or empty string
+            userData.first_name,
+            userData.last_name,
+            userData.company_name || null
+          ]
+        );
+        console.log('✅ User record created for affiliate');
+      } else {
+        console.log('✅ User record already exists for affiliate');
+      }
+    }
+
+    // Save transaction record
+    console.log('💾 Saving transaction record...');
+
+    // Persist metadata for later commission processing and course handling
+    const transactionMetadata = JSON.stringify({
+      type: course_id ? 'course_purchase' : 'subscription',
+      course_id: course_id || undefined,
+      affiliateId: resolvedAffiliateId || undefined,
+      referralSource
+    });
+    await executeQuery(
+      `INSERT INTO billing_transactions 
+       (user_id, stripe_payment_intent_id, stripe_customer_id, amount, currency, status, plan_name, plan_type, description, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId,
+        paymentIntent.id,
+        customerId,
+        amount,
+        currency,
+        'pending',
+        planName || null,
+        planType || null,
+        course_id ? `Course purchase: ${planName}` : `Payment for ${planName} plan`,
+        transactionMetadata
+      ]
+    );
+    console.log('✅ Transaction record saved');
+    
+    console.log('🎉 Payment intent creation completed successfully');
+    res.json({
+      success: true,
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id
+    });
+  } catch (error) {
+    console.error('❌ Error creating payment intent:', error);
+    console.error('📋 Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    res.status(500).json({ error: 'Failed to create payment intent', details: error.message });
+  }
+});
+
+// Create Stripe Checkout session for subscriptions
+router.post('/create-subscription-checkout', authenticateToken, async (req, res) => {
+  try {
+    console.log('🧾 Creating subscription checkout session...');
+    const userId = (req as any).user.id;
+    const { planId, billingCycle = 'monthly', affiliateId } = req.body as { planId: number; billingCycle?: 'monthly' | 'yearly'; affiliateId?: string | number };
+
+    if (!planId) {
+      return res.status(400).json({ error: 'planId is required' });
+    }
+
+    // Initialize Stripe if needed
+    if (!stripe) {
+      console.log('🔄 Stripe not initialized, attempting to initialize...');
+      await initializeStripe();
+    }
+    if (!stripe) {
+      console.error('❌ Stripe not configured');
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    // Fetch plan to get Stripe Price IDs
+    const planRows = await executeQuery<any[]>(
+      'SELECT id, name, price, stripe_monthly_price_id, stripe_yearly_price_id, stripe_product_id FROM subscription_plans WHERE id = ? AND is_active = TRUE',
+      [planId]
+    );
+    if (!Array.isArray(planRows) || planRows.length === 0) {
+      return res.status(404).json({ error: 'Plan not found or inactive' });
+    }
+    const plan = planRows[0];
+
+    let priceId = billingCycle === 'yearly' ? plan.stripe_yearly_price_id : plan.stripe_monthly_price_id;
+    const interval = billingCycle === 'yearly' ? 'year' : 'month';
+    let pendingAmount = 0;
+    let stripePriceValid = false;
+    try {
+      if (priceId) {
+        const stripePrice = await stripe.prices.retrieve(String(priceId));
+        if (stripePrice && stripePrice.id) {
+          stripePriceValid = true;
+          if (typeof stripePrice.unit_amount === 'number') {
+            pendingAmount = stripePrice.unit_amount / 100;
+          }
+        }
+      }
+    } catch {}
+    if (!stripePriceValid) {
+      const planPriceNum = Number(plan.price);
+      if (!Number.isFinite(planPriceNum) || planPriceNum <= 0) {
+        return res.status(400).json({ error: 'Plan price not configured' });
+      }
+      let productId = String(plan.stripe_product_id || '');
+      let productExists = false;
+      if (productId) {
+        try {
+          const product = await stripe.products.retrieve(productId);
+          if (product && product.id) {
+            productExists = true;
+          }
+        } catch {}
+      }
+      if (!productExists) {
+        const product = await stripe.products.create({ name: plan.name });
+        productId = product.id;
+        await executeQuery(
+          'UPDATE subscription_plans SET stripe_product_id = ? WHERE id = ?',
+          [productId, plan.id]
+        );
+      }
+      const newPrice = await stripe.prices.create({
+        unit_amount: Math.round(planPriceNum * 100),
+        currency: 'usd',
+        recurring: { interval },
+        product: productId
+      });
+      priceId = newPrice.id;
+      stripePriceValid = true;
+      pendingAmount = planPriceNum;
+      if (billingCycle === 'yearly') {
+        await executeQuery(
+          'UPDATE subscription_plans SET stripe_yearly_price_id = ? WHERE id = ?',
+          [priceId, plan.id]
+        );
+      } else {
+        await executeQuery(
+          'UPDATE subscription_plans SET stripe_monthly_price_id = ? WHERE id = ?',
+          [priceId, plan.id]
+        );
+      }
+    }
+
+    // Resolve affiliateId similar to payment intent
+    let resolvedAffiliateId: number | null = null;
+    let referralSource: 'affiliate' | 'main' = 'main';
+    try {
+      const commissionSvc = new CommissionService();
+      let candidate: string | number | undefined = affiliateId;
+      if (!candidate && (req as any).query && (req as any).query.ref) {
+        candidate = (req as any).query.ref;
+      }
+      if (!candidate && req.headers && (req.headers['referer'] || req.headers['origin'])) {
+        const referer = (req.headers['referer'] as string) || (req.headers['origin'] as string);
+        try {
+          const url = new URL(referer);
+          const refParam = url.searchParams.get('ref');
+          if (refParam) candidate = refParam;
+        } catch {}
+      }
+      if (candidate !== undefined && candidate !== null && candidate !== '') {
+        const resolved = await commissionSvc.resolveAffiliateId(String(candidate));
+        if (resolved) {
+          resolvedAffiliateId = resolved;
+          referralSource = 'affiliate';
+        }
+      }
+      // Dashboard fallback: if still not resolved, derive from user's affiliate parent chain
+      if (!resolvedAffiliateId) {
+        const hierarchy = await commissionSvc.getAffiliateHierarchy(userId);
+        if (Array.isArray(hierarchy) && hierarchy.length > 0 && hierarchy[0]?.id) {
+          resolvedAffiliateId = Number(hierarchy[0].id);
+          referralSource = 'affiliate';
+          console.log('🔁 Fallback resolved affiliate via hierarchy:', resolvedAffiliateId);
+        }
+      }
+    } catch (affErr) {
+      console.log('ℹ️ Affiliate resolution skipped due to parse/validation error');
+    }
+
+    // Get or create Stripe customer
+    let user = await executeQuery<any[]>(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+    let userData = null;
+    let isAffiliate = false;
+    if (!Array.isArray(user) || user.length === 0) {
+      const affiliate = await executeQuery<any[]>(
+        'SELECT * FROM affiliates WHERE id = ?',
+        [userId]
+      );
+      if (!Array.isArray(affiliate) || affiliate.length === 0) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      userData = affiliate[0];
+      isAffiliate = true;
+    } else {
+      userData = user[0];
+    }
+    let customerId = userData.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: userData.email,
+        name: `${userData.first_name} ${userData.last_name}`,
+        metadata: { userId: String(userId) }
+      });
+      customerId = customer.id;
+      if (isAffiliate) {
+        await executeQuery('UPDATE affiliates SET stripe_customer_id = ? WHERE id = ?', [customerId, userId]);
+      } else {
+        await executeQuery('UPDATE users SET stripe_customer_id = ? WHERE id = ?', [customerId, userId]);
+      }
+    }
+
+    // Create Checkout Session
+    const successUrl = `${ENV_CONFIG.FRONTEND_URL}/billing/success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${ENV_CONFIG.FRONTEND_URL}/billing/cancel`;
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{ price: String(priceId), quantity: 1 }],
+      customer: customerId,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      client_reference_id: String(userId),
+      metadata: {
+        userId: String(userId),
+        planId: String(planId),
+        billingCycle,
+        affiliateId: resolvedAffiliateId ? String(resolvedAffiliateId) : '',
+        referralSource
+      },
+      subscription_data: {
+        metadata: {
+          userId: String(userId),
+          planId: String(planId),
+          billingCycle,
+          affiliateId: resolvedAffiliateId ? String(resolvedAffiliateId) : '',
+          referralSource
+        }
+      }
+    }, {
+      idempotencyKey: `subchk_${userId}_${planId}_${billingCycle}`
+    });
+
+    // Optionally store a pending transaction record for tracking
+    await executeQuery(
+      `INSERT INTO billing_transactions 
+       (user_id, stripe_payment_intent_id, stripe_customer_id, amount, currency, status, plan_name, plan_type, description, metadata)
+       VALUES (?, NULL, ?, ?, 'USD', 'pending', ?, ?, ?, ?)`,
+      [
+        userId,
+        customerId,
+        pendingAmount,
+        plan.name,
+        billingCycle,
+        `Stripe Checkout session ${session.id} for ${plan.name} (${billingCycle})`,
+        JSON.stringify({ type: 'subscription_checkout', planId, billingCycle, sessionId: session.id, affiliateId: resolvedAffiliateId || undefined, referralSource })
+      ]
+    );
+
+    console.log('✅ Checkout session created:', session.id);
+    res.json({ success: true, url: session.url, sessionId: session.id });
+  } catch (error: any) {
+    console.error('❌ Error creating subscription checkout session:', error);
+    res.status(500).json({ error: 'Failed to create subscription checkout session', details: error?.message || 'Unknown error' });
+  }
+});
+
+// Confirm payment and activate subscription
+router.post('/confirm-payment', authenticateToken, async (req, res) => {
+  try {
+    const { paymentIntentId, newAdminPassword } = req.body;
+    const userId = (req as any).user.id;
+    
+    if (!paymentIntentId) {
+      return res.status(400).json({ error: 'Payment intent ID is required' });
+    }
+    
+    // Initialize Stripe
+    if (!stripe) {
+      await initializeStripe();
+    }
+    
+    // Retrieve the payment intent from Stripe to verify its status
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    
+    console.log(`🔍 Payment intent ${paymentIntentId} status: ${paymentIntent.status}`);
+    
+    // Check if payment intent is in a valid state for confirmation
+    if (paymentIntent.status === 'succeeded') {
+      // Check if this payment has already been processed
+      const [existingTxn] = await executeQuery(
+        'SELECT id, status FROM billing_transactions WHERE stripe_payment_intent_id = ? AND user_id = ?',
+        [paymentIntentId, userId]
+      ) as any[];
+      
+      if (existingTxn && existingTxn.length > 0 && existingTxn[0].status === 'succeeded') {
+        console.log(`⚠️ Payment ${paymentIntentId} already processed for user ${userId}`);
+        return res.json({ 
+          success: true, 
+          message: 'Payment already processed',
+          alreadyProcessed: true 
+        });
+      }
+      
+      // Update transaction status
+      await executeQuery(
+        'UPDATE billing_transactions SET status = ? WHERE stripe_payment_intent_id = ? AND user_id = ?',
+        ['succeeded', paymentIntentId, userId]
+      );
+      
+      // Get transaction details for processing
+      const txnRows = await executeQuery(
+        'SELECT plan_name, amount, plan_type, metadata FROM billing_transactions WHERE stripe_payment_intent_id = ? AND user_id = ?',
+        [paymentIntentId, userId]
+      ) as any[];
+      
+      if (!txnRows || txnRows.length === 0) {
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
+      
+      const transaction = Array.isArray(txnRows) ? txnRows[0] : txnRows;
+      
+      // Check if this is a course purchase
+      let isCoursePurchase = false;
+      let courseId = null;
+      let affiliateIdFromMetadata: number | null = null;
+      let referralSourceFromMetadata: 'affiliate' | 'main' | null = null;
+      
+      if (transaction.metadata) {
+        try {
+          const metadata = JSON.parse(transaction.metadata);
+          if (metadata.type === 'course_purchase' && metadata.course_id) {
+             isCoursePurchase = true;
+            courseId = metadata.course_id;
+          }
+          if (metadata.affiliateId) {
+            const parsed = parseInt(metadata.affiliateId, 10);
+            affiliateIdFromMetadata = Number.isNaN(parsed) ? null : parsed;
+          }
+          if (metadata.referralSource) {
+            referralSourceFromMetadata = metadata.referralSource === 'affiliate' ? 'affiliate' : 'main';
+          }
+        } catch (e) {
+          console.log('Could not parse transaction metadata');
+        }
+      }
+      
+      if (isCoursePurchase && courseId) {
+        // Handle course purchase - create enrollment
+        console.log('📚 Processing course purchase for course ID:', courseId);
+        
+        // Check if user is already enrolled
+        const existingEnrollment = await executeQuery(
+          'SELECT id FROM course_enrollments WHERE user_id = ? AND course_id = ?',
+          [userId, courseId]
+        ) as any[];
+        
+        if (!existingEnrollment || existingEnrollment.length === 0) {
+          // Create course enrollment
+          await executeQuery(
+            'INSERT INTO course_enrollments (user_id, course_id, enrolled_at) VALUES (?, ?, NOW())',
+            [userId, courseId]
+          );
+          console.log('✅ Course enrollment created for user:', userId, 'course:', courseId);
+        } else {
+          console.log('ℹ️ User already enrolled in course');
+        }
+        
+        // Skip commission processing for course purchases
+        console.log('ℹ️ Skipping commission processing for course purchase');
+      } else {
+        // Handle subscription purchase
+        console.log('📋 Processing subscription purchase');
+      }
+      
+      // Calculate subscription period (declare at higher scope)
+      const now = new Date();
+      let endDate = new Date(now);
+      
+      if (!isCoursePurchase) {
+        // Only calculate end date for subscriptions
+        if (transaction.plan_type === 'monthly') {
+          endDate.setMonth(endDate.getMonth() + 1);
+        } else if (transaction.plan_type === 'yearly') {
+          endDate.setFullYear(endDate.getFullYear() + 1);
+        } else if (transaction.plan_type === 'lifetime') {
+          endDate.setFullYear(endDate.getFullYear() + 100);
+        }
+        
+        // Create or update subscription
+        await executeQuery(`
+          INSERT INTO subscriptions (user_id, plan_name, status, current_period_start, current_period_end, plan_type)
+          VALUES (?, ?, 'active', ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+          plan_name = VALUES(plan_name),
+          status = 'active',
+          current_period_start = VALUES(current_period_start),
+          current_period_end = VALUES(current_period_end),
+          plan_type = VALUES(plan_type),
+          cancel_at_period_end = FALSE
+        `, [userId, transaction.plan_name, now, endDate, transaction.plan_type]);
+        console.log('✅ Subscription created/updated for user:', userId);
+
+        // Create admin onboarding contract if not already pending/signed
+        try {
+          // Check for existing latest contract
+          const existingContracts = await executeQuery(
+            `SELECT id, status FROM contracts WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`,
+            [userId]
+          ) as any[];
+
+          const latestContract = existingContracts && existingContracts.length > 0 ? existingContracts[0] : null;
+          // Harden condition: treat 'pending_signature' as an existing active contract to avoid duplicates
+          if (!latestContract || (latestContract.status !== 'signed' && latestContract.status !== 'sent' && latestContract.status !== 'pending_signature')) {
+            // Defensive guard: if any active/pending contract exists, skip creation
+            const activeContracts = await executeQuery(
+              `SELECT id, status FROM contracts WHERE user_id = ? AND status IN ('sent','pending_signature','signed') ORDER BY created_at DESC LIMIT 1`,
+              [userId]
+            ) as any[];
+            if (activeContracts && activeContracts.length > 0) {
+              console.log('ℹ️ Admin contract already exists (guard), latest status:', activeContracts[0].status);
+            } else {
+            // Find an active template
+            // Prefer admin's own active template; fall back to super admin's active template
+            let template: any = null;
+            const templateRows = await executeQuery(
+              `SELECT id, name, content FROM contract_templates WHERE user_id = ? AND is_active = 1 ORDER BY id DESC LIMIT 1`,
+              [userId]
+            ) as any[];
+            if (templateRows && templateRows.length > 0) {
+              template = templateRows[0];
+            } else {
+              const superAdminTpl = await executeQuery(
+                `SELECT t.id, t.name, t.content
+                 FROM contract_templates t
+                 JOIN users u ON t.user_id = u.id
+                 WHERE u.role = 'super_admin' AND t.is_active = 1
+                 ORDER BY t.id DESC LIMIT 1`
+              ) as any[];
+              template = superAdminTpl && superAdminTpl.length > 0 ? superAdminTpl[0] : null;
+            }
+
+            const title = 'Admin Onboarding Agreement';
+            const body = template?.content || 'By purchasing a subscription, you agree to the Admin Onboarding Agreement.';
+            const templateId = template?.id || null;
+
+            // Attribute creation to a super admin if available
+            let creatorId = userId;
+            try {
+              const superAdmins = await executeQuery(
+                `SELECT id FROM users WHERE role = 'super_admin' ORDER BY id ASC LIMIT 1`
+              ) as any[];
+              if (superAdmins && superAdmins.length > 0) {
+                creatorId = superAdmins[0].id;
+              }
+            } catch {}
+
+            await executeQuery(
+              `INSERT INTO contracts (user_id, client_id, template_id, title, body, status, sent_at, created_at, updated_at, created_by, updated_by)
+               VALUES (?, NULL, ?, ?, ?, 'sent', NOW(), NOW(), NOW(), ?, ?)`,
+              [userId, templateId, title, body, creatorId, creatorId]
+            );
+            console.log('✅ Admin onboarding contract created and sent for user:', userId);
+            }
+          } else {
+            console.log('ℹ️ Admin contract already exists with status:', latestContract.status);
+          }
+        } catch (contractError) {
+          console.error('⚠️ Failed to create admin onboarding contract:', contractError);
+        }
+
+        // Process affiliate commission only for subscriptions
+        try {
+          const commissionService = new CommissionService();
+          // Provide affiliateId from metadata when available to correctly attribute commission
+          await commissionService.processPurchase({
+            userId,
+            planId: 0,
+            amount: transaction.amount,
+            transactionId: paymentIntentId,
+            affiliateId: affiliateIdFromMetadata || undefined,
+            paymentMethod: 'stripe'
+          });
+          console.log('✅ Commission processed for user:', userId, 'affiliateId:', affiliateIdFromMetadata || 'none', 'source:', referralSourceFromMetadata || 'unknown');
+        } catch (commissionError) {
+          console.error('⚠️ Commission processing failed:', commissionError);
+        }
+      }
+      
+      // Only process affiliate upgrades for subscription purchases, not course purchases
+      if (!isCoursePurchase) {
+        // Check if user is an affiliate and upgrade to admin if needed
+        try {
+          const affiliateUpgradeService = new AffiliateUpgradeService();
+        
+        // Get user email and details - check both users and affiliates tables
+        let userEmail = null;
+        let userDetails = null;
+        
+        // First try users table
+        const userRows = await executeQuery(
+          'SELECT email, first_name, last_name, company_name, role FROM users WHERE id = ?',
+          [userId]
+        ) as any[];
+        
+        if (userRows && userRows.length > 0) {
+          userEmail = userRows[0].email;
+          userDetails = userRows[0];
+        } else {
+          // If not found in users, check affiliates table
+          const affiliateRows = await executeQuery(
+            'SELECT email FROM affiliates WHERE id = ?',
+            [userId]
+          ) as any[];
+          
+          if (affiliateRows && affiliateRows.length > 0) {
+            userEmail = affiliateRows[0].email;
+          }
+        }
+        
+        if (userEmail && userDetails) {
+          // Check if user is affiliate by email
+          const affiliateCheck = await affiliateUpgradeService.checkIfAffiliate(userEmail);
+          
+          if (affiliateCheck.isAffiliate) {
+            // Update affiliate plan_type to reflect paid status for dashboard detection
+            console.log('🔄 Updating affiliate plan_type for dashboard detection...');
+            await executeQuery(
+              'UPDATE affiliates SET plan_type = ?, updated_at = NOW() WHERE email = ?',
+              ['paid_partner', userEmail]
+            );
+            console.log('✅ Affiliate plan_type updated to paid_partner for:', userEmail);
+            
+            // Create a temporary admin password: first name + 'score8241'
+            const tempPasswordBase = (userDetails.first_name || 'Admin');
+            const tempPassword = `${tempPasswordBase}score8241`;
+
+            const upgradeResult = await affiliateUpgradeService.upgradeAffiliateToAdmin(
+              userEmail,
+              1, // planId - can be derived from plan_name if needed
+              transaction.plan_name,
+              transaction.plan_type,
+              transaction.amount,
+              tempPassword
+            );
+            
+            if (upgradeResult.success) {
+              console.log('✅ Affiliate upgraded to admin for user:', userEmail);
+              // Send admin account creation email with temporary password
+              try {
+                await emailService.sendAdminAccountCreatedEmail({
+                  firstName: userDetails.first_name || 'Admin',
+                  email: userEmail,
+                  password: tempPassword
+                });
+                console.log('✉️ Sent admin account creation email to:', userEmail);
+              } catch (emailErr) {
+                console.error('⚠️ Failed to send admin account creation email:', emailErr);
+              }
+            } else {
+              console.log('⚠️ Affiliate upgrade skipped:', upgradeResult.message);
+            }
+          } else {
+            // Check if this admin user has an affiliate record (admin_id relationship)
+            console.log('🔍 Checking if admin user has affiliate record...');
+            const adminAffiliateRows = await executeQuery(
+              'SELECT id, email, plan_type FROM affiliates WHERE admin_id = ?',
+              [userId]
+            ) as any[];
+            
+            if (adminAffiliateRows && adminAffiliateRows.length > 0) {
+              const affiliateRecord = adminAffiliateRows[0];
+              console.log('🔄 Found affiliate record for admin user, updating plan_type...');
+              
+              // Update affiliate plan_type for admin user's affiliate record
+              await executeQuery(
+                'UPDATE affiliates SET plan_type = ?, updated_at = NOW() WHERE admin_id = ?',
+                ['paid_partner', userId]
+              );
+              console.log('✅ Admin user affiliate plan_type updated to paid_partner for admin_id:', userId);
+              
+              // Create affiliate payment history record
+              try {
+                await executeQuery(
+                  `INSERT INTO affiliate_payment_history (
+                    affiliate_id, transaction_id, amount, plan_name, plan_type, 
+                    payment_status, payment_date, created_at, updated_at
+                  ) VALUES (?, ?, ?, ?, ?, 'completed', NOW(), NOW(), NOW())`,
+                  [
+                    affiliateRecord.id,
+                    paymentIntentId,
+                    transaction.amount,
+                    transaction.plan_name,
+                    transaction.plan_type
+                  ]
+                );
+                console.log('✅ Affiliate payment history created for admin user');
+              } catch (paymentHistoryError) {
+                console.error('⚠️ Failed to create affiliate payment history:', paymentHistoryError);
+              }
+            } else if (userDetails.role === 'admin') {
+              // Admin user doesn't have affiliate record - create one automatically
+              console.log('🆕 Creating affiliate profile for admin user who purchased plan...');
+              
+              try {
+                // Create affiliate profile for admin user
+                // Generate a temp password using admin first name + 'score8241'
+                const baseFirstName = (userDetails.first_name || 'admin').toString().replace(/\s+/g, '');
+                const tempPassword = `${baseFirstName}score8241`;
+                
+                const affiliateData = {
+                  admin_id: userId,
+                  email: userEmail,
+                  password: tempPassword, // Set temp password based on first name
+                  first_name: userDetails.first_name || '',
+                  last_name: userDetails.last_name || '',
+                  company_name: userDetails.company_name || null,
+                  commission_rate: 20.00, // Default commission rate for admin affiliates
+                  parent_commission_rate: 10.00,
+                  created_by: userId,
+                  isPasswordHashed: false // Let createAffiliate hash the password
+                };
+                
+                const newAffiliate = await createAffiliate(affiliateData);
+                
+                if (newAffiliate) {
+                  console.log('✅ Affiliate profile created for admin user:', userEmail);
+                  
+                  // Send affiliate account creation email with temp password
+                  try {
+                    await emailService.sendAffiliateAccountCreatedEmail({
+                      firstName: userDetails.first_name || 'Admin',
+                      email: userEmail,
+                      password: tempPassword
+                    });
+                    console.log('📧 Sent affiliate account creation email to:', userEmail);
+                  } catch (emailErr) {
+                    console.error('⚠️ Failed to send affiliate account creation email:', emailErr);
+                  }
+                  
+                  // Update the new affiliate record with paid partner status
+                  await executeQuery(
+                    'UPDATE affiliates SET plan_type = ?, status = ?, updated_at = NOW() WHERE id = ?',
+                    ['paid_partner', 'active', newAffiliate.id]
+                  );
+                  console.log('✅ Admin affiliate profile activated with paid_partner status');
+                  
+                  // Create affiliate payment history record
+                  try {
+                    await executeQuery(
+                      `INSERT INTO affiliate_payment_history (
+                        affiliate_id, transaction_id, amount, plan_name, plan_type, 
+                        payment_status, payment_date, created_at, updated_at
+                      ) VALUES (?, ?, ?, ?, ?, 'completed', NOW(), NOW(), NOW())`,
+                      [
+                        newAffiliate.id,
+                        paymentIntentId,
+                        transaction.amount,
+                        transaction.plan_name,
+                        transaction.plan_type
+                      ]
+                    );
+                    console.log('✅ Affiliate payment history created for new admin affiliate');
+                  } catch (paymentHistoryError) {
+                    console.error('⚠️ Failed to create affiliate payment history:', paymentHistoryError);
+                  }
+                  
+                  // Create default affiliate settings
+                  try {
+                    // Create notification settings
+                    await executeQuery(
+                      `INSERT INTO affiliate_notification_settings (
+                        affiliate_id, email_notifications, sms_notifications, 
+                        push_notifications, commission_alerts, referral_updates,
+                        weekly_reports, monthly_reports, marketing_emails, created_at, updated_at
+                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                      [newAffiliate.id, 1, 0, 1, 1, 1, 1, 1, 0]
+                    );
+                    
+                    // Create payment settings
+                    await executeQuery(
+                      `INSERT INTO affiliate_payment_settings (
+                        affiliate_id, payment_method, paypal_email, minimum_payout,
+                        payout_frequency, w9_submitted, created_at, updated_at
+                      ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+                      [newAffiliate.id, 'bank_transfer', userEmail, '50.00', 'monthly', 0]
+                    );
+                    
+                    console.log('✅ Default affiliate settings created for admin user');
+                  } catch (settingsError) {
+                    console.error('⚠️ Failed to create affiliate settings:', settingsError);
+                  }
+                } else {
+                  console.error('❌ Failed to create affiliate profile for admin user');
+                }
+              } catch (createAffiliateError) {
+                console.error('❌ Error creating affiliate profile for admin user:', createAffiliateError);
+              }
+            }
+          }
+        } else {
+          console.log('⚠️ Could not find email or user details for user ID:', userId);
+        }
+      } catch (upgradeError) {
+        console.error('⚠️ Affiliate upgrade failed:', upgradeError);
+      }
+      } // End of subscription-only processing
+      
+      // Send purchase notification email
+      try {
+        // Get user details for purchase notification
+        const userDetails = await executeQuery(
+          'SELECT first_name, last_name, email, company_name FROM users WHERE id = ?',
+          [userId]
+        ) as any[];
+        
+        if (userDetails && userDetails.length > 0) {
+          const user = userDetails[0];
+          await emailService.sendPurchaseNotification({
+            firstName: user.first_name,
+            lastName: user.last_name,
+            email: user.email,
+            companyName: user.company_name || '',
+            planName: transaction.plan_name,
+            planType: transaction.plan_type,
+            amount: transaction.amount,
+            purchaseDate: new Date().toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            }),
+            transactionId: paymentIntent.id
+          });
+          console.log('✅ Purchase notification email sent to:', user.email);
+        }
+      } catch (emailError) {
+        console.error('⚠️ Failed to send purchase notification email:', emailError);
+        // Don't fail the payment confirmation if email fails
+      }
+
+      // Send verification code upon first successful purchase (if email not verified)
+      try {
+        const userRows = await executeQuery(
+          'SELECT id, email, first_name, email_verified FROM users WHERE id = ?',
+          [userId]
+        ) as any[];
+
+        if (userRows && userRows.length > 0) {
+          const user = userRows[0];
+          if (!user.email_verified) {
+            // Check for existing active verification code
+            const codeRows = await executeQuery(
+              `SELECT id, code FROM email_verification_codes 
+               WHERE email = ? AND type = 'admin_registration' AND used = 0 AND expires_at > NOW()
+               ORDER BY created_at DESC LIMIT 1`,
+              [user.email]
+            ) as any[];
+
+            let verificationCode: string;
+            if (codeRows && codeRows.length > 0) {
+              verificationCode = codeRows[0].code;
+            } else {
+              verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+              await executeQuery(
+                `INSERT INTO email_verification_codes (email, code, type, expires_at)
+                 VALUES (?, ?, 'admin_registration', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY))`,
+                [user.email, verificationCode]
+              );
+            }
+
+            try {
+              await emailService.sendVerificationCode(user.email, verificationCode, user.first_name);
+              console.log('✅ Verification code sent after first purchase to:', user.email);
+            } catch (codeEmailError) {
+              console.error('⚠️ Failed to send verification code after purchase:', codeEmailError);
+            }
+          }
+        }
+      } catch (postPurchaseVerificationError) {
+        console.error('⚠️ Post-purchase verification code flow failed:', postPurchaseVerificationError);
+      }
+      
+      res.json({ 
+        success: true, 
+        message: isCoursePurchase ? 'Course purchase confirmed and enrollment created' : 'Payment confirmed and subscription activated',
+        ...(isCoursePurchase ? {
+          enrollment: {
+            course_id: courseId,
+            status: 'enrolled'
+          }
+        } : {
+          subscription: {
+            plan: transaction.plan_name,
+            status: 'active',
+            period_end: endDate
+          }
+        })
+      });
+      
+    } else if (paymentIntent.status === 'processing') {
+      res.json({ 
+        success: false, 
+        error: 'Payment is still processing. Please wait a moment.',
+        status: 'processing'
+      });
+    } else if (paymentIntent.status === 'requires_action') {
+      res.json({ 
+        success: false, 
+        error: 'Payment requires additional authentication.',
+        status: 'requires_action'
+      });
+    } else if (paymentIntent.status === 'canceled' || paymentIntent.status === 'requires_payment_method') {
+      res.json({ 
+        success: false, 
+        error: 'Payment was canceled or requires a new payment method.',
+        status: paymentIntent.status
+      });
+    } else {
+      res.json({ 
+        success: false, 
+        error: `Payment failed with status: ${paymentIntent.status}`,
+        status: paymentIntent.status
+      });
+    }
+    
+  } catch (error: any) {
+    console.error('❌ Error confirming payment:', error);
+    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error type:', error.type);
+    console.error('❌ Error code:', error.code);
+    
+    // Handle specific Stripe errors
+    if (error.type === 'StripeInvalidRequestError') {
+      if (error.code === 'resource_missing') {
+        return res.status(404).json({ 
+          error: 'Payment intent not found. It may have expired or been deleted.',
+          code: 'payment_intent_not_found'
+        });
+      }
+    }
+    
+    // Return more detailed error information for debugging
+    res.status(500).json({ 
+      error: 'Failed to confirm payment',
+      details: error.message,
+      type: error.type || 'Unknown',
+      code: error.code || 'Unknown'
+    });
+  }
+});
+
+router.post('/finalize-checkout-session', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId } = req.body as { sessionId?: string };
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+    if (!stripe) {
+      await initializeStripe();
+    }
+    const session = await stripe.checkout.sessions.retrieve(String(sessionId));
+    if (!session || session.mode !== 'subscription' || !session.subscription) {
+      return res.status(400).json({ error: 'Invalid checkout session' });
+    }
+    const stripeSubscriptionId = String(session.subscription);
+    const customerId = String(session.customer);
+    const metadata: any = session.metadata || {};
+    let userId: number | undefined = undefined;
+    if (metadata.userId) {
+      const parsed = parseInt(String(metadata.userId), 10);
+      if (!Number.isNaN(parsed)) userId = parsed;
+    }
+    if (!userId && session.client_reference_id) {
+      const refParsed = parseInt(String(session.client_reference_id), 10);
+      if (!Number.isNaN(refParsed)) userId = refParsed;
+    }
+    let planName = 'Subscription';
+    let billingCycle: 'monthly' | 'yearly' = metadata?.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+    const planIdMeta = metadata?.planId ? parseInt(String(metadata.planId), 10) : undefined;
+    if (planIdMeta) {
+      const planRows = await executeQuery<any[]>('SELECT name FROM subscription_plans WHERE id = ?', [planIdMeta]);
+      if (Array.isArray(planRows) && planRows.length > 0 && planRows[0].name) {
+        planName = planRows[0].name;
+      }
+    }
+    const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+    const periodStart = stripeSub.current_period_start ? new Date(stripeSub.current_period_start * 1000) : null;
+    const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
+    const statusMap: any = { active: 'active', canceled: 'canceled', past_due: 'past_due', unpaid: 'unpaid', incomplete: 'incomplete', incomplete_expired: 'incomplete' };
+    const normalizedStatus = statusMap[stripeSub.status] || 'active';
+    if (userId) {
+      const existing = await executeQuery<any[]>('SELECT id FROM subscriptions WHERE user_id = ? LIMIT 1', [userId]);
+      if (Array.isArray(existing) && existing.length > 0) {
+        await executeQuery(
+          `UPDATE subscriptions 
+           SET stripe_subscription_id = ?, stripe_customer_id = ?, plan_name = ?, plan_type = ?, status = ?, 
+               current_period_start = ?, current_period_end = ?, cancel_at_period_end = ?, updated_at = CURRENT_TIMESTAMP 
+           WHERE user_id = ?`,
+          [
+            stripeSubscriptionId,
+            customerId,
+            planName,
+            billingCycle,
+            normalizedStatus,
+            periodStart ? new Date(periodStart) : null,
+            periodEnd ? new Date(periodEnd) : null,
+            !!stripeSub.cancel_at_period_end,
+            userId
+          ]
+        );
+      } else {
+        await executeQuery(
+          `INSERT INTO subscriptions 
+           (user_id, stripe_subscription_id, stripe_customer_id, plan_name, plan_type, status, current_period_start, current_period_end, cancel_at_period_end, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+          [
+            userId,
+            stripeSubscriptionId,
+            customerId,
+            planName,
+            billingCycle,
+            normalizedStatus,
+            periodStart ? new Date(periodStart) : null,
+            periodEnd ? new Date(periodEnd) : null,
+            !!stripeSub.cancel_at_period_end
+          ]
+        );
+      }
+    }
+    if (userId) {
+      const userRows = await executeQuery('SELECT email, first_name, last_name, company_name, role FROM users WHERE id = ?', [userId]) as any[];
+      if (userRows && userRows.length > 0 && userRows[0].role === 'admin') {
+        const adminAffiliateRows = await executeQuery('SELECT id FROM affiliates WHERE admin_id = ?', [userId]) as any[];
+        if (adminAffiliateRows && adminAffiliateRows.length > 0) {
+          await executeQuery('UPDATE affiliates SET plan_type = ?, status = ?, updated_at = NOW() WHERE admin_id = ?', ['paid_partner', 'active', userId]);
+        } else {
+          const baseFirstName = (userRows[0].first_name || 'admin').toString().replace(/\s+/g, '');
+          const tempPassword = `${baseFirstName}score8241`;
+          const newAffiliate = await createAffiliate({
+            admin_id: userId,
+            email: userRows[0].email,
+            password: tempPassword,
+            first_name: userRows[0].first_name || '',
+            last_name: userRows[0].last_name || '',
+            company_name: userRows[0].company_name || null,
+            commission_rate: 20.0,
+            parent_commission_rate: 10.0,
+            created_by: userId,
+            isPasswordHashed: false
+          });
+          if (newAffiliate) {
+            await executeQuery('UPDATE affiliates SET plan_type = ?, status = ?, updated_at = NOW() WHERE id = ?', ['paid_partner', 'active', newAffiliate.id]);
+            try {
+              await emailService.sendAffiliateAccountCreatedEmail({
+                firstName: userRows[0].first_name || 'Admin',
+                email: userRows[0].email,
+                password: tempPassword
+              });
+            } catch {}
+          }
+        }
+      }
+    }
+    try {
+      const commissionService = new CommissionService();
+      let amount = 0;
+      try {
+        const item = (stripeSub as any)?.items?.data?.[0];
+        const unit = item?.price?.unit_amount || 0;
+        amount = unit / 100;
+      } catch {}
+      const affiliateIdNumeric = metadata?.affiliateId ? parseInt(String(metadata.affiliateId), 10) : undefined;
+      const result = await commissionService.processPurchase({
+        userId: userId || 0,
+        planId: planIdMeta || 0,
+        amount,
+        transactionId: session.id,
+        affiliateId: !Number.isNaN(affiliateIdNumeric as any) ? affiliateIdNumeric : undefined,
+        paymentMethod: 'stripe'
+      });
+      if (result?.commissionIds && result.commissionIds.length > 0) {
+        await commissionService.markCommissionsAsPaid(result.commissionIds);
+        const placeholders = result.commissionIds.map(() => '?').join(',');
+        await executeQuery(
+          `UPDATE affiliate_commissions SET status = 'paid', updated_at = NOW() 
+           WHERE referral_id IN (${placeholders}) AND status = 'pending'`,
+          result.commissionIds
+        );
+        if (userId) {
+          await executeQuery(
+            `UPDATE affiliate_referrals SET status = 'paid', payment_date = NOW() 
+             WHERE referred_user_id = ? AND status = 'pending'`,
+            [userId]
+          );
+          await executeQuery(
+            `UPDATE affiliate_commissions SET status = 'paid', payment_date = NOW(), updated_at = NOW() 
+             WHERE customer_id = ? AND status = 'pending'`,
+            [userId]
+          );
+        }
+      }
+    } catch {}
+    res.json({
+      success: true,
+      subscription: {
+        user_id: userId,
+        stripe_subscription_id: stripeSubscriptionId,
+        stripe_customer_id: customerId,
+        plan_name: planName,
+        plan_type: billingCycle,
+        status: normalizedStatus,
+        current_period_start: periodStart,
+        current_period_end: periodEnd,
+        cancel_at_period_end: !!stripeSub.cancel_at_period_end
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: 'Failed to finalize checkout session', details: error?.message || 'Unknown error' });
+  }
+});
+
+// Cancel subscription
+router.post('/cancel-subscription', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+    console.log(`🔄 Attempting to cancel subscription for user ${userId}`);
+    const rows = await executeQuery(
+      'SELECT id, status, plan_name, stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = ? LIMIT 1',
+      [userId, 'active']
+    ) as any[];
+    if (!rows || rows.length === 0) {
+      console.log(`❌ No active subscription found for user ${userId}`);
+      return res.status(404).json({ success: false, error: 'No active subscription found to cancel' });
+    }
+    const sub = rows[0];
+    console.log(`📋 Found active subscription: ${sub.plan_name}`);
+    if (!stripe) {
+      await initializeStripe();
+    }
+    let periodEnd: Date | null = null;
+    try {
+      if (stripe && sub.stripe_subscription_id) {
+        await stripe.subscriptions.update(String(sub.stripe_subscription_id), { cancel_at_period_end: true });
+        const updated = await stripe.subscriptions.retrieve(String(sub.stripe_subscription_id));
+        if (updated.current_period_end) {
+          periodEnd = new Date(updated.current_period_end * 1000);
+        }
+      }
+    } catch (err) {}
+    await executeQuery(
+      'UPDATE subscriptions SET cancel_at_period_end = TRUE, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND status = ?',
+      [periodEnd ? new Date(periodEnd) : null, userId, 'active']
+    );
+    try {
+      const userRows = await executeQuery(
+        'SELECT email FROM users WHERE id = ? LIMIT 1',
+        [userId]
+      ) as any[];
+      const userEmail = userRows && userRows.length > 0 ? userRows[0].email : null;
+      await executeQuery(
+        'UPDATE affiliates SET plan_type = ?, commission_rate = ?, updated_at = NOW() WHERE admin_id = ?',
+        ['free', 10.0, userId]
+      );
+      if (userEmail) {
+        await executeQuery(
+          'UPDATE affiliates SET plan_type = ?, commission_rate = ?, updated_at = NOW() WHERE email = ?',
+          ['free', 10.0, userEmail]
+        );
+      }
+      console.log('🔁 Affiliate plan_type set to free and commission_rate set to 10% for user', userId);
+    } catch {}
+    console.log(`✅ Subscription set to cancel at period end for user ${userId}`);
+    return res.json({
+      success: true,
+      message: 'Subscription cancellation scheduled',
+      subscription: {
+        status: 'active',
+        plan_name: sub.plan_name,
+        current_period_end: periodEnd || null,
+        cancel_at_period_end: true
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ Error canceling subscription:', error);
+    res.status(500).json({ success: false, error: 'Failed to cancel subscription', details: error?.message || 'Unknown error' });
+  }
+});
+
+// Get Stripe publishable key
+router.get('/stripe-config', async (req, res) => {
+  try {
+    const config = await getStripeConfig();
+    const publishableKey = config?.stripe_publishable_key || process.env.STRIPE_PUBLISHABLE_KEY;
+    
+    res.json({
+      success: true,
+      publishableKey
+    });
+  } catch (error) {
+    console.error('Error fetching Stripe config:', error);
+    res.status(500).json({ error: 'Failed to fetch Stripe configuration' });
+  }
+});
+
+// Webhook endpoint for Stripe events
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const sig = req.headers['stripe-signature'] as string;
+    const config = await getStripeConfig();
+    const endpointSecret = config?.webhook_endpoint_secret || process.env.STRIPE_WEBHOOK_SECRET;
+    
+    if (!stripe || !endpointSecret) {
+      return res.status(400).send('Webhook configuration missing');
+    }
+    
+    let event: Stripe.Event;
+    
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    } catch (err) {
+      console.error('Webhook signature verification failed:', err);
+      return res.status(400).send('Webhook signature verification failed');
+    }
+    
+    // Handle the event
+    switch (event.type) {
+      case 'payment_intent.succeeded':
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        await executeQuery(
+          'UPDATE billing_transactions SET status = ? WHERE stripe_payment_intent_id = ?',
+          ['succeeded', paymentIntent.id]
+        );
+        
+        // Process affiliate commission for webhook payments
+        try {
+          const [txnRows] = await executeQuery(
+            'SELECT user_id, amount, plan_name, plan_type, metadata FROM billing_transactions WHERE stripe_payment_intent_id = ?',
+            [paymentIntent.id]
+          ) as any[];
+          
+          if (txnRows && txnRows.length > 0) {
+            const commissionService = new CommissionService();
+            // Parse affiliateId from transaction metadata if present
+            let affiliateIdFromMetadata: number | undefined = undefined;
+            let referralSourceFromMetadata: 'affiliate' | 'main' | undefined = undefined;
+            try {
+              if (txnRows[0].metadata) {
+                const metadataObj = JSON.parse(txnRows[0].metadata);
+                if (metadataObj && metadataObj.affiliateId) {
+                  const parsed = parseInt(metadataObj.affiliateId, 10);
+                  affiliateIdFromMetadata = Number.isNaN(parsed) ? undefined : parsed;
+                }
+                if (metadataObj && metadataObj.referralSource) {
+                  referralSourceFromMetadata = metadataObj.referralSource === 'affiliate' ? 'affiliate' : 'main';
+                }
+              }
+            } catch {}
+
+            await commissionService.processPurchase({
+              userId: txnRows[0].user_id,
+              planId: 0,
+              amount: txnRows[0].amount,
+              transactionId: paymentIntent.id,
+              affiliateId: affiliateIdFromMetadata,
+              paymentMethod: 'stripe'
+            });
+            console.log('✅ Commission processed via webhook for user:', txnRows[0].user_id, 'affiliateId:', affiliateIdFromMetadata || 'none', 'source:', referralSourceFromMetadata || 'unknown');
+            
+            // Check if user is an affiliate and upgrade to admin if needed
+            try {
+              const affiliateUpgradeService = new AffiliateUpgradeService();
+              // Look up the user's email and first name from their ID
+              const userInfoRows = await executeQuery(
+                'SELECT email, first_name FROM users WHERE id = ? LIMIT 1',
+                [txnRows[0].user_id]
+              ) as any[];
+              let userEmail: string | null = null;
+              let firstName: string | null = null;
+              if (userInfoRows && userInfoRows.length > 0) {
+                userEmail = userInfoRows[0].email;
+                firstName = userInfoRows[0].first_name || 'Admin';
+              }
+
+              if (userEmail) {
+                const affiliateCheck = await affiliateUpgradeService.checkIfAffiliate(userEmail);
+                if (affiliateCheck.isAffiliate) {
+                  const tempPassword = `${firstName}score8241`;
+                  const upgradeResult = await affiliateUpgradeService.upgradeAffiliateToAdmin(
+                    userEmail,
+                    1,
+                    txnRows[0].plan_name,
+                    txnRows[0].plan_type,
+                    txnRows[0].amount,
+                    tempPassword
+                  );
+                  if (upgradeResult.success) {
+                    console.log('✅ Affiliate upgraded to admin via webhook for user:', userEmail);
+                    try {
+                      await emailService.sendAdminAccountCreatedEmail({
+                        firstName: firstName || 'Admin',
+                        email: userEmail,
+                        password: tempPassword
+                      });
+                      console.log('✉️ Sent admin account creation email (webhook) to:', userEmail);
+                    } catch (emailErr) {
+                      console.error('⚠️ Failed to send admin account creation email (webhook):', emailErr);
+                    }
+                  } else {
+                    console.log('ℹ️ Webhook upgrade skipped:', upgradeResult.message);
+                  }
+                }
+              }
+            } catch (upgradeError) {
+              console.error('⚠️ Webhook affiliate upgrade failed:', upgradeError);
+            }
+          }
+        } catch (commissionError) {
+          console.error('⚠️ Webhook commission processing failed:', commissionError);
+        }
+
+        // Send verification code upon first successful purchase (webhook path)
+        try {
+          const userRows = await executeQuery(
+            `SELECT u.id, u.email, u.first_name, u.email_verified
+             FROM users u
+             JOIN billing_transactions bt ON bt.user_id = u.id
+             WHERE bt.stripe_payment_intent_id = ?
+             LIMIT 1`,
+            [paymentIntent.id]
+          ) as any[];
+
+          if (userRows && userRows.length > 0) {
+            const user = userRows[0];
+            if (!user.email_verified) {
+              // Check for existing active verification code
+              const codeRows = await executeQuery(
+                `SELECT id, code FROM email_verification_codes 
+                 WHERE email = ? AND type = 'admin_registration' AND used = 0 AND expires_at > NOW()
+                 ORDER BY created_at DESC LIMIT 1`,
+                [user.email]
+              ) as any[];
+
+              let verificationCode: string;
+              if (codeRows && codeRows.length > 0) {
+                verificationCode = codeRows[0].code;
+              } else {
+                verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+                await executeQuery(
+                  `INSERT INTO email_verification_codes (email, code, type, expires_at)
+                   VALUES (?, ?, 'admin_registration', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY))`,
+                  [user.email, verificationCode]
+                );
+              }
+
+              try {
+                await emailService.sendVerificationCode(user.email, verificationCode, user.first_name);
+                console.log('✅ Verification code sent via webhook after purchase to:', user.email);
+              } catch (codeEmailError) {
+                console.error('⚠️ Failed to send verification code via webhook after purchase:', codeEmailError);
+              }
+            }
+          }
+        } catch (webhookVerificationError) {
+          console.error('⚠️ Webhook post-purchase verification code flow failed:', webhookVerificationError);
+        }
+        break;
+        
+      case 'payment_intent.payment_failed':
+        const failedPayment = event.data.object as Stripe.PaymentIntent;
+        await executeQuery(
+          'UPDATE billing_transactions SET status = ? WHERE stripe_payment_intent_id = ?',
+          ['failed', failedPayment.id]
+        );
+        break;
+      
+      // Subscription Checkout completed
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        try {
+          if (session.mode === 'subscription' && session.subscription) {
+            const stripeSubscriptionId = String(session.subscription);
+            const customerId = String(session.customer);
+            const metadata = session.metadata || {};
+            const userId = metadata?.userId ? parseInt(String(metadata.userId), 10) : undefined;
+            const planId = metadata?.planId ? parseInt(String(metadata.planId), 10) : undefined;
+            const billingCycle: 'monthly' | 'yearly' = metadata?.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+
+            let planName = 'Subscription';
+            if (planId) {
+              const planRows = await executeQuery<any[]>(
+                'SELECT name FROM subscription_plans WHERE id = ?',
+                [planId]
+              );
+              if (Array.isArray(planRows) && planRows.length > 0 && planRows[0].name) {
+                planName = planRows[0].name;
+              }
+            }
+
+            // Retrieve subscription details for period times
+            const stripeSub = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+            const periodStart = stripeSub.current_period_start ? new Date(stripeSub.current_period_start * 1000) : null;
+            const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
+            const statusMap: any = {
+              active: 'active',
+              canceled: 'canceled',
+              past_due: 'past_due',
+              unpaid: 'unpaid',
+              incomplete: 'incomplete',
+              incomplete_expired: 'incomplete'
+            };
+            const normalizedStatus = statusMap[stripeSub.status] || 'active';
+
+        if (userId) {
+          const existing = await executeQuery<any[]>(
+            'SELECT id FROM subscriptions WHERE user_id = ? LIMIT 1',
+            [userId]
+          );
+              if (Array.isArray(existing) && existing.length > 0) {
+                await executeQuery(
+                  `UPDATE subscriptions 
+                   SET stripe_subscription_id = ?, stripe_customer_id = ?, plan_name = ?, plan_type = ?, status = ?, 
+                       current_period_start = ?, current_period_end = ?, cancel_at_period_end = ?, updated_at = CURRENT_TIMESTAMP 
+                   WHERE user_id = ?`,
+                  [
+                    stripeSubscriptionId,
+                    customerId,
+                    planName,
+                    billingCycle,
+                    normalizedStatus,
+                    periodStart ? new Date(periodStart) : null,
+                    periodEnd ? new Date(periodEnd) : null,
+                    !!stripeSub.cancel_at_period_end,
+                    userId
+                  ]
+                );
+              } else {
+                await executeQuery(
+                  `INSERT INTO subscriptions 
+                   (user_id, stripe_subscription_id, stripe_customer_id, plan_name, plan_type, status, current_period_start, current_period_end, cancel_at_period_end, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                  [
+                    userId,
+                    stripeSubscriptionId,
+                    customerId,
+                    planName,
+                    billingCycle,
+                    normalizedStatus,
+                    periodStart ? new Date(periodStart) : null,
+                    periodEnd ? new Date(periodEnd) : null,
+                    !!stripeSub.cancel_at_period_end
+                  ]
+        );
+      }
+      }
+          console.log('✅ Subscription created/updated via checkout session:', { userId, stripeSubscriptionId, planName, billingCycle });
+
+          if (userId) {
+            const userRows = await executeQuery(
+              'SELECT email, first_name, last_name, company_name, role FROM users WHERE id = ?',
+              [userId]
+            ) as any[];
+            if (userRows && userRows.length > 0 && userRows[0].role === 'admin') {
+              const adminAffiliateRows = await executeQuery(
+                'SELECT id, email, plan_type FROM affiliates WHERE admin_id = ?',
+                [userId]
+              ) as any[];
+              if (adminAffiliateRows && adminAffiliateRows.length > 0) {
+                await executeQuery(
+                  'UPDATE affiliates SET plan_type = ?, status = ?, updated_at = NOW() WHERE admin_id = ?',
+                  ['paid_partner', 'active', userId]
+                );
+              } else {
+                const baseFirstName = (userRows[0].first_name || 'admin').toString().replace(/\s+/g, '');
+                const tempPassword = `${baseFirstName}score8241`;
+                const newAffiliate = await createAffiliate({
+                  admin_id: userId,
+                  email: userRows[0].email,
+                  password: tempPassword,
+                  first_name: userRows[0].first_name || '',
+                  last_name: userRows[0].last_name || '',
+                  company_name: userRows[0].company_name || null,
+                  commission_rate: 20.0,
+                  parent_commission_rate: 10.0,
+                  created_by: userId,
+                  isPasswordHashed: false
+                });
+                if (newAffiliate) {
+                  await executeQuery(
+                    'UPDATE affiliates SET plan_type = ?, status = ?, updated_at = NOW() WHERE id = ?',
+                    ['paid_partner', 'active', newAffiliate.id]
+                  );
+                  try {
+                    await emailService.sendAffiliateAccountCreatedEmail({
+                      firstName: userRows[0].first_name || 'Admin',
+                      email: userRows[0].email,
+                      password: tempPassword
+                    });
+                  } catch {}
+                }
+              }
+            }
+          }
+
+          try {
+            const commissionService = new CommissionService();
+            let amount = 0;
+            try {
+              const item = (stripeSub as any)?.items?.data?.[0];
+              const unit = item?.price?.unit_amount || 0;
+              amount = unit / 100;
+            } catch {}
+            const affiliateIdNumeric = metadata?.affiliateId ? parseInt(String(metadata.affiliateId), 10) : undefined;
+            const purchaseResult = await commissionService.processPurchase({
+              userId,
+              planId: planId || 0,
+              amount,
+              transactionId: session.id,
+              affiliateId: !Number.isNaN(affiliateIdNumeric as any) ? affiliateIdNumeric : undefined,
+              paymentMethod: 'stripe'
+            });
+            if (purchaseResult?.commissionIds && purchaseResult.commissionIds.length > 0) {
+              await commissionService.markCommissionsAsPaid(purchaseResult.commissionIds);
+              const placeholders = purchaseResult.commissionIds.map(() => '?').join(',');
+              await executeQuery(
+                `UPDATE affiliate_commissions SET status = 'paid', updated_at = NOW() 
+                 WHERE referral_id IN (${placeholders}) AND status = 'pending'`,
+                purchaseResult.commissionIds
+              );
+              await executeQuery(
+                `UPDATE affiliate_referrals SET status = 'paid', payment_date = NOW() 
+                 WHERE referred_user_id = ? AND status = 'pending'`,
+                [userId]
+              );
+              await executeQuery(
+                `UPDATE affiliate_commissions SET status = 'paid', payment_date = NOW(), updated_at = NOW() 
+                 WHERE customer_id = ? AND status = 'pending'`,
+                [userId]
+              );
+            }
+          } catch (commissionErr) {
+          }
+        }
+      } catch (subErr) {
+        console.error('⚠️ Error processing checkout.session.completed:', subErr);
+      }
+      break;
+    }
+      
+      // Ongoing subscription status updates
+      case 'customer.subscription.updated': {
+        const stripeSub = event.data.object as Stripe.Subscription;
+        try {
+          const customerId = String(stripeSub.customer);
+          // Try to resolve user by customer ID
+          const userRows = await executeQuery<any[]>(
+            'SELECT id FROM users WHERE stripe_customer_id = ? LIMIT 1',
+            [customerId]
+          );
+          let userId: number | undefined = undefined;
+          if (Array.isArray(userRows) && userRows.length > 0) {
+            userId = userRows[0].id;
+          } else {
+            const affRows = await executeQuery<any[]>(
+              'SELECT id FROM affiliates WHERE stripe_customer_id = ? LIMIT 1',
+              [customerId]
+            );
+            if (Array.isArray(affRows) && affRows.length > 0) {
+              userId = affRows[0].id;
+            }
+          }
+
+          const statusMap: any = {
+            active: 'active',
+            canceled: 'canceled',
+            past_due: 'past_due',
+            unpaid: 'unpaid',
+            incomplete: 'incomplete',
+            incomplete_expired: 'incomplete'
+          };
+          const normalizedStatus = statusMap[stripeSub.status] || 'active';
+          const periodStart = stripeSub.current_period_start ? new Date(stripeSub.current_period_start * 1000) : null;
+          const periodEnd = stripeSub.current_period_end ? new Date(stripeSub.current_period_end * 1000) : null;
+
+          if (userId) {
+            await executeQuery(
+              `UPDATE subscriptions 
+               SET status = ?, current_period_start = ?, current_period_end = ?, cancel_at_period_end = ?, updated_at = CURRENT_TIMESTAMP 
+               WHERE user_id = ?`,
+              [
+                normalizedStatus,
+                periodStart ? new Date(periodStart) : null,
+                periodEnd ? new Date(periodEnd) : null,
+                !!stripeSub.cancel_at_period_end,
+                userId
+              ]
+            );
+            console.log('🔁 Subscription updated via webhook:', { userId, status: normalizedStatus });
+          } else {
+            console.log('ℹ️ No matching user found for subscription update (customerId:', customerId, ')');
+          }
+        } catch (updErr) {
+          console.error('⚠️ Error processing customer.subscription.updated:', updErr);
+        }
+        break;
+      }
+      
+      case 'customer.subscription.deleted': {
+        const stripeSub = event.data.object as Stripe.Subscription;
+        try {
+          const customerId = String(stripeSub.customer);
+          const userRows = await executeQuery<any[]>(
+            'SELECT id FROM users WHERE stripe_customer_id = ? LIMIT 1',
+            [customerId]
+          );
+          let userId: number | undefined = undefined;
+          if (Array.isArray(userRows) && userRows.length > 0) {
+            userId = userRows[0].id;
+          } else {
+            const affRows = await executeQuery<any[]>(
+              'SELECT id FROM affiliates WHERE stripe_customer_id = ? LIMIT 1',
+              [customerId]
+            );
+            if (Array.isArray(affRows) && affRows.length > 0) {
+              userId = affRows[0].id;
+            }
+          }
+
+          if (userId) {
+            await executeQuery(
+              'UPDATE subscriptions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+              ['canceled', userId]
+            );
+            console.log('🛑 Subscription canceled via webhook:', { userId });
+          }
+        } catch (delErr) {
+          console.error('⚠️ Error processing customer.subscription.deleted:', delErr);
+        }
+        break;
+      }
+      
+      default:
+        console.log(`Unhandled event type ${event.type}`);
+    }
+    
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+export default router;

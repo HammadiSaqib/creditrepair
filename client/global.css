@@ -1,0 +1,261 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * Tailwind CSS theme
+   * tailwind.config.ts expects the following color variables to be expressed as HSL values.
+   * A different format will require also updating the theme in tailwind.config.ts.
+  */
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 220 16% 22%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 16% 22%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 212 84% 4%;
+
+    --primary: 197 71% 52%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 173 58% 39%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 210 40% 98%;
+    --muted-foreground: 220 14% 41%;
+
+    --accent: 173 58% 39%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 96%;
+    --ring: 197 71% 52%;
+
+    --radius: 0.75rem;
+
+    /* Custom blue and sea green colors - better contrast */
+    --ocean-blue: 199 89% 48%;
+    --deep-blue: 220 40% 30%;
+    --sea-green: 172 47% 45%;
+    --light-sea-green: 173 58% 85%;
+    --cyan-blue: 187 85% 53%;
+    --teal-green: 158 64% 52%;
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(197 71% 52%) 0%,
+      hsl(173 58% 39%) 100%
+    );
+    --gradient-secondary: linear-gradient(
+      135deg,
+      hsl(187 85% 53%) 0%,
+      hsl(158 64% 52%) 100%
+    );
+    --gradient-soft: linear-gradient(
+      135deg,
+      hsl(197 71% 96%) 0%,
+      hsl(173 58% 96%) 100%
+    );
+    --gradient-dark: linear-gradient(
+      135deg,
+      hsl(197 71% 35%) 0%,
+      hsl(173 58% 25%) 100%
+    );
+    --gradient-light: linear-gradient(
+      135deg,
+      hsl(220 13% 97%) 0%,
+      hsl(220 13% 98%) 100%
+    );
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Professional dark theme - Rich navy and slate tones */
+    --background: 222 47% 11%;
+    --foreground: 213 31% 91%;
+
+    --card: 222 47% 15%;
+    --card-foreground: 213 31% 91%;
+
+    --popover: 222 47% 15%;
+    --popover-foreground: 213 31% 91%;
+
+    --primary: 199 89% 48%;
+    --primary-foreground: 220 26% 14%;
+
+    --secondary: 172 47% 45%;
+    --secondary-foreground: 220 9% 96%;
+
+    --muted: 215 25% 27%;
+    --muted-foreground: 217 10% 64%;
+
+    --accent: 172 47% 45%;
+    --accent-foreground: 220 9% 96%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 220 9% 96%;
+
+    --border: 215 25% 27%;
+    --input: 215 25% 27%;
+    --ring: 199 89% 48%;
+
+    /* Professional dark theme custom colors */
+    --ocean-blue: 199 89% 48%;
+    --deep-blue: 217 91% 60%;
+    --sea-green: 142 76% 36%;
+    --light-sea-green: 160 84% 39%;
+    --cyan-blue: 190 80% 50%;
+    --teal-green: 165 60% 48%;
+
+    /* Professional gradients for dark theme - navy/slate only */
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(199 89% 48%) 0%,
+      hsl(142 76% 36%) 100%
+    );
+    --gradient-secondary: linear-gradient(
+      135deg,
+      hsl(190 80% 50%) 0%,
+      hsl(165 60% 48%) 100%
+    );
+    --gradient-soft: linear-gradient(
+      135deg,
+      hsl(215 25% 30%) 0%,
+      hsl(215 25% 32%) 100%
+    );
+    --gradient-dark: linear-gradient(
+      135deg,
+      hsl(222 47% 18%) 0%,
+      hsl(222 47% 20%) 100%
+    );
+    --gradient-light: linear-gradient(
+      135deg,
+      hsl(215 25% 35%) 0%,
+      hsl(215 25% 37%) 100%
+    );
+
+    /* Professional sidebar colors */
+    --sidebar-background: 220 30% 12%;
+    --sidebar-foreground: 220 9% 96%;
+    --sidebar-primary: 199 89% 48%;
+    --sidebar-primary-foreground: 220 30% 12%;
+    --sidebar-accent: 220 22% 18%;
+    --sidebar-accent-foreground: 220 9% 96%;
+    --sidebar-border: 220 22% 18%;
+    --sidebar-ring: 199 89% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .gradient-secondary {
+    background: var(--gradient-secondary);
+  }
+
+  .gradient-soft {
+    background: var(--gradient-soft);
+  }
+
+  .gradient-dark {
+    background: var(--gradient-dark);
+  }
+
+  .gradient-light {
+    background: var(--gradient-light);
+  }
+
+  .gradient-text-primary {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .gradient-text-secondary {
+    background: var(--gradient-secondary);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Blob animation for login pages */
+  @keyframes blob {
+    0% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    33% {
+      transform: translate(30px, -50px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+  }
+
+  .animate-blob {
+    animation: blob 7s infinite;
+  }
+
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+
+  /* PDF export helpers */
+  .analysis-pdf-root > * {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .pdf-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Hide scrollbars for horizontal scroll containers */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+}

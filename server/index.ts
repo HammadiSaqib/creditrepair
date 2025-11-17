@@ -1,0 +1,647 @@
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
+import express from "express";
+import cors from "cors";
+import { createServer as createHttpServer } from "http";
+import { handleDemo } from "./routes/demo.js";
+import { initializeDatabaseAdapter } from "./database/databaseAdapter.js";
+import { loadEnvironmentConfig } from "./config/environment.js";
+import { authenticateToken, requireRole } from "./middleware/authMiddleware.js";
+import { requireSignedAdminContract } from "./middleware/contractGuard.js";
+import { jsonErrorHandler, generalErrorHandler } from "./middleware/errorHandlingMiddleware.js";
+import authRoutes from "./routes/authRoutes.js";
+import profileUploadRoutes from "./routes/profileUpload.js";
+import communityRoutes from "./routes/community.js";
+import groupRoutes from "./routes/groups.js";
+import superAdminRoutes from "./routes/superAdmin.js";
+import schoolManagementRoutes from "./routes/schoolManagement.js";
+import adminManagementRoutes from "./routes/adminManagement.js";
+import affiliateManagementRoutes from "./routes/affiliateManagement.js";
+import affiliateDashboardRoutes from "./routes/affiliateDashboard.js";
+import affiliateRegistrationRoutes from "./routes/affiliateRegistration.js";
+import affiliateLandingRoutes from "./routes/affiliateLanding.js";
+import affiliateSettingsRoutes from "./routes/affiliateSettings.js";
+import commissionRoutes from "./routes/commissionRoutes.js";
+import commissionPaymentsRoutes from "./routes/commissionPayments.js";
+import supportUsersRoutes from "./routes/supportUsers.js";
+import supportTicketsRoutes from "./routes/supportTickets.js";
+import supportChatRoutes from "./routes/supportChat.js";
+import supportReportsRoutes from "./routes/supportReports.js";
+import supportDashboardRoutes from "./routes/supportDashboard.js";
+import supportSettingsRoutes from "./routes/supportSettings.js";
+import adminNotificationRoutes from "./routes/adminNotifications.js";
+import knowledgeBaseRoutes from "./routes/knowledgeBase.js";
+import pricingRoutes from "./routes/pricing.js";
+import billingRoutes from "./routes/billing.js";
+import { initializeStripe } from "./routes/billing.js";
+import invoicesRoutes from "./routes/invoices.js";
+import { initializeWebSocketService } from "./services/websocketService.js";
+import creditReportScraperRoutes from "./routes/creditreportscraper.js";
+import scraperLogsRoutes from "./routes/scraperLogs.js";
+import aiRoutes from "./routes/ai.js";
+import contractsRoutes from "./routes/contracts.js";
+import contractsAdminRoutes from "./routes/contractsAdmin.js";
+import employeesRoutes from "./routes/employees.js";
+
+// Course routes
+import {
+  getCourses,
+  getCourse,
+  createCourse,
+  updateCourse,
+  deleteCourse,
+  enrollInCourse,
+  getEnrolledCourses,
+  checkEnrollment,
+} from "./routes/courses.js";
+
+// Calendar routes
+import {
+  getCalendarEvents,
+  getCalendarEvent,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+  registerForEvent,
+  unregisterFromEvent,
+  getUserRegisteredEvents,
+  getAdminCalendarEvents,
+  getUpcomingAdminEvents,
+  markReminderCompleted,
+} from "./routes/calendar.js";
+
+// Client routes
+import {
+  getClients,
+  getClient,
+  createClient,
+  updateClient,
+  deleteClient,
+  getClientStats,
+} from "./routes/clients.js";
+
+// Funding request routes
+import {
+  getFundingRequests,
+  getFundingRequest,
+  createFundingRequest,
+  updateFundingRequest,
+  deleteFundingRequest,
+  getFundingRequestStats,
+  generateFundingRequestPDF,
+  uploadFundingDocuments,
+  fundingDocumentsUpload,
+  serveDocument,
+} from "./routes/fundingRequests.js";
+
+// Funding Manager Dashboard routes
+import {
+  getFundingManagerDashboardStats,
+} from "./routes/fundingManagerDashboard.js";
+
+// Dispute routes
+import {
+  getDisputes,
+  getDispute,
+  createDispute,
+  updateDispute,
+  deleteDispute,
+  getDisputeStats,
+  generateDisputeLetter,
+} from "./routes/disputes.js";
+
+// Analytics routes
+import {
+  getDashboardAnalytics,
+  getRevenueAnalytics,
+  getPerformanceMetrics,
+  getClientAnalytics,
+  getFinancialInsights,
+  getRecentActivities,
+} from "./routes/analytics.js";
+
+// Bank management routes
+import {
+  getBanks,
+  getBank,
+  createBank,
+  updateBank,
+  deleteBank,
+  getBankStats,
+  exportBanksCSV,
+  importBanksCSV,
+} from "./routes/bankManagement.js";
+import multer from 'multer';
+
+import cardManagementRoutes from "./routes/cardManagement.js";
+import fundingDIYSubmissionsRoutes from "./routes/fundingDIYSubmissions.js";
+
+export async function createServer() {
+  const app = express();
+  const httpServer = createHttpServer(app);
+
+  // Load configuration and initialize database adapter
+  const config = loadEnvironmentConfig();
+  const dbType = config.DATABASE_URL?.startsWith('mysql://') ? 'mysql' : 'sqlite';
+  await initializeDatabaseAdapter(config, dbType);
+  
+  console.log(`🗄️  Database: Using ${dbType.toUpperCase()} adapter`);
+
+  // Middleware
+  app.use(cors({
+    origin: ['http://localhost:3002', 'http://localhost:8080', 'http://localhost:3001'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  }));
+  // IMPORTANT: Use raw body for Stripe webhook BEFORE json/urlencoded parsers
+  // This prevents express.json() from consuming and mutating the raw payload,
+  // which would break Stripe signature verification.
+  app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+  // Serve static files from uploads directory
+  app.use('/uploads', express.static('uploads'));
+
+  // Health check
+  app.get("/api/ping", (_req, res) => {
+    console.log("Ping endpoint hit!");
+    res.json({
+      message: "CreditRepairPro API v1.0",
+      timestamp: new Date().toISOString(),
+      status: "healthy",
+    });
+  });
+
+  // Debug current user endpoint
+  app.get("/api/debug/current-user", authenticateToken, (req: any, res) => {
+    res.json({
+      user: req.user,
+      message: "Current authenticated user info",
+    });
+  });
+
+  // Simple user check endpoint
+  app.get("/api/check-demo-user", async (_req, res) => {
+    try {
+      const { getUserByEmail } = await import(
+        "./controllers/authController.js"
+      );
+      const user = await getUserByEmail("demo@creditrepairpro.com");
+
+      res.json({
+        user_exists: !!user,
+        email: user?.email || null,
+        has_password: !!user?.password_hash,
+        is_active: user?.is_active || false,
+        created_at: user?.created_at || null,
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Debug endpoint to check users (temporary)
+  app.get("/api/debug/users", async (_req, res) => {
+    try {
+      const { allQuery } = await import("./database/schema.js");
+      const users = await allQuery(
+        "SELECT email, first_name, last_name, role, created_at FROM users",
+      );
+      res.json({ users, count: users.length });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Debug endpoint to test password (temporary)
+  app.post("/api/debug/test-password", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      const { getUserByEmail, comparePassword } = await import(
+        "./controllers/authController.js"
+      );
+
+      const user = await getUserByEmail(email);
+      if (!user) {
+        return res.json({ result: "user_not_found" });
+      }
+
+      const passwordMatch = comparePassword(password, user.password_hash);
+      res.json({
+        result: passwordMatch ? "password_match" : "password_mismatch",
+        user_exists: true,
+        email: user.email,
+        password_hash_preview: user.password_hash.substring(0, 10) + "...",
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Debug endpoint to reset database (temporary)
+  app.post("/api/debug/reset-database", async (req, res) => {
+    try {
+      const { resetDatabase } = await import("./utils/resetDatabase.js");
+      const success = await resetDatabase();
+      res.json({
+        success,
+        message: success
+          ? "Database reset successfully"
+          : "Failed to reset database",
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Legacy demo route
+  app.get("/api/demo", handleDemo);
+
+  // =============================================================================
+  // AUTHENTICATION ROUTES
+  // =============================================================================
+  app.use("/api/auth", authRoutes);
+  app.use("/api/profile", profileUploadRoutes);
+
+  // =============================================================================
+  // COMMUNITY ROUTES
+  // =============================================================================
+  app.use("/api/community", communityRoutes);
+
+  // =============================================================================
+  // GROUP ROUTES
+  // =============================================================================
+  app.use("/api/groups", groupRoutes);
+
+  // =============================================================================
+  // SUPER ADMIN ROUTES
+  // =============================================================================
+  console.log('🔍 Registering super admin routes at /api/super-admin');
+  app.use("/api/super-admin", superAdminRoutes);
+
+  // =============================================================================
+  // SCHOOL MANAGEMENT ROUTES
+  // =============================================================================
+  app.use("/api/school-management", schoolManagementRoutes);
+
+  // =============================================================================
+  // ADMIN MANAGEMENT ROUTES (Support Staff)
+  // =============================================================================
+  app.use("/api/admin-management", authenticateToken, requireSignedAdminContract, adminManagementRoutes);
+
+  // =============================================================================
+  // EMPLOYEE ROUTES (Admin)
+  // =============================================================================
+  app.use("/api/employees", authenticateToken, requireSignedAdminContract, employeesRoutes);
+
+  // =============================================================================
+  // ADMIN NOTIFICATION ROUTES
+  // =============================================================================
+  app.use("/api/admin", authenticateToken, requireSignedAdminContract, adminNotificationRoutes);
+
+  // =============================================================================
+  // AFFILIATE MANAGEMENT ROUTES (Admin)
+  // =============================================================================
+  app.use("/api/affiliate-management", authenticateToken, requireSignedAdminContract, affiliateManagementRoutes);
+  app.use("/api/affiliate", affiliateDashboardRoutes);
+  app.use("/api/affiliate", affiliateRegistrationRoutes);
+  app.use("/api/affiliate", affiliateSettingsRoutes);
+  app.use("/api/landing", affiliateLandingRoutes);
+  app.use("/api/commissions", commissionRoutes);
+app.use("/api/commission-payments", commissionPaymentsRoutes);
+
+  // =============================================================================
+  // SUPPORT USERS ROUTES
+  // =============================================================================
+  app.use(supportUsersRoutes);
+
+  // =============================================================================
+  // SUPPORT TICKETS ROUTES
+  // =============================================================================
+  app.use("/api/support/tickets", supportTicketsRoutes);
+
+  // =============================================================================
+  // SUPPORT CHAT ROUTES
+  // =============================================================================
+  app.use("/api/support/chat", supportChatRoutes);
+
+  // =============================================================================
+  // SUPPORT REPORTS ROUTES
+  // =============================================================================
+  app.use("/api/support/reports", supportReportsRoutes);
+
+  // =============================================================================
+  // SUPPORT DASHBOARD ROUTES
+  // =============================================================================
+  app.use("/api/support/dashboard", supportDashboardRoutes);
+
+  // =============================================================================
+  // SUPPORT SETTINGS ROUTES
+  // =============================================================================
+  app.use("/api/support/settings", supportSettingsRoutes);
+
+  // =============================================================================
+  // KNOWLEDGE BASE ROUTES
+  // =============================================================================
+  app.use("/api/knowledge-base", knowledgeBaseRoutes);
+
+  // =============================================================================
+  // PUBLIC PRICING ROUTES
+  // =============================================================================
+  app.use("/api/pricing", pricingRoutes);
+
+  // =============================================================================
+  // BILLING AND STRIPE ROUTES
+  // =============================================================================
+  app.use("/api/billing", billingRoutes);
+  // Invoices routes
+  app.use("/api/invoices", invoicesRoutes);
+
+  // =============================================================================
+  // AI ROUTES
+  // =============================================================================
+  app.use("/api/ai", aiRoutes);
+
+  // =============================================================================
+  // CONTRACTS ROUTES
+  // =============================================================================
+  app.use("/api/contracts", contractsRoutes);
+  app.use("/api/contracts-admin", contractsAdminRoutes);
+
+  // Enforce contract signing for admin-specific REST endpoints
+  // Clients
+  app.use("/api/clients", authenticateToken, requireSignedAdminContract);
+  // Disputes
+  app.use("/api/disputes", authenticateToken, requireSignedAdminContract);
+  // Analytics
+  app.use("/api/analytics", authenticateToken, requireSignedAdminContract);
+  // Banks
+  app.use("/api/banks", authenticateToken, requireSignedAdminContract);
+  // Cards
+  app.use("/api/cards", authenticateToken, requireSignedAdminContract);
+  // Admin calendar endpoints
+  app.use("/api/calendar/admin", authenticateToken, requireSignedAdminContract);
+
+  // =============================================================================
+  // COURSE ROUTES
+  // =============================================================================
+  app.get("/api/courses", getCourses);
+  app.get("/api/courses/:id", authenticateToken, getCourse);
+  app.post("/api/courses", authenticateToken, createCourse);
+  app.put("/api/courses/:id", authenticateToken, updateCourse);
+  app.delete("/api/courses/:id", authenticateToken, deleteCourse);
+  app.post("/api/courses/:id/enroll", authenticateToken, enrollInCourse);
+  app.get("/api/courses/enrolled", authenticateToken, getEnrolledCourses);
+  app.get("/api/courses/:id/enrollment", authenticateToken, checkEnrollment);
+
+  // =============================================================================
+  // CALENDAR ROUTES
+  // =============================================================================
+  app.get("/api/calendar/events", getCalendarEvents);
+  app.get("/api/calendar/events/:id", getCalendarEvent);
+  app.post("/api/calendar/events", authenticateToken, createCalendarEvent);
+  app.put("/api/calendar/events/:id", authenticateToken, updateCalendarEvent);
+  app.delete("/api/calendar/events/:id", authenticateToken, deleteCalendarEvent);
+  app.post("/api/calendar/events/:id/register", authenticateToken, registerForEvent);
+  app.delete("/api/calendar/events/:id/register", authenticateToken, unregisterFromEvent);
+  app.get("/api/calendar/my-events", authenticateToken, getUserRegisteredEvents);
+  
+  // Admin Dashboard Calendar Routes
+  app.get("/api/calendar/admin/events", authenticateToken, getAdminCalendarEvents);
+  app.get("/api/calendar/admin/upcoming", authenticateToken, getUpcomingAdminEvents);
+  app.post("/api/calendar/admin/mark-completed", authenticateToken, markReminderCompleted);
+
+  // Client Management
+  app.get("/api/clients", authenticateToken, getClients);
+  app.get("/api/clients/stats", authenticateToken, getClientStats);
+  app.get("/api/clients/:id", authenticateToken, getClient);
+  app.post("/api/clients", authenticateToken, createClient);
+  app.put("/api/clients/:id", authenticateToken, updateClient);
+  app.delete("/api/clients/:id", authenticateToken, deleteClient);
+
+  // Funding DIY submissions
+  app.use('/api/funding/diy-submissions', fundingDIYSubmissionsRoutes);
+
+  // Funding Requests
+  app.get("/api/funding-requests", authenticateToken, requireRole('funding_manager'), getFundingRequests);
+  app.get("/api/funding-requests/stats", authenticateToken, requireRole('funding_manager'), getFundingRequestStats);
+  app.get("/api/funding-requests/:id", authenticateToken, requireRole('funding_manager'), getFundingRequest);
+  app.post("/api/funding-requests", authenticateToken, requireRole('funding_manager'), createFundingRequest);
+  app.put("/api/funding-requests/:id", authenticateToken, requireRole('funding_manager'), updateFundingRequest);
+  app.delete("/api/funding-requests/:id", authenticateToken, requireRole('funding_manager'), deleteFundingRequest);
+  app.get("/api/funding-requests/:id/pdf", authenticateToken, requireRole('funding_manager'), generateFundingRequestPDF);
+  app.post("/api/funding-requests/upload-documents", authenticateToken, fundingDocumentsUpload.fields([
+    { name: 'driverLicenseFile', maxCount: 1 },
+    { name: 'einConfirmationFile', maxCount: 1 },
+    { name: 'articlesFromStateFile', maxCount: 1 }
+  ]), uploadFundingDocuments);
+  app.get("/api/funding-requests/documents/:filename", authenticateToken, serveDocument);
+
+  // Funding Manager Dashboard
+  app.get("/api/funding-manager/dashboard/stats", authenticateToken, requireRole('funding_manager'), getFundingManagerDashboardStats);
+
+  // Dispute Management
+  app.get("/api/disputes", authenticateToken, getDisputes);
+  app.get("/api/disputes/stats", authenticateToken, getDisputeStats);
+  app.get("/api/disputes/:id", authenticateToken, getDispute);
+  app.post("/api/disputes", authenticateToken, createDispute);
+  app.put("/api/disputes/:id", authenticateToken, updateDispute);
+  app.delete("/api/disputes/:id", authenticateToken, deleteDispute);
+  app.get(
+    "/api/disputes/:dispute_id/letter",
+    authenticateToken,
+    generateDisputeLetter,
+  );
+
+  // Analytics and Reporting
+  app.get("/api/analytics/dashboard", authenticateToken, getDashboardAnalytics);
+  app.get("/api/analytics/revenue", authenticateToken, getRevenueAnalytics);
+  app.get(
+    "/api/analytics/performance",
+    authenticateToken,
+    getPerformanceMetrics,
+  );
+  app.get("/api/analytics/clients", authenticateToken, getClientAnalytics);
+  app.get("/api/analytics/financial", authenticateToken, getFinancialInsights);
+  app.get("/api/analytics/activities", authenticateToken, getRecentActivities);
+
+  // Bank Management
+  app.get("/api/banks", authenticateToken, requireRole('admin', 'funding_manager'), getBanks);
+  app.get("/api/banks/stats", authenticateToken, requireRole('admin', 'funding_manager'), getBankStats);
+  app.get("/api/banks/export", authenticateToken, requireRole('admin', 'funding_manager'), exportBanksCSV);
+  const bankUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+  app.post("/api/banks/import", authenticateToken, requireRole('admin', 'funding_manager'), bankUpload.single('file'), importBanksCSV);
+  app.get("/api/banks/:id", authenticateToken, requireRole('admin', 'funding_manager'), getBank);
+  app.post("/api/banks", authenticateToken, requireRole('admin', 'funding_manager'), createBank);
+  app.put("/api/banks/:id", authenticateToken, requireRole('admin', 'funding_manager'), updateBank);
+  app.delete("/api/banks/:id", authenticateToken, requireRole('admin', 'funding_manager'), deleteBank);
+
+  // Card Management
+  app.use("/api/cards", cardManagementRoutes);
+
+  // =============================================================================
+  // CREDIT REPORTS
+  // =============================================================================
+
+  // Credit report scraper routes
+  
+  // Register credit report scraper routes
+  app.use("/api/credit-reports", creditReportScraperRoutes);
+  
+  // Register scraper logs routes
+  app.use("/api/scraper", scraperLogsRoutes);
+  
+  // Legacy credit report route
+  app.get("/api/reports", authenticateToken, (req, res) => {
+    res.json({ message: "Please use the new /api/credit-reports endpoints" });
+  });
+
+  // =============================================================================
+  // AI FEATURES (Mock implementations)
+  // =============================================================================
+
+  // AI Coach recommendations
+  app.get("/api/ai/recommendations", authenticateToken, (req, res) => {
+    const mockRecommendations = [
+      {
+        id: 1,
+        type: "client_action",
+        priority: "high",
+        title: "Follow up with Sarah Johnson",
+        description:
+          "Credit score increased by 70 points - time to celebrate and plan next steps",
+        action_url: "/clients/1",
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: 2,
+        type: "dispute_opportunity",
+        priority: "medium",
+        title: "New dispute opportunity detected",
+        description: "3 clients have accounts ready for dispute filing",
+        action_url: "/disputes/new",
+        created_at: new Date().toISOString(),
+      },
+    ];
+
+    res.json(mockRecommendations);
+  });
+
+  // AI insights
+  app.get("/api/ai/insights", authenticateToken, (req, res) => {
+    const mockInsights = [
+      {
+        insight_type: "performance",
+        title: "Your success rate is 15% above industry average",
+        description:
+          "Your 94.5% dispute success rate significantly outperforms the industry average of 79%.",
+        impact: "positive",
+        confidence: 95,
+      },
+      {
+        insight_type: "opportunity",
+        title: "Optimal time for dispute filing",
+        description:
+          "Historical data shows disputes filed on Tuesdays have 12% higher success rates.",
+        impact: "neutral",
+        confidence: 87,
+      },
+    ];
+
+    res.json(mockInsights);
+  });
+
+  // =============================================================================
+  // COMPLIANCE FEATURES (Mock implementations)
+  // =============================================================================
+
+  // Compliance monitoring
+  app.get("/api/compliance/status", authenticateToken, (req, res) => {
+    const mockCompliance = {
+      overall_score: 94,
+      fcra_compliance: 96,
+      croa_compliance: 89,
+      state_licensing: 78,
+      fdcpa_compliance: 98,
+      last_audit: "2024-01-15",
+      violations: [],
+      warnings: [
+        {
+          type: "licensing",
+          message: "License renewal pending for California",
+          due_date: "2024-02-01",
+        },
+      ],
+    };
+
+    res.json(mockCompliance);
+  });
+
+  // =============================================================================
+  // AUTOMATION FEATURES (Mock implementations)
+  // =============================================================================
+
+  // Automation workflows
+  app.get("/api/automation/workflows", authenticateToken, (req, res) => {
+    const mockWorkflows = [
+      {
+        id: 1,
+        name: "New Client Onboarding",
+        status: "active",
+        triggers: 5,
+        success_rate: 98,
+        last_run: "2024-01-22T10:30:00Z",
+      },
+      {
+        id: 2,
+        name: "Dispute Follow-up",
+        status: "active",
+        triggers: 12,
+        success_rate: 87,
+        last_run: "2024-01-22T14:15:00Z",
+      },
+    ];
+
+    res.json(mockWorkflows);
+  });
+
+  // =============================================================================
+  // ERROR HANDLING
+  // =============================================================================
+
+  // 404 handler for API routes - must be AFTER all other routes
+  console.log('🔍 Registering 404 handler for /api/*');
+  app.use("/api/*", (req: express.Request, res: express.Response) => {
+    console.log('❌ 404 handler called for:', req.method, req.originalUrl);
+    res.status(404).json({ 
+      error: "API endpoint not found", 
+      path: req.path, 
+      method: req.method 
+    });
+  });
+
+  // Global error handler
+  app.use(jsonErrorHandler);
+  app.use(generalErrorHandler);
+
+  // Initialize Stripe
+  console.log('🔄 Initializing Stripe...');
+  await initializeStripe();
+  
+  // Initialize WebSocket service
+  const websocketService = initializeWebSocketService(httpServer);
+  
+  // Add WebSocket service to app for access in routes
+  (app as any).websocketService = websocketService;
+
+  return { app, httpServer, websocketService };
+}

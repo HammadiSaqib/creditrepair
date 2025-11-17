@@ -1,0 +1,226 @@
+# Deployment Guide for SQL Fixes and Database Migration
+
+This guide outlines the steps to deploy the fixed SQL issues and ensure database schema completeness on the VPS.
+
+## Overview
+
+The following issues have been addressed:
+1. **SQL syntax errors** in `server/routes/groups.ts` - Fixed backticks in template literals
+2. **Database schema validation** - Created migration script to ensure all required tables exist
+3. **Comprehensive testing** - All SQL queries validated and build process verified
+
+## Pre-Deployment Steps
+
+1. **Verify Local Build**
+   ```bash
+   npm run build:server
+   ```
+   ✅ Build should complete without errors
+
+2. **Test SQL Syntax**
+   ```bash
+   node test-sql-syntax.cjs
+   ```
+   ✅ All SQL queries should pass validation
+
+3. **Analyze Database Schema**
+   ```bash
+   node compare-database-schema.cjs
+   ```
+   ✅ Reference schema contains 69 tables including critical `groups` table
+
+## Deployment Steps
+
+### Step 1: Build the Application
+```bash
+npm run build:server
+```
+
+### Step 2: Copy Files to VPS
+Copy the following files to the VPS at `/root/ScoreMachineV2RawCode/`:
+- `dist/` directory (entire built application)
+- `server/routes/groups.ts` (source file with fixes)
+- `vps-database-migration.cjs` (database migration script)
+- `package.json` and `package-lock.json` (if dependencies changed)
+
+**Copy Commands:**
+```bash
+# Copy built application
+scp -r dist/ root@your-vps-ip:/root/ScoreMachineV2RawCode/
+
+# Copy migration script
+scp vps-database-migration.cjs root@your-vps-ip:/root/ScoreMachineV2RawCode/
+
+# Copy source file
+scp server/routes/groups.ts root@your-vps-ip:/root/ScoreMachineV2RawCode/server/routes/
+```
+
+### Step 3: Run Database Migration (CRITICAL)
+On the VPS, ensure database schema is complete:
+```bash
+cd /root/ScoreMachineV2RawCode
+node vps-database-migration.cjs
+```
+
+**What this script does:**
+- Creates a backup of the current database
+- Checks for critical tables: `groups`, `group_members`, `activities`, `users`
+- Creates missing tables with proper structure
+- Validates the `groups` table is accessible
+- Provides detailed migration report
+
+### Step 4: Restart PM2 Process
+On the VPS, restart the application:
+```bash
+pm2 restart scoremachine-api
+pm2 logs scoremachine-api --lines 50
+```
+
+### Step 5: Verify Deployment
+1. Check PM2 status: `pm2 status`
+2. Monitor logs: `pm2 logs scoremachine-api`
+3. Test API endpoints that use groups functionality
+4. Verify no SQL syntax errors in logs
+5. Confirm database connection is successful
+
+## Database Migration Details
+
+### Critical Tables Ensured:
+- **groups** - Community groups with proper column structure
+- **group_members** - Group membership relationships
+- **activities** - User activity tracking
+- **users** - User accounts and authentication
+
+### Migration Safety Features:
+- Automatic database backup before changes
+- Uses `CREATE TABLE IF NOT EXISTS` to avoid conflicts
+- Detailed logging of all operations
+- Rollback information provided
+
+## Rollback Plan
+
+If issues occur:
+
+### Application Rollback:
+1. Stop the application: `pm2 stop scoremachine-api`
+2. Restore previous version from backup
+3. Restart: `pm2 start scoremachine-api`
+
+### Database Rollback:
+1. The migration script creates automatic backups
+2. Restore from backup file if needed:
+   ```bash
+   mysql -u username -p database_name < backup-file.sql
+   ```
+
+## Testing Checklist
+
+After deployment, test:
+- [ ] Application starts without errors
+- [ ] Database connection successful
+- [ ] Groups creation functionality
+- [ ] Groups listing/retrieval
+- [ ] Group member operations
+- [ ] Group updates and deletions
+- [ ] No SQL syntax errors in logs
+- [ ] Migration script completed successfully
+- [ ] All critical tables exist and are accessible
+
+## Files Modified/Added
+
+### Modified:
+- `server/routes/groups.ts` - Fixed SQL syntax in template literals and string queries
+
+### Added:
+- `vps-database-migration.cjs` - Database migration and validation script
+- `compare-database-schema.cjs` - Schema analysis tool
+- `test-sql-syntax.cjs` - SQL syntax validation tool
+
+## Troubleshooting
+
+### If Migration Fails:
+1. Check database connection settings in `.env`
+2. Verify MySQL service is running
+3. Ensure database user has CREATE TABLE permissions
+4. Check if database name exists
+5. Review migration logs for specific errors
+
+### If Application Won't Start:
+1. Check PM2 logs: `pm2 logs scoremachine-api`
+
+## Domain & SSL Deployment (Nginx + PM2)
+
+Follow these steps to run the app at `https://mywarmachine.com` with HTTPS and WebSocket support.
+
+### 1) DNS Setup
+- Create an `A` record for `mywarmachine.com` pointing to your VPS IPv4 (e.g., `72.61.2.28`).
+- Optionally create `AAAA` record for IPv6 if available.
+- Propagation can take up to 30 minutes.
+
+### 2) Server Prerequisites
+- Ensure Node.js `v20+` (target is `node22`).
+- Install Nginx: `sudo apt update && sudo apt install -y nginx`.
+- Allow HTTP/HTTPS in firewall: `sudo ufw allow 'Nginx Full'`.
+
+### 3) Environment Configuration
+- Copy `.env.production.example` to `.env` in project root: `cp .env.production.example .env`.
+- Set values:
+  - `FRONTEND_URL=https://mywarmachine.com`
+  - `CORS_ORIGIN=https://mywarmachine.com`
+  - `VITE_API_URL=https://mywarmachine.com`
+  - Provide secure `JWT_SECRET` (64+ random hex) and MySQL credentials.
+
+### 4) Build and Start with PM2
+```bash
+cd /root/ScoreMachineV2RawCode
+git pull origin master
+npm ci
+npm run build
+pm2 start ecosystem.config.cjs --name scoremachine-api
+pm2 save
+pm2 status
+```
+
+Notes:
+- `ecosystem.config.cjs` points to `dist/server/production.mjs` and uses domain envs.
+- Sensitive credentials are read from `.env` at runtime.
+
+### 5) Configure Nginx Reverse Proxy
+1. Create a site config based on `deploy/nginx.conf.example`:
+```bash
+sudo nano /etc/nginx/sites-available/scoremachine
+# Paste and edit domains if needed
+sudo ln -s /etc/nginx/sites-available/scoremachine /etc/nginx/sites-enabled/scoremachine
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### 6) Obtain TLS Certificates (Let's Encrypt)
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d mywarmachine.com -d www.mywarmachine.com
+sudo systemctl reload nginx
+```
+
+### 7) Verify
+- `curl -I https://mywarmachine.com`
+- Open site in browser; authenticate; check APIs and WebSocket features.
+- If `TokenExpiredError` appears, clear browser storage (localStorage/sessionStorage) and login again.
+
+### 8) Logs and Monitoring
+- App logs: `pm2 logs scoremachine-api --lines 100`
+- Nginx: `sudo tail -n 100 /var/log/nginx/access.log /var/log/nginx/error.log`
+
+### Common Pitfalls
+- `VITE_API_URL` must be set at build time for client to target your domain.
+- Ensure `FRONTEND_URL` and `CORS_ORIGIN` match your domain exactly, including `https`.
+- WebSocket proxy requires `Upgrade`/`Connection` headers as in the example config.
+2. Verify database connection in logs
+3. Ensure all environment variables are set
+4. Check file permissions on uploaded files
+
+## Notes
+
+- The SQL fixes address build-time syntax errors caused by unescaped backticks
+- Database migration ensures schema completeness without data loss
+- All changes are backward compatible
+- Migration script can be run multiple times safely

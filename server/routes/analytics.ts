@@ -1,0 +1,526 @@
+import { Response } from "express";
+import { runQuery, getQuery, allQuery } from "../database/databaseAdapter.js";
+import { AuthRequest } from "../middleware/authMiddleware.js";
+
+// Get dashboard overview analytics
+export async function getDashboardAnalytics(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user!.id;
+    console.log("getDashboardAnalytics called for user ID:", userId);
+
+    // Get current date ranges
+    const now = new Date();
+    const firstDayThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const firstDayLastMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1,
+    );
+    const lastDayLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    // Total clients from clients table - FIXED: Added user_id filter
+    const clientStats = await getQuery(
+      `
+      SELECT COUNT(*) as current_count,
+             SUM(CASE WHEN DATE(created_at) >= DATE(?) THEN 1 ELSE 0 END) as this_month_count,
+             SUM(CASE WHEN DATE(created_at) >= DATE(?) AND DATE(created_at) <= DATE(?) THEN 1 ELSE 0 END) as last_month_count
+      FROM clients
+      WHERE user_id = ?
+    `,
+      [
+        firstDayThisMonth.toISOString().split("T")[0],
+        firstDayLastMonth.toISOString().split("T")[0],
+        lastDayLastMonth.toISOString().split("T")[0],
+        userId,
+      ],
+    );
+
+    console.log("Client stats query result:", clientStats);
+
+    // Also check if there are any clients at all - FIXED: Added user_id filter
+    const allClients = await getQuery(
+      "SELECT COUNT(*) as total FROM clients WHERE user_id = ?",
+      [userId],
+    );
+    console.log("Total clients for user:", allClients);
+
+    // Active disputes from disputes table - FIXED: Added user_id filter through JOIN
+    const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const disputeStats = await getQuery(
+      `
+      SELECT COUNT(*) as active_disputes,
+             SUM(CASE WHEN DATE(d.created_at) >= DATE(?) THEN 1 ELSE 0 END) as new_this_week
+      FROM disputes d
+      JOIN clients c ON d.client_id = c.id
+      WHERE d.status IN ('pending', 'investigating') AND c.user_id = ?
+    `,
+      [lastWeek.toISOString().split("T")[0], userId],
+    );
+
+    // Average score improvement from clients table - FIXED: Added user_id filter
+    const scoreStats = await getQuery(
+      `
+      SELECT AVG(credit_score) as avg_score,
+             COUNT(CASE WHEN credit_score IS NOT NULL THEN 1 END) as clients_with_scores,
+             COUNT(CASE WHEN credit_score > 650 THEN 1 END) as improved_count
+      FROM clients
+      WHERE credit_score IS NOT NULL AND user_id = ?
+    `,
+      [userId],
+    );
+
+    // Success rate calculation from disputes table - FIXED: Added user_id filter through JOIN
+    const successStats = await getQuery(
+      `
+      SELECT
+        COUNT(CASE WHEN d.status IN ('resolved') THEN 1 END) as successful,
+        COUNT(*) as total
+      FROM disputes d
+      JOIN clients c ON d.client_id = c.id
+      WHERE c.user_id = ?
+    `,
+      [userId],
+    );
+    const successRate =
+      successStats.total > 0
+        ? (successStats.successful / successStats.total) * 100
+        : 0;
+
+    // Client categorization stats from clients table - FIXED: Added user_id filter
+    const categorizationStats = await getQuery(
+      `
+      SELECT 
+        COUNT(CASE WHEN fundable_status = 'fundable' THEN 1 END) as fundable_clients,
+        COUNT(CASE WHEN fundable_status = 'not_fundable' THEN 1 END) as not_fundable_clients,
+        COUNT(CASE WHEN 
+          first_name IS NOT NULL AND 
+          last_name IS NOT NULL AND 
+          email IS NOT NULL AND 
+          phone IS NOT NULL AND 
+          address IS NOT NULL 
+        THEN 1 END) as ready_clients,
+        COUNT(CASE WHEN 
+          first_name IS NULL OR 
+          last_name IS NULL OR 
+          email IS NULL OR 
+          phone IS NULL OR 
+          address IS NULL 
+        THEN 1 END) as not_ready_clients
+      FROM clients
+      WHERE user_id = ?
+    `,
+      [userId],
+    );
+
+    console.log("Categorization stats query result:", categorizationStats);
+
+    // Funding invoices paid this month (count of paid invoices for this user's clients)
+    const fundingInvoicesPaidThisMonth = await getQuery(
+      `
+      SELECT COUNT(*) as paid_count
+      FROM invoices
+      WHERE user_id = ?
+        AND status = 'paid'
+        AND paid_at IS NOT NULL
+        AND DATE(paid_at) >= DATE(?)
+        AND client_id IS NOT NULL
+    `,
+      [
+        userId,
+        firstDayThisMonth.toISOString().split("T")[0],
+      ],
+    );
+
+    // Calculate percentage changes
+    const clientChange =
+      clientStats.last_month_count > 0
+        ? ((clientStats.this_month_count - clientStats.last_month_count) /
+            clientStats.last_month_count) *
+          100
+        : 0;
+
+    const analytics = {
+      total_clients: {
+        current: clientStats.current_count,
+        change: Math.round(clientChange),
+        change_text: `${clientChange >= 0 ? "+" : ""}${Math.round(clientChange)}% from last month`,
+      },
+      ready: categorizationStats.ready_clients || 0,
+      notReady: categorizationStats.not_ready_clients || 0,
+      fundable: categorizationStats.fundable_clients || 0,
+      notFundable: categorizationStats.not_fundable_clients || 0,
+      funding_invoices_paid_this_month: (fundingInvoicesPaidThisMonth as any)?.paid_count || 0,
+      active_disputes: {
+        current: disputeStats.active_disputes,
+        new_this_week: disputeStats.new_this_week,
+        change_text: `${disputeStats.new_this_week} new this week`,
+      },
+      avg_score_improvement: {
+        current: Math.round(scoreStats.avg_score || 0),
+        total_improved: scoreStats.improved_count,
+        change_text: `Average credit score`,
+      },
+      success_rate: {
+        current: Math.round(successRate),
+        successful_disputes: successStats.successful,
+        total_disputes: successStats.total,
+        change_text: `Dispute success rate`,
+      },
+    };
+
+    console.log("Dashboard analytics result:", analytics);
+    res.json(analytics);
+  } catch (error) {
+    console.error("Error fetching dashboard analytics:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// Get revenue analytics
+export async function getRevenue(req: AuthRequest, res: Response) {
+  try {
+    const { period = "monthly" } = req.query;
+    const userId = req.user!.id;
+
+    // Mock revenue data based on client count (in real app, you'd have a payments table)
+    let dateFormat: string;
+    let dateRange: string;
+
+    switch (period) {
+      case "daily":
+        dateFormat = "%Y-%m-%d";
+        dateRange = "DATE('now', '-30 days')";
+        break;
+      case "weekly":
+        dateFormat = "%Y-W%W";
+        dateRange = "DATE('now', '-12 weeks')";
+        break;
+      default:
+        dateFormat = "%Y-%m";
+        dateRange = "DATE('now', '-12 months')";
+    }
+
+    const revenueData = await allQuery(`
+      SELECT 
+        strftime('${dateFormat}', created_at) as period,
+        COUNT(*) * 99 as revenue,  -- Mock: $99 per client
+        COUNT(*) as new_clients
+      FROM clients 
+      WHERE user_id = ? AND DATE(created_at) >= ${dateRange}
+      GROUP BY strftime('${dateFormat}', created_at)
+      ORDER BY period DESC
+      LIMIT 12
+    `, [userId]);
+
+    // Calculate total revenue
+    const totalRevenue = revenueData.reduce(
+      (sum: number, item: any) => sum + item.revenue,
+      0,
+    );
+
+    // Calculate growth rate (comparing last two periods)
+    const growth =
+      revenueData.length >= 2
+        ? (((revenueData[0] as any).revenue - (revenueData[1] as any).revenue) /
+            (revenueData[1] as any).revenue) *
+          100
+        : 0;
+
+    res.json({
+      total_revenue: totalRevenue,
+      growth_rate: Math.round(growth),
+      period_data: revenueData.reverse(), // Return in chronological order
+      period: period,
+    });
+  } catch (error) {
+    console.error("Error fetching revenue analytics:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// Get performance metrics
+export async function getPerformanceMetrics(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user!.id;
+
+    // Client acquisition metrics
+    const acquisitionData = await allQuery(`
+      SELECT 
+        strftime('%Y-%m', created_at) as month,
+        COUNT(*) as new_clients,
+        AVG(credit_score) as avg_initial_score
+      FROM clients 
+      WHERE user_id = ? AND DATE(created_at) >= DATE('now', '-12 months')
+      GROUP BY strftime('%Y-%m', created_at)
+      ORDER BY month DESC
+      LIMIT 12
+    `, [userId]);
+
+    // Dispute success rates by bureau
+    const bureauStats = await allQuery(`
+      SELECT
+        bureau,
+        COUNT(*) as total_disputes,
+        COUNT(CASE WHEN d.status IN ('deleted', 'updated') THEN 1 END) as successful_disputes,
+        ROUND(COUNT(CASE WHEN d.status IN ('deleted', 'updated') THEN 1 END) * 100.0 / COUNT(*), 1) as success_rate
+      FROM disputes d
+      JOIN clients c ON d.client_id = c.id
+      WHERE c.user_id = ?
+      GROUP BY bureau
+    `, [userId]);
+
+    // Average time to resolution
+    const resolutionStats = await getQuery(`
+      SELECT 
+        AVG(JULIANDAY(response_date) - JULIANDAY(filed_date)) as avg_resolution_days,
+        COUNT(CASE WHEN response_date IS NOT NULL THEN 1 END) as resolved_disputes
+      FROM disputes d
+      JOIN clients c ON d.client_id = c.id
+      WHERE c.user_id = ? AND response_date IS NOT NULL
+    `, [userId]) as any;
+
+    // Credit score improvements over time
+    const scoreImprovementData = await allQuery(`
+      SELECT 
+        strftime('%Y-%m', updated_at) as month,
+        AVG(credit_score - previous_credit_score) as avg_improvement,
+        COUNT(CASE WHEN credit_score > previous_credit_score THEN 1 END) as improved_clients
+      FROM clients 
+      WHERE user_id = ? 
+        AND credit_score IS NOT NULL 
+        AND previous_credit_score IS NOT NULL
+        AND DATE(updated_at) >= DATE('now', '-12 months')
+      GROUP BY strftime('%Y-%m', updated_at)
+      ORDER BY month DESC
+      LIMIT 12
+    `, [userId]);
+
+    res.json({
+      client_acquisition: acquisitionData.reverse(),
+      bureau_performance: bureauStats,
+      average_resolution_days: Math.round(
+        resolutionStats.avg_resolution_days || 0,
+      ),
+      score_improvements: scoreImprovementData.reverse(),
+      total_resolved_disputes: resolutionStats.resolved_disputes || 0,
+    });
+  } catch (error) {
+    console.error("Error fetching performance metrics:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// Get client analytics
+export async function getClientAnalytics(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user!.id;
+
+    // Client status distribution
+    const statusDistribution = await allQuery(`
+      SELECT 
+        status,
+        COUNT(*) as count,
+        ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM clients WHERE user_id = ?), 1) as percentage
+      FROM clients 
+      WHERE user_id = ?
+      GROUP BY status
+    `, [userId, userId]);
+
+    // Credit score distribution
+    const scoreDistribution = await allQuery(`
+      SELECT 
+        CASE 
+          WHEN credit_score < 580 THEN 'Poor (300-579)'
+          WHEN credit_score < 670 THEN 'Fair (580-669)'
+          WHEN credit_score < 740 THEN 'Good (670-739)'
+          WHEN credit_score < 800 THEN 'Very Good (740-799)'
+          ELSE 'Excellent (800+)'
+        END as score_range,
+        COUNT(*) as count
+      FROM clients 
+      WHERE user_id = ? AND credit_score IS NOT NULL
+      GROUP BY score_range
+      ORDER BY MIN(credit_score)
+    `, [userId]);
+
+    // Employment status breakdown
+    const employmentBreakdown = await allQuery(`
+      SELECT 
+        employment_status,
+        COUNT(*) as count,
+        AVG(annual_income) as avg_income
+      FROM clients 
+      WHERE user_id = ? AND employment_status IS NOT NULL
+      GROUP BY employment_status
+    `, [userId]);
+
+    // Geographic distribution (mock data based on area codes)
+    const geoData = await allQuery(`
+      SELECT 
+        SUBSTR(phone, 2, 3) as area_code,
+        COUNT(*) as count
+      FROM clients 
+      WHERE user_id = ?
+      GROUP BY SUBSTR(phone, 2, 3)
+      ORDER BY count DESC
+      LIMIT 10
+    `, [userId]);
+
+    res.json({
+      status_distribution: statusDistribution,
+      credit_score_distribution: scoreDistribution,
+      employment_breakdown: employmentBreakdown,
+      geographic_distribution: geoData,
+    });
+  } catch (error) {
+    console.error("Error fetching client analytics:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// Get financial insights
+export async function getFinancialInsights(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user!.id;
+
+    // Monthly recurring revenue (MRR) - mock calculation
+    const { mrr } = await getQuery(`
+      SELECT COUNT(*) * 99 as mrr
+      FROM clients 
+      WHERE user_id = ? AND status = 'active'
+    `, [userId]) as { mrr: number };
+
+    // Annual recurring revenue projection
+    const arr = mrr * 12;
+
+    // Client lifetime value (mock calculation)
+    const cltv = 99 * 8; // Average 8 months per client
+
+    // Average revenue per client
+    const { total_clients } = await getQuery(`
+      SELECT COUNT(*) as total_clients
+      FROM clients 
+      WHERE user_id = ?
+    `, [userId]) as { total_clients: number };
+    const arpc = total_clients > 0 ? mrr / total_clients : 0;
+
+    // Revenue breakdown by service (mock data)
+    const revenueBreakdown = [
+      { service: "Credit Monitoring", revenue: mrr * 0.3, percentage: 30 },
+      { service: "Dispute Services", revenue: mrr * 0.5, percentage: 50 },
+      { service: "Credit Coaching", revenue: mrr * 0.15, percentage: 15 },
+      { service: "Other Services", revenue: mrr * 0.05, percentage: 5 },
+    ];
+
+    // Monthly growth rate
+    const growthData = await getQuery(`
+      SELECT 
+        COUNT(CASE WHEN DATE(created_at) >= DATE('now', 'start of month') THEN 1 END) as this_month,
+        COUNT(CASE WHEN DATE(created_at) >= DATE('now', '-1 month', 'start of month') 
+              AND DATE(created_at) < DATE('now', 'start of month') THEN 1 END) as last_month
+      FROM clients 
+      WHERE user_id = ?
+    `, [userId]) as { this_month: number; last_month: number };
+    const growthRate =
+      growthData.last_month > 0
+        ? ((growthData.this_month - growthData.last_month) /
+            growthData.last_month) *
+          100
+        : 0;
+
+    res.json({
+      monthly_recurring_revenue: mrr,
+      annual_recurring_revenue: arr,
+      customer_lifetime_value: cltv,
+      average_revenue_per_client: Math.round(arpc),
+      growth_rate: Math.round(growthRate),
+      revenue_breakdown: revenueBreakdown,
+      financial_metrics: {
+        total_revenue_ytd: mrr * new Date().getMonth() + 1, // Year to date
+        new_client_revenue_this_month: growthData.this_month * 99,
+        churn_rate: 5, // Mock 5% monthly churn
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching financial insights:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// Get revenue analytics
+export async function getRevenueAnalytics(req: AuthRequest, res: Response) {
+  try {
+    const { period = 'monthly' } = req.query;
+    const userId = req.user!.id;
+
+    // Determine date format based on period
+    let dateFormat: string;
+    switch (period) {
+      case 'daily':
+        dateFormat = '%Y-%m-%d';
+        break;
+      case 'weekly':
+        dateFormat = '%Y-W%W';
+        break;
+      case 'monthly':
+        dateFormat = '%Y-%m';
+        break;
+      case 'yearly':
+        dateFormat = '%Y';
+        break;
+      default:
+        dateFormat = '%Y-%m';
+    }
+
+    const revenueData = await allQuery(`
+      SELECT 
+        strftime('${dateFormat}', created_at) as period,
+        COUNT(*) as new_clients,
+        COUNT(*) * 99 as revenue
+      FROM clients
+      WHERE user_id = ? AND DATE(created_at) >= DATE('now', '-12 months')
+      GROUP BY strftime('${dateFormat}', created_at)
+      ORDER BY period DESC
+      LIMIT 12
+    `, [userId]);
+
+    res.json({
+      period_data: revenueData.reverse(),
+      total_revenue: revenueData.reduce((sum: number, item: any) => sum + (item.revenue || 0), 0)
+    });
+  } catch (error) {
+    console.error("Error fetching revenue analytics:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// Get recent activities
+export async function getRecentActivities(req: AuthRequest, res: Response) {
+  try {
+    const { limit = 10 } = req.query;
+    const userId = req.user!.id;
+
+    // Sanitize and enforce a safe numeric limit (avoid binding LIMIT as a param)
+    const parsedLimit = parseInt(String(limit), 10);
+    const safeLimit = Number.isFinite(parsedLimit) && parsedLimit > 0 && parsedLimit <= 100 ? parsedLimit : 10;
+
+    const activitiesSql = `
+      SELECT
+        a.*,
+        c.first_name,
+        c.last_name
+      FROM activities a
+      LEFT JOIN clients c ON a.client_id = c.id
+      WHERE a.user_id = ?
+      ORDER BY a.created_at DESC
+      LIMIT ${safeLimit}
+    `;
+
+    const activities = await allQuery(activitiesSql, [userId]);
+
+    res.json(activities);
+  } catch (error) {
+    console.error("Error fetching recent activities:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
