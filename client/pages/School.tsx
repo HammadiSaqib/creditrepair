@@ -620,6 +620,10 @@ export default function School() {
     fetchCourses();
   }, [toast]);
 
+  useEffect(() => {
+    setLearningPaths(computeLearningPaths(courses));
+  }, [courses]);
+
   // Helper functions for course access logic
   const isCourseInSubscriptionPlan = (courseId: number): boolean => {
     if (!userSubscription || !userSubscription.plan) return false;
@@ -1287,72 +1291,42 @@ export default function School() {
 
   // Calendar events are now loaded from API via fetchCalendarEvents()
 
-  const learningPaths: LearningPath[] = [
-    {
-      id: 1,
-      name: "Credit Repair Foundation",
-      type: "fundamental",
-      description: "Essential knowledge for starting your credit repair journey",
-      totalCourses: 5,
-      completedCourses: 3,
-      estimatedHours: 25,
-      difficulty: "beginner",
-      skills: ["FCRA Basics", "Credit Reports", "Dispute Letters", "Client Communication"],
-      isEnrolled: true,
-      progress: 60,
-      nextCourse: {
-        id: 4,
-        title: "Advanced Dispute Strategies",
-        estimatedTime: "3h 30m"
-      }
-    },
-    {
-      id: 2,
-      name: "Advanced Professional Track",
-      type: "advanced",
-      description: "Master advanced techniques and become an industry expert",
-      totalCourses: 8,
-      completedCourses: 1,
-      estimatedHours: 45,
-      difficulty: "advanced",
-      prerequisites: ["Credit Repair Foundation"],
-      skills: ["Complex Disputes", "Legal Compliance", "Business Scaling", "Advanced Analytics"],
-      isEnrolled: true,
-      progress: 12,
-      nextCourse: {
-        id: 6,
-        title: "Legal Compliance Deep Dive",
-        estimatedTime: "4h 15m"
-      }
-    },
-    {
-      id: 3,
-      name: "Business Builder Certification",
-      type: "certification",
-      description: "Build and scale your credit repair business",
-      totalCourses: 6,
-      completedCourses: 0,
-      estimatedHours: 35,
-      difficulty: "intermediate",
-      prerequisites: ["Credit Repair Foundation"],
-      skills: ["Business Management", "Marketing", "Client Acquisition", "Team Building"],
-      isEnrolled: false,
-      progress: 0
-    },
-    {
-      id: 4,
-      name: "Medical Collections Specialist",
-      type: "specialized",
-      description: "Specialized expertise in medical debt disputes",
-      totalCourses: 4,
-      completedCourses: 4,
-      estimatedHours: 18,
-      difficulty: "intermediate",
-      skills: ["Medical Collections", "HIPAA Compliance", "Healthcare Billing", "Medical Disputes"],
-      isEnrolled: true,
-      progress: 100
+  const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
+
+  const computeLearningPaths = (sourceCourses: Course[]): LearningPath[] => {
+    const groups: Record<string, Course[]> = {};
+    for (const c of sourceCourses) {
+      const key = c.difficulty === 'beginner' ? 'fundamental' : c.difficulty === 'advanced' ? 'advanced' : 'certification';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(c);
     }
-  ];
+    const result: LearningPath[] = [];
+    let idCounter = 1;
+    for (const [type, list] of Object.entries(groups)) {
+      const totalCourses = list.length;
+      const completedCourses = list.filter(x => x.isCompleted || x.progress === 100).length;
+      const avgProgress = totalCourses > 0 ? Math.round(list.reduce((sum, x) => sum + (x.progress || 0), 0) / totalCourses) : 0;
+      const isEnrolled = list.some(x => x.isEnrolled);
+      const next = list.find(x => x.progress < 100);
+      const skills = Array.from(new Set(list.flatMap(x => [x.category].filter(Boolean)))).slice(0, 6) as string[];
+      result.push({
+        id: idCounter++,
+        name: type === 'fundamental' ? 'Credit Repair Foundation' : type === 'advanced' ? 'Advanced Professional Track' : 'Business Builder Certification',
+        type: type as any,
+        description: type === 'fundamental' ? 'Essential knowledge for starting your credit repair journey' : type === 'advanced' ? 'Master advanced techniques and become an industry expert' : 'Build and scale your credit repair business',
+        totalCourses,
+        completedCourses,
+        estimatedHours: totalCourses * 5,
+        difficulty: type === 'fundamental' ? 'beginner' : type === 'advanced' ? 'advanced' : 'intermediate',
+        prerequisites: type !== 'fundamental' ? ['Credit Repair Foundation'] : undefined,
+        skills: skills.length > 0 ? skills : ['Credit Reports', 'Dispute Letters'],
+        isEnrolled,
+        progress: avgProgress,
+        nextCourse: next ? { id: next.id, title: next.title, estimatedTime: next.duration || '3h' } : undefined
+      });
+    }
+    return result;
+  };
 
   const courseMaps: CourseMap[] = [
     {
@@ -1928,127 +1902,6 @@ export default function School() {
           <AdminCalendar />
         </TabsContent>
 
-        <TabsContent value="community" className="space-y-6">
-          {/* Community Overview */}
-          <div className="grid lg:grid-cols-4 gap-6">
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700">
-              <CardContent className="p-4 text-center">
-                <Users className="h-8 w-8 mx-auto mb-2 text-ocean-blue" />
-                <div className="text-2xl font-bold gradient-text-primary">2,847</div>
-                <div className="text-xs text-muted-foreground">Active Members</div>
-              </CardContent>
-            </Card>
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-green-50/50 dark:from-slate-800 dark:to-slate-700">
-              <CardContent className="p-4 text-center">
-                <MessageSquare className="h-8 w-8 mx-auto mb-2 text-emerald-600" />
-                <div className="text-2xl font-bold gradient-text-secondary">1,234</div>
-                <div className="text-xs text-muted-foreground">Discussions</div>
-              </CardContent>
-            </Card>
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-slate-800 dark:to-slate-700">
-              <CardContent className="p-4 text-center">
-                <HelpCircle className="h-8 w-8 mx-auto mb-2 text-purple-600" />
-                <div className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">456</div>
-                <div className="text-xs text-muted-foreground">Questions Answered</div>
-              </CardContent>
-            </Card>
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-orange-50/50 dark:from-slate-800 dark:to-slate-700">
-              <CardContent className="p-4 text-center">
-                <Star className="h-8 w-8 mx-auto mb-2 text-orange-600" />
-                <div className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">89</div>
-                <div className="text-xs text-muted-foreground">Expert Contributors</div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Forum Posts */}
-          <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="gradient-text-primary">
-                    Community Discussions
-                  </CardTitle>
-                  <CardDescription>
-                    Get help and share knowledge with fellow professionals
-                  </CardDescription>
-                </div>
-                <Button
-                  onClick={() => setIsCreatePostOpen(true)}
-                  className="gradient-primary hover:opacity-90"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Discussion
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {forumPosts.map((post) => (
-                  <Card key={post.id} className="border border-border/40 bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm hover:shadow-md transition-shadow cursor-pointer">
-                    <CardContent className="p-4">
-                      <div className="flex items-start space-x-4">
-                        <Avatar className="h-10 w-10">
-                          <AvatarFallback className="gradient-primary text-white">
-                            {post.authorAvatar}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-2">
-                            {post.isPinned && (
-                              <Badge className="bg-orange-100 text-orange-800 border-orange-200">
-                                📌 Pinned
-                              </Badge>
-                            )}
-                            {post.isAnswered && (
-                              <Badge className="bg-green-100 text-green-800 border-green-200">
-                                ✓ Answered
-                              </Badge>
-                            )}
-                            <Badge variant="outline">{post.category}</Badge>
-                          </div>
-                          <h3 className="font-semibold text-sm mb-1">{post.title}</h3>
-                          <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
-                            {post.content}
-                          </p>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                              <span>by {post.author}</span>
-                              <span>{new Date(post.createdAt).toLocaleDateString()}</span>
-                            </div>
-                            <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                              <div className="flex items-center space-x-1">
-                                <Reply className="h-3 w-3" />
-                                <span>{post.replies}</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <ThumbsUp className="h-3 w-3" />
-                                <span>{post.likes}</span>
-                              </div>
-                              <div className="flex items-center space-x-1">
-                                <Eye className="h-3 w-3" />
-                                <span>{post.views}</span>
-                              </div>
-                            </div>
-                          </div>
-                          {post.tags.length > 0 && (
-                            <div className="flex items-center space-x-1 mt-2">
-                              {post.tags.map((tag) => (
-                                <Badge key={tag} variant="outline" className="text-xs">
-                                  #{tag}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="maps" className="space-y-6">
           {/* Learning Overview */}
@@ -2694,69 +2547,7 @@ export default function School() {
                 </CardContent>
               </Card>
 
-              {/* Instructors */}
-              <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
-                <CardHeader>
-                  <CardTitle className="gradient-text-secondary">
-                    Meet Our Instructors
-                  </CardTitle>
-                  <CardDescription>
-                    Learn from industry experts and thought leaders
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="flex items-start space-x-4">
-                      <Avatar className="h-12 w-12">
-                        <AvatarFallback className="gradient-primary text-white">SJ</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h4 className="font-semibold">Sarah Johnson</h4>
-                        <p className="text-sm text-muted-foreground">FCRA Compliance Expert</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          15+ years in credit repair, former bureau executive
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start space-x-4">
-                      <Avatar className="h-12 w-12">
-                        <AvatarFallback className="gradient-secondary text-white">MC</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h4 className="font-semibold">Michael Chen</h4>
-                        <p className="text-sm text-muted-foreground">Dispute Strategy Specialist</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Advanced techniques and automation expert
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start space-x-4">
-                      <Avatar className="h-12 w-12">
-                        <AvatarFallback className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">LR</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h4 className="font-semibold">Lisa Rodriguez</h4>
-                        <p className="text-sm text-muted-foreground">Business Development Coach</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Help professionals scale their practice
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-start space-x-4">
-                      <Avatar className="h-12 w-12">
-                        <AvatarFallback className="bg-gradient-to-r from-orange-500 to-red-500 text-white">DW</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h4 className="font-semibold">David Wilson</h4>
-                        <p className="text-sm text-muted-foreground">Legal Affairs Advisor</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Attorney specializing in consumer law
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+
             </div>
 
             {/* Sidebar */}
