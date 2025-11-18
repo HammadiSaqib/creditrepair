@@ -362,6 +362,151 @@ export default function School() {
     communityRank: 0,
     weeklyPoints: 0,
   });
+  const [academyStats, setAcademyStats] = useState({
+    activeMembers: 0,
+    coursesAvailable: 0,
+    completionRate: 0,
+    avgRating: 0,
+  });
+  const [certifications, setCertifications] = useState<string[]>([]);
+  const badges: Badge[] = [
+    {
+      id: 1,
+      name: "First Steps",
+      description: "Complete your first course",
+      icon: "🎯",
+      rarity: "common",
+      earned: true,
+      earnedDate: "2024-01-15",
+      requirements: "Complete 1 course",
+      points: 50
+    },
+    {
+      id: 2,
+      name: "Knowledge Seeker",
+      description: "Complete 5 courses",
+      icon: "📚",
+      rarity: "rare",
+      earned: true,
+      earnedDate: "2024-01-20",
+      requirements: "Complete 5 courses",
+      points: 200
+    },
+    {
+      id: 3,
+      name: "Report Master",
+      description: "Pull 100 credit reports",
+      icon: "📊",
+      rarity: "epic",
+      earned: true,
+      earnedDate: "2024-01-22",
+      requirements: "Pull 100 credit reports",
+      points: 500
+    },
+    {
+      id: 4,
+      name: "Community Helper",
+      description: "Help 25 community members",
+      icon: "🤝",
+      rarity: "rare",
+      earned: false,
+      requirements: "Answer 25 community questions",
+      points: 300
+    },
+    {
+      id: 5,
+      name: "Streak Master",
+      description: "Maintain 30-day learning streak",
+      icon: "🔥",
+      rarity: "legendary",
+      earned: false,
+      requirements: "30 consecutive days of activity",
+      points: 1000
+    }
+  ];
+  const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
+  const [courseMaps, setCourseMaps] = useState<CourseMap[]>([]);
+
+  const computeLearningPaths = (sourceCourses: Course[]): LearningPath[] => {
+    const groups: Record<string, Course[]> = {};
+    for (const c of sourceCourses) {
+      const key = c.difficulty === 'beginner' ? 'fundamental' : c.difficulty === 'advanced' ? 'advanced' : 'certification';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(c);
+    }
+    const result: LearningPath[] = [];
+    let idCounter = 1;
+    for (const [type, list] of Object.entries(groups)) {
+      const totalCourses = list.length;
+      const completedCourses = list.filter(x => x.isCompleted || x.progress === 100).length;
+      const avgProgress = totalCourses > 0 ? Math.round(list.reduce((sum, x) => sum + (x.progress || 0), 0) / totalCourses) : 0;
+      const isEnrolled = list.some(x => x.isEnrolled);
+      const next = list.find(x => x.progress < 100);
+      const skills = Array.from(new Set(list.flatMap(x => [x.category].filter(Boolean)))).slice(0, 6) as string[];
+      result.push({
+        id: idCounter++,
+        name: type === 'fundamental' ? 'Credit Repair Foundation' : type === 'advanced' ? 'Advanced Professional Track' : 'Business Builder Certification',
+        type: type as any,
+        description: type === 'fundamental' ? 'Essential knowledge for starting your credit repair journey' : type === 'advanced' ? 'Master advanced techniques and become an industry expert' : 'Build and scale your credit repair business',
+        totalCourses,
+        completedCourses,
+        estimatedHours: totalCourses * 5,
+        difficulty: type === 'fundamental' ? 'beginner' : type === 'advanced' ? 'advanced' : 'intermediate',
+        prerequisites: type !== 'fundamental' ? ['Credit Repair Foundation'] : undefined,
+        skills: skills.length > 0 ? skills : ['Credit Reports', 'Dispute Letters'],
+        isEnrolled,
+        progress: avgProgress,
+        nextCourse: next ? { id: next.id, title: next.title, estimatedTime: next.duration || '3h' } : undefined
+      });
+    }
+    return result;
+  };
+
+  const formatMinutes = (mins: number): string => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}h ${m}m`;
+  };
+
+  const computeCourseMaps = (sourceCourses: Course[]): CourseMap[] => {
+    const maps: CourseMap[] = [];
+    let idCounter = 1;
+    for (const c of sourceCourses) {
+      const totalChapters = Number(c.chapters || 0) > 0 ? Number(c.chapters) : 8;
+      const progress = Math.max(0, Math.min(100, Number(c.progress || 0)));
+      const completedCount = Math.min(totalChapters, Math.round((progress / 100) * totalChapters));
+      const chapterTypes = ['video', 'reading', 'quiz', 'assignment'];
+      const chapters: CourseMap['chapters'] = Array.from({ length: totalChapters }).map((_, idx) => {
+        const type = chapterTypes[idx % chapterTypes.length] as any;
+        const isCompleted = idx < completedCount;
+        const isCurrently = idx === completedCount && progress < 100;
+        const isLocked = idx > completedCount;
+        const estimatedTime = `${15 + (idx % 3) * 5}m`;
+        return {
+          id: idx + 1,
+          type,
+          title: `Chapter ${idx + 1}: ${c.title}`,
+          estimatedTime,
+          isCompleted,
+          isCurrently,
+          isLocked,
+        };
+      });
+      const totalMinutes = totalChapters * 20;
+      const spentMinutes = Math.round((progress / 100) * totalMinutes);
+      const remainingMinutes = Math.max(0, totalMinutes - spentMinutes);
+      maps.push({
+        id: idCounter++,
+        courseId: c.id,
+        courseName: c.title,
+        overallProgress: progress,
+        timeSpent: formatMinutes(spentMinutes),
+        estimatedRemaining: formatMinutes(remainingMinutes),
+        chapters,
+      });
+    }
+    return maps;
+  };
 
 
   // Fetch current user profile
@@ -627,6 +772,46 @@ export default function School() {
   useEffect(() => {
     setCourseMaps(computeCourseMaps(courses));
   }, [courses]);
+
+  const computeAcademyStats = (sourceCourses: Course[], lb: LeaderboardUser[]) => {
+    const activeMembers = Array.isArray(lb) ? lb.length : 0;
+    const coursesAvailable = Array.isArray(sourceCourses) ? sourceCourses.length : 0;
+    const enrolled = sourceCourses.filter(c => c.isEnrolled);
+    const completionRate = enrolled.length > 0
+      ? Math.round(enrolled.reduce((sum, c) => sum + Math.min(100, Number(c.progress || 0)), 0) / enrolled.length)
+      : 0;
+    const ratings = sourceCourses.map(c => Number(c.rating || 0)).filter(n => Number.isFinite(n) && n > 0);
+    const avgRating = ratings.length > 0
+      ? Math.round((ratings.reduce((s, n) => s + n, 0) / ratings.length) * 10) / 10
+      : 0;
+    return { activeMembers, coursesAvailable, completionRate, avgRating };
+  };
+
+  useEffect(() => {
+    setAcademyStats(computeAcademyStats(courses, leaderboard));
+  }, [courses, leaderboard]);
+
+  const computeCertifications = (
+    sourceCourses: Course[],
+    paths: LearningPath[],
+    badgeList: Badge[],
+    stats: UserStats
+  ): string[] => {
+    const out = new Set<string>();
+    const certPath = paths.find(p => p.type === 'certification' && p.progress === 100);
+    if (certPath) out.add(certPath.name);
+    const fundamentalDone = paths.find(p => p.type === 'fundamental' && p.progress === 100);
+    if (fundamentalDone) out.add('FCRA Certified Program');
+    const fundingCourseCompleted = sourceCourses.some(c => /funding/i.test(String(c.category)) && Math.round(Number(c.progress || 0)) === 100);
+    if (fundingCourseCompleted) out.add('Funding Specialist Badge');
+    if (Number(stats.badgesEarned || 0) > 0) out.add('Community Expert Status');
+    badgeList.filter(b => b.earned).slice(0, 2).forEach(b => out.add(b.name));
+    return Array.from(out);
+  };
+
+  useEffect(() => {
+    setCertifications(computeCertifications(courses, learningPaths, badges, userStats));
+  }, [courses, learningPaths, badges, userStats]);
 
   // Helper functions for course access logic
   const isCourseInSubscriptionPlan = (courseId: number): boolean => {
@@ -1165,62 +1350,6 @@ export default function School() {
 
   // userStats now loaded from API
 
-  const badges: Badge[] = [
-    {
-      id: 1,
-      name: "First Steps",
-      description: "Complete your first course",
-      icon: "🎯",
-      rarity: "common",
-      earned: true,
-      earnedDate: "2024-01-15",
-      requirements: "Complete 1 course",
-      points: 50
-    },
-    {
-      id: 2,
-      name: "Knowledge Seeker",
-      description: "Complete 5 courses",
-      icon: "📚",
-      rarity: "rare",
-      earned: true,
-      earnedDate: "2024-01-20",
-      requirements: "Complete 5 courses",
-      points: 200
-    },
-    {
-      id: 3,
-      name: "Report Master",
-      description: "Pull 100 credit reports",
-      icon: "📊",
-      rarity: "epic",
-      earned: true,
-      earnedDate: "2024-01-22",
-      requirements: "Pull 100 credit reports",
-      points: 500
-    },
-    {
-      id: 4,
-      name: "Community Helper",
-      description: "Help 25 community members",
-      icon: "🤝",
-      rarity: "rare",
-      earned: false,
-      requirements: "Answer 25 community questions",
-      points: 300
-    },
-    {
-      id: 5,
-      name: "Streak Master",
-      description: "Maintain 30-day learning streak",
-      icon: "🔥",
-      rarity: "legendary",
-      earned: false,
-      requirements: "30 consecutive days of activity",
-      points: 1000
-    }
-  ];
-
   // Filter courses based on search query and category
   const filteredCourses = (courses && Array.isArray(courses)) ? courses.filter(course => {
     const matchesSearch = course?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1294,89 +1423,7 @@ export default function School() {
   ];
 
   // Calendar events are now loaded from API via fetchCalendarEvents()
-
-  const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
-
-  const computeLearningPaths = (sourceCourses: Course[]): LearningPath[] => {
-    const groups: Record<string, Course[]> = {};
-    for (const c of sourceCourses) {
-      const key = c.difficulty === 'beginner' ? 'fundamental' : c.difficulty === 'advanced' ? 'advanced' : 'certification';
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(c);
-    }
-    const result: LearningPath[] = [];
-    let idCounter = 1;
-    for (const [type, list] of Object.entries(groups)) {
-      const totalCourses = list.length;
-      const completedCourses = list.filter(x => x.isCompleted || x.progress === 100).length;
-      const avgProgress = totalCourses > 0 ? Math.round(list.reduce((sum, x) => sum + (x.progress || 0), 0) / totalCourses) : 0;
-      const isEnrolled = list.some(x => x.isEnrolled);
-      const next = list.find(x => x.progress < 100);
-      const skills = Array.from(new Set(list.flatMap(x => [x.category].filter(Boolean)))).slice(0, 6) as string[];
-      result.push({
-        id: idCounter++,
-        name: type === 'fundamental' ? 'Credit Repair Foundation' : type === 'advanced' ? 'Advanced Professional Track' : 'Business Builder Certification',
-        type: type as any,
-        description: type === 'fundamental' ? 'Essential knowledge for starting your credit repair journey' : type === 'advanced' ? 'Master advanced techniques and become an industry expert' : 'Build and scale your credit repair business',
-        totalCourses,
-        completedCourses,
-        estimatedHours: totalCourses * 5,
-        difficulty: type === 'fundamental' ? 'beginner' : type === 'advanced' ? 'advanced' : 'intermediate',
-        prerequisites: type !== 'fundamental' ? ['Credit Repair Foundation'] : undefined,
-        skills: skills.length > 0 ? skills : ['Credit Reports', 'Dispute Letters'],
-        isEnrolled,
-        progress: avgProgress,
-        nextCourse: next ? { id: next.id, title: next.title, estimatedTime: next.duration || '3h' } : undefined
-      });
-    }
-    return result;
-  };
-
-  const [courseMaps, setCourseMaps] = useState<CourseMap[]>([]);
-  const formatMinutes = (mins: number): string => {
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return `${h}h ${m}m`;
-  };
-  const computeCourseMaps = (sourceCourses: Course[]): CourseMap[] => {
-    const maps: CourseMap[] = [];
-    let idCounter = 1;
-    for (const c of sourceCourses) {
-      const totalChapters = Number(c.chapters || 0) > 0 ? Number(c.chapters) : 8;
-      const progress = Math.max(0, Math.min(100, Number(c.progress || 0)));
-      const completedCount = Math.min(totalChapters, Math.round((progress / 100) * totalChapters));
-      const chapterTypes = ['video', 'reading', 'quiz', 'assignment'];
-      const chapters: CourseMap['chapters'] = Array.from({ length: totalChapters }).map((_, idx) => {
-        const type = chapterTypes[idx % chapterTypes.length] as any;
-        const isCompleted = idx < completedCount;
-        const isCurrently = idx === completedCount && progress < 100;
-        const isLocked = idx > completedCount;
-        const estimatedTime = `${15 + (idx % 3) * 5}m`;
-        return {
-          id: idx + 1,
-          type,
-          title: `Chapter ${idx + 1}: ${c.title}`,
-          estimatedTime,
-          isCompleted,
-          isCurrently,
-          isLocked,
-        };
-      });
-      const totalMinutes = totalChapters * 20;
-      const spentMinutes = Math.round((progress / 100) * totalMinutes);
-      const remainingMinutes = Math.max(0, totalMinutes - spentMinutes);
-      maps.push({
-        id: idCounter++,
-        courseId: c.id,
-        courseName: c.title,
-        overallProgress: progress,
-        timeSpent: formatMinutes(spentMinutes),
-        estimatedRemaining: formatMinutes(remainingMinutes),
-        chapters,
-      });
-    }
-    return maps;
-  };
+  
   
 
   const getRarityColor = (rarity: string) => {
@@ -2403,7 +2450,7 @@ export default function School() {
               <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
                 <CardHeader>
                   <CardTitle className="gradient-text-primary">
-                    About Credit Repair Academy
+                    About Score Machine Academy
                   </CardTitle>
                   <CardDescription>
                     Empowering professionals with knowledge and expertise
@@ -2413,7 +2460,7 @@ export default function School() {
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Our Mission</h3>
                     <p className="text-muted-foreground">
-                      To provide comprehensive education and support for credit repair professionals,
+                      To provide comprehensive education and support for funding professionals,
                       helping them build successful businesses while delivering exceptional results for their clients.
                       We believe in the power of knowledge sharing and community collaboration to elevate the entire industry.
                     </p>
@@ -2436,7 +2483,7 @@ export default function School() {
                         <div>
                           <h4 className="font-medium">Active Community</h4>
                           <p className="text-sm text-muted-foreground">
-                            Connect with 2,800+ professionals worldwide
+                            Connect with {academyStats.activeMembers.toLocaleString()}+ professionals worldwide
                           </p>
                         </div>
                       </div>
@@ -2465,19 +2512,19 @@ export default function School() {
                     <h3 className="text-lg font-semibold mb-3">Academy Stats</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                       <div className="p-3 bg-gradient-light rounded-lg">
-                        <div className="text-2xl font-bold gradient-text-primary">2,847</div>
+                        <div className="text-2xl font-bold gradient-text-primary">{academyStats.activeMembers.toLocaleString()}</div>
                         <div className="text-xs text-muted-foreground">Active Members</div>
                       </div>
                       <div className="p-3 bg-gradient-light rounded-lg">
-                        <div className="text-2xl font-bold gradient-text-secondary">156</div>
+                        <div className="text-2xl font-bold gradient-text-secondary">{academyStats.coursesAvailable}</div>
                         <div className="text-xs text-muted-foreground">Courses Available</div>
                       </div>
                       <div className="p-3 bg-gradient-light rounded-lg">
-                        <div className="text-2xl font-bold text-purple-600">95%</div>
+                        <div className="text-2xl font-bold text-purple-600">{academyStats.completionRate}%</div>
                         <div className="text-xs text-muted-foreground">Completion Rate</div>
                       </div>
                       <div className="p-3 bg-gradient-light rounded-lg">
-                        <div className="text-2xl font-bold text-orange-600">4.8</div>
+                        <div className="text-2xl font-bold text-orange-600">{academyStats.avgRating.toFixed(1)}</div>
                         <div className="text-xs text-muted-foreground">Avg Rating</div>
                       </div>
                     </div>
@@ -2509,14 +2556,14 @@ export default function School() {
                     <Phone className="h-4 w-4 text-emerald-600" />
                     <div>
                       <div className="text-sm font-medium">Phone</div>
-                      <div className="text-xs text-muted-foreground">(555) 123-4567</div>
+                      <div className="text-xs text-muted-foreground">{currentUser?.phone || "(475) 259-8768"}</div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
                     <MapPin className="h-4 w-4 text-purple-600" />
                     <div>
                       <div className="text-sm font-medium">Headquarters</div>
-                      <div className="text-xs text-muted-foreground">Phoenix, AZ</div>
+                      <div className="text-xs text-muted-foreground">{currentUser?.address || "New York, NY"}</div>
                     </div>
                   </div>
                   <Button className="w-full gradient-primary hover:opacity-90">
@@ -2535,22 +2582,19 @@ export default function School() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-sm">FCRA Certified Program</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-sm">Dispute Specialist Badge</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-sm">Business Coach Certification</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      <span className="text-sm">Community Expert Status</span>
-                    </div>
+                    {certifications.length > 0 ? (
+                      certifications.map((name) => (
+                        <div key={name} className="flex items-center space-x-2">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span className="text-sm">{name}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <span className="text-sm">No certifications yet</span>
+                      </div>
+                    )}
                   </div>
                   <Button variant="outline" className="w-full">
                     <Award className="h-4 w-4 mr-2" />
