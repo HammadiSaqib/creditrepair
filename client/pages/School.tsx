@@ -624,6 +624,10 @@ export default function School() {
     setLearningPaths(computeLearningPaths(courses));
   }, [courses]);
 
+  useEffect(() => {
+    setCourseMaps(computeCourseMaps(courses));
+  }, [courses]);
+
   // Helper functions for course access logic
   const isCourseInSubscriptionPlan = (courseId: number): boolean => {
     if (!userSubscription || !userSubscription.plan) return false;
@@ -1328,118 +1332,52 @@ export default function School() {
     return result;
   };
 
-  const courseMaps: CourseMap[] = [
-    {
-      id: 1,
-      courseId: 1,
-      courseName: "Credit Repair Fundamentals",
-      overallProgress: 75,
-      timeSpent: "8h 45m",
-      estimatedRemaining: "3h 15m",
-      chapters: [
-        {
-          id: 1,
-          title: "Introduction to Credit Repair",
-          isCompleted: true,
-          isCurrently: false,
-          isLocked: false,
-          estimatedTime: "45m",
-          type: "video"
-        },
-        {
-          id: 2,
-          title: "Understanding Credit Reports",
-          isCompleted: true,
-          isCurrently: false,
-          isLocked: false,
-          estimatedTime: "1h 20m",
-          type: "video"
-        },
-        {
-          id: 3,
-          title: "FCRA Overview",
-          isCompleted: true,
-          isCurrently: false,
-          isLocked: false,
-          estimatedTime: "2h 10m",
-          type: "reading"
-        },
-        {
-          id: 4,
-          title: "Basic Dispute Letters",
-          isCompleted: false,
-          isCurrently: true,
-          isLocked: false,
-          estimatedTime: "1h 30m",
-          type: "assignment"
-        },
-        {
-          id: 5,
-          title: "Client Communication",
-          isCompleted: false,
-          isCurrently: false,
-          isLocked: false,
-          estimatedTime: "1h 45m",
-          type: "video"
-        },
-        {
-          id: 6,
-          title: "Final Assessment",
-          isCompleted: false,
-          isCurrently: false,
-          isLocked: true,
-          estimatedTime: "45m",
-          type: "quiz"
-        }
-      ]
-    },
-    {
-      id: 2,
-      courseId: 2,
-      courseName: "Advanced Dispute Strategies",
-      overallProgress: 30,
-      timeSpent: "3h 20m",
-      estimatedRemaining: "7h 40m",
-      chapters: [
-        {
-          id: 1,
-          title: "Complex Dispute Scenarios",
-          isCompleted: true,
-          isCurrently: false,
-          isLocked: false,
-          estimatedTime: "2h 15m",
-          type: "video"
-        },
-        {
-          id: 2,
-          title: "Advanced Letter Templates",
-          isCompleted: false,
-          isCurrently: true,
-          isLocked: false,
-          estimatedTime: "1h 45m",
-          type: "assignment"
-        },
-        {
-          id: 3,
-          title: "Escalation Procedures",
-          isCompleted: false,
-          isCurrently: false,
-          isLocked: false,
-          estimatedTime: "2h 30m",
-          type: "reading"
-        },
-        {
-          id: 4,
-          title: "Legal Considerations",
-          isCompleted: false,
-          isCurrently: false,
-          isLocked: true,
-          estimatedTime: "3h 10m",
-          type: "video"
-        }
-      ]
+  const [courseMaps, setCourseMaps] = useState<CourseMap[]>([]);
+  const formatMinutes = (mins: number): string => {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}h ${m}m`;
+  };
+  const computeCourseMaps = (sourceCourses: Course[]): CourseMap[] => {
+    const maps: CourseMap[] = [];
+    let idCounter = 1;
+    for (const c of sourceCourses) {
+      const totalChapters = Number(c.chapters || 0) > 0 ? Number(c.chapters) : 8;
+      const progress = Math.max(0, Math.min(100, Number(c.progress || 0)));
+      const completedCount = Math.min(totalChapters, Math.round((progress / 100) * totalChapters));
+      const chapterTypes = ['video', 'reading', 'quiz', 'assignment'];
+      const chapters: CourseMap['chapters'] = Array.from({ length: totalChapters }).map((_, idx) => {
+        const type = chapterTypes[idx % chapterTypes.length] as any;
+        const isCompleted = idx < completedCount;
+        const isCurrently = idx === completedCount && progress < 100;
+        const isLocked = idx > completedCount;
+        const estimatedTime = `${15 + (idx % 3) * 5}m`;
+        return {
+          id: idx + 1,
+          type,
+          title: `Chapter ${idx + 1}: ${c.title}`,
+          estimatedTime,
+          isCompleted,
+          isCurrently,
+          isLocked,
+        };
+      });
+      const totalMinutes = totalChapters * 20;
+      const spentMinutes = Math.round((progress / 100) * totalMinutes);
+      const remainingMinutes = Math.max(0, totalMinutes - spentMinutes);
+      maps.push({
+        id: idCounter++,
+        courseId: c.id,
+        courseName: c.title,
+        overallProgress: progress,
+        timeSpent: formatMinutes(spentMinutes),
+        estimatedRemaining: formatMinutes(remainingMinutes),
+        chapters,
+      });
     }
-  ];
+    return maps;
+  };
+  
 
   const getRarityColor = (rarity: string) => {
     switch (rarity) {
@@ -2564,7 +2502,7 @@ export default function School() {
                     <Mail className="h-4 w-4 text-ocean-blue" />
                     <div>
                       <div className="text-sm font-medium">Email</div>
-                      <div className="text-xs text-muted-foreground">academy@creditrepairpro.com</div>
+                      <div className="text-xs text-muted-foreground">support@thescoremachine.com</div>
                     </div>
                   </div>
                   <div className="flex items-center space-x-3">
