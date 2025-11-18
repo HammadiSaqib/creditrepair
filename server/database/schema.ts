@@ -604,7 +604,7 @@ async function seedDatabase() {
       demoPasswordHash,
       "John",
       "Doe",
-      "CreditRepair Pro",
+      "The Score Machine",
       "admin",
       1,
     ],

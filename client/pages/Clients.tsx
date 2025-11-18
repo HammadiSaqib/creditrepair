@@ -951,10 +951,6 @@ const getScoreChange = (current: number, previous: number) => {
                                <FileText className="h-4 w-4 mr-2" />
                                View Reports
                              </DropdownMenuItem>
-                             <DropdownMenuItem>
-                               <CreditCard className="h-4 w-4 mr-2" />
-                               Generate Dispute
-                             </DropdownMenuItem>
                              <DropdownMenuItem 
                                onClick={(e) => {
                                  e.stopPropagation();

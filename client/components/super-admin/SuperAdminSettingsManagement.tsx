@@ -469,7 +469,7 @@ const SuperAdminSettingsManagement: React.FC = () => {
                   </h3>
                   <p className="text-muted-foreground">Super Administrator</p>
                   <p className="text-sm text-muted-foreground">
-                    CreditRepair Pro
+                    The Score Machine
                   </p>
                 </div>
               </div>
