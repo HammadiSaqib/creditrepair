@@ -6691,6 +6691,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     const targetBal = Math.round(limit * (selectedTarget / 100));
                     const payment = Math.max(0, Math.round(balance - targetBal));
                     const weekly = Math.round(payment / 52);
+                    const daily = Math.round(payment / 365);
                     const monthly = Math.round(payment / 12);
                     const yearly = payment;
                     return (
@@ -6737,7 +6738,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         {/* Payment targets */}
                         <div className="space-y-3">
                           <div className="font-medium">Payment Targets</div>
-                          <div className="grid grid-cols-3 gap-3">
+                          <div className="grid grid-cols-4 gap-3">
+                            <div className="rounded-md bg-slate-50 border p-3">
+                              <div className="text-xs text-muted-foreground">Daily (365 days)</div>
+                              <div className="font-semibold text-teal-700">{formatCurrency(daily)}</div>
+                            </div>
                             <div className="rounded-md bg-slate-50 border p-3">
                               <div className="text-xs text-muted-foreground">Weekly (52 weeks)</div>
                               <div className="font-semibold text-emerald-700">{formatCurrency(weekly)}</div>
@@ -6758,8 +6763,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <div className="font-medium">Step-by-Step Plan</div>
                           <ol className="list-decimal list-inside space-y-1 text-sm">
                             <li>Choose your target utilization ({selectedTarget}%).</li>
-                            <li>Set your schedule: weekly or monthly payments.</li>
-                            <li>Pay {formatCurrency(weekly)} per week or {formatCurrency(monthly)} per month until {formatCurrency(payment)} is completed.</li>
+                            <li>Set your schedule: daily, weekly or monthly payments.</li>
+                            <li>Pay {formatCurrency(daily)} per day, {formatCurrency(weekly)} per week or {formatCurrency(monthly)} per month until {formatCurrency(payment)} is completed.</li>
                             <li>Keep new charges low to maintain target utilization.</li>
                           </ol>
                         </div>
