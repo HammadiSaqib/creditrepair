@@ -123,6 +123,8 @@ import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { clientsApi } from "@/lib/api";
 import { useAuthContext } from "@/contexts/AuthContext";
 
+const PERSONAL_INFO_MODE_OPTIONS = { normal: 'normal', credit_repair: 'credit_repair' } as const;
+
 // Import the same detailed report data from Reports.tsx for consistency
 const detailedReport = {
   personalInfo: {
@@ -676,6 +678,7 @@ export default function CreditReport() {
   const [qualifyView, setQualifyView] = useState<'cards' | 'table'>('table');
   const [eligibilityBureau, setEligibilityBureau] = useState<'all' | 'tu' | 'ex' | 'eq'>('all');
   const analysisRef = useRef<HTMLDivElement>(null);
+  const [personalInfoMode, setPersonalInfoMode] = useState<'normal' | 'credit_repair'>('normal');
   
   // Subscription status for tab access control
   const subscriptionStatus = useSubscriptionStatus();
@@ -1454,7 +1457,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             totalRevolvingBalance += balance;
             totalRevolvingLimit += limit;
           }
-        } else if (accountType.toLowerCase().includes('installment') || accountType.toLowerCase().includes('loan')) {
+        } else if (
+          accountType.toLowerCase().includes('installment') ||
+          accountType.toLowerCase().includes('loan') ||
+          accountType.toLowerCase().includes('mortgage') ||
+          (account.Industry && String(account.Industry).toLowerCase().includes('real estate'))
+        ) {
           totalInstallmentUtilization += utilization;
           installmentAccountCount++;
         }
@@ -8273,14 +8281,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100">
                                   <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
                                   <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
-                                  {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
                                     <div className="space-y-1 mt-1">
-                                      <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.Experian.utilization)}`}>
-                                        {accountGroup.bureaus.Experian.utilization}% Paid
-                                      </div>
-                                      <div className={`font-bold text-sm ${getUtilizationColor(100 - accountGroup.bureaus.Experian.utilization)}`}>
-                                        {100 - accountGroup.bureaus.Experian.utilization}% Remaining
-                                      </div>
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.Experian.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.Experian.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.Experian.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   ) : (
                                     <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.Experian.utilization)}`}>
@@ -8877,14 +8897,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100">
                                   <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
                                   <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
-                                  {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
                                     <div className="space-y-1 mt-1">
-                                      <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.TransUnion.utilization)}`}>
-                                        {accountGroup.bureaus.TransUnion.utilization}% Paid
-                                      </div>
-                                      <div className={`font-bold text-sm ${getUtilizationColor(100 - accountGroup.bureaus.TransUnion.utilization)}`}>
-                                        {100 - accountGroup.bureaus.TransUnion.utilization}% Remaining
-                                      </div>
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.TransUnion.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.TransUnion.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.TransUnion.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   ) : (
                                     <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.TransUnion.utilization)}`}>
@@ -9478,14 +9510,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100">
                                   <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
                                   <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
-                                  {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
                                     <div className="space-y-1 mt-1">
-                                      <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.Equifax.utilization)}`}>
-                                        {accountGroup.bureaus.Equifax.utilization}% Paid
-                                      </div>
-                                      <div className={`font-bold text-sm ${getUtilizationColor(100 - accountGroup.bureaus.Equifax.utilization)}`}>
-                                        {100 - accountGroup.bureaus.Equifax.utilization}% Remaining
-                                      </div>
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.Equifax.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.Equifax.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.Equifax.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   ) : (
                                     <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.Equifax.utilization)}`}>
@@ -10541,6 +10585,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <CardDescription className="text-gray-600 font-medium ml-11">
                 Identity verification across all credit bureaus
               </CardDescription>
+              <div className="ml-auto mt-2">
+                <ToggleGroup type="single" value={personalInfoMode} onValueChange={(v) => setPersonalInfoMode((v as any) || 'normal')} className="gap-1">
+                  <ToggleGroupItem value="normal">Normal</ToggleGroupItem>
+                  <ToggleGroupItem value="credit_repair">Credit Repair</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
             </CardHeader>
             <CardContent>
               {/* Personal Information Cards */}
@@ -10605,7 +10655,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {experianInfo.name}
-                              {nameMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                nameMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           {/* AKA / Aliases */}
@@ -10635,7 +10689,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {experianInfo.dob}
-                              {dobMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                dobMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           <div className="text-xs">
@@ -10697,7 +10755,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {transUnionInfo.name}
-                              {nameMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                nameMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           {/* AKA / Aliases */}
@@ -10727,7 +10789,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {transUnionInfo.dob}
-                              {dobMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                dobMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           <div className="text-xs">
@@ -10789,7 +10855,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {equifaxInfo.name}
-                              {nameMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                nameMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           {/* AKA / Aliases */}
@@ -10819,7 +10889,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {equifaxInfo.dob}
-                              {dobMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                dobMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           <div className="text-xs">
@@ -11890,14 +11964,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100">
                                   <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
                                   <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
-                                  {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
                                     <div className="space-y-1 mt-1">
-                                      <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.TransUnion.utilization)}`}>
-                                        {accountGroup.bureaus.TransUnion.utilization}% Paid
-                                      </div>
-                                      <div className={`font-bold text-sm ${getUtilizationColor(100 - accountGroup.bureaus.TransUnion.utilization)}`}>
-                                        {100 - accountGroup.bureaus.TransUnion.utilization}% Remaining
-                                      </div>
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.TransUnion.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.TransUnion.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.TransUnion.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   ) : (
                                     <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.TransUnion.utilization)}`}>
@@ -12005,14 +12091,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100">
                                   <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
                                   <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
-                                  {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
                                     <div className="space-y-1 mt-1">
-                                      <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.Equifax.utilization)}`}>
-                                        {accountGroup.bureaus.Equifax.utilization}% Paid
-                                      </div>
-                                      <div className={`font-bold text-sm ${getUtilizationColor(100 - accountGroup.bureaus.Equifax.utilization)}`}>
-                                        {100 - accountGroup.bureaus.Equifax.utilization}% Remaining
-                                      </div>
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.Equifax.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.Equifax.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.Equifax.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   ) : (
                                     <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.Equifax.utilization)}`}>
@@ -13272,6 +13370,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <CardDescription className="text-gray-600 font-medium ml-11">
                 Identity verification across all credit bureaus
               </CardDescription>
+              <div className="ml-auto mt-2">
+                <ToggleGroup type="single" value={personalInfoMode} onValueChange={(v) => setPersonalInfoMode((v as any) || 'normal')} className="gap-1">
+                  <ToggleGroupItem value="normal">Normal</ToggleGroupItem>
+                  <ToggleGroupItem value="credit_repair">Credit Repair</ToggleGroupItem>
+                </ToggleGroup>
+              </div>
             </CardHeader>
             <CardContent>
               {/* Personal Information Cards */}
@@ -13336,7 +13440,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {experianInfo.name}
-                              {nameMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                nameMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           {/* AKA / Aliases */}
@@ -13366,7 +13474,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {experianInfo.dob}
-                              {dobMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                dobMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           <div className="text-xs">
@@ -13428,7 +13540,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {transUnionInfo.name}
-                              {nameMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                nameMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           {/* AKA / Aliases */}
@@ -13458,7 +13574,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {transUnionInfo.dob}
-                              {dobMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                dobMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           <div className="text-xs">
@@ -13520,7 +13640,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {equifaxInfo.name}
-                              {nameMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                nameMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           {/* AKA / Aliases */}
@@ -13550,7 +13674,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {equifaxInfo.dob}
-                              {dobMismatch && <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>}
+                              {personalInfoMode === 'credit_repair' && (
+                                dobMismatch
+                                  ? <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">Not Match</span>
+                                  : <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Match</span>
+                              )}
                             </div>
                           </div>
                           <div className="text-xs">
