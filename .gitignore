@@ -46,6 +46,7 @@ dist-ssr
 data/
 
 # Uploads and user data
+uploads/
 userData/
 
 # Temporary files

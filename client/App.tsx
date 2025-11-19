@@ -47,6 +47,8 @@ import SuperAdminReports from "./pages/super-admin/SuperAdminReports";
 import SuperAdminContracts from "./pages/super-admin/SuperAdminContracts";
 import SuperAdminSupportUsers from "./pages/super-admin/SuperAdminSupportUsers";
 import SuperAdminSchoolManagement from "./pages/super-admin/SuperAdminSchoolManagement";
+import SuperAdminAdminImport from "./pages/super-admin/SuperAdminAdminImport";
+import SuperAdminAffiliateImport from "./pages/super-admin/SuperAdminAffiliateImport";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import SuperAdminLogin from "./pages/SuperAdminLogin";
@@ -454,6 +456,22 @@ const App = () => (
             element={
               <SuperAdminProtectedRoute>
                 <SuperAdminSchoolManagement />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/admin-import"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminAdminImport />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/affiliate-import"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminAffiliateImport />
               </SuperAdminProtectedRoute>
             }
           />

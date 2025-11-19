@@ -16,6 +16,10 @@ const US_STATE_CODES = [
 // Also allow 'USA' to represent nationwide coverage
 const STATE_OR_COUNTRY_CODES = [...US_STATE_CODES, 'USA'];
 
+const STATE_NAME_TO_CODE: Record<string, string> = {
+  'alabama': 'AL','alaska': 'AK','arizona': 'AZ','arkansas': 'AR','california': 'CA','colorado': 'CO','connecticut': 'CT','delaware': 'DE','florida': 'FL','georgia': 'GA','hawaii': 'HI','idaho': 'ID','illinois': 'IL','indiana': 'IN','iowa': 'IA','kansas': 'KS','kentucky': 'KY','louisiana': 'LA','maine': 'ME','maryland': 'MD','massachusetts': 'MA','michigan': 'MI','minnesota': 'MN','mississippi': 'MS','missouri': 'MO','montana': 'MT','nebraska': 'NE','nevada': 'NV','new hampshire': 'NH','new jersey': 'NJ','new mexico': 'NM','new york': 'NY','north carolina': 'NC','north dakota': 'ND','ohio': 'OH','oklahoma': 'OK','oregon': 'OR','pennsylvania': 'PA','rhode island': 'RI','south carolina': 'SC','south dakota': 'SD','tennessee': 'TN','texas': 'TX','utah': 'UT','vermont': 'VT','virginia': 'VA','washington': 'WA','west virginia': 'WV','wisconsin': 'WI','wyoming': 'WY','usa': 'USA'
+};
+
 // Validation schemas
 const createCardValidation = [
   body('card_image')
@@ -303,7 +307,9 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Req
     if (lines.length < 2) {
       return res.status(400).json({ error: 'CSV has no data' });
     }
-    const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const header = lines[0]
+      .split(',')
+      .map(h => h.replace(/^[\uFEFF]/, '').trim().toLowerCase());
     const idx = (name: string) => header.indexOf(name);
 
     let inserted = 0;
@@ -339,12 +345,21 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Req
       const statesStr = get('states');
       const stateStr = get('state');
       const activeStr = get('is_active');
+      const bankNameVal = get('bank_name')?.trim();
 
-      if (!bankIdVal || !cardNameVal || !cardLinkVal || !cardTypeVal || !fundingTypeVal) {
+      let resolvedBankId = bankIdVal;
+      if (!resolvedBankId && bankNameVal) {
+        const bankByName = await executeQuery('SELECT id FROM banks WHERE LOWER(name) = LOWER(?) AND is_active = true LIMIT 1', [bankNameVal]) as RowDataPacket[];
+        if (bankByName.length > 0) {
+          resolvedBankId = parseInt(String(bankByName[0].id));
+        }
+      }
+
+      if (!resolvedBankId || !cardNameVal || !cardLinkVal || !cardTypeVal || !fundingTypeVal) {
         continue;
       }
 
-      const bankCheck = await executeQuery('SELECT id FROM banks WHERE id = ? AND is_active = true', [bankIdVal]) as RowDataPacket[];
+      const bankCheck = await executeQuery('SELECT id FROM banks WHERE id = ? AND is_active = true', [resolvedBankId]) as RowDataPacket[];
       if (bankCheck.length === 0) {
         continue;
       }
@@ -352,24 +367,38 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Req
       let bureaus: string[] = [];
       try { const parsed = JSON.parse(bureausStr); if (Array.isArray(parsed)) bureaus = parsed; } catch {}
       if (bureaus.length === 0 && bureausStr) {
-        bureaus = bureausStr.split(';').map(s => s.trim()).filter(Boolean);
+        bureaus = bureausStr.split(/[;,]/).map(s => s.trim()).filter(Boolean);
       }
+      bureaus = bureaus.map(b => {
+        const k = b.toLowerCase();
+        if (k === 'tu' || k === 'trans union' || k === 'transunion') return 'TransUnion';
+        if (k === 'eq' || k === 'equifax') return 'Equifax';
+        if (k === 'ex' || k === 'experian') return 'Experian';
+        return b;
+      }).filter(b => ['Experian','Equifax','TransUnion'].includes(b));
 
       let statesArr: string[] = [];
       try { const parsedS = JSON.parse(statesStr); if (Array.isArray(parsedS)) statesArr = parsedS; } catch {}
       if (statesArr.length === 0 && statesStr) {
-        statesArr = statesStr.split(';').map(s => s.trim().toUpperCase()).filter(Boolean);
+        statesArr = statesStr.split(/[;,]/).map(s => s.trim()).filter(Boolean);
       }
+      statesArr = statesArr.map(s => {
+        const upper = s.toUpperCase();
+        if (STATE_OR_COUNTRY_CODES.includes(upper)) return upper;
+        const code = STATE_NAME_TO_CODE[s.toLowerCase()];
+        return code ? code : upper;
+      });
       const normalizedStates = statesArr.length > 0 ? statesArr.map(s => s.toUpperCase()) : (stateStr ? [stateStr.toUpperCase()] : []);
       const stateVal = normalizedStates.length > 0 ? normalizedStates[0] : null;
-      const isActiveVal = String(activeStr).toLowerCase() === 'true';
+      const activeNorm = String(activeStr).toLowerCase();
+      const isActiveVal = activeNorm === 'true' || activeNorm === '1' || activeNorm === 'active' || activeNorm === 'yes';
 
       if (Number.isFinite(idVal)) {
         const existing = await executeQuery('SELECT id FROM cards WHERE id = ?', [idVal]) as RowDataPacket[];
         if (existing.length > 0) {
           await executeQuery(
             'UPDATE cards SET card_image = ?, bank_id = ?, card_name = ?, card_link = ?, card_type = ?, funding_type = ?, credit_bureaus = ?, state = ?, states = ?, is_active = ?, updated_at = NOW() WHERE id = ?',
-            [null, bankIdVal, cardNameVal, cardLinkVal, cardTypeVal, fundingTypeVal, JSON.stringify(bureaus), stateVal, normalizedStates.length > 0 ? JSON.stringify(normalizedStates) : null, isActiveVal, idVal]
+            [null, resolvedBankId, cardNameVal, cardLinkVal, cardTypeVal, fundingTypeVal, JSON.stringify(bureaus), stateVal, normalizedStates.length > 0 ? JSON.stringify(normalizedStates) : null, isActiveVal, idVal]
           );
           updated += 1;
           continue;
@@ -378,7 +407,7 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Req
 
       const result = await executeQuery(
         'INSERT INTO cards (card_image, bank_id, card_name, card_link, card_type, funding_type, credit_bureaus, state, states, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [null, bankIdVal, cardNameVal, cardLinkVal, cardTypeVal, fundingTypeVal, JSON.stringify(bureaus), stateVal, normalizedStates.length > 0 ? JSON.stringify(normalizedStates) : null, isActiveVal]
+        [null, resolvedBankId, cardNameVal, cardLinkVal, String(cardTypeVal).toLowerCase() === 'personal' ? 'personal' : 'business', fundingTypeVal, JSON.stringify(bureaus), stateVal, normalizedStates.length > 0 ? JSON.stringify(normalizedStates) : null, isActiveVal]
       ) as ResultSetHeader;
       if (result.insertId) inserted += 1;
     }

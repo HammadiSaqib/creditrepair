@@ -6,8 +6,10 @@ import { getDatabaseAdapter } from '../database/databaseAdapter.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { SubscriptionPlan, AdminProfile, AdminSubscription, UserActivity, SystemSettings, AdminNotification } from '../database/superAdminSchema.js';
 import { getWebSocketService } from '../services/websocketService.js';
+import multer from 'multer';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Middleware functions - must be defined before use
 const requireSuperAdmin = async (req: any, res: Response, next: any) => {
@@ -19,7 +21,7 @@ const requireSuperAdmin = async (req: any, res: Response, next: any) => {
 
     const db = getDatabaseAdapter();
     const user = await db.getQuery(
-      'SELECT * FROM users WHERE id = ? AND (role = "admin" OR role = "super_admin")',
+      "SELECT * FROM users WHERE id = ? AND (role = 'admin' OR role = 'super_admin')",
       [userId]
     );
 
@@ -51,7 +53,7 @@ const requireAdmin = async (req: any, res: Response, next: any) => {
 
     const db = getDatabaseAdapter();
     const user = await db.getQuery(
-      'SELECT * FROM users WHERE id = ? AND (role = "admin" OR role = "super_admin")',
+      "SELECT * FROM users WHERE id = ? AND (role = 'admin' OR role = 'super_admin')",
       [userId]
     );
 
@@ -433,6 +435,7 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
     }
 
     const db = getDatabaseAdapter();
+    console.log('🔎 Building admin list query', { whereClause, paramsLength: params.length, page: Number(page), limit: Number(limit), offset });
     
     // Get total count
     const countResult = await db.getQuery(
@@ -805,6 +808,7 @@ router.get('/support-users', authenticateToken, requireSuperAdmin, async (req: R
       `SELECT COUNT(*) as total FROM users u ${whereClause}`,
       params
     );
+    console.log('📈 Admins count query result', { total: countResult?.total || 0 });
 
     // Get support users (handle both MySQL and SQLite schemas)
     const dbType = db.getType();
@@ -849,15 +853,15 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
     console.log('🔍 Admin API called with params:', { page, limit, search, is_active, access_level });
     const offset = (Number(page) - 1) * Number(limit);
 
-    let whereClause = 'WHERE (u.role = "admin" OR u.role = "super_admin")';
+    let whereClause = "WHERE (u.role = 'admin' OR u.role = 'super_admin')";
     const params: any[] = [];
 
     // Handle role/access_level filtering
     if (access_level && access_level !== 'all') {
       if (access_level === 'super_admin') {
-        whereClause = 'WHERE u.role = "super_admin"';
+        whereClause = "WHERE u.role = 'super_admin'";
       } else if (access_level === 'admin') {
-        whereClause = 'WHERE u.role = "admin"';
+        whereClause = "WHERE u.role = 'admin'";
       }
     }
 
@@ -893,18 +897,87 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
     
     const safeLimitAdmins = Math.max(1, Math.min(100, Number(limit)));
     const safeOffsetAdmins = Math.max(0, offset);
-    const admins = await db.allQuery(
-      `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ${statusColumn} as status,
-              u.last_login, u.created_at, u.updated_at,
-              u.role as access_level, 'General' as department, 1 as is_active,
-              CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title, 
-              '{}' as permissions
-       FROM users u
-       ${whereClause}
-       ORDER BY u.created_at DESC
-       LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`,
-      params
-    );
+    let admins: any[] = [];
+    try {
+      admins = await db.allQuery(
+        `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ${statusColumn} as status,
+                u.last_login, u.created_at, u.updated_at,
+                u.role as access_level, 'General' as department, 1 as is_active,
+                CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title,
+                '{}' as permissions
+         FROM users u
+         ${whereClause}
+         ORDER BY u.created_at DESC
+         LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`,
+        params
+      );
+      console.log('📋 Admins list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
+    } catch (listErr: any) {
+      // Fallback for environments missing optional columns
+      const msg: string = listErr?.sqlMessage || listErr?.message || '';
+      console.error('⚠️ Admins list query error', { message: msg, code: listErr?.code });
+      try {
+        const diagDb = getDatabaseAdapter();
+        const diagType = diagDb.getType();
+        let userColumns: string[] = [];
+        if (diagType === 'mysql') {
+          const rows = await diagDb.allQuery('SHOW COLUMNS FROM users');
+          userColumns = Array.isArray(rows) ? rows.map((r: any) => String(r.Field || r.COLUMN_NAME || '').toLowerCase()) : [];
+        } else {
+          const rows = await diagDb.allQuery("PRAGMA table_info('users')");
+          userColumns = Array.isArray(rows) ? rows.map((r: any) => String(r.name || '').toLowerCase()) : [];
+        }
+        const requiredCols = ['id','first_name','last_name','email','role','status','last_login','created_at','updated_at','is_active'];
+        const present = requiredCols.filter(c => userColumns.includes(c));
+        const missing = requiredCols.filter(c => !userColumns.includes(c));
+        console.log('🔬 Users table columns', { present, missing, total: userColumns.length });
+        console.log('🧪 Admins query diagnostic', { whereClause, paramsLength: Array.isArray(params) ? params.length : 0, safeLimitAdmins, safeOffsetAdmins });
+        // If any of the key optional columns are missing, prefer fallback immediately
+        if (missing.length > 0 && !msg.includes('Unknown column')) {
+          admins = await diagDb.allQuery(
+            `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+                    ${statusColumn} as status,
+                    u.created_at,
+                    u.role as access_level,
+                    'General' as department,
+                    1 as is_active,
+                    CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title,
+                    '{}' as permissions
+             FROM users u
+             ${whereClause}
+             ORDER BY u.created_at DESC
+             LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`,
+            Array.isArray(params) ? params : []
+          );
+          console.log('📋 Admins diagnostic fallback list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
+          // Continue without throwing
+        } else {
+          // Keep original behavior below
+        }
+      } catch (diagErr: any) {
+        console.error('🛠️ Admins diagnostic failed', { message: diagErr?.message, code: diagErr?.code });
+      }
+      if (msg.includes('Unknown column') || listErr?.code === 'ER_BAD_FIELD_ERROR') {
+        admins = await db.allQuery(
+          `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+                  ${statusColumn} as status,
+                  u.created_at,
+                  u.role as access_level,
+                  'General' as department,
+                  1 as is_active,
+                  CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title,
+                  '{}' as permissions
+           FROM users u
+           ${whereClause}
+           ORDER BY u.created_at DESC
+           LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`,
+          params
+        );
+        console.log('📋 Admins fallback list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
+      } else {
+        throw listErr;
+      }
+    }
 
     // Parse permissions JSON for each admin (default empty permissions)
     const adminsWithPermissions = admins.map(admin => ({
@@ -1163,7 +1236,7 @@ router.put('/admins/:id', authenticateToken, requireSuperAdmin, async (req: Requ
     
     // Check if user exists and is admin
     const existingAdmin = await db.getQuery(
-      'SELECT * FROM users WHERE id = ? AND role = "admin"',
+      "SELECT * FROM users WHERE id = ? AND role = 'admin'",
       [adminId]
     );
 
@@ -1374,7 +1447,7 @@ router.delete('/admins/:id', authenticateToken, requireSuperAdmin, async (req: R
     
     // Check if user exists and is admin
     const existingAdmin = await db.getQuery(
-      'SELECT * FROM users WHERE id = ? AND role = "admin"',
+      "SELECT * FROM users WHERE id = ? AND role = 'admin'",
       [adminId]
     );
 
@@ -1388,7 +1461,7 @@ router.delete('/admins/:id', authenticateToken, requireSuperAdmin, async (req: R
     }
 
     // Change user role from admin to user instead of deleting
-    await db.executeQuery('UPDATE users SET role = "user", updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [currentUserId, adminId]);
+    await db.executeQuery("UPDATE users SET role = 'user', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [currentUserId, adminId]);
 
     res.json({ success: true, message: 'Admin profile deleted successfully' });
   } catch (error) {
@@ -2194,6 +2267,294 @@ router.get('/stripe/config', authenticateToken, requireSuperAdmin, async (req: R
   } catch (error) {
     console.error('Error fetching Stripe config:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch Stripe configuration' });
+  }
+});
+
+router.post('/admins/import-csv', authenticateToken, requireSuperAdmin, upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const currentUserId = (req as any).user?.id;
+    const file = (req as any).file;
+    if (!file || !file.buffer) {
+      return res.status(400).json({ success: false, error: 'CSV file is required' });
+    }
+    const text = file.buffer.toString('utf-8');
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) {
+      return res.status(400).json({ success: false, error: 'CSV must have header and at least one row' });
+    }
+    const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+    console.log('📥 CSV import received', { rows: lines.length - 1, header });
+    function parseRow(line: string): string[] {
+      const out: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = !inQuotes; }
+        } else if (ch === ',' && !inQuotes) {
+          out.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      out.push(cur);
+      return out.map(v => v.trim());
+    }
+    function get(row: Record<string,string>, key: string): string {
+      const k = key.toLowerCase();
+      return row[k] ?? '';
+    }
+    function getAny(row: Record<string,string>, keys: string[]): string {
+      for (const key of keys) {
+        const val = get(row, key);
+        if (val && String(val).trim().length > 0) return val;
+      }
+      return '';
+    }
+    const rows: Record<string,string>[] = lines.slice(1).map(line => {
+      const values = parseRow(line);
+      const obj: Record<string,string> = {};
+      for (let i = 0; i < header.length; i++) obj[header[i]] = values[i] ?? '';
+      return obj;
+    });
+    const results: any[] = [];
+
+    // Load subscription plans (MySQL) for plan validation, price defaults, and permissions
+    let planMap: Record<string, { id: number; name: string; billing_cycle: string; price: number; page_permissions?: string | null }> = {};
+    try {
+      const planRows = await db.executeQuery('SELECT id, name, billing_cycle, price, page_permissions FROM subscription_plans');
+      if (Array.isArray(planRows)) {
+        for (const p of planRows) {
+          const key = String(p.name || '').toLowerCase();
+          planMap[key] = { id: p.id, name: p.name, billing_cycle: p.billing_cycle, price: Number(p.price), page_permissions: p.page_permissions ?? null };
+        }
+      }
+    } catch {}
+    for (const row of rows) {
+      try {
+      const companyName = get(row, 'company name');
+      const phone = get(row, 'phone');
+      const email = get(row, 'email');
+      const activeVal = get(row, 'active');
+      const createdAtCsv = get(row, 'created');
+      const lastLoginCsv = get(row, 'last login');
+      const lastPaymentCsv = get(row, 'last payment');
+      const stripeSubId = getAny(row, ['stripe_subscription_id','subscription_id','stripe_subscription']);
+      const stripeCustomerId = getAny(row, ['stripe_customer_id','customer_id','stripe_customer']);
+      const invoiceId = getAny(row, ['invoice id','invoice_id','invoice']);
+      const paymentIntentId = getAny(row, [
+        'payment id (payment intent id)',
+        'payment id',
+        'payment intent id',
+        'payment_intent_id',
+        'payment intent'
+      ]);
+      const planName = getAny(row, ['plan name','plan','subscription plan']);
+      const planPrice = getAny(row, ['plan price','amount','price']);
+      const adminCode = get(row, 'admin code');
+      if (!email) {
+        results.push({ email, status: 'skipped', reason: 'missing email' });
+        continue;
+      }
+      const status = /^(active|yes|true|1)$/i.test(activeVal) ? 'active' : 'inactive';
+      console.log('➡️ CSV row start', { email, status, planName, stripeCustomerId, stripeSubId, createdAtCsv, lastPaymentCsv });
+      const passwordHash = adminCode ? await bcrypt.hash(adminCode, 10) : await bcrypt.hash('ChangeMe123!', 10);
+      let userRow = await db.getQuery('SELECT * FROM users WHERE email = ?', [email]);
+      let userId: number;
+      if (userRow) {
+        if (db.getType() === 'mysql') {
+          await db.executeQuery('UPDATE users SET company_name = ?, phone = ?, role = ?, status = ?, last_login = ?, stripe_customer_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [companyName || null, phone || null, 'admin', status, lastLoginCsv || null, stripeCustomerId || null, userRow.id]);
+        } else {
+          const isActiveInt = status === 'active' ? 1 : 0;
+          await db.executeQuery('UPDATE users SET company_name = ?, phone = ?, role = ?, is_active = ?, last_login = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [companyName || null, phone || null, 'admin', isActiveInt, lastLoginCsv || null, userRow.id]);
+        }
+        userId = userRow.id;
+        const needNameUpdate = !((userRow?.first_name || '').trim()) || !((userRow?.last_name || '').trim());
+        if (needNameUpdate) {
+          const np = (companyName || '').trim().split(' ');
+          const fn = np[0] || '';
+          const ln = np.slice(1).join(' ') || '';
+          await db.executeQuery('UPDATE users SET first_name = ?, last_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [fn, ln, userRow.id]);
+        }
+        console.log('👤 Updated existing user as admin', { userId, email });
+      } else {
+        const nameParts = (companyName || '').trim().split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        if (db.getType() === 'mysql') {
+          const ins = await db.executeQuery('INSERT INTO users (email, password_hash, first_name, last_name, company_name, phone, role, status, stripe_customer_id, created_at, updated_at, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [email, passwordHash, firstName, lastName, companyName || null, phone || null, 'admin', status, stripeCustomerId || null, createdAtCsv || new Date(), new Date(), false]);
+          userId = ins.insertId || ins?.lastID || 0;
+        } else {
+          const isActiveInt = status === 'active' ? 1 : 0;
+          const ins = await db.executeQuery('INSERT INTO users (email, password_hash, first_name, last_name, company_name, phone, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [email, passwordHash, firstName, lastName, companyName || null, phone || null, 'admin', isActiveInt, createdAtCsv || new Date(), new Date()]);
+          userId = ins.insertId || ins?.lastID || 0;
+        }
+        console.log('👤 Created new admin user', { userId, email });
+      }
+      try {
+        const existingAffiliate = await db.getQuery('SELECT id FROM affiliates WHERE email = ? LIMIT 1', [email]);
+        const defaultFirst = (userRow?.first_name || '').trim() || ((companyName || '').trim().split(' ')[0] || '');
+        const defaultLast = (userRow?.last_name || '').trim() || ((companyName || '').trim().split(' ').slice(1).join(' ') || '');
+        if (existingAffiliate) {
+          await db.executeQuery('UPDATE affiliates SET admin_id = ?, first_name = ?, last_name = ?, company_name = ?, status = ?, plan_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [userId, defaultFirst, defaultLast, companyName || null, 'active', 'free', existingAffiliate.id]);
+        } else {
+          await db.executeQuery('INSERT INTO affiliates (admin_id, email, password_hash, first_name, last_name, company_name, plan_type, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)', [userId, email, passwordHash, defaultFirst, defaultLast, companyName || null, 'free', 'active']);
+        }
+        console.log('🤝 Affiliate upserted', { userId, email });
+      } catch {}
+      try {
+        const existingProfile = await db.getQuery('SELECT id FROM admin_profiles WHERE user_id = ? LIMIT 1', [userId]);
+        const isActiveInt = status === 'active' ? 1 : 0;
+        const accessLevel = 'admin';
+        let permissionsArr: string[] = [];
+        // Derive permissions from plan page_permissions if available
+        try {
+          const pKey = String(planName || '').toLowerCase();
+          const planInfo = planMap[pKey];
+          if (planInfo && planInfo.page_permissions) {
+            const raw = planInfo.page_permissions;
+            if (typeof raw === 'string') {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) permissionsArr = parsed as string[];
+              else if (parsed && Array.isArray((parsed as any).permissions)) permissionsArr = (parsed as any).permissions;
+            }
+          }
+        } catch {}
+        const permissionsJson = JSON.stringify(permissionsArr);
+        if (existingProfile) {
+          try {
+            await db.executeQuery(
+              'UPDATE admin_profiles SET permissions = ?, access_level = ?, department = ?, title = ?, is_active = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+              [permissionsJson, accessLevel, 'General', 'Admin User', isActiveInt, currentUserId, userId]
+            );
+          } catch {
+            await db.executeQuery(
+              'UPDATE admin_profiles SET permissions = ?, access_level = ?, department = ?, title = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+              [permissionsJson, accessLevel, 'General', 'Admin User', isActiveInt, userId]
+            );
+          }
+          console.log('🧩 Admin profile updated', { userId, department: 'General', title: 'Admin User' });
+        } else {
+          try {
+            await db.executeQuery(
+              'INSERT INTO admin_profiles (user_id, permissions, access_level, department, title, is_active, created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+              [userId, permissionsJson, accessLevel, 'General', 'Admin User', isActiveInt, currentUserId, currentUserId]
+            );
+          } catch {
+            await db.executeQuery(
+              'INSERT INTO admin_profiles (user_id, permissions, access_level, department, title, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+              [userId, permissionsJson, accessLevel, 'General', 'Admin User', isActiveInt]
+            );
+          }
+          console.log('🧩 Admin profile created', { userId, department: 'General', title: 'Admin User' });
+        }
+      } catch {}
+      // Plan determination via DB first, fallback to heuristics
+      let planType = 'monthly';
+      let planPriceNum = planPrice ? parseFloat(planPrice) : undefined;
+      const planKey = String(planName || '').toLowerCase();
+      if (planKey && planMap[planKey]) {
+        const p = planMap[planKey];
+        planType = p.billing_cycle === 'yearly' ? 'yearly' : p.billing_cycle === 'lifetime' ? 'lifetime' : 'monthly';
+        if (planPriceNum == null || isNaN(planPriceNum)) planPriceNum = Number(p.price) || 0;
+      } else {
+        if (/year/i.test(planName)) planType = 'yearly';
+      }
+
+      // Normalize CSV date values to valid Date objects for MySQL
+      function parseCsvDate(val: any): Date | null {
+        if (!val) return null;
+        if (val instanceof Date) return val;
+        const s = String(val).trim();
+        if (!s) return null;
+        // Try common formats: YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY
+        // Prefer ISO-parse; if fails, manually rearrange
+        let d = new Date(s);
+        if (!isNaN(d.getTime())) return d;
+        // Handle MM/DD/YYYY
+        const mdY = s.match(/^([0-1]?\d)\/[0-3]?\d\/(\d{4})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?$/);
+        if (mdY) {
+          const mm = mdY[1].padStart(2, '0');
+          const dd = s.split('/')[1].padStart(2, '0');
+          const yyyy = mdY[2];
+          const time = mdY[3] || '00:00:00';
+          d = new Date(`${yyyy}-${mm}-${dd} ${time}`);
+          if (!isNaN(d.getTime())) return d;
+        }
+        // Handle DD-MM-YYYY
+        const dMY = s.match(/^([0-3]?\d)[- ]([0-1]?\d)[- ](\d{4})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?$/);
+        if (dMY) {
+          const dd = dMY[1].padStart(2, '0');
+          const mm = dMY[2].padStart(2, '0');
+          const yyyy = dMY[3];
+          const time = dMY[4] || '00:00:00';
+          d = new Date(`${yyyy}-${mm}-${dd} ${time}`);
+          if (!isNaN(d.getTime())) return d;
+        }
+        return null;
+      }
+      try {
+        const subExisting = await db.getQuery('SELECT id FROM subscriptions WHERE user_id = ? LIMIT 1', [userId]);
+        const startDateObj = parseCsvDate(lastPaymentCsv) || parseCsvDate(createdAtCsv) || new Date();
+        const startMs = startDateObj.getTime();
+        const endDateObj = planType === 'yearly'
+          ? new Date(startMs + 365 * 24 * 60 * 60 * 1000)
+          : new Date(startMs + 30 * 24 * 60 * 60 * 1000);
+        if (subExisting) {
+          await db.executeQuery(
+            'UPDATE subscriptions SET stripe_subscription_id = ?, stripe_customer_id = ?, plan_name = ?, plan_type = ?, current_period_start = ?, current_period_end = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+            [
+              stripeSubId || null,
+              stripeCustomerId || null,
+              planName || null,
+              planType,
+              startDateObj,
+              endDateObj,
+              'active',
+              userId
+            ]
+          );
+          console.log('📦 Subscription updated', { userId, planType, start: startDateObj, end: endDateObj });
+        } else {
+          await db.executeQuery(
+            'INSERT INTO subscriptions (user_id, stripe_subscription_id, stripe_customer_id, plan_name, plan_type, current_period_start, current_period_end, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+            [
+              userId,
+              stripeSubId || null,
+              stripeCustomerId || null,
+              planName || null,
+              planType,
+              startDateObj,
+              endDateObj,
+              'active'
+            ]
+          );
+          console.log('📦 Subscription created', { userId, planType, start: startDateObj, end: endDateObj });
+        }
+      } catch {}
+      try {
+        if (paymentIntentId || planPriceNum != null) {
+          const existingTxn = paymentIntentId ? await db.getQuery('SELECT id FROM billing_transactions WHERE stripe_payment_intent_id = ? LIMIT 1', [paymentIntentId]) : null;
+          const amountNum = planPriceNum != null ? planPriceNum : 0;
+          if (!existingTxn) {
+            await db.executeQuery('INSERT INTO billing_transactions (user_id, stripe_payment_intent_id, stripe_customer_id, amount, currency, status, payment_method, plan_name, plan_type, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)', [userId, null, stripeCustomerId || null, amountNum || 0, 'USD', 'succeeded', 'stripe', planName || null, planType, JSON.stringify({ invoice_id: invoiceId || null, company_name: companyName || null }), lastPaymentCsv || new Date()]);
+            console.log('💳 Billing transaction inserted', { userId, amount: amountNum || 0, intent: paymentIntentId || null });
+          }
+        }
+      } catch {}
+      results.push({ email, status: 'imported', user_id: userId });
+      console.log('✅ CSV row processed', { email, userId });
+      } catch (e: any) {
+        results.push({ email: get(row, 'email'), status: 'error', error: e?.message || 'row failed' });
+        console.error('❌ CSV row error', { email: get(row, 'email'), error: e?.message });
+      }
+    }
+    res.json({ success: true, results });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to import CSV' });
   }
 });
 
@@ -3089,7 +3450,7 @@ router.post('/invitations/send', authenticateToken, requireSuperAdmin, async (re
       const recipientEmails = [];
       
       if (bulkRecipients.includes('all_admins')) {
-        const admins = await db.getQuery('SELECT email, name FROM users WHERE role = "admin"', []);
+        const admins = await db.getQuery("SELECT email, name FROM users WHERE role = 'admin'", []);
         if (Array.isArray(admins)) {
           recipientEmails.push(...admins.map(admin => ({ email: admin.email, name: admin.name })));
         } else if (admins) {
@@ -3398,3 +3759,148 @@ router.post('/invitations/bulk', authenticateToken, requireSuperAdmin, async (re
 });
 
 export default router;
+router.post('/affiliates/import-csv', authenticateToken, requireSuperAdmin, upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const currentUserId = (req as any).user?.id;
+    const file = (req as any).file;
+    if (!file || !file.buffer) {
+      return res.status(400).json({ success: false, error: 'CSV file is required' });
+    }
+    const text = file.buffer.toString('utf-8');
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) {
+      return res.status(400).json({ success: false, error: 'CSV must have header and at least one row' });
+    }
+    const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+    function parseRow(line: string): string[] {
+      const out: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = !inQuotes; }
+        } else if (ch === ',' && !inQuotes) {
+          out.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      out.push(cur);
+      return out.map(v => v.trim());
+    }
+    function get(row: Record<string,string>, key: string): string { const k = key.toLowerCase(); return row[k] ?? ''; }
+    function getAny(row: Record<string,string>, keys: string[]): string { for (const key of keys) { const val = get(row, key); if (val && String(val).trim().length > 0) return val; } return ''; }
+    const rows: Record<string,string>[] = lines.slice(1).map(line => { const values = parseRow(line); const obj: Record<string,string> = {}; for (let i = 0; i < header.length; i++) obj[header[i]] = values[i] ?? ''; return obj; });
+    const results: any[] = [];
+
+    let hasReferralPurchaseAmount = true;
+    try {
+      if (db.getType() === 'mysql') {
+        const cols = await db.allQuery('SHOW COLUMNS FROM affiliate_referrals');
+        const names = Array.isArray(cols) ? cols.map((c: any) => String(c.Field || '').toLowerCase()) : [];
+        hasReferralPurchaseAmount = names.includes('purchase_amount');
+      } else {
+        const cols = await db.allQuery("PRAGMA table_info('affiliate_referrals')");
+        const names = Array.isArray(cols) ? cols.map((c: any) => String(c.name || '').toLowerCase()) : [];
+        hasReferralPurchaseAmount = names.includes('purchase_amount');
+      }
+    } catch {}
+    for (const row of rows) {
+      try {
+        const referBy = getAny(row, ['refer by','referred by','affiliate email']).toLowerCase();
+        const fullName = getAny(row, ['full name','name']);
+        const email = getAny(row, ['email','customer email']).toLowerCase();
+        const payStatusRaw = getAny(row, ['pay status','paid status','payment status']);
+        const invoiceId = getAny(row, ['last paid invoice id','invoice id']).trim();
+        const invoiceAmountRaw = getAny(row, ['invoice amount','amount']).trim();
+        const activeStatusRaw = getAny(row, ['active status','status']).trim();
+        const isPaid = /^(paid|succeeded|complete|success|yes|true|1)$/i.test(payStatusRaw);
+        const isActive = /^(active|yes|true|1)$/i.test(activeStatusRaw);
+        const amount = invoiceAmountRaw ? Number(invoiceAmountRaw) : 0;
+        const nameParts = (fullName || '').trim().split(' ').filter(Boolean);
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        let affiliateId: number | null = null;
+        if (referBy) {
+          const aff = await db.getQuery('SELECT id, commission_rate FROM affiliates WHERE email = ? LIMIT 1', [referBy]);
+          if (aff && aff.id) affiliateId = Number(aff.id);
+        }
+        let userRow = email ? await db.getQuery('SELECT * FROM users WHERE email = ? LIMIT 1', [email]) : null;
+        let userId: number | null = userRow?.id || null;
+        if (!userId && email) {
+          const status = isActive ? 'active' : 'inactive';
+          const ins = await db.executeQuery('INSERT INTO users (email, password_hash, first_name, last_name, role, status, created_at, updated_at, must_change_password) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)', [email, await bcrypt.hash('ChangeMe123!', 10), firstName, lastName, 'admin', status, false]);
+          userId = ins.insertId || ins?.lastID || 0;
+          const isActiveInt = isActive ? 1 : 0;
+          try {
+            await db.executeQuery('INSERT INTO admin_profiles (user_id, permissions, access_level, department, title, is_active, created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)', [userId, JSON.stringify([]), 'admin', 'General', 'Admin User', isActiveInt, currentUserId, currentUserId]);
+          } catch {
+            await db.executeQuery('INSERT INTO admin_profiles (user_id, permissions, access_level, department, title, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)', [userId, JSON.stringify([]), 'admin', 'General', 'Admin User', isActiveInt]);
+          }
+        }
+        if (affiliateId && userId) {
+          let referralId: number | null = null;
+          if (isPaid && invoiceId) {
+            const existingRef = await db.getQuery('SELECT id FROM affiliate_referrals WHERE affiliate_id = ? AND referred_user_id = ? AND transaction_id = ? LIMIT 1', [affiliateId, userId, invoiceId]);
+            if (existingRef && existingRef.id) {
+              referralId = Number(existingRef.id);
+              if (hasReferralPurchaseAmount) {
+                await db.executeQuery('UPDATE affiliate_referrals SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, status = ?, conversion_date = NOW(), payment_date = NOW(), updated_at = NOW() WHERE id = ?', [amount, 0, 0, 'paid', referralId]);
+              } else {
+                await db.executeQuery('UPDATE affiliate_referrals SET commission_amount = ?, commission_rate = ?, status = ?, conversion_date = NOW(), payment_date = NOW(), updated_at = NOW() WHERE id = ?', [0, 0, 'paid', referralId]);
+              }
+            } else {
+              if (hasReferralPurchaseAmount) {
+                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate, transaction_id, status, referral_date, conversion_date, payment_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), NOW(), NOW())', [affiliateId, userId, amount, 0, 0, invoiceId, 'paid']);
+                referralId = insRef.insertId || insRef?.lastID || 0;
+              } else {
+                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, commission_amount, commission_rate, transaction_id, status, referral_date, conversion_date, payment_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), NOW(), NOW())', [affiliateId, userId, 0, 0, invoiceId, 'paid']);
+                referralId = insRef.insertId || insRef?.lastID || 0;
+              }
+            }
+          } else {
+            const pendingRef = await db.getQuery('SELECT id FROM affiliate_referrals WHERE affiliate_id = ? AND referred_user_id = ? AND (transaction_id IS NULL OR transaction_id = \'\') ORDER BY created_at ASC LIMIT 1', [affiliateId, userId]);
+            if (pendingRef && pendingRef.id) {
+              referralId = Number(pendingRef.id);
+              if (hasReferralPurchaseAmount) {
+                await db.executeQuery('UPDATE affiliate_referrals SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, status = ?, updated_at = NOW() WHERE id = ?', [0, 0, 0, 'pending', referralId]);
+              } else {
+                await db.executeQuery('UPDATE affiliate_referrals SET commission_amount = ?, commission_rate = ?, status = ?, updated_at = NOW() WHERE id = ?', [0, 0, 'pending', referralId]);
+              }
+            } else {
+              if (hasReferralPurchaseAmount) {
+                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate, status, referral_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())', [affiliateId, userId, 0, 0, 0, 'pending']);
+                referralId = insRef.insertId || insRef?.lastID || 0;
+              } else {
+                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, commission_amount, commission_rate, status, referral_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW(), NOW())', [affiliateId, userId, 0, 0, 'pending']);
+                referralId = insRef.insertId || insRef?.lastID || 0;
+              }
+            }
+          }
+          const affInfo = await db.getQuery('SELECT commission_rate FROM affiliates WHERE id = ? LIMIT 1', [affiliateId]);
+          const rate = affInfo?.commission_rate ? Number(affInfo.commission_rate) : 0;
+          const commissionAmount = isPaid ? Number(((amount || 0) * rate) / 100).toFixed(2) : '0';
+          const productName = 'Subscription';
+          const statusVal = isPaid ? 'paid' : 'pending';
+          if (referralId) {
+            const existingComm = await db.getQuery('SELECT id FROM affiliate_commissions WHERE referral_id = ? LIMIT 1', [referralId]);
+            if (existingComm && existingComm.id) {
+              await db.executeQuery('UPDATE affiliate_commissions SET order_value = ?, commission_rate = ?, commission_amount = ?, status = ?, product = ?, payment_date = ?, updated_at = NOW() WHERE id = ?', [amount || 0, rate, commissionAmount, statusVal, productName, isPaid ? new Date() : null, existingComm.id]);
+            } else {
+              await db.executeQuery('INSERT INTO affiliate_commissions (affiliate_id, referral_id, customer_id, customer_name, customer_email, order_value, commission_rate, commission_amount, status, tier, product, order_date, payment_date, tracking_code, commission_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, NOW(), NOW())', [affiliateId, referralId, userId, fullName || `${firstName} ${lastName}`.trim(), email, amount || 0, rate, commissionAmount, statusVal, 'Bronze', productName, isPaid ? new Date() : null, invoiceId || null, 'signup']);
+            }
+          }
+        }
+        results.push({ email, status: isPaid ? 'paid' : 'pending' });
+      } catch (e: any) {
+        results.push({ email: get(row, 'email'), status: 'error', error: e?.message || 'row failed' });
+      }
+    }
+    res.json({ success: true, results });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to import CSV' });
+  }
+});

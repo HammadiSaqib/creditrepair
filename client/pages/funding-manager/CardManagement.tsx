@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Search, Edit, Trash2, CreditCard, AlertCircle, Upload, Download, X, LayoutGrid, Table, ChevronDown } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import FundingManagerLayout from '@/components/FundingManagerLayout';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
@@ -77,6 +78,7 @@ const CardManagement: React.FC = () => {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
   const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     console.log('API_BASE', API_BASE);
@@ -658,15 +660,30 @@ const CardManagement: React.FC = () => {
                   type="file"
                   accept=".csv"
                   className="hidden"
+                  ref={fileInputRef}
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     const token = localStorage.getItem('auth_token');
                     const fd = new FormData();
                     fd.append('file', file);
-                    const res = await fetch(`${API_BASE}/api/cards/import`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
-                    if (res.ok) { fetchCards(); fetchStats(); }
-                    e.currentTarget.value = '';
+                    try {
+                      const res = await fetch(`${API_BASE}/api/cards/import`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: fd });
+                      if (res.ok) {
+                        const data = await res.json();
+                        toast({ title: 'Import completed', description: `Inserted ${data.inserted || 0}, Updated ${data.updated || 0}` });
+                        fetchCards();
+                        fetchStats();
+                      } else {
+                        const err = await res.json().catch(() => ({ error: 'Import failed' }));
+                        toast({ title: 'Import failed', description: err.error || 'Unable to import CSV' });
+                        setError(err.error || 'Failed to import CSV');
+                      }
+                    } catch (ex) {
+                      toast({ title: 'Import error', description: 'Network or server error during import' });
+                      setError('Network or server error during import');
+                    }
+                    if (fileInputRef.current) fileInputRef.current.value = '';
                   }}
                 />
               </label>

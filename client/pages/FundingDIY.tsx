@@ -90,6 +90,118 @@ export default function FundingDIY() {
     return ["all", ...unique];
   }, [cards]);
 
+  // Client details for eligibility
+  const [clientDetails, setClientDetails] = useState<any>(null);
+  const [clientLoading, setClientLoading] = useState<boolean>(false);
+  const [clientError, setClientError] = useState<string | null>(null);
+  const [selectedState, setSelectedState] = useState<string | null>(null);
+
+  // Three-slot selection workflow state
+  type SlotForm = {
+    bankId?: number;
+    cardId?: number;
+    emergencyNotes?: string;
+    altContact?: string;
+    limitOverride?: number;
+  };
+  const [slotForms, setSlotForms] = useState<SlotForm[]>([{}]);
+  const [selectedSlots, setSelectedSlots] = useState<Array<{ bankId: number; cardId: number }>>([]);
+
+  // Unique banks from fetched cards
+  const banks = useMemo(() => {
+    const map = new Map<number, { id: number; name: string; logo?: string }>();
+    for (const c of cards) {
+      if (c.bank_id && !map.has(c.bank_id)) {
+        map.set(c.bank_id, { id: c.bank_id, name: c.bank_name || `Bank #${c.bank_id}`, logo: c.bank_logo });
+      }
+    }
+    return Array.from(map.values());
+  }, [cards]);
+
+  // Fetch client details for eligibility (state and scores)
+  useEffect(() => {
+    const clientId = (Number.isFinite(clientIdDetected) && clientIdDetected > 0) ? clientIdDetected : clientIdInput;
+    if (!clientId || clientId <= 0) return;
+    const fetchClient = async () => {
+      try {
+        setClientLoading(true);
+        setClientError(null);
+        const resp = await fetch(`/api/clients/${clientId}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+        });
+        if (!resp.ok) throw new Error("Failed to fetch client details");
+        const data = await resp.json();
+        setClientDetails(data);
+      } catch (err: any) {
+        setClientError(err?.message || "Failed to load client");
+      } finally {
+        setClientLoading(false);
+      }
+    };
+    fetchClient();
+  }, [clientIdDetected, clientIdInput]);
+
+  // Derive fundable bureaus from client scores (simple threshold)
+  const fundableBureaus = useMemo(() => {
+    const out: string[] = [];
+    try {
+      const ex = Number(clientDetails?.experian_score || clientDetails?.credit_score || 0);
+      const eq = Number(clientDetails?.equifax_score || clientDetails?.credit_score || 0);
+      const tu = Number(clientDetails?.transunion_score || clientDetails?.credit_score || 0);
+      if (ex >= 700) out.push("Experian");
+      if (eq >= 700) out.push("Equifax");
+      if (tu >= 700) out.push("TransUnion");
+    } catch {}
+    return out;
+  }, [clientDetails]);
+
+  const US_STATE_CODES = [
+    'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'
+  ];
+
+  const resolveClientState = (): string | null => {
+    const raw = String(clientDetails?.state || '').trim();
+    const upper = raw.toUpperCase();
+    if (US_STATE_CODES.includes(upper)) return upper;
+    const addr = String(clientDetails?.address || '').toUpperCase();
+    if (addr) {
+      const tokens = addr.replace(/[^A-Z0-9]/g, ' ').split(/\s+/).filter(Boolean);
+      for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t.length === 2 && US_STATE_CODES.includes(t)) return t;
+        const m = t.match(/^([A-Z]{2})$/);
+        if (m && US_STATE_CODES.includes(m[1])) return m[1];
+      }
+      const withZip = addr.match(/\b([A-Z]{2})\s+\d{5}(?:-\d{4})?\b/);
+      if (withZip && US_STATE_CODES.includes(withZip[1])) return withZip[1];
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const s = resolveClientState();
+    setSelectedState(s);
+  }, [clientDetails]);
+
+  // Eligibility helpers
+  const bankEligibility = (bankId?: number) => {
+    const state = String((selectedState || resolveClientState() || '')).toUpperCase();
+    const cardsByBank = cards.filter(c => c.bank_id === bankId && c.card_type === resolvedType);
+    const stateEligible = cardsByBank.some(c => {
+      const statesArr = Array.isArray((c as any).states) ? (c as any).states : [];
+      const stateVal = (c as any).state || null;
+      if (stateVal === 'USA') return true;
+      if (statesArr && statesArr.length > 0) return statesArr.map((s: string) => String(s).toUpperCase()).includes(state) || statesArr.includes('USA');
+      return !stateVal;
+    });
+    const bureauEligible = {
+      Experian: cardsByBank.some(c => (c.credit_bureaus || []).includes('Experian')),
+      Equifax: cardsByBank.some(c => (c.credit_bureaus || []).includes('Equifax')),
+      TransUnion: cardsByBank.some(c => (c.credit_bureaus || []).includes('TransUnion')),
+    };
+    return { stateEligible, bureauEligible };
+  };
+
   useEffect(() => {
     if (!resolvedType) return;
     const fetchCards = async () => {
@@ -367,6 +479,20 @@ export default function FundingDIY() {
                 </div>
               )}
               <div className="space-y-2">
+                <Label>Client State</Label>
+                <p className="text-sm text-muted-foreground">Detected from address: {resolveClientState() || 'Not detected'}</p>
+                <Select value={String(selectedState || '')} onValueChange={(v) => setSelectedState(v || null)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select state" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {US_STATE_CODES.map((code) => (
+                      <SelectItem key={code} value={code}>{code}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="global-admin-percent">Admin Percentage (%)</Label>
                 <Input
                   id="global-admin-percent"
@@ -462,7 +588,7 @@ export default function FundingDIY() {
           </Card>
         )}
 
-        {/* Funding Types Tabs with nested Bureau Tabs and Cards */}
+        {/* Three-Slot Selection Workflow */}
         {resolvedType && !loading && !error && (
           <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-green-50">
             <CardHeader className="pb-4">
@@ -471,198 +597,204 @@ export default function FundingDIY() {
                   {isBusiness ? <Building2 className="h-6 w-6 text-green-600" /> : <User className="h-6 w-6 text-green-600" />}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-green-800">{isBusiness ? "Business" : "Personal"} DIY Funding Cards</h3>
-                  <p className="text-sm text-green-600 font-medium">Filter by funding type, then by bureau. Configure admin fields per card.</p>
+                  <h3 className="text-xl font-bold text-green-800">{isBusiness ? "Business" : "Personal"} DIY Funding: Compare up to 3 options</h3>
+                  <p className="text-sm text-green-600 font-medium">Select a bank, review eligibility, add cards to compare.</p>
                 </div>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <Tabs value={selectedFundingType} onValueChange={setSelectedFundingType}>
-                <TabsList className="flex flex-wrap gap-2">
-                  {fundingTypes.map((ft) => (
-                    <TabsTrigger key={ft} value={ft} className="capitalize">
-                      {ft}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-                <TabsContent value={selectedFundingType} className="mt-4">
-                  <Tabs value={selectedBureau} onValueChange={setSelectedBureau}>
-                    <TabsList className="flex flex-wrap gap-2">
-                      {bureaus.map((b) => (
-                        <TabsTrigger key={b} value={b} className="capitalize">
-                          {b}
-                        </TabsTrigger>
+              <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Funding Type</Label>
+                  <Tabs value={selectedFundingType} onValueChange={setSelectedFundingType}>
+                    <TabsList className="flex flex-wrap">
+                      {fundingTypes.map((ft) => (
+                        <TabsTrigger key={ft} value={ft}>{ft}</TabsTrigger>
                       ))}
                     </TabsList>
-                    <TabsContent value={selectedBureau} className="mt-4">
-                      {filteredCards.length === 0 ? (
-                        <div className="text-center py-12">
-                          <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                          <p className="text-gray-600">No cards available for this selection.</p>
-                        </div>
-                      ) : (
-                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {filteredCards.map((card) => (
-                            <Card key={card.id} className="hover:shadow-xl transition-all duration-300 border-2 hover:border-green-300 group relative overflow-hidden">
-                              <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-emerald-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                              <CardHeader className="relative z-10">
-                                <div className="flex items-center justify-between mb-4">
-                                  <div className="flex items-center gap-3">
-                                {card.bank_logo ? (
-                                  <img
-                                    src={card.bank_logo}
-                                    alt={`${card.bank_name || "Bank"} logo`}
-                                    className="h-8 w-8 rounded-full object-cover shadow-md"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = "none";
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-md">
-                                    <Building2 className="h-4 w-4 text-white" />
+                  </Tabs>
+                </div>
+                <div className="space-y-2">
+                  <Label>Bureau</Label>
+                  <Tabs value={selectedBureau} onValueChange={setSelectedBureau}>
+                    <TabsList className="flex flex-wrap">
+                      {bureaus.map((b) => (
+                        <TabsTrigger key={b} value={b}>{b}</TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {slotForms.map((slot, idx) => (
+                  <div key={idx} className="p-4 rounded-lg border bg-white">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>Bank</Label>
+                        {slotForms.length > 1 && (
+                          <Button variant="ghost" onClick={() => setSlotForms((prev) => prev.filter((_, i) => i !== idx))}>Remove</Button>
+                        )}
+                      </div>
+                      <Select
+                        value={String(slot.bankId || '')}
+                        onValueChange={(v) => {
+                          const id = parseInt(v);
+                          setSlotForms((prev) => {
+                            const next = [...prev];
+                            next[idx] = { bankId: id, cardId: undefined };
+                            return next;
+                          });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select bank" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {banks.map((b) => {
+                            const elig = bankEligibility(b.id);
+                            return (
+                              <SelectItem key={b.id} value={String(b.id)}>
+                                <div className="flex items-center justify-between w-full">
+                                  <div className="flex items-center gap-2">
+                                    {b.logo ? (
+                                      <img src={b.logo} alt={b.name} className="h-4 w-4 rounded" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                    ) : (
+                                      <Building2 className="h-4 w-4" />
+                                    )}
+                                    <span>{b.name}</span>
                                   </div>
-                                )}
-                                <div>
-                                  <div className="text-sm text-gray-600 font-medium">{card.bank_name}</div>
-                                  <div className="text-base font-bold text-gray-800">{card.card_name}</div>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <span className={elig.stateEligible ? 'text-green-600' : 'text-red-500'}>{elig.stateEligible ? '✔' : '❌'} State</span>
+                                    <span className={elig.bureauEligible.Experian ? 'text-green-600' : 'text-red-500'}>EX {elig.bureauEligible.Experian ? '✔' : '❌'}</span>
+                                    <span className={elig.bureauEligible.Equifax ? 'text-green-600' : 'text-red-500'}>EQ {elig.bureauEligible.Equifax ? '✔' : '❌'}</span>
+                                    <span className={elig.bureauEligible.TransUnion ? 'text-green-600' : 'text-red-500'}>TU {elig.bureauEligible.TransUnion ? '✔' : '❌'}</span>
+                                  </div>
                                 </div>
-                              </div>
-                              <Badge variant="outline" className="text-xs font-medium">
-                                {card.funding_type}
-                              </Badge>
-                            </div>
-                            {/* Card Image */}
-                            <div className="flex justify-center mb-4">
-                              {card.card_image ? (
-                                <img
-                                  src={card.card_image}
-                                  alt={card.card_name}
-                                  className="h-24 w-38 rounded-lg object-cover shadow-md group-hover:scale-105 transition-transform duration-300"
-                                  onError={(e) => {
-                                    e.currentTarget.src = "/uploads/card.png";
-                                  }}
-                                />
-                              ) : (
-                                <img
-                                  src="/uploads/card.png"
-                                  alt="Default card"
-                                  className="h-24 w-38 rounded-lg object-cover shadow-md group-hover:scale-105 transition-transform duration-300"
-                                />
-                              )}
-                            </div>
-                            {/* Bureaus badges */}
-                            <div className="flex flex-wrap justify-center gap-2">
-                              {(card.credit_bureaus || []).map((bureau) => (
-                                <span key={bureau} className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                  <Shield className="h-3 w-3 mr-1" />
-                                  {bureau}
-                                </span>
-                              ))}
-                            </div>
-                          </CardHeader>
-                          <CardContent className="relative z-10 space-y-4">
-                            <div className="space-y-3">
-                              {/* Approval Status and Amount Approved in one row */}
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div className="space-y-2">
-                                  <Label htmlFor={`status-${card.id}`}>Approval Status</Label>
-                                  <Select
-                                    value={adminData[card.id]?.status || "not_approved"}
-                                    onValueChange={(v) => updateAdmin(card.id, { status: v as AdminInputs["status"] })}
-                                    disabled={Boolean(lockedMap[card.id])}
-                                  >
-                                    <SelectTrigger id={`status-${card.id}`}>
-                                      <SelectValue placeholder="Select status" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="approved">Approved</SelectItem>
-                                      <SelectItem value="not_approved">Not Approved</SelectItem>
-                                    </SelectContent>
-                                  </Select>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+
+                      <Label>Card</Label>
+                      <Select
+                        value={String(slot.cardId || '')}
+                        onValueChange={(v) => {
+                          const id = parseInt(v);
+                          setSlotForms((prev) => {
+                            const next = [...prev];
+                            next[idx] = { ...next[idx], cardId: id };
+                            return next;
+                          });
+                        }}
+                        disabled={!slot.bankId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select card" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cards
+                            .filter(c => c.bank_id === slot.bankId && c.card_type === resolvedType)
+                            .filter(c => selectedFundingType === "all" ? true : (c.funding_type || "").toLowerCase() === selectedFundingType.toLowerCase())
+                            .filter(c => selectedBureau === "all" ? true : (c.credit_bureaus || []).map(cb => cb?.toLowerCase()).includes(selectedBureau.toLowerCase()))
+                            .map((c) => (
+                              <SelectItem key={c.id} value={String(c.id)}>
+                                <div className="flex items-center justify-between w-full">
+                                  <span>{c.card_name}</span>
+                                  <div className="flex gap-1">
+                                    {(c.credit_bureaus || []).map(b => (
+                                      <Badge key={b} variant="outline" className="text-[10px]">{b}</Badge>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="space-y-2">
-                                  <Label htmlFor={`amt-${card.id}`}>Amount Approved (USD)</Label>
-                                  <Input
-                                    id={`amt-${card.id}`}
-                                    type="number"
-                                    min="0"
-                                    value={(adminData[card.id]?.amountApproved ?? 0).toString()}
-                                    disabled={adminData[card.id]?.status !== "approved" || Boolean(lockedMap[card.id])}
-                                    onChange={(e) => updateAdmin(card.id, { amountApproved: parseFloat(e.target.value || "0") })}
-                                  />
-                                  <p className="text-xs text-muted-foreground">
-                                    Charged: {formatCurrency(((adminData[card.id]?.amountApproved || 0) * ((globalAdminPercent || 0) / 100)))}
-                                  </p>
-                                </div>
-                              </div>
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
 
-                              {/* Description / Notes */}
-                              <div className="space-y-2">
-                                <Label htmlFor={`desc-${card.id}`}>Description / Notes</Label>
-                                <Textarea
-                                  id={`desc-${card.id}`}
-                                  rows={4}
-                                  placeholder="Add description or instructions for this card"
-                                  value={adminData[card.id]?.description || ""}
-                                  onChange={(e) => updateAdmin(card.id, { description: e.target.value })}
-                                  disabled={Boolean(lockedMap[card.id])}
-                                />
-                              </div>
-
-                              {/* Apply now */}
-                              <Button
-                                variant="outline"
-                                onClick={() => window.open(card.card_link, "_blank")}
-                                className="w-full"
-                              >
-                                <DollarSign className="h-4 w-4 mr-2" /> Apply Now
-                              </Button>
-                            </div>
-
-                            {/* Submit */}
-                            <div className="flex items-center justify-between pt-2">
-                              <p className="text-xs text-muted-foreground flex items-center">
-                                <Clock className="h-3 w-3 mr-1" /> Updated {new Date(card.updated_at).toLocaleDateString()}
-                              </p>
-                              <div className="flex items-center gap-2">
-                                {lockedMap[card.id] ? (
-                                  <>
-                                    <Badge variant="secondary" className="mr-2">Approved & Locked</Badge>
-                                    <Button variant="secondary" onClick={() => handleViewInvoice(card)}>
-                                      <FileText className="h-4 w-4 mr-2" /> View Invoice
-                                    </Button>
-                                  </>
-                                ) : (
-                                  invoiceMap[card.id]?.token ? (
-                                    <Button variant="secondary" onClick={() => navigate(`/invoice/${invoiceMap[card.id].token}`)}>
-                                      <FileText className="h-4 w-4 mr-2" /> View Invoice
-                                    </Button>
-                                  ) : (
-                                    <Button variant="outline" onClick={() => generateInvoiceForCard(card)}>
-                                      <FileText className="h-4 w-4 mr-2" /> Generate Invoice
-                                    </Button>
-                                  )
-                                )}
-                                {lockedMap[card.id] ? (
-                                  <Button disabled className="bg-gray-300">
-                                    <CheckCircle className="h-4 w-4 mr-2" /> Submitted
-                                  </Button>
-                                ) : (
-                                  <Button onClick={() => submitCard(card)} className="bg-green-600 hover:bg-green-700">
-                                    <CheckCircle className="h-4 w-4 mr-2" /> Submit
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          </CardContent>
-                          </Card>
-                          ))}
+                      {slot.cardId && (
+                        <div className="space-y-3 mt-2">
+                          <Label>Emergency Details</Label>
+                          <Input
+                            placeholder="Alternate contact"
+                            value={slot.altContact || ''}
+                            onChange={(e) => setSlotForms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], altContact: e.target.value }; return next; })}
+                          />
+                          <Input
+                            type="number"
+                            placeholder="Requested limit override"
+                            value={Number.isFinite(slot.limitOverride || 0) ? (slot.limitOverride || 0) : 0}
+                            onChange={(e) => setSlotForms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], limitOverride: parseFloat(e.target.value || '0') }; return next; })}
+                          />
+                          <Textarea
+                            rows={3}
+                            placeholder="Emergency notes"
+                            value={slot.emergencyNotes || ''}
+                            onChange={(e) => setSlotForms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], emergencyNotes: e.target.value }; return next; })}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => {
+                                if (slot.bankId && slot.cardId) {
+                                  setSelectedSlots((prev) => {
+                                    const exists = prev.find(p => p.cardId === slot.cardId!);
+                                    return exists ? prev : [{ bankId: slot.bankId!, cardId: slot.cardId! }, ...prev];
+                                  });
+                                }
+                              }}
+                            >Add to Compare</Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                const card = cards.find(c => c.id === slot.cardId);
+                                if (card) window.open(card.card_link, '_blank');
+                              }}
+                            >Apply Now</Button>
+                          </div>
                         </div>
                       )}
-                    </TabsContent>
-                  </Tabs>
-                </TabsContent>
-              </Tabs>
+                    </div>
+                  </div>
+                ))}
+                <div className="p-4 rounded-lg border-2 border-dashed bg-white flex items-center justify-center">
+                  <Button variant="outline" onClick={() => setSlotForms((prev) => [...prev, {}])}>+</Button>
+                </div>
+              </div>
+              
+              {/* Comparison Summary */}
+              {selectedSlots.length > 0 && (
+                <div className="mt-6">
+                  <Label>Comparison</Label>
+                  <div className="grid md:grid-cols-3 gap-4 mt-2">
+                    {selectedSlots.map((sel, idx) => {
+                      const card = cards.find(c => c.id === sel.cardId);
+                      if (!card) return null;
+                      const bank = banks.find(b => b.id === sel.bankId);
+                      return (
+                        <Card key={`${sel.cardId}-${idx}`}>
+                          <CardHeader>
+                            <CardTitle className="text-sm">{bank?.name || card.bank_name} — {card.card_name}</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge>{card.funding_type}</Badge>
+                              {(card.credit_bureaus || []).map(b => (<Badge key={b} variant="outline">{b}</Badge>))}
+                              {Array.isArray((card as any).states) && (card as any).states.length > 0 ? (
+                                <Badge variant="secondary">{(card as any).states.join(', ')}</Badge>
+                              ) : ((card as any).state ? <Badge variant="secondary">{(card as any).state}</Badge> : null)}
+                            </div>
+                            <div className="mt-3 flex gap-2">
+                              <Button variant="outline" onClick={() => window.open(card.card_link, '_blank')}>Apply</Button>
+                              <Button variant="destructive" onClick={() => setSelectedSlots((prev) => prev.filter(p => p.cardId !== sel.cardId))}>Remove</Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

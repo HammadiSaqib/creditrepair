@@ -27,18 +27,18 @@ export default function AffiliateProtectedRoute({ children }: AffiliateProtected
         
         if (response.data?.valid && response.data?.user) {
           const user = response.data.user;
-          
-          // Check if user has affiliate role
-          if (user.role === "affiliate") {
+
+          // Allow affiliate, admin, and super_admin roles
+          const allowedRoles = ["affiliate", "admin", "super_admin"];
+          if (allowedRoles.includes(user.role)) {
             setIsAuthenticated(true);
             setUserRole(user.role);
-            
+
             // Update stored user info
             localStorage.setItem("userRole", user.role);
             localStorage.setItem("userId", user.id.toString());
             localStorage.setItem("userName", `${user.first_name} ${user.last_name}`);
           } else {
-            console.log("Access denied: User role is", user.role, "but affiliate required");
             setIsAuthenticated(false);
             setUserRole(user.role);
           }
@@ -72,8 +72,8 @@ export default function AffiliateProtectedRoute({ children }: AffiliateProtected
     );
   }
 
-  // Redirect to affiliate login if not authenticated or not affiliate role
-  if (!isAuthenticated || userRole !== "affiliate") {
+  // Redirect to affiliate login if not authenticated or not allowed role
+  if (!isAuthenticated || !["affiliate", "admin", "super_admin"].includes(userRole || "")) {
     return <Navigate to="/affiliate/login" state={{ from: location }} replace />;
   }
 

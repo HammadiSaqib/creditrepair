@@ -97,6 +97,18 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       badge: null,
     },
     {
+      name: "Admin Import",
+      href: "/super-admin/admin-import",
+      icon: Receipt,
+      badge: null,
+    },
+    {
+      name: "Affiliate Import",
+      href: "/super-admin/affiliate-import",
+      icon: HandHeart,
+      badge: null,
+    },
+    {
       name: "Settings",
       href: "/super-admin/settings",
       icon: Settings,

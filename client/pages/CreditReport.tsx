@@ -1002,6 +1002,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       }
     });
 
+    Object.keys(utilizationByBureau).forEach((key) => {
+      const b: any = (utilizationByBureau as any)[key];
+      const openLimit = b.openRevolvingLimit || 0;
+      const allLimit = b.allRevolvingLimit || 0;
+      b.openRevolvingUtilization = openLimit > 0 ? (b.openRevolvingBalance / openLimit) * 100 : null;
+      b.allRevolvingUtilization = allLimit > 0 ? (b.allRevolvingBalance / allLimit) * 100 : null;
+    });
+
     return utilizationByBureau;
   };
 
@@ -2728,7 +2736,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   };
 
   const getScoreChange = (current: number, previous: number) => {
-    const change = current - previous;
+    const change = current - 700;
     return {
       value: change,
       isPositive: change >= 0,
@@ -4766,8 +4774,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         <tbody>
                           {(() => {
                             const scales = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-                            const colors = ['bg-green-50', 'bg-blue-50', 'bg-yellow-50', 'bg-orange-50', 'bg-red-50', 'bg-yellow-50', 'bg-orange-50', 'bg-orange-50', 'bg-red-50', 'bg-red-50', 'bg-red-50'];
-                            const textColors = ['text-green-600', 'text-blue-600', 'text-yellow-600', 'text-orange-600', 'text-red-600', 'text-yellow-600', 'text-orange-600', 'text-orange-600', 'text-red-600', 'text-red-600', 'text-red-600'];
+                            const colors = ['bg-green-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-red-50', 'bg-red-50', 'bg-red-50', 'bg-red-50', 'bg-red-50', 'bg-red-50', 'bg-red-50'];
+                            const textColors = ['text-green-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-red-600', 'text-red-600', 'text-red-600', 'text-red-600', 'text-red-600', 'text-red-600', 'text-red-600'];
                             
                             const mapHighUsageCountToScale = (count) => {
                               return Math.min(count, 10);
@@ -5183,8 +5191,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         <tbody>
                           {(() => {
                             const scales = [0, 1, 2, 3, 4];
-                            const colors = ['bg-green-50', 'bg-blue-50', 'bg-yellow-50', 'bg-orange-50', 'bg-red-50'];
-                            const textColors = ['text-green-600', 'text-blue-600', 'text-yellow-600', 'text-orange-600', 'text-red-600'];
+                            const colors = ['bg-green-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-orange-50', 'bg-red-50'];
+                            const textColors = ['text-green-600', 'text-yellow-600', 'text-yellow-600', 'text-orange-600', 'text-red-600'];
                             
                             const mapInquiryCountToScale = (count) => {
                               return Math.min(count, 4);
@@ -6193,7 +6201,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             'from-white via-red-50/30 to-pink-50/50'
           } scroll-mt-24`}>
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Negetive Accounts Impacting Your Qualification</CardTitle>
+              <CardTitle className="text-2xl font-bold text-gray-800">Negative Accounts Impacting Your Qualification</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="mb-4 flex items-center justify-between">
@@ -10187,11 +10195,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       reportData.scores.experian,
                       reportData.previousScores.experian,
                     ).icon === ArrowUp ? (
-                      <ArrowUp className="h-5 w-5 mr-2" />
+                      <ArrowUp className="h-8 w-8 mr-2" />
                     ) : (
-                      <ArrowDown className="h-5 w-5 mr-2" />
+                      <ArrowDown className="h-8 w-8 mr-2" />
                     )}
-                    <span className="text-base font-semibold">
+                    <span className="text-[2rem] font-bold leading-none">
                       {getScoreChange(
                         reportData.scores.experian,
                         reportData.previousScores.experian,
@@ -10300,11 +10308,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       reportData.scores.transunion,
                       reportData.previousScores.transunion,
                     ).icon === ArrowUp ? (
-                      <ArrowUp className="h-5 w-5 mr-2" />
+                      <ArrowUp className="h-8 w-8 mr-2" />
                     ) : (
-                      <ArrowDown className="h-5 w-5 mr-2" />
+                      <ArrowDown className="h-8 w-8 mr-2" />
                     )}
-                    <span className="text-base font-semibold">
+                    <span className="text-[2rem] font-bold leading-none">
                       {getScoreChange(
                         reportData.scores.transunion,
                         reportData.previousScores.transunion,
@@ -10413,11 +10421,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       reportData.scores.equifax,
                       reportData.previousScores.equifax,
                     ).icon === ArrowUp ? (
-                      <ArrowUp className="h-5 w-5 mr-2" />
+                      <ArrowUp className="h-8 w-8 mr-2" />
                     ) : (
-                      <ArrowDown className="h-5 w-5 mr-2" />
+                      <ArrowDown className="h-8 w-8 mr-2" />
                     )}
-                    <span className="text-base font-semibold">
+                    <span className="text-[2rem] font-bold leading-none">
                       {getScoreChange(
                         reportData.scores.equifax,
                         reportData.previousScores.equifax,
@@ -11113,15 +11121,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       <div className="p-1.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
                                       <FileText className="h-3 w-3 text-green-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
                                       <CalendarIcon className="h-3 w-3 text-green-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -11176,15 +11184,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       <div className="p-1.5 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
                                       <FileText className="h-3 w-3 text-purple-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
                                       <CalendarIcon className="h-3 w-3 text-purple-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -11239,15 +11247,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       <div className="p-1.5 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
                                       <FileText className="h-3 w-3 text-red-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
                                       <CalendarIcon className="h-3 w-3 text-red-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -13081,15 +13089,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       <div className="p-1.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
                                       <FileText className="h-3 w-3 text-green-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
                                       <CalendarIcon className="h-3 w-3 text-green-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -13144,15 +13152,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       <div className="p-1.5 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
                                       <FileText className="h-3 w-3 text-purple-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
                                       <CalendarIcon className="h-3 w-3 text-purple-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -13207,15 +13215,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       <div className="p-1.5 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
                                       <FileText className="h-3 w-3 text-red-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
                                       <CalendarIcon className="h-3 w-3 text-red-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>

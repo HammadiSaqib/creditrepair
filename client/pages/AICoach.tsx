@@ -146,7 +146,7 @@ const chatMessages = [
     id: 1,
     type: "ai",
     message:
-      "Hello! I'm your AI Funding Coach. I've analyzed your client portfolio and found 12 new optimization opportunities. Would you like me to prioritize them by potential impact?",
+      "Hello! I'm Carmela Credit Coach. I've analyzed your client portfolio and found 12 new optimization opportunities. Would you like me to prioritize them by potential impact?",
     timestamp: "2024-01-15 10:30",
   },
   {
@@ -433,7 +433,7 @@ export default function AICoach() {
 
   return (
     <DashboardLayout
-      title="FinMint AI"
+      title="Carmela Credit Coach"
       description="Certified USA Credit Repair & Business Funding guidance"
     >
       <div className="relative">
@@ -500,7 +500,7 @@ export default function AICoach() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <MessageSquare className="h-5 w-5 text-emerald-600" />
-                  FinMint AI Chat
+                  Carmela Credit Coach
                 </CardTitle>
                 <CardDescription>
                   Ask about credit repair, disputes, utilization, inquiries, or funding
@@ -519,7 +519,7 @@ export default function AICoach() {
                     ))}
                     {loading && (
                       <div className="flex justify-start">
-                        <div className="max-w-[80%] rounded-xl px-4 py-2 text-sm bg-muted shadow animate-pulse">FinMint AI is typing…</div>
+                        <div className="max-w-[80%] rounded-xl px-4 py-2 text-sm bg-muted shadow animate-pulse">Carmela Credit Coach is typing…</div>
                       </div>
                     )}
                     <div ref={chatEndRef} />

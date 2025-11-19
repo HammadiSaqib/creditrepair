@@ -476,6 +476,11 @@ export const superAdminApi = {
     api.get('/api/super-admin/user-subscriptions', { params }),
   getBillingTransactions: (params?: { page?: number; limit?: number }) =>
     api.get('/api/super-admin/billing-transactions', { params }),
+  importAdminsCSV: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/api/super-admin/admins/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
   getClients: (params?: { page?: number; limit?: number }) =>
     api.get('/api/super-admin/clients', { params }),
   getClientStatistics: () => api.get('/api/super-admin/client-statistics'),
@@ -525,6 +530,11 @@ export const superAdminApi = {
   // Alias for create flow used by some components
   createStripeConfig: (data: any) => api.post('/api/super-admin/stripe-config', data),
   updateStripeConfigSetting: (data: any) => api.put('/api/super-admin/stripe/config', data),
+  importAffiliateCSV: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return api.post('/api/super-admin/affiliates/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
 };
 
 // Affiliate API module

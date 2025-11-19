@@ -75,16 +75,19 @@ class MySQLAdapter implements DatabaseAdapter {
   }
 
   async executeQuery(query: string, params?: any[]): Promise<any> {
-    return executeQuery(query, params);
+    const safeParams = Array.isArray(params) ? params : [];
+    return executeQuery(query, safeParams);
   }
 
   async getQuery(query: string, params?: any[]): Promise<any> {
-    const results = await executeQuery(query, params);
+    const safeParams = Array.isArray(params) ? params : [];
+    const results = await executeQuery(query, safeParams);
     return Array.isArray(results) ? results[0] : results;
   }
 
   async allQuery(query: string, params?: any[]): Promise<any[]> {
-    const results = await executeQuery(query, params);
+    const safeParams = Array.isArray(params) ? params : [];
+    const results = await executeQuery(query, safeParams);
     return Array.isArray(results) ? results : [results];
   }
 

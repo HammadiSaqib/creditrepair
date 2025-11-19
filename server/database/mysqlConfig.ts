@@ -170,7 +170,16 @@ export async function executeQuery<T = any>(
   
   try {
     const startTime = Date.now();
-    const [results] = await connection.execute(sql, params);
+    const useParams: any = params ?? [];
+    if (!Array.isArray(params)) {
+      console.log('⚠️ MySQL executeQuery non-array params, defaulting to []', { sqlSnippet: sql.substring(0, 120) });
+    }
+    const paramCount = Array.isArray(useParams) ? useParams.length : 0;
+    console.log('🧭 MySQL executeQuery', { paramCount, sqlSnippet: sql.substring(0, 120) });
+    const [rows] = Array.isArray(useParams)
+      ? await connection.query(sql, useParams)
+      : await connection.query(sql);
+    const results: any = rows;
     const executionTime = Date.now() - startTime;
     
     // Log slow queries
@@ -184,7 +193,7 @@ export async function executeQuery<T = any>(
         metadata: {
           sql: sql.substring(0, 200),
           executionTime,
-          paramCount: params.length
+          paramCount: Array.isArray(useParams) ? useParams.length : (useParams ? Object.keys(useParams).length : 0)
         }
       });
     }
