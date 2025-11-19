@@ -705,6 +705,7 @@ export class AuthController {
       
       // Generate token
       const token = generateToken(user);
+      const refreshToken = generateRefreshToken(user);
       
       // Return user data (without password)
       const userData = {
