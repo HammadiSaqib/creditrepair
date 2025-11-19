@@ -36,6 +36,62 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Handle token expiration globally
+api.interceptors.response.use(
+  (response) => {
+    try {
+      const data: any = response?.data;
+      const rt = data?.refresh_token;
+      if (rt) {
+        try { localStorage.setItem('refresh_token', rt); } catch {}
+      }
+    } catch {}
+    return response;
+  },
+  (error) => {
+    const status = error?.response?.status;
+    const code = error?.response?.data?.code;
+    const originalConfig = error?.config || {};
+    if (status === 401 && code === 'TOKEN_EXPIRED' && !originalConfig.__isRetry) {
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (refreshToken) {
+        return api
+          .post('/api/auth/refresh', {}, { headers: { 'x-refresh-token': refreshToken } })
+          .then((resp) => {
+            const newToken = resp?.data?.token;
+            if (newToken) {
+              try { localStorage.setItem('auth_token', newToken); } catch {}
+              originalConfig.__isRetry = true;
+              originalConfig.headers = originalConfig.headers || {};
+              originalConfig.headers.Authorization = `Bearer ${newToken}`;
+              return api.request(originalConfig);
+            }
+            return Promise.reject(error);
+          })
+          .catch(() => {
+            try { localStorage.removeItem('auth_token'); localStorage.removeItem('refresh_token'); } catch {}
+            const current = typeof window !== 'undefined' ? window.location.pathname : '/';
+            const loginPath = '/login';
+            if (typeof window !== 'undefined') {
+              const redirect = current && current !== loginPath ? `?redirect=${encodeURIComponent(current)}` : '';
+              window.location.href = `${loginPath}${redirect}`;
+            }
+            return Promise.reject(error);
+          });
+      } else {
+        try { localStorage.removeItem('auth_token'); } catch {}
+        const current = typeof window !== 'undefined' ? window.location.pathname : '/';
+        const loginPath = '/login';
+        if (typeof window !== 'undefined') {
+          const redirect = current && current !== loginPath ? `?redirect=${encodeURIComponent(current)}` : '';
+          window.location.href = `${loginPath}${redirect}`;
+        }
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Utility function to get auth token
 export const getAuthToken = (): string | null => {
   return localStorage.getItem('auth_token');

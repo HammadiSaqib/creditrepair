@@ -50,6 +50,25 @@ export function generateToken(user: any): string {
   );
 }
 
+export function generateRefreshToken(user: any): string {
+  return jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      type: 'refresh'
+    },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+}
+
+export function verifyRefreshToken(token: string): any {
+  const decoded = jwt.verify(token, JWT_SECRET) as any;
+  if (decoded?.type !== 'refresh') throw new Error('Invalid token type');
+  return decoded;
+}
+
 export function verifyTokenHelper(token: string): any {
   try {
     return jwt.verify(token, JWT_SECRET);
@@ -323,6 +342,7 @@ export class AuthController {
       
       // Generate token with super admin role
       const token = generateToken(user);
+      const refreshToken = generateRefreshToken(user);
       
       // Return user data (without password)
       const userData = {
@@ -702,6 +722,7 @@ export class AuthController {
       res.json({
         message: 'Login successful',
         token,
+        refresh_token: refreshToken,
         user: userData,
       });
     } catch (error) {
@@ -1651,6 +1672,7 @@ export class AuthController {
         role: 'client'
       };
       const token = generateToken(tokenUser);
+      const refreshToken = generateRefreshToken(tokenUser);
       
       // Return client data (without password)
       const userData = {
@@ -1669,6 +1691,7 @@ export class AuthController {
         success: true,
         message: 'Client login successful',
         token,
+        refresh_token: refreshToken,
         user: userData,
       });
     } catch (error) {
@@ -1677,6 +1700,31 @@ export class AuthController {
         return res.status(400).json({ error: 'Validation error', details: error.errors });
       }
       res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  static async refreshToken(req: Request, res: Response) {
+    try {
+      const headerToken = req.headers['x-refresh-token'] as string | undefined;
+      const bodyToken = (req.body && (req.body as any).refresh_token) as string | undefined;
+      const refreshToken = headerToken || bodyToken;
+      if (!refreshToken) {
+        return res.status(401).json({ error: 'Refresh token required' });
+      }
+      const decoded = verifyRefreshToken(refreshToken);
+      const userId = decoded.id || decoded.userId;
+      const email = decoded.email;
+      const role = decoded.role;
+      if (!userId || !email || !role) {
+        return res.status(401).json({ error: 'Invalid token payload' });
+      }
+      const accessToken = generateToken({ id: userId, email, role });
+      return res.json({ token: accessToken });
+    } catch (error: any) {
+      if (error?.name === 'TokenExpiredError') {
+        return res.status(401).json({ error: 'Refresh token expired' });
+      }
+      return res.status(401).json({ error: 'Invalid refresh token' });
     }
   }
 

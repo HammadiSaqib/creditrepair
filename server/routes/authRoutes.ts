@@ -20,6 +20,7 @@ router.post('/verify-user-email', authenticateToken, AuthController.verifyEmail)
 router.post('/change-email', authenticateToken, AuthController.changeEmail);
 router.post('/resend-verification', authenticateToken, AuthController.resendVerificationCode);
 router.post('/logout', AuthController.logout);
+router.post('/refresh', AuthController.refreshToken);
 
 // Password reset routes
 router.post('/forgot-password', AuthController.forgotPassword);

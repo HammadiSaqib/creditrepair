@@ -41,6 +41,9 @@ export function authenticateToken(req: AuthRequest, res: Response, next: NextFun
     next();
   } catch (error) {
     console.error('Token verification error:', error);
+    if ((error as any)?.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+    }
     return res.status(403).json({ error: 'Invalid or expired token' });
   }
 }
