@@ -718,37 +718,106 @@ export default function FundingDIY() {
                         const bank = banks.find(b => b.id === slot.bankId);
                         if (!card) return null;
                         return (
-                          <div className="space-y-3 mt-2">
-                            <div className="flex items-center gap-3">
-                              {card.card_image ? (
-                                <img src={card.card_image} alt={card.card_name} className="h-10 rounded" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-                              ) : null}
-                              <div>
-                                <div className="text-sm font-semibold">{bank?.name || card.bank_name}</div>
-                                <div className="text-xs text-muted-foreground">{card.card_name}</div>
+                          <Card className="hover:shadow-xl transition-all duration-300 border-2 hover:border-green-300 group relative overflow-hidden">
+                            <div className="absolute inset-0 bg-gradient-to-br from-green-500/5 to-emerald-600/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                            <CardHeader className="relative z-10">
+                              <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                  {card.bank_logo ? (
+                                    <img
+                                      src={card.bank_logo}
+                                      alt={`${card.bank_name || 'Bank'} logo`}
+                                      className="h-8 w-8 rounded-full object-cover shadow-md"
+                                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                                    />
+                                  ) : (
+                                    <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-md">
+                                      <Building2 className="h-4 w-4 text-white" />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="text-sm text-gray-600 font-medium">{bank?.name || card.bank_name}</div>
+                                    <div className="text-base font-bold text-gray-800">{card.card_name}</div>
+                                  </div>
+                                </div>
+                                <Badge variant="outline" className="text-xs font-medium">{card.funding_type}</Badge>
                               </div>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <Badge>{card.funding_type}</Badge>
-                              {(card.credit_bureaus || []).map(b => (<Badge key={b} variant="outline">{b}</Badge>))}
-                              {Array.isArray((card as any).states) && (card as any).states.length > 0 ? (
-                                <Badge variant="secondary">{(card as any).states.join(', ')}</Badge>
-                              ) : ((card as any).state ? <Badge variant="secondary">{(card as any).state}</Badge> : null)}
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                onClick={() => {
-                                  if (slot.bankId && slot.cardId) {
-                                    setSelectedSlots((prev) => {
-                                      const exists = prev.find(p => p.cardId === slot.cardId!);
-                                      return exists ? prev : [{ bankId: slot.bankId!, cardId: slot.cardId! }, ...prev];
-                                    });
-                                  }
-                                }}
-                              >Add to Compare</Button>
-                              <Button variant="outline" onClick={() => { window.open(card.card_link, '_blank'); }}>Apply Now</Button>
-                            </div>
-                          </div>
+                              <div className="flex justify-center mb-4">
+                                {card.card_image ? (
+                                  <img
+                                    src={card.card_image}
+                                    alt={card.card_name}
+                                    className="h-24 w-38 rounded-lg object-cover shadow-md group-hover:scale-105 transition-transform duration-300"
+                                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/uploads/card.png'; }}
+                                  />
+                                ) : (
+                                  <img
+                                    src="/uploads/card.png"
+                                    alt="Default card"
+                                    className="h-24 w-38 rounded-lg object-cover shadow-md group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                )}
+                              </div>
+                              <div className="flex flex-wrap justify-center gap-2">
+                                {(card.credit_bureaus || []).map((bureau) => (
+                                  <span key={bureau} className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                    <Shield className="h-3 w-3 mr-1" />
+                                    {bureau}
+                                  </span>
+                                ))}
+                              </div>
+                            </CardHeader>
+                            <CardContent className="relative z-10 space-y-4">
+                              <div className="space-y-2">
+                                <Label htmlFor={`desc-${card.id}`}>Description / Notes</Label>
+                                <Textarea
+                                  id={`desc-${card.id}`}
+                                  rows={4}
+                                  placeholder="Add description or instructions for this card"
+                                  value={adminData[card.id]?.description || ''}
+                                  onChange={(e) => updateAdmin(card.id, { description: e.target.value })}
+                                  disabled={Boolean(lockedMap[card.id])}
+                                />
+                              </div>
+                              <Button variant="outline" onClick={() => window.open(card.card_link, '_blank')} className="w-full">
+                                <DollarSign className="h-4 w-4 mr-2" /> Apply Now
+                              </Button>
+                              <div className="flex items-center justify-between pt-2">
+                                <p className="text-xs text-muted-foreground flex items-center">
+                                  <Clock className="h-3 w-3 mr-1" /> Updated {new Date(card.updated_at).toLocaleDateString()}
+                                </p>
+                                <div className="flex items-center gap-2">
+                                  {lockedMap[card.id] ? (
+                                    <>
+                                      <Badge variant="secondary" className="mr-2">Approved & Locked</Badge>
+                                      <Button variant="secondary" onClick={() => handleViewInvoice(card)}>
+                                        <FileText className="h-4 w-4 mr-2" /> View Invoice
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    invoiceMap[card.id]?.token ? (
+                                      <Button variant="secondary" onClick={() => navigate(`/invoice/${invoiceMap[card.id].token}`)}>
+                                        <FileText className="h-4 w-4 mr-2" /> View Invoice
+                                      </Button>
+                                    ) : (
+                                      <Button variant="outline" onClick={() => generateInvoiceForCard(card)}>
+                                        <FileText className="h-4 w-4 mr-2" /> Generate Invoice
+                                      </Button>
+                                    )
+                                  )}
+                                  {lockedMap[card.id] ? (
+                                    <Button disabled className="bg-gray-300">
+                                      <CheckCircle className="h-4 w-4 mr-2" /> Submitted
+                                    </Button>
+                                  ) : (
+                                    <Button onClick={() => submitCard(card)} className="bg-green-600 hover:bg-green-700">
+                                      <CheckCircle className="h-4 w-4 mr-2" /> Submit
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
                         );
                       })()}
                     </div>
