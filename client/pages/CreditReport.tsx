@@ -7378,52 +7378,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             <CardContent>
               {(() => {
                 const counts = (() => {
-                  if (apiData?.Accounts && Array.isArray(apiData.Accounts)) {
-                    const accounts = apiData.Accounts;
-                    const inquiries = apiData.Inquiries || [];
-                    const publicRecords = apiData?.PublicRecords || [];
-
-                    const latePayments = accounts.filter((account: any) =>
-                      (account.PaymentHistory && (
-                        account.PaymentHistory.includes('30') ||
-                        account.PaymentHistory.includes('60') ||
-                        account.PaymentHistory.includes('90') ||
-                        account.PaymentHistory.includes('120')
-                      )) || account.PaymentStatus === 'Late' || account.PaymentStatus === 'Past Due'
-                    ).length;
-
-                    const collections = accounts.filter((account: any) =>
-                      account.AccountType === 'Collection' ||
-                      account.AccountStatus === 'Collection' ||
-                      account.CreditorName?.toLowerCase().includes('collection') ||
-                      account.AccountType?.toLowerCase().includes('collection')
-                    ).length;
-
-                    const chargeOffs = accounts.filter((account: any) =>
-                      account.AccountStatus === 'Charge Off' ||
-                      account.AccountStatus?.toLowerCase().includes('charge')
-                    ).length;
-
-                    const inquiriesCount = inquiries.length; // count all inquiries
-                    const publicRecordsCount = publicRecords.length;
-
-                    return { latePayments, collections, chargeOffs, publicRecords: publicRecordsCount, inquiries: inquiriesCount };
-                  } else {
-                    const latePayments = reportData.accounts.filter((account: any) =>
-                      account.paymentHistory && /Late|30|60|90|120/i.test(account.paymentHistory)
-                    ).length;
-
-                    const collections = reportData.collections.length;
-
-                    const chargeOffs = reportData.accounts.filter((account: any) =>
-                      account.status && account.status.toLowerCase().includes('charge')
-                    ).length;
-
-                    const publicRecordsCount = reportData.publicRecords?.length || 0;
-                    const inquiriesCount = reportData.inquiries.length;
-
-                    return { latePayments, collections, chargeOffs, publicRecords: publicRecordsCount, inquiries: inquiriesCount };
-                  }
+                  const latePayments = reportData.accounts.filter((account: any) =>
+                    account.paymentHistory && account.paymentHistory.includes('Late')
+                  ).length;
+                  const collections = reportData.collections.length;
+                  const chargeOffs = reportData.accounts.filter((account: any) => {
+                    const status = (account.status || account.AccountStatus || '').toString().toLowerCase();
+                    const paymentStatus = (account.paymentHistory || account.PaymentStatus || '').toString().toLowerCase();
+                    return status.includes('charge off') || status.includes('charge-off') || paymentStatus.includes('chargeoff');
+                  }).length;
+                  const inquiriesCount = reportData.inquiries.length;
+                  const publicRecordsCount = reportData.publicRecords?.length || 0;
+                  return { latePayments, collections, chargeOffs, publicRecords: publicRecordsCount, inquiries: inquiriesCount };
                 })();
 
                 return (
