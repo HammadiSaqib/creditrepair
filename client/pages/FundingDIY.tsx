@@ -100,6 +100,7 @@ export default function FundingDIY() {
   type SlotForm = {
     bankId?: number;
     cardId?: number;
+    fundingType?: string;
     emergencyNotes?: string;
     altContact?: string;
     limitOverride?: number;
@@ -642,7 +643,7 @@ export default function FundingDIY() {
                           const id = parseInt(v);
                           setSlotForms((prev) => {
                             const next = [...prev];
-                            next[idx] = { bankId: id, cardId: undefined };
+                            next[idx] = { bankId: id, fundingType: next[idx]?.fundingType, cardId: undefined };
                             return next;
                           });
                         }}
@@ -677,6 +678,32 @@ export default function FundingDIY() {
                         </SelectContent>
                       </Select>
 
+                      {selectedFundingType === "all" && (
+                        <>
+                          <Label>Funding Type</Label>
+                          <Select
+                            value={String(slot.fundingType || '')}
+                            onValueChange={(v) => {
+                              setSlotForms((prev) => {
+                                const next = [...prev];
+                                next[idx] = { ...next[idx], fundingType: v, cardId: undefined };
+                                return next;
+                              });
+                            }}
+                            disabled={!slot.bankId}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select funding type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {fundingTypes.filter((ft) => ft !== 'all').map((ft) => (
+                                <SelectItem key={ft} value={ft}>{ft}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </>
+                      )}
+
                       <Label>Card</Label>
                       <Select
                         value={String(slot.cardId || '')}
@@ -688,7 +715,7 @@ export default function FundingDIY() {
                             return next;
                           });
                         }}
-                        disabled={!slot.bankId}
+                        disabled={!slot.bankId || (selectedFundingType === 'all' && !slot.fundingType)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select card" />
@@ -696,7 +723,11 @@ export default function FundingDIY() {
                         <SelectContent>
                           {cards
                             .filter(c => c.bank_id === slot.bankId && c.card_type === resolvedType)
-                            .filter(c => selectedFundingType === "all" ? true : (c.funding_type || "").toLowerCase() === selectedFundingType.toLowerCase())
+                            .filter(c => {
+                              const effective = selectedFundingType === 'all' ? (slot.fundingType || 'all') : selectedFundingType;
+                              if (effective === 'all') return true;
+                              return (c.funding_type || '').toLowerCase() === String(effective).toLowerCase();
+                            })
                             .filter(c => selectedBureau === "all" ? true : (c.credit_bureaus || []).map(cb => cb?.toLowerCase()).includes(selectedBureau.toLowerCase()))
                             .map((c) => (
                               <SelectItem key={c.id} value={String(c.id)}>
@@ -768,6 +799,35 @@ export default function FundingDIY() {
                               </div>
                             </CardHeader>
                             <CardContent className="relative z-10 space-y-4">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                  <Label htmlFor={`status-${card.id}`}>Approval Status</Label>
+                                  <Select
+                                    value={adminData[card.id]?.status || "not_approved"}
+                                    onValueChange={(v) => updateAdmin(card.id, { status: v as any, ...(v !== "approved" ? { amountApproved: 0 } : {}) })}
+                                    disabled={Boolean(lockedMap[card.id])}
+                                  >
+                                    <SelectTrigger id={`status-${card.id}`}>
+                                      <SelectValue placeholder="Select status" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="approved">Approved</SelectItem>
+                                      <SelectItem value="not_approved">Not Approved</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor={`amt-${card.id}`}>Amount Approved (USD)</Label>
+                                  <Input
+                                    id={`amt-${card.id}`}
+                                    type="number"
+                                    min="0"
+                                    value={(adminData[card.id]?.amountApproved ?? 0).toString()}
+                                    disabled={adminData[card.id]?.status !== "approved" || Boolean(lockedMap[card.id])}
+                                    onChange={(e) => updateAdmin(card.id, { amountApproved: parseFloat(e.target.value || "0") })}
+                                  />
+                                </div>
+                              </div>
                               <div className="space-y-2">
                                 <Label htmlFor={`desc-${card.id}`}>Description / Notes</Label>
                                 <Textarea
@@ -779,7 +839,7 @@ export default function FundingDIY() {
                                   disabled={Boolean(lockedMap[card.id])}
                                 />
                               </div>
-                              <Button variant="outline" onClick={() => window.open(card.card_link, '_blank')} className="w-full">
+                              <Button onClick={() => window.open(card.card_link, '_blank')} className="w-full bg-green-600 hover:bg-green-700 text-white">
                                 <DollarSign className="h-4 w-4 mr-2" /> Apply Now
                               </Button>
                               <div className="flex items-center justify-between pt-2">
