@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { runQuery, getQuery, allQuery } from '../database/databaseAdapter.js';
+import { format } from 'date-fns';
 import { executeTransaction } from '../database/mysqlConfig.js';
 import { Client } from '../database/schema.js';
 import { AuthRequest } from '../middleware/authMiddleware.js';
@@ -34,6 +35,19 @@ const clientSchema = z.object({
 });
 
 const updateClientSchema = clientSchema.partial();
+
+function normalizeDateInput(input?: string | null): string | null {
+  try {
+    if (!input) return null;
+    const s = String(input);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const t = s.split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return format(d, 'yyyy-MM-dd');
+  } catch {}
+  return null;
+}
 
 // Get all clients for the authenticated user (or all clients for funding managers)
 export async function getClients(req: AuthRequest, res: Response) {
@@ -217,7 +231,7 @@ export async function createClient(req: AuthRequest, res: Response) {
         clientData.state || null,
         clientData.zip_code || null,
         clientData.ssn_last_four || null,
-        clientData.date_of_birth || null,
+        normalizeDateInput(clientData.date_of_birth) || null,
         clientData.employment_status || null,
         clientData.annual_income || null,
         clientData.status || 'active',
@@ -299,6 +313,9 @@ export async function updateClient(req: AuthRequest, res: Response) {
   try {
     const { id } = req.params;
     const updates = updateClientSchema.parse(req.body);
+    if (typeof updates.date_of_birth !== 'undefined') {
+      updates.date_of_birth = normalizeDateInput(updates.date_of_birth) || null as any;
+    }
     
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'No updates provided' });

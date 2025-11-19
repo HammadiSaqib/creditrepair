@@ -713,47 +713,44 @@ export default function FundingDIY() {
                         </SelectContent>
                       </Select>
 
-                      {slot.cardId && (
-                        <div className="space-y-3 mt-2">
-                          <Label>Emergency Details</Label>
-                          <Input
-                            placeholder="Alternate contact"
-                            value={slot.altContact || ''}
-                            onChange={(e) => setSlotForms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], altContact: e.target.value }; return next; })}
-                          />
-                          <Input
-                            type="number"
-                            placeholder="Requested limit override"
-                            value={Number.isFinite(slot.limitOverride || 0) ? (slot.limitOverride || 0) : 0}
-                            onChange={(e) => setSlotForms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], limitOverride: parseFloat(e.target.value || '0') }; return next; })}
-                          />
-                          <Textarea
-                            rows={3}
-                            placeholder="Emergency notes"
-                            value={slot.emergencyNotes || ''}
-                            onChange={(e) => setSlotForms((prev) => { const next = [...prev]; next[idx] = { ...next[idx], emergencyNotes: e.target.value }; return next; })}
-                          />
-                          <div className="flex gap-2">
-                            <Button
-                              onClick={() => {
-                                if (slot.bankId && slot.cardId) {
-                                  setSelectedSlots((prev) => {
-                                    const exists = prev.find(p => p.cardId === slot.cardId!);
-                                    return exists ? prev : [{ bankId: slot.bankId!, cardId: slot.cardId! }, ...prev];
-                                  });
-                                }
-                              }}
-                            >Add to Compare</Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                const card = cards.find(c => c.id === slot.cardId);
-                                if (card) window.open(card.card_link, '_blank');
-                              }}
-                            >Apply Now</Button>
+                      {slot.cardId && (() => {
+                        const card = cards.find(c => c.id === slot.cardId);
+                        const bank = banks.find(b => b.id === slot.bankId);
+                        if (!card) return null;
+                        return (
+                          <div className="space-y-3 mt-2">
+                            <div className="flex items-center gap-3">
+                              {card.card_image ? (
+                                <img src={card.card_image} alt={card.card_name} className="h-10 rounded" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                              ) : null}
+                              <div>
+                                <div className="text-sm font-semibold">{bank?.name || card.bank_name}</div>
+                                <div className="text-xs text-muted-foreground">{card.card_name}</div>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge>{card.funding_type}</Badge>
+                              {(card.credit_bureaus || []).map(b => (<Badge key={b} variant="outline">{b}</Badge>))}
+                              {Array.isArray((card as any).states) && (card as any).states.length > 0 ? (
+                                <Badge variant="secondary">{(card as any).states.join(', ')}</Badge>
+                              ) : ((card as any).state ? <Badge variant="secondary">{(card as any).state}</Badge> : null)}
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={() => {
+                                  if (slot.bankId && slot.cardId) {
+                                    setSelectedSlots((prev) => {
+                                      const exists = prev.find(p => p.cardId === slot.cardId!);
+                                      return exists ? prev : [{ bankId: slot.bankId!, cardId: slot.cardId! }, ...prev];
+                                    });
+                                  }
+                                }}
+                              >Add to Compare</Button>
+                              <Button variant="outline" onClick={() => { window.open(card.card_link, '_blank'); }}>Apply Now</Button>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
