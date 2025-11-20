@@ -751,7 +751,7 @@ export default function Support() {
                     <Phone className="h-5 w-5 text-blue-500" />
                     <div>
                       <p className="font-medium">Phone Support</p>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">+1 914 429-4188</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">+1 (475) 259-8768</p>
                       <p className="text-xs text-slate-500">Mon-Fri 9AM-6PM EST</p>
                     </div>
                   </div>
@@ -759,7 +759,7 @@ export default function Support() {
                     <Mail className="h-5 w-5 text-green-500" />
                     <div>
                       <p className="font-medium">Email Support</p>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">support@scoremachine.com</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">thesupport@scoremachine.com</p>
                       <p className="text-xs text-slate-500">Response within 24 hours</p>
                     </div>
                   </div>

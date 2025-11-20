@@ -168,6 +168,7 @@ export const authApi = {
     api.post('/api/auth/resend-verification', data),
   
   getProfile: () => api.get('/api/auth/profile'),
+  getAffiliateStatus: () => api.get('/api/auth/affiliate/status'),
   
   updateProfile: (profileData: {
     first_name?: string;
@@ -662,6 +663,8 @@ export const affiliateApi = {
   updateNotifications: (data: any) => api.put('/api/affiliate/settings/notifications', data),
   updatePayment: (data: any) => api.put('/api/affiliate/settings/payment', data),
   updatePassword: (data: any) => api.put('/api/affiliate/settings/password', data),
+  checkSlugAvailability: (slug: string) => api.post('/api/affiliate/check-slug', { slug }),
+  updateReferralSlug: (slug: string) => api.put('/api/affiliate/settings/referral-slug', { slug }),
 
   // Marketing endpoints
   getMarketingMaterials: () => api.get('/api/affiliate/marketing-materials'),
@@ -743,6 +746,8 @@ export const schoolManagementApi = {
   // Course Videos
   getVideos: () => api.get('/api/school-management/videos'),
   getCourseVideos: (courseId: string) => api.get(`/api/school-management/courses/${courseId}/videos`),
+  createCourseVideo: (courseId: string, data: any) =>
+    api.post(`/api/school-management/courses/${courseId}/videos`, data),
   uploadVideo: (formData: FormData) => 
     api.post('/api/school-management/videos/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' }

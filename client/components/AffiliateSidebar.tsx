@@ -383,11 +383,10 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
               {/* Dashboard Switcher for Admin users */}
               {userProfile?.role === 'admin' && (
                 <Button 
-                  variant="outline" 
                   size="sm"
                   onClick={() => navigate('/dashboard')}
-                  title="Switch to Admin Dashboard"
-                  className="text-xs px-3 py-2 h-8 border-blue-500/30 text-blue-600 hover:bg-blue-50 hover:border-blue-500 dark:text-blue-400 dark:hover:bg-blue-900/20 dark:border-blue-600/30 font-medium"
+                  title="Go to Admin Dashboard"
+                  className="text-xs px-3 py-2 h-8 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 text-white shadow-sm"
                 >
                   <Briefcase className="h-4 w-4 mr-1" />
                   Admin

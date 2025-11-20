@@ -93,6 +93,34 @@ const CourseLearning: React.FC = () => {
     }
   }, [courseId]);
 
+  const isYouTubeUrl = (url: string): boolean => {
+    try {
+      const u = new URL(url);
+      return u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be');
+    } catch {
+      return /youtube\.com|youtu\.be/.test(url);
+    }
+  };
+
+  const getYouTubeEmbedUrl = (url: string): string => {
+    try {
+      const u = new URL(url);
+      if (u.pathname.includes('/embed/')) {
+        return url;
+      }
+      if (u.hostname.includes('youtu.be')) {
+        const id = u.pathname.replace('/', '').split('?')[0];
+        return `https://www.youtube.com/embed/${id}`;
+      }
+      const v = u.searchParams.get('v');
+      if (v) {
+        return `https://www.youtube.com/embed/${v}`;
+      }
+    } catch {}
+    const match = url.match(/(?:v=|\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    return match ? `https://www.youtube.com/embed/${match[1]}` : url;
+  };
+
   const fetchCourseData = async (id: number) => {
     try {
       setLoading(true);
@@ -149,9 +177,8 @@ const CourseLearning: React.FC = () => {
       
       setCourseData(courseData);
       
-      // Set the first video as current if available
       if (courseData.videos.length > 0) {
-        setCurrentVideo(courseData.videos[0]);
+        setCurrentVideoIndex(0);
       }
       
     } catch (error) {
@@ -395,14 +422,24 @@ const CourseLearning: React.FC = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="aspect-video bg-black rounded-lg relative overflow-hidden mb-4">
-                      <video
-                        className="w-full h-full"
-                        controls
-                        src={currentVideo.url}
-                        onEnded={() => handleVideoComplete(currentVideoIndex)}
-                      >
-                        Your browser does not support the video tag.
-                      </video>
+                      {isYouTubeUrl(currentVideo.url) ? (
+                        <iframe
+                          className="w-full h-full"
+                          src={getYouTubeEmbedUrl(currentVideo.url)}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          title={currentVideo.title}
+                        />
+                      ) : (
+                        <video
+                          className="w-full h-full"
+                          controls
+                          src={currentVideo.url}
+                          onEnded={() => handleVideoComplete(currentVideoIndex)}
+                        >
+                          Your browser does not support the video tag.
+                        </video>
+                      )}
                     </div>
                     
                     {/* Video Navigation */}

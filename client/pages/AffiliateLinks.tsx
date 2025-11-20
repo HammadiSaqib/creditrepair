@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Link2, Copy, Edit, Trash2, Eye, BarChart3, ExternalLink, Search, Filter, Calendar, TrendingUp, MousePointer, Users, Share2, Facebook, Twitter, Linkedin, MessageCircle, Check, X, AlertCircle, DollarSign } from "lucide-react";
-import { affiliateApi } from "@/lib/api";
+import { affiliateApi, authApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -71,12 +71,25 @@ export default function AffiliateLinks() {
 
   const fetchAffiliateInfo = async () => {
     try {
-      const response = await affiliateApi.getProfile();
-      console.log('Profile API response:', response);
-      // The profile endpoint returns { success: true, user: affiliateData }
-      if (response.data && response.data.user) {
-        setAffiliateInfo(response.data.user);
+      let info: any = null;
+      try {
+        const statusResp = await authApi.getAffiliateStatus();
+        if (statusResp.data && statusResp.data.success) {
+          info = {
+            id: statusResp.data.affiliate_id,
+            affiliate_id: statusResp.data.affiliate_id,
+            referral_slug: statusResp.data.referral_slug,
+            status: statusResp.data.status
+          };
+        }
+      } catch {}
+      if (!info) {
+        const profileResp = await authApi.getProfile();
+        if (profileResp.data && profileResp.data.user) {
+          info = profileResp.data.user;
+        }
       }
+      if (info) setAffiliateInfo(info);
     } catch (error) {
       console.error('Error fetching affiliate info:', error);
     }
@@ -130,13 +143,13 @@ export default function AffiliateLinks() {
   };
 
   const generatePersonalizedLink = () => {
-    // Prefer stable affiliate ID for referral links to avoid changes when name updates
+    if (affiliateInfo && affiliateInfo.referral_slug) {
+      return `${window.location.origin}/ref/${affiliateInfo.referral_slug}`;
+    }
     if (affiliateInfo && (affiliateInfo.id || affiliateInfo.affiliate_id)) {
       const id = String(affiliateInfo.id ?? affiliateInfo.affiliate_id);
       return `${window.location.origin}/ref/${id}`;
     }
-
-    // Fallback: if profile hasn’t loaded yet, generate a temporary placeholder
     return `${window.location.origin}/ref/affiliate${Date.now()}`;
   };
 

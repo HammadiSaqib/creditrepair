@@ -7,30 +7,71 @@ import { SecurityLogger } from '../utils/securityLogger.js';
 const router = express.Router();
 const securityLogger = new SecurityLogger();
 
-// Middleware to ensure only affiliates can access these routes
+// Middleware to allow affiliates and admins with linked affiliate records
 const requireAffiliateRole = (req: any, res: any, next: any) => {
-  if (req.user?.role !== 'affiliate') {
+  const role = req.user?.role;
+  if (!['affiliate', 'admin', 'super_admin'].includes(role)) {
     securityLogger.logSecurityEvent('unauthorized_affiliate_settings_access', {
       userId: req.user?.id,
-      role: req.user?.role,
+      role,
       endpoint: req.path,
       ip: req.ip
     });
-    return res.status(403).json({ error: 'Access denied. Affiliate role required.' });
+    return res.status(403).json({ error: 'Access denied. Affiliate or Admin role required.' });
   }
   next();
 };
 
+async function resolveAffiliateId(req: any): Promise<number | null> {
+  try {
+    if (req.user?.role === 'affiliate') return req.user.id;
+    if (req.user?.role === 'admin' || req.user?.role === 'super_admin') {
+      const userRows = await executeQuery('SELECT email FROM users WHERE id = ? LIMIT 1', [req.user.id]);
+      const adminEmail = userRows && userRows[0]?.email;
+      const rows = await executeQuery('SELECT id, email, status, updated_at, created_at FROM affiliates WHERE admin_id = ?', [req.user.id]);
+      if (!rows || rows.length === 0) return null;
+      let selected = null as any;
+      if (adminEmail) {
+        selected = rows.find((r: any) => String(r.email || '').toLowerCase() === String(adminEmail).toLowerCase()) || null;
+      }
+      if (!selected) {
+        selected = rows.find((r: any) => r.status === 'active') || null;
+      }
+      if (!selected) {
+        selected = rows.sort((a: any, b: any) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())[0];
+      }
+      if (!selected) selected = rows[0];
+      return selected?.id || null;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error resolving affiliate id for settings:', err);
+    return null;
+  }
+}
+
 // GET /api/affiliate/settings - Get all affiliate settings
 router.get('/settings', authenticateToken, requireAffiliateRole, async (req, res) => {
   try {
-    const affiliateId = req.user.id;
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
     
     // Get affiliate profile information
+    const columnCheck = `
+      SELECT COUNT(*) as cnt FROM information_schema.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'affiliates' AND COLUMN_NAME = 'referral_slug'
+    `;
+    let hasSlug = false;
+    try {
+      const colRes: any = await executeQuery(columnCheck, []);
+      hasSlug = !!colRes && ((colRes[0]?.cnt || 0) > 0);
+    } catch {}
     const profileQuery = `
       SELECT 
         id, email, first_name, last_name, company_name, phone, 
-        address, city, state, zip_code, status, email_verified
+        address, city, state, zip_code, status, email_verified${hasSlug ? ', referral_slug' : ', NULL as referral_slug'}
       FROM affiliates 
       WHERE id = ?
     `;
@@ -53,17 +94,31 @@ router.get('/settings', authenticateToken, requireAffiliateRole, async (req, res
       WHERE affiliate_id = ?
     `;
     
-    const notificationResult = await executeQuery(notificationQuery, [affiliateId]);
-    const notifications = notificationResult[0] || {
-      email_notifications: true,
-      sms_notifications: false,
-      push_notifications: true,
-      commission_alerts: true,
-      referral_updates: true,
-      weekly_reports: true,
-      monthly_reports: true,
-      marketing_emails: false
-    };
+    let notifications;
+    try {
+      const notificationResult = await executeQuery(notificationQuery, [affiliateId]);
+      notifications = notificationResult[0] || {
+        email_notifications: true,
+        sms_notifications: false,
+        push_notifications: true,
+        commission_alerts: true,
+        referral_updates: true,
+        weekly_reports: true,
+        monthly_reports: true,
+        marketing_emails: false
+      };
+    } catch {
+      notifications = {
+        email_notifications: true,
+        sms_notifications: false,
+        push_notifications: true,
+        commission_alerts: true,
+        referral_updates: true,
+        weekly_reports: true,
+        monthly_reports: true,
+        marketing_emails: false
+      };
+    }
     
     // Get payment settings
     const paymentQuery = `
@@ -75,20 +130,37 @@ router.get('/settings', authenticateToken, requireAffiliateRole, async (req, res
       WHERE affiliate_id = ?
     `;
     
-    const paymentResult = await executeQuery(paymentQuery, [affiliateId]);
-    const payment = paymentResult[0] || {
-      payment_method: 'paypal',
-      bank_name: '',
-      account_number: '',
-      routing_number: '',
-      account_holder_name: '',
-      paypal_email: '',
-      stripe_account_id: '',
-      minimum_payout: 50.00,
-      payout_frequency: 'monthly',
-      tax_id: '',
-      w9_submitted: false
-    };
+    let payment;
+    try {
+      const paymentResult = await executeQuery(paymentQuery, [affiliateId]);
+      payment = paymentResult[0] || {
+        payment_method: 'paypal',
+        bank_name: '',
+        account_number: '',
+        routing_number: '',
+        account_holder_name: '',
+        paypal_email: '',
+        stripe_account_id: '',
+        minimum_payout: 50.00,
+        payout_frequency: 'monthly',
+        tax_id: '',
+        w9_submitted: false
+      };
+    } catch {
+      payment = {
+        payment_method: 'paypal',
+        bank_name: '',
+        account_number: '',
+        routing_number: '',
+        account_holder_name: '',
+        paypal_email: '',
+        stripe_account_id: '',
+        minimum_payout: 50.00,
+        payout_frequency: 'monthly',
+        tax_id: '',
+        w9_submitted: false
+      };
+    }
     
     // Remove sensitive information from payment settings
     if (payment.account_number) {
@@ -113,7 +185,10 @@ router.get('/settings', authenticateToken, requireAffiliateRole, async (req, res
 // PUT /api/affiliate/settings/profile - Update affiliate profile
 router.put('/settings/profile', authenticateToken, requireAffiliateRole, async (req, res) => {
   try {
-    const affiliateId = req.user.id;
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
     const {
       first_name, last_name, company_name, phone,
       address, city, state, zip_code
@@ -155,7 +230,10 @@ router.put('/settings/profile', authenticateToken, requireAffiliateRole, async (
 // PUT /api/affiliate/settings/notifications - Update notification preferences
 router.put('/settings/notifications', authenticateToken, requireAffiliateRole, async (req, res) => {
   try {
-    const affiliateId = req.user.id;
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
     const {
       email_notifications, sms_notifications, push_notifications,
       commission_alerts, referral_updates, weekly_reports,
@@ -206,7 +284,10 @@ router.put('/settings/notifications', authenticateToken, requireAffiliateRole, a
 // PUT /api/affiliate/settings/payment - Update payment settings
 router.put('/settings/payment', authenticateToken, requireAffiliateRole, async (req, res) => {
   try {
-    const affiliateId = req.user.id;
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
     const {
       payment_method, bank_name, account_number, routing_number,
       account_holder_name, paypal_email, stripe_account_id,
@@ -274,7 +355,10 @@ router.put('/settings/payment', authenticateToken, requireAffiliateRole, async (
 // PUT /api/affiliate/settings/password - Change password
 router.put('/settings/password', authenticateToken, requireAffiliateRole, async (req, res) => {
   try {
-    const affiliateId = req.user.id;
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
     const { current_password, new_password } = req.body;
     
     // Validate input
@@ -332,6 +416,87 @@ router.put('/settings/password', authenticateToken, requireAffiliateRole, async 
   } catch (error) {
     console.error('Error changing password:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/check-slug', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const { slug } = req.body;
+    const currentAffiliateId = await resolveAffiliateId(req);
+    if (!currentAffiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
+    if (!slug) {
+      return res.status(400).json({ error: 'Slug is required' });
+    }
+    const slugRegex = /^[a-z0-9_-]{3,30}$/;
+    if (!slugRegex.test(slug)) {
+      return res.status(400).json({ error: 'Slug must be 3-30 characters of a-z, 0-9, - or _' });
+    }
+    const columnCheck = `
+      SELECT COUNT(*) as cnt FROM information_schema.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'affiliates' AND COLUMN_NAME = 'referral_slug'
+    `;
+    const colRes: any = await executeQuery(columnCheck, []);
+    if (!colRes || (colRes[0]?.cnt || 0) === 0) {
+      try {
+        await executeQuery(`ALTER TABLE affiliates ADD COLUMN referral_slug VARCHAR(64) UNIQUE`, []);
+      } catch {}
+    }
+    const existing = await executeQuery(
+      `SELECT id FROM affiliates WHERE referral_slug = ? AND id != ? LIMIT 1`,
+      [slug, currentAffiliateId]
+    );
+    const available = !existing || existing.length === 0;
+    res.json({ success: true, available, slug });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to check slug availability' });
+  }
+});
+
+router.put('/settings/referral-slug', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const { slug } = req.body;
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
+    if (!slug) {
+      return res.status(400).json({ error: 'Slug is required' });
+    }
+    const slugRegex = /^[a-z0-9_-]{3,30}$/;
+    if (!slugRegex.test(slug)) {
+      return res.status(400).json({ error: 'Slug must be 3-30 characters of a-z, 0-9, - or _' });
+    }
+    const columnCheck = `
+      SELECT COUNT(*) as cnt FROM information_schema.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'affiliates' AND COLUMN_NAME = 'referral_slug'
+    `;
+    const colRes: any = await executeQuery(columnCheck, []);
+    if (!colRes || (colRes[0]?.cnt || 0) === 0) {
+      try {
+        await executeQuery(`ALTER TABLE affiliates ADD COLUMN referral_slug VARCHAR(64) UNIQUE`, []);
+      } catch {}
+    }
+    const existing = await executeQuery(
+      `SELECT id FROM affiliates WHERE referral_slug = ? AND id != ? LIMIT 1`,
+      [slug, affiliateId]
+    );
+    if (existing && existing.length > 0) {
+      return res.status(409).json({ error: 'Slug already in use' });
+    }
+    await executeQuery(
+      `UPDATE affiliates SET referral_slug = ?, updated_at = NOW() WHERE id = ?`,
+      [slug, affiliateId]
+    );
+    securityLogger.logSecurityEvent('affiliate_referral_slug_updated', {
+      affiliateId,
+      newSlug: slug,
+      ip: req.ip
+    });
+    res.json({ success: true, slug });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update referral slug' });
   }
 });
 

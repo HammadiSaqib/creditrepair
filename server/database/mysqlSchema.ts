@@ -2181,6 +2181,7 @@ export interface SupportGeneralSettings {
     state?: string;
     zip_code?: string;
     avatar?: string;
+    referral_slug?: string;
     plan_type: 'free' | 'paid_partner';
     paid_referrals_count: number;
     commission_rate: number;

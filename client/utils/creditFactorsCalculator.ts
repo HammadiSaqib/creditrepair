@@ -34,12 +34,12 @@ export const calculateCreditFactors = (
 
   if (scoreType === 'VantageScore') {
     return [
-      { label: 'Payment History', value: paymentHistoryScore, color: '#3B82F6' },
-      { label: 'Age/Mix', value: creditAgeScore + creditMixScore, color: '#10B981' },
-      { label: 'Utilization', value: utilizationScore, color: '#F59E0B' },
-      { label: 'New Credit', value: newCreditScore, color: '#EF4444' },
-      { label: 'Balance', value: Math.max(0, 100 - paymentHistoryScore - utilizationScore - newCreditScore - (creditAgeScore + creditMixScore)), color: '#8B5CF6' },
-      { label: 'Available Credit', value: 2, color: '#06B6D4' } // Minimal factor
+      { label: 'Payment History', value: paymentHistoryScore, color: '#85BB65' },
+      { label: 'Depth of Credit', value: creditAgeScore + creditMixScore, color: '#333333' },
+      { label: 'Credit Utilization', value: utilizationScore, color: '#32CD32' },
+      { label: 'Recent Credit', value: newCreditScore, color: '#64748B' },
+      { label: 'Balance', value: Math.max(0, 100 - paymentHistoryScore - utilizationScore - newCreditScore - (creditAgeScore + creditMixScore)), color: '#006400' },
+      { label: 'Available Credit', value: 2, color: '#D1D5DB' }
     ];
   } else {
     // FICO scoring
@@ -171,12 +171,12 @@ const calculateCreditMix = (accounts: Account[]): number => {
 const getDefaultCreditFactors = (scoreType: 'FICO' | 'VantageScore'): CreditFactors[] => {
   if (scoreType === 'VantageScore') {
     return [
-      { label: 'Payment History', value: 41, color: '#3B82F6' },
-      { label: 'Age/Mix', value: 20, color: '#10B981' },
-      { label: 'Utilization', value: 20, color: '#F59E0B' },
-      { label: 'New Credit', value: 11, color: '#EF4444' },
-      { label: 'Balance', value: 6, color: '#8B5CF6' },
-      { label: 'Available Credit', value: 2, color: '#06B6D4' }
+      { label: 'Payment History', value: 41, color: '#85BB65' },
+      { label: 'Depth of Credit', value: 20, color: '#333333' },
+      { label: 'Credit Utilization', value: 20, color: '#32CD32' },
+      { label: 'Recent Credit', value: 11, color: '#64748B' },
+      { label: 'Balance', value: 6, color: '#006400' },
+      { label: 'Available Credit', value: 2, color: '#D1D5DB' }
     ];
   } else {
     return [

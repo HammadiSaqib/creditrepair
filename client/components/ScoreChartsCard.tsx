@@ -44,9 +44,6 @@ const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accoun
 
   const uniqueScoreTypes = getUniqueScoreTypes();
 
-  // Calculate credit factors from account data if available
-  const creditFactors = accounts ? calculateCreditFactors(accounts) : undefined;
-
   return (
     <Card className="w-full h-full flex flex-col">
       <CardHeader>
@@ -54,15 +51,18 @@ const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accoun
       </CardHeader>
       <CardContent className="flex-1 flex flex-col">
         <div className="flex flex-col gap-6 flex-1 justify-center">
-          {uniqueScoreTypes.map((scoreData, index) => (
-            <CircularScoreChart
-              key={`${scoreData.scoreType}-${index}`}
-              score={scoreData.score}
-              scoreType={scoreData.scoreType}
-              size={280}
-              creditFactors={creditFactors}
-            />
-          ))}
+          {uniqueScoreTypes.map((scoreData, index) => {
+            const factors = accounts ? calculateCreditFactors(accounts, scoreData.scoreType) : undefined;
+            return (
+              <CircularScoreChart
+                key={`${scoreData.scoreType}-${index}`}
+                score={scoreData.score}
+                scoreType={scoreData.scoreType}
+                size={280}
+                creditFactors={factors}
+              />
+            );
+          })}
         </div>
       </CardContent>
     </Card>

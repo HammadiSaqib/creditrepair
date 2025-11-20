@@ -292,10 +292,17 @@ const SchoolManagement: React.FC = () => {
     duration_hours: 0,
     difficulty_level: 'beginner' as const,
     price: 0,
+    price_type: 'free' as 'free' | 'paid',
     is_featured: false,
     is_published: false,
     thumbnail_url: '',
-    thumbnail_file: null as File | null
+    thumbnail_file: null as File | null,
+    youtube_embed_url: '',
+    video_source_type: 'embed' as 'embed' | 'upload',
+    initial_video_file: null as File | null,
+    initial_video_title: '',
+    initial_video_description: '',
+    additional_videos: [] as any[]
   });
 
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
@@ -315,6 +322,37 @@ const SchoolManagement: React.FC = () => {
   const handleFormChange = useCallback((field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   }, []);
+
+  const extractYouTubeId = (raw: string): string => {
+    let url = raw;
+    if (/\<iframe[\s\S]*?src=\"([^\"]+)\"/i.test(raw)) {
+      const m = raw.match(/src=\"([^\"]+)\"/i);
+      if (m && m[1]) url = m[1];
+    }
+    try {
+      const u = new URL(url);
+      const host = u.hostname.replace('www.', '');
+      if (host.includes('youtu.be')) {
+        return u.pathname.replace('/', '').split('?')[0];
+      }
+      if (host.includes('youtube.com') || host.includes('youtube-nocookie.com')) {
+        if (u.pathname.includes('/embed/')) {
+          return u.pathname.split('/embed/')[1].split('?')[0];
+        }
+        if (u.pathname.includes('/shorts/')) {
+          return u.pathname.split('/shorts/')[1].split('?')[0];
+        }
+        const v = u.searchParams.get('v');
+        if (v) return v;
+      }
+    } catch {}
+    const match = url.match(/(?:v=|\/embed\/|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+    return match ? match[1] : '';
+  };
+
+  const getYouTubeThumbnailUrl = (videoId: string): string => {
+    return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+  };
 
   // Memoized API functions to prevent unnecessary re-renders
   const fetchCategories = useCallback(async () => {
@@ -787,22 +825,110 @@ const SchoolManagement: React.FC = () => {
       // Add all form fields
       formDataToSend.append('title', formData.title);
       formDataToSend.append('description', formData.description);
-      formDataToSend.append('category', String(formData.category_id));
+      {
+        const categoryValue = String((formData as any).category_id || '').trim();
+        const defaultCategoryId = Array.isArray(categories)
+          ? (categories.find((c: any) => (c.name || '').toLowerCase() === 'general')?.id?.toString()
+              || categories[0]?.id?.toString()
+              || '1')
+          : '1';
+        const finalCategory = categoryValue.length ? categoryValue : defaultCategoryId;
+        formDataToSend.append('category', finalCategory);
+      }
       formDataToSend.append('instructor_name', formData.instructor_name);
-      formDataToSend.append('price', (parseFloat(formData.price) || 0).toString());
+      {
+        const priceValue = (formData.price_type === 'free') ? 0 : (parseFloat(formData.price as any) || 0);
+        formDataToSend.append('price', priceValue.toString());
+      }
       formDataToSend.append('duration_hours', (parseFloat(formData.duration_hours) || 0).toString());
       formDataToSend.append('difficulty_level', formData.difficulty_level);
       formDataToSend.append('is_featured', String(formData.is_featured));
       formDataToSend.append('is_published', String(formData.is_published));
+      if ((formData as any).youtube_embed_url) {
+        formDataToSend.append('youtube_embed_url', (formData as any).youtube_embed_url);
+      }
       
       // Add thumbnail file if selected
       if (formData.thumbnail_file) {
         formDataToSend.append('thumbnail', formData.thumbnail_file);
       } else if (formData.thumbnail_url) {
         formDataToSend.append('thumbnail_url', formData.thumbnail_url);
+      } else if ((formData.video_source_type === 'embed') && formData.youtube_embed_url) {
+        const vidAuto = extractYouTubeId(formData.youtube_embed_url);
+        if (vidAuto) {
+          formDataToSend.append('thumbnail_url', getYouTubeThumbnailUrl(vidAuto));
+        }
       }
       
-      await schoolManagementApi.createCourse(formDataToSend);
+      const response = await schoolManagementApi.createCourse(formDataToSend);
+      const createdCourse = response?.data?.data || {};
+      const courseId = String(createdCourse.id || createdCourse.course_id || '');
+
+      if (courseId) {
+        if ((formData.video_source_type === 'embed') && (formData.youtube_embed_url)) {
+          const vid = extractYouTubeId(formData.youtube_embed_url);
+          const thumb = vid ? getYouTubeThumbnailUrl(vid) : undefined;
+          const videoPayload: any = {
+            course_id: parseInt(courseId),
+            title: formData.initial_video_title || formData.title,
+            description: formData.initial_video_description || '',
+            video_url: formData.youtube_embed_url,
+            video_type: 'youtube'
+          };
+          if (vid) videoPayload.video_id = vid;
+          if (thumb) videoPayload.thumbnail_url = thumb;
+          try {
+            await schoolManagementApi.createCourseVideo(courseId, videoPayload);
+          } catch {}
+        } else if ((formData.video_source_type === 'upload') && formData.initial_video_file) {
+          const videoForm = new FormData();
+          videoForm.append('course_id', courseId);
+          videoForm.append('title', formData.initial_video_title || formData.title);
+          if (formData.initial_video_description) {
+            videoForm.append('description', formData.initial_video_description);
+          }
+          videoForm.append('video', formData.initial_video_file);
+          if (formData.thumbnail_file) {
+            videoForm.append('thumbnail', formData.thumbnail_file);
+          }
+          try {
+            await schoolManagementApi.uploadVideo(videoForm);
+          } catch {}
+        }
+        const baseIndex = 1;
+        const extras = Array.isArray(formData.additional_videos) ? formData.additional_videos : [];
+        for (let i = 0; i < extras.length; i++) {
+          const item = extras[i] || {};
+          if (item.source_type === 'embed' && item.youtube_url) {
+            const vid = extractYouTubeId(item.youtube_url);
+            const thumb = vid ? getYouTubeThumbnailUrl(vid) : undefined;
+            const payload: any = {
+              course_id: parseInt(courseId),
+              title: item.title || formData.title,
+              description: item.description || '',
+              video_url: item.youtube_url,
+              video_type: 'youtube',
+              order_index: baseIndex + i
+            };
+            if (vid) payload.video_id = vid;
+            if (thumb) payload.thumbnail_url = thumb;
+            try {
+              await schoolManagementApi.createCourseVideo(courseId, payload);
+            } catch {}
+          } else if (item.source_type === 'upload' && item.file) {
+            const f = new FormData();
+            f.append('course_id', courseId);
+            f.append('title', item.title || formData.title);
+            if (item.description) f.append('description', item.description);
+            f.append('video', item.file);
+            if (item.thumbnail_file) f.append('thumbnail', item.thumbnail_file);
+            f.append('order_index', String(baseIndex + i));
+            try {
+              await schoolManagementApi.uploadVideo(f);
+            } catch {}
+          }
+        }
+      }
       
       toast({
         title: "Success",
@@ -839,20 +965,97 @@ const SchoolManagement: React.FC = () => {
       formDataToSend.append('description', formData.description);
       formDataToSend.append('category_id', formData.category_id);
       formDataToSend.append('instructor_name', formData.instructor_name);
-      formDataToSend.append('price', (parseFloat(formData.price) || 0).toString());
+      {
+        const priceValue = (formData.price_type === 'free') ? 0 : (parseFloat(formData.price as any) || 0);
+        formDataToSend.append('price', priceValue.toString());
+      }
       formDataToSend.append('duration_hours', (parseFloat(formData.duration_hours) || 0).toString());
       formDataToSend.append('difficulty_level', formData.difficulty_level);
       formDataToSend.append('is_featured', String(formData.is_featured));
       formDataToSend.append('is_published', String(formData.is_published));
+      if ((formData as any).youtube_embed_url) {
+        formDataToSend.append('youtube_embed_url', (formData as any).youtube_embed_url);
+      }
       
       // Add thumbnail file if selected
       if (formData.thumbnail_file) {
         formDataToSend.append('thumbnail', formData.thumbnail_file);
       } else if (formData.thumbnail_url) {
         formDataToSend.append('thumbnail_url', formData.thumbnail_url);
+      } else if ((formData.video_source_type === 'embed') && formData.youtube_embed_url) {
+        const vidAuto = extractYouTubeId(formData.youtube_embed_url);
+        if (vidAuto) {
+          formDataToSend.append('thumbnail_url', getYouTubeThumbnailUrl(vidAuto));
+        }
       }
       
-      await schoolManagementApi.updateCourse(selectedCourse.id, formDataToSend);
+      const updateResponse = await schoolManagementApi.updateCourse(selectedCourse.id, formDataToSend);
+      if (selectedCourse?.id) {
+        const courseId = String(selectedCourse.id);
+        if ((formData.video_source_type === 'embed') && (formData.youtube_embed_url)) {
+          const vid = extractYouTubeId(formData.youtube_embed_url);
+          const thumb = vid ? getYouTubeThumbnailUrl(vid) : undefined;
+          const videoPayload: any = {
+            course_id: parseInt(courseId),
+            title: formData.initial_video_title || formData.title,
+            description: formData.initial_video_description || '',
+            video_url: formData.youtube_embed_url,
+            video_type: 'youtube'
+          };
+          if (vid) videoPayload.video_id = vid;
+          if (thumb) videoPayload.thumbnail_url = thumb;
+          try {
+            await schoolManagementApi.createCourseVideo(courseId, videoPayload);
+          } catch {}
+        } else if ((formData.video_source_type === 'upload') && formData.initial_video_file) {
+          const videoForm = new FormData();
+          videoForm.append('course_id', courseId);
+          videoForm.append('title', formData.initial_video_title || formData.title);
+          if (formData.initial_video_description) {
+            videoForm.append('description', formData.initial_video_description);
+          }
+          videoForm.append('video', formData.initial_video_file);
+          if (formData.thumbnail_file) {
+            videoForm.append('thumbnail', formData.thumbnail_file);
+          }
+          try {
+            await schoolManagementApi.uploadVideo(videoForm);
+          } catch {}
+        }
+        const baseIndex = 1;
+        const extras = Array.isArray(formData.additional_videos) ? formData.additional_videos : [];
+        for (let i = 0; i < extras.length; i++) {
+          const item = extras[i] || {};
+          if (item.source_type === 'embed' && item.youtube_url) {
+            const vid = extractYouTubeId(item.youtube_url);
+            const thumb = vid ? getYouTubeThumbnailUrl(vid) : undefined;
+            const payload: any = {
+              course_id: parseInt(courseId),
+              title: item.title || formData.title,
+              description: item.description || '',
+              video_url: item.youtube_url,
+              video_type: 'youtube',
+              order_index: baseIndex + i
+            };
+            if (vid) payload.video_id = vid;
+            if (thumb) payload.thumbnail_url = thumb;
+            try {
+              await schoolManagementApi.createCourseVideo(courseId, payload);
+            } catch {}
+          } else if (item.source_type === 'upload' && item.file) {
+            const f = new FormData();
+            f.append('course_id', courseId);
+            f.append('title', item.title || formData.title);
+            if (item.description) f.append('description', item.description);
+            f.append('video', item.file);
+            if (item.thumbnail_file) f.append('thumbnail', item.thumbnail_file);
+            f.append('order_index', String(baseIndex + i));
+            try {
+              await schoolManagementApi.uploadVideo(f);
+            } catch {}
+          }
+        }
+      }
       
       toast({
         title: "Success",
@@ -1015,10 +1218,17 @@ const SchoolManagement: React.FC = () => {
       duration_hours: 0,
       difficulty_level: 'beginner',
       price: 0,
+      price_type: 'free',
       is_featured: false,
       is_published: false,
       thumbnail_url: '',
-      thumbnail_file: null
+      thumbnail_file: null,
+      youtube_embed_url: '',
+      video_source_type: 'embed',
+      initial_video_file: null,
+      initial_video_title: '',
+      initial_video_description: '',
+      additional_videos: []
     });
     setSelectedCourse(null);
   };
@@ -1033,10 +1243,17 @@ const SchoolManagement: React.FC = () => {
       duration_hours: course.duration_hours,
       difficulty_level: course.difficulty_level,
       price: course.price,
+      price_type: (course.price && course.price > 0) ? 'paid' : 'free',
       is_featured: course.is_featured,
       is_published: course.is_published,
       thumbnail_url: course.thumbnail_url || '',
-      thumbnail_file: null
+      thumbnail_file: null,
+      youtube_embed_url: '',
+      video_source_type: 'embed',
+      initial_video_file: null,
+      initial_video_title: '',
+      initial_video_description: '',
+      additional_videos: []
     });
     setIsEditDialogOpen(true);
   };
@@ -1063,9 +1280,7 @@ const SchoolManagement: React.FC = () => {
     if (!formData.title.trim()) errors.push('Course title is required');
     if (!formData.instructor_name.trim()) errors.push('Instructor name is required');
     if (!formData.description.trim()) errors.push('Course description is required');
-    if (!formData.category_id) errors.push('Course category is required');
-    if (!formData.difficulty_level) errors.push('Difficulty level is required');
-    if (formData.duration_hours <= 0) errors.push('Duration must be greater than 0');
+    // Optional: category, difficulty, and duration are not required
     if (formData.price < 0) errors.push('Price cannot be negative');
     
     if (errors.length > 0) {

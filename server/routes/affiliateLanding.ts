@@ -281,50 +281,90 @@ router.post('/track-conversion', async (req, res) => {
 router.get('/affiliate/:id/info', async (req, res) => {
   try {
     const { id } = req.params;
-    
-    const affiliateQuery = `
-      SELECT 
-        a.id,
-        a.email,
-        a.first_name,
-        a.last_name,
-        a.company_name,
-        a.total_referrals,
-        a.commission_rate,
-        a.status,
-        u.first_name as admin_first_name,
-        u.last_name as admin_last_name,
-        u.company_name as admin_company_name
-      FROM affiliates a
-      LEFT JOIN users u ON a.admin_id = u.id
-      WHERE a.id = ? AND a.status = 'active'
-    `;
-    
-    const affiliate = await executeQuery(affiliateQuery, [id]);
-    
+    const isNumeric = /^\d+$/.test(String(id));
+    let affiliate;
+    if (isNumeric) {
+      const q = `
+        SELECT 
+          a.id,
+          a.email,
+          a.first_name,
+          a.last_name,
+          a.company_name,
+          a.total_referrals,
+          a.commission_rate,
+          a.status,
+          u.first_name as admin_first_name,
+          u.last_name as admin_last_name,
+          u.company_name as admin_company_name
+        FROM affiliates a
+        LEFT JOIN users u ON a.admin_id = u.id
+        WHERE a.id = ? AND a.status = 'active'
+      `;
+      affiliate = await executeQuery(q, [id]);
+    } else {
+      const qSlug = `
+        SELECT 
+          a.id,
+          a.email,
+          a.first_name,
+          a.last_name,
+          a.company_name,
+          a.total_referrals,
+          a.commission_rate,
+          a.status,
+          u.first_name as admin_first_name,
+          u.last_name as admin_last_name,
+          u.company_name as admin_company_name
+        FROM affiliates a
+        LEFT JOIN users u ON a.admin_id = u.id
+        WHERE a.referral_slug = ? AND a.status = 'active'
+        LIMIT 1
+      `;
+      affiliate = await executeQuery(qSlug, [id]);
+      if (!affiliate || affiliate.length === 0) {
+        const qFallback = `
+          SELECT 
+            a.id,
+            a.email,
+            a.first_name,
+            a.last_name,
+            a.company_name,
+            a.total_referrals,
+            a.commission_rate,
+            a.status,
+            u.first_name as admin_first_name,
+            u.last_name as admin_last_name,
+            u.company_name as admin_company_name
+          FROM affiliates a
+          LEFT JOIN users u ON a.admin_id = u.id
+          WHERE (a.email = ? OR LOWER(CONCAT(a.first_name, a.last_name)) = LOWER(?) OR LOWER(REPLACE(CONCAT(a.first_name, ' ', a.last_name), ' ', '')) = LOWER(?)) 
+            AND a.status = 'active'
+          LIMIT 1
+        `;
+        affiliate = await executeQuery(qFallback, [id, id, id]);
+      }
+    }
     if (!affiliate || affiliate.length === 0) {
       return res.status(404).json({ error: 'Affiliate not found or inactive' });
     }
-    
-    const affiliateData = affiliate[0];
-    
+    const a = affiliate[0];
     res.json({
       success: true,
       data: {
-        id: affiliateData.id,
-        name: `${affiliateData.first_name} ${affiliateData.last_name}`,
-        firstName: affiliateData.first_name,
-        lastName: affiliateData.last_name,
-        email: affiliateData.email,
-        companyName: affiliateData.company_name,
-        totalReferrals: affiliateData.total_referrals,
-        commissionRate: affiliateData.commission_rate,
-        adminName: `${affiliateData.admin_first_name} ${affiliateData.admin_last_name}`,
-        adminCompany: affiliateData.admin_company_name,
-        status: affiliateData.status
+        id: a.id,
+        name: `${a.first_name} ${a.last_name}`,
+        firstName: a.first_name,
+        lastName: a.last_name,
+        email: a.email,
+        companyName: a.company_name,
+        totalReferrals: a.total_referrals,
+        commissionRate: a.commission_rate,
+        adminName: `${a.admin_first_name} ${a.admin_last_name}`,
+        adminCompany: a.admin_company_name,
+        status: a.status
       }
     });
-    
   } catch (error) {
     console.error('Error fetching affiliate info:', error);
     res.status(500).json({ error: 'Failed to fetch affiliate information' });
@@ -337,7 +377,7 @@ router.get('/referral/:username', async (req, res) => {
     const { username } = req.params;
     
     // Try to find affiliate by email first, then by first_name+last_name combination
-    const affiliateQuery = `
+  const affiliateQuery = `
       SELECT 
         a.id,
         a.email,
@@ -348,12 +388,32 @@ router.get('/referral/:username', async (req, res) => {
         a.commission_rate,
         a.status
       FROM affiliates a
-      WHERE (a.email = ? OR LOWER(CONCAT(a.first_name, a.last_name)) = LOWER(?) OR LOWER(REPLACE(CONCAT(a.first_name, ' ', a.last_name), ' ', '')) = LOWER(?)) 
+      WHERE (a.email = ? OR a.referral_slug = ? OR LOWER(CONCAT(a.first_name, a.last_name)) = LOWER(?) OR LOWER(REPLACE(CONCAT(a.first_name, ' ', a.last_name), ' ', '')) = LOWER(?)) 
         AND a.status = 'active'
       LIMIT 1
     `;
     
-    const affiliate = await executeQuery(affiliateQuery, [username, username, username]);
+    let affiliate;
+    try {
+      affiliate = await executeQuery(affiliateQuery, [username, username, username, username]);
+    } catch (err) {
+      const fallbackQuery = `
+        SELECT 
+          a.id,
+          a.email,
+          a.first_name,
+          a.last_name,
+          a.company_name,
+          a.total_referrals,
+          a.commission_rate,
+          a.status
+        FROM affiliates a
+        WHERE (a.email = ? OR LOWER(CONCAT(a.first_name, a.last_name)) = LOWER(?) OR LOWER(REPLACE(CONCAT(a.first_name, ' ', a.last_name), ' ', '')) = LOWER(?)) 
+          AND a.status = 'active'
+        LIMIT 1
+      `;
+      affiliate = await executeQuery(fallbackQuery, [username, username, username]);
+    }
     
     if (!affiliate || affiliate.length === 0) {
       return res.status(404).json({ 

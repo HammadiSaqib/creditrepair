@@ -24,18 +24,24 @@ const requireAffiliateRole = (req: any, res: any, next: any) => {
 // Resolve the affiliate ID for the current user (supports affiliate role and admin owners)
 async function resolveAffiliateId(req: any): Promise<number | null> {
   try {
-    if (req.user?.role === 'affiliate') {
-      return req.user.id;
-    }
+    if (req.user?.role === 'affiliate') return req.user.id;
     if (req.user?.role === 'admin' || req.user?.role === 'super_admin') {
-      const rows = await executeQuery(
-        'SELECT id FROM affiliates WHERE admin_id = ? LIMIT 1',
-        [req.user.id]
-      );
-      if (rows && rows.length > 0) {
-        return rows[0].id;
+      const userRows = await executeQuery('SELECT email FROM users WHERE id = ? LIMIT 1', [req.user.id]);
+      const adminEmail = userRows && userRows[0]?.email;
+      const rows = await executeQuery('SELECT id, email, status, updated_at, created_at FROM affiliates WHERE admin_id = ?', [req.user.id]);
+      if (!rows || rows.length === 0) return null;
+      let selected = null as any;
+      if (adminEmail) {
+        selected = rows.find((r: any) => String(r.email || '').toLowerCase() === String(adminEmail).toLowerCase()) || null;
       }
-      return null;
+      if (!selected) {
+        selected = rows.find((r: any) => r.status === 'active') || null;
+      }
+      if (!selected) {
+        selected = rows.sort((a: any, b: any) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())[0];
+      }
+      if (!selected) selected = rows[0];
+      return selected?.id || null;
     }
     return null;
   } catch (err) {

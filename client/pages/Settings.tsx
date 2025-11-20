@@ -67,6 +67,7 @@ import {
   Sun,
   Moon,
   CreditCard,
+  AlertCircle,
 } from "lucide-react";
 
 // User profile data is now loaded from backend via API
@@ -592,7 +593,7 @@ export default function Settings() {
           <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="agreement">Agreement</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
-          <TabsTrigger value="funding">Funding & Payments</TabsTrigger>
+          <TabsTrigger value="funding">Merchant Integration</TabsTrigger>
           <TabsTrigger value="appearance">Appearance & Preferences</TabsTrigger>
         </TabsList>
 
@@ -1122,11 +1123,29 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="funding" className="space-y-8">
+          <div className="rounded-md border border-blue-200 bg-blue-50 dark:bg-slate-900/40 p-4 flex items-start">
+            <AlertCircle className="h-5 w-5 text-blue-600 mr-3 mt-0.5" />
+            <div>
+              <div className="font-medium">NMI Merchant Account Required</div>
+              <p className="text-sm text-muted-foreground">
+                If you haven't setup your NMI Merchant account, go to 5 Star website to setup your NMI.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2 border-ocean-blue/30 text-ocean-blue hover:bg-gradient-soft"
+                onClick={() => window.open('https://www.5starpays.com/scoremachine/', '_blank')}
+              >
+                Open 5 Star Pays
+              </Button>
+            </div>
+          </div>
           <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="gradient-text-primary flex items-center">
                 <CreditCard className="h-5 w-5 mr-2" />
-                Funding & Payments
+                Merchant Setup and Integration
               </CardTitle>
               <CardDescription>
                 Configure NMI gateway credentials and branding (UI only for now)

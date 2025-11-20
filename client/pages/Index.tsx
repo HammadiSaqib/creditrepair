@@ -669,7 +669,7 @@ export default function Index() {
               <Button
                 size="lg"
                 variant="outline"
-                className="text-xl px-12 py-8 border-2 border-white text-white hover:bg-white hover:text-ocean-blue transition-all duration-300 transform hover:scale-105 font-bold backdrop-blur-sm"
+                className="text-xl px-12 py-8 border-2 border-white text-sea-green hover:bg-white hover:text-ocean-blue transition-all duration-300 transform hover:scale-105 font-bold backdrop-blur-sm"
               >
                 <Play className="mr-3 h-6 w-6" />
                 Watch Demo
@@ -781,7 +781,7 @@ export default function Index() {
               <Button
                 size="lg"
                 variant="outline"
-                className="text-xl px-12 py-8 border-2 border-white text-white hover:bg-white hover:text-ocean-blue transition-all duration-300 transform hover:scale-105 font-bold backdrop-blur-sm"
+                className="text-xl px-12 py-8 border-2 border-white text-sea-green hover:bg-white hover:text-ocean-blue transition-all duration-300 transform hover:scale-105 font-bold backdrop-blur-sm"
               >
                 <BarChart3 className="mr-3 h-6 w-6" />
                 Learn More About Commissions

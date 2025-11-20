@@ -5927,135 +5927,6 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-indigo-50">
-            <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Credit Score Analysis</CardTitle>
-              <CardDescription className="text-lg text-gray-600">FICO factor weights and vintage metrics</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {(() => {
-                const factors = [
-                  { label: 'Payment History', value: 35, color: '#22c55e' },
-                  { label: 'Credit Utilization', value: 30, color: '#3b82f6' },
-                  { label: 'Length of Credit History', value: 15, color: '#f59e0b' },
-                  { label: 'Credit Mix', value: 5, color: '#8b5cf6' },
-                  { label: 'New Credit', value: 10, color: '#ef4444' }
-                ];
-                const r = 60;
-                const circumference = 2 * Math.PI * r;
-                let offset = 0;
-                const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                const totalLimit = accounts.reduce((sum: number, a: any) => sum + (parseFloat(a.CreditLimit) || 0), 0);
-                const totalBalance = accounts.reduce((sum: number, a: any) => sum + (parseFloat(a.CurrentBalance) || 0), 0);
-                const utilizationPct = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                const availablePct = totalLimit > 0 ? Math.round(((totalLimit - totalBalance) / totalLimit) * 100) : 0;
-                const balancePct = utilizationPct;
-                const now = new Date();
-                const ageMonthsArr = accounts
-                  .map((a: any) => {
-                    const d = a.DateOpened || a.dateOpened || a.opened;
-                    if (!d) return null;
-                    const opened = new Date(d);
-                    if (isNaN(opened.getTime())) return null;
-                    return (now.getFullYear() - opened.getFullYear()) * 12 + (now.getMonth() - opened.getMonth());
-                  })
-                  .filter((m: any) => typeof m === 'number' && m >= 0) as number[];
-                const avgMonths = ageMonthsArr.length ? Math.round(ageMonthsArr.reduce((s, m) => s + m, 0) / ageMonthsArr.length) : 0;
-                const ageScore = Math.min(100, Math.round((avgMonths / 120) * 100));
-                const typeSet = new Set<string>();
-                accounts.forEach((a: any) => {
-                  const t = ((a.CreditType || a.AccountTypeDescription || a.AccountType || a.type || '') as string).toLowerCase();
-                  if (t.includes('revolving')) typeSet.add('revolving');
-                  if (t.includes('installment')) typeSet.add('installment');
-                  if (t.includes('mortgage') || t.includes('real estate')) typeSet.add('mortgage');
-                  if (t.includes('student')) typeSet.add('student');
-                  if (t.includes('auto')) typeSet.add('auto');
-                });
-                const mixScore = Math.round((Math.min(5, typeSet.size) / 5) * 100);
-                const ageMixPct = Math.round((ageScore + mixScore) / 2);
-                const lateKeywords = ['late', 'delinquent', 'charge', 'collection', 'default', 'past due'];
-                const onTimeCount = accounts.filter((a: any) => {
-                  const s = ((a.PaymentStatus || a.paymentHistory || '') as string).toLowerCase();
-                  if (lateKeywords.some((k) => s.includes(k))) return false;
-                  return s.includes('current') || s.includes('paid') || s.includes('as agreed') || s.includes('ok');
-                }).length;
-                const paymentHistoryPct = accounts.length > 0 ? Math.round((onTimeCount / accounts.length) * 100) : 0;
-                const recentOpenCount = accounts.filter((a: any) => {
-                  const d = a.DateOpened || a.dateOpened || a.opened;
-                  if (!d) return false;
-                  const opened = new Date(d);
-                  if (isNaN(opened.getTime())) return false;
-                  const months = (now.getFullYear() - opened.getFullYear()) * 12 + (now.getMonth() - opened.getMonth());
-                  return months <= 12 && months >= 0;
-                }).length;
-                const newCreditPct = accounts.length > 0 ? Math.round((recentOpenCount / accounts.length) * 100) : 0;
-                return (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <div className="flex items-center justify-center">
-                      <svg width="180" height="180" viewBox="0 0 180 180">
-                        <g transform="rotate(-90 90 90)">
-                          {factors.map((f, i) => {
-                            const dash = (f.value / 100) * circumference;
-                            const el = (
-                              <circle
-                                key={i}
-                                cx="90"
-                                cy="90"
-                                r={r}
-                                fill="none"
-                                stroke={f.color}
-                                strokeWidth="14"
-                                strokeDasharray={`${dash} ${circumference}`}
-                                strokeDashoffset={-offset}
-                              />
-                            );
-                            offset += dash;
-                            return el;
-                          })}
-                        </g>
-                        <circle cx="90" cy="90" r="46" fill="#ffffff" />
-                        <text x="90" y="90" textAnchor="middle" dominantBaseline="middle" className="fill-gray-800 text-sm font-semibold">FICO</text>
-                      </svg>
-                    </div>
-                    <div className="space-y-4">
-                      {factors.map((f, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-block w-3 h-3 rounded" style={{ backgroundColor: f.color }}></span>
-                            <span className="text-sm text-gray-700">{f.label}</span>
-                          </div>
-                          <span className="text-sm font-semibold text-gray-800">{f.value}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-              {(() => {
-                const items = [
-                  { label: 'Utilization%', value: (() => { const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : []; const totalLimit = accounts.reduce((s: number, a: any) => s + (parseFloat(a.CreditLimit) || 0), 0); const totalBalance = accounts.reduce((s: number, a: any) => s + (parseFloat(a.CurrentBalance) || 0), 0); return totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0; })() },
-                  { label: 'Age/Mix%', value: (() => { const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : []; const now = new Date(); const monthsArr = accounts.map((a: any) => { const d = a.DateOpened || a.dateOpened || a.opened; if (!d) return null; const opened = new Date(d); if (isNaN(opened.getTime())) return null; return (now.getFullYear() - opened.getFullYear()) * 12 + (now.getMonth() - opened.getMonth()); }).filter((m: any) => typeof m === 'number' && m >= 0) as number[]; const avg = monthsArr.length ? Math.round(monthsArr.reduce((s, m) => s + m, 0) / monthsArr.length) : 0; const ageScore = Math.min(100, Math.round((avg / 120) * 100)); const typeSet = new Set<string>(); accounts.forEach((a: any) => { const t = ((a.CreditType || a.AccountTypeDescription || a.AccountType || a.type || '') as string).toLowerCase(); if (t.includes('revolving')) typeSet.add('revolving'); if (t.includes('installment')) typeSet.add('installment'); if (t.includes('mortgage') || t.includes('real estate')) typeSet.add('mortgage'); if (t.includes('student')) typeSet.add('student'); if (t.includes('auto')) typeSet.add('auto'); }); const mixScore = Math.round((Math.min(5, typeSet.size) / 5) * 100); return Math.round((ageScore + mixScore) / 2); })() },
-                  { label: 'Payment History %', value: (() => { const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : []; const lateKeywords = ['late', 'delinquent', 'charge', 'collection', 'default', 'past due']; const onTimeCount = accounts.filter((a: any) => { const s = ((a.PaymentStatus || a.paymentHistory || '') as string).toLowerCase(); if (lateKeywords.some((k) => s.includes(k))) return false; return s.includes('current') || s.includes('paid') || s.includes('as agreed') || s.includes('ok'); }).length; return accounts.length > 0 ? Math.round((onTimeCount / accounts.length) * 100) : 0; })() },
-                  { label: 'Available Credit %', value: (() => { const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : []; const totalLimit = accounts.reduce((s: number, a: any) => s + (parseFloat(a.CreditLimit) || 0), 0); const totalBalance = accounts.reduce((s: number, a: any) => s + (parseFloat(a.CurrentBalance) || 0), 0); return totalLimit > 0 ? Math.round(((totalLimit - totalBalance) / totalLimit) * 100) : 0; })() },
-                  { label: 'Balance %', value: (() => { const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : []; const totalLimit = accounts.reduce((s: number, a: any) => s + (parseFloat(a.CreditLimit) || 0), 0); const totalBalance = accounts.reduce((s: number, a: any) => s + (parseFloat(a.CurrentBalance) || 0), 0); return totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0; })() },
-                  { label: 'New Credit %', value: (() => { const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : []; const now = new Date(); const recent = accounts.filter((a: any) => { const d = a.DateOpened || a.dateOpened || a.opened; if (!d) return false; const opened = new Date(d); if (isNaN(opened.getTime())) return false; const months = (now.getFullYear() - opened.getFullYear()) * 12 + (now.getMonth() - opened.getMonth()); return months <= 12 && months >= 0; }).length; return accounts.length > 0 ? Math.round((recent / accounts.length) * 100) : 0; })() }
-                ];
-                return (
-                  <div className="mt-8">
-                    <h4 className="text-lg font-semibold text-gray-800 mb-4">Vintage Metrics</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {items.map((it, idx) => (
-                        <div key={idx} className="rounded-lg border bg-white p-4 flex items-center justify-between">
-                          <span className="text-sm text-gray-600">{it.label}</span>
-                          <span className="text-lg font-bold text-gray-800">{it.value}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-            </CardContent>
-          </Card>
 
           {(() => {
             // Underwriting eligibility helpers based on calculated qualification criteria
@@ -14337,7 +14208,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </div>
                 <div className="bg-white rounded-lg p-4 border border-blue-200">
                   <div className="text-sm text-gray-600">
-                    Credit Repair Journey
+                    Funding Journey
                   </div>
                   <div className="text-lg font-bold text-blue-600">✓ Ready</div>
                 </div>

@@ -38,7 +38,10 @@ const createCourseSchema = z.object({
   enrollment_end_date: z.string().datetime().optional(),
   course_start_date: z.string().datetime().optional(),
   course_end_date: z.string().datetime().optional(),
-  featured: z.boolean().default(false)
+  featured: z.boolean().default(false),
+  thumbnail_url: z.string().url().optional(),
+  preview_video_url: z.string().url().optional(),
+  youtube_embed_url: z.string().url().optional()
 });
 
 const updateCourseSchema = createCourseSchema.partial();
@@ -65,6 +68,7 @@ const createVideoSchema = z.object({
   video_url: z.string().url('Invalid video URL'),
   video_type: z.enum(['upload', 'youtube', 'vimeo', 'external']).default('upload'),
   video_id: z.string().optional(),
+  thumbnail_url: z.string().url().optional(),
   duration_seconds: z.number().int().min(0).default(0),
   order_index: z.number().int().min(0).default(0),
   is_preview: z.boolean().default(false),
@@ -506,10 +510,6 @@ export async function createCourse(req: Request, res: Response) {
     if (formData.duration_minutes) {
       formData.duration_minutes = parseFloat(formData.duration_minutes);
     }
-    if (formData.category) {
-      formData.category_id = parseInt(formData.category);
-      delete formData.category;
-    }
     
     // Convert boolean fields from strings to booleans
     if (formData.is_featured !== undefined) {
@@ -531,6 +531,63 @@ export async function createCourse(req: Request, res: Response) {
       formData.thumbnail_url = `/uploads/school/${uploadedFile.filename}`;
     }
 
+    if (!formData.thumbnail_url && formData.youtube_embed_url) {
+      const extractYouTubeId = (raw: string): string => {
+        let url = raw || '';
+        const m = url.match(/src=\"([^\"]+)\"/i);
+        if (m && m[1]) url = m[1];
+        try {
+          const u = new URL(url);
+          const host = u.hostname.replace('www.', '');
+          if (host.includes('youtu.be')) {
+            return u.pathname.replace('/', '').split('?')[0];
+          }
+          if (host.includes('youtube.com') || host.includes('youtube-nocookie.com')) {
+            if (u.pathname.includes('/embed/')) return u.pathname.split('/embed/')[1].split('?')[0];
+            if (u.pathname.includes('/shorts/')) return u.pathname.split('/shorts/')[1].split('?')[0];
+            const v = u.searchParams.get('v');
+            if (v) return v;
+          }
+        } catch {}
+        const match = url.match(/(?:v=|\/embed\/|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+        return match ? match[1] : '';
+      };
+      const vid = extractYouTubeId(formData.youtube_embed_url);
+      if (vid) {
+        formData.thumbnail_url = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
+        formData.preview_video_url = `https://www.youtube.com/embed/${vid}`;
+      }
+    }
+
+    const extractYouTubeId = (raw: string): string => {
+      let url = raw || '';
+      const m = url.match(/src=\"([^\"]+)\"/i);
+      if (m && m[1]) url = m[1];
+      try {
+        const u = new URL(url);
+        const host = u.hostname.replace('www.', '');
+        if (host.includes('youtu.be')) {
+          return u.pathname.replace('/', '').split('?')[0];
+        }
+        if (host.includes('youtube.com') || host.includes('youtube-nocookie.com')) {
+          if (u.pathname.includes('/embed/')) return u.pathname.split('/embed/')[1].split('?')[0];
+          if (u.pathname.includes('/shorts/')) return u.pathname.split('/shorts/')[1].split('?')[0];
+          const v = u.searchParams.get('v');
+          if (v) return v;
+        }
+      } catch {}
+      const match = url.match(/(?:v=|\/embed\/|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+      return match ? match[1] : '';
+    };
+
+    if (!formData.thumbnail_url && formData.youtube_embed_url) {
+      const vid = extractYouTubeId(formData.youtube_embed_url);
+      if (vid) {
+        formData.thumbnail_url = `https://img.youtube.com/vi/${vid}/hqdefault.jpg`;
+        formData.preview_video_url = `https://www.youtube.com/embed/${vid}`;
+      }
+    }
+
     const validatedData = createCourseSchema.parse(formData);
 
     // Create course
@@ -540,14 +597,14 @@ export async function createCourse(req: Request, res: Response) {
         duration_hours, duration_minutes, price, is_free, currency,
         prerequisites, learning_objectives, tags, language, certificate_enabled,
         max_enrollments, enrollment_start_date, enrollment_end_date,
-        course_start_date, course_end_date, featured, created_by, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        course_start_date, course_end_date, featured, thumbnail_url, preview_video_url, created_by, updated_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         validatedData.title,
         validatedData.description || null,
         validatedData.short_description || null,
-        userId, // instructor_id
-        parseInt(validatedData.category), // Convert category string to category_id integer
+        userId,
+        parseInt(validatedData.category),
         validatedData.level,
         validatedData.duration_hours,
         validatedData.duration_minutes,
@@ -565,6 +622,8 @@ export async function createCourse(req: Request, res: Response) {
         validatedData.course_start_date || null,
         validatedData.course_end_date || null,
         validatedData.featured ? 1 : 0,
+        formData.thumbnail_url || null,
+        formData.preview_video_url || null,
         userId,
         userId
       ]
@@ -1147,9 +1206,9 @@ export async function createCourseVideo(req: Request, res: Response) {
 
     const result = await db.executeQuery(
       `INSERT INTO course_videos (
-        course_id, module_id, title, description, video_url, video_type, video_id,
+        course_id, module_id, title, description, video_url, video_type, video_id, thumbnail_url,
         duration_seconds, order_index, is_preview, transcript, captions_url
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         validatedData.course_id,
         validatedData.module_id || null,
@@ -1158,6 +1217,7 @@ export async function createCourseVideo(req: Request, res: Response) {
         validatedData.video_url,
         validatedData.video_type,
         validatedData.video_id || null,
+        validatedData.thumbnail_url || null,
         validatedData.duration_seconds,
         validatedData.order_index,
         validatedData.is_preview ? 1 : 0,

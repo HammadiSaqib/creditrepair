@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bell, User, CreditCard, Shield, Globe, Mail, Phone, MapPin, Camera, Save, Eye, EyeOff, Trash2, Loader2 } from "lucide-react";
+import { Bell, User, CreditCard, Shield, Globe, Mail, Phone, MapPin, Camera, Save, Eye, EyeOff, Trash2, Loader2, Link as LinkIcon } from "lucide-react";
 import { affiliateApi, authApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/contexts/AuthContext";
@@ -111,6 +111,9 @@ export default function AffiliateSettings() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [referralSlug, setReferralSlug] = useState("");
+  const [slugCheckLoading, setSlugCheckLoading] = useState(false);
+  const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null);
   const { toast } = useToast();
   const { refreshProfile, userProfile, updateProfile } = useAuthContext();
 
@@ -153,6 +156,7 @@ export default function AffiliateSettings() {
           timezone: "UTC",
           language: "en"
         });
+        setReferralSlug(responseData.profile.referral_slug || "");
       } else {
         console.log('No profile data in response');
       }
@@ -187,6 +191,42 @@ export default function AffiliateSettings() {
         description: "Failed to load settings",
         variant: "destructive"
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const validateSlug = (s: string) => /^[a-z0-9_-]{3,30}$/.test(s);
+  const handleCheckSlug = async () => {
+    try {
+      if (!validateSlug(referralSlug)) {
+        toast({ title: "Invalid slug", description: "Use 3-30 chars: a-z, 0-9, - or _", variant: "destructive" });
+        return;
+      }
+      setSlugCheckLoading(true);
+      const res = await affiliateApi.checkSlugAvailability(referralSlug);
+      const data = res.data || res;
+      setSlugAvailable(!!data.available);
+      toast({ title: data.available ? "Available" : "Taken", description: data.available ? "You can use this slug" : "Choose another" });
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to check slug", variant: "destructive" });
+    } finally {
+      setSlugCheckLoading(false);
+    }
+  };
+
+  const handleSaveSlug = async () => {
+    try {
+      if (!validateSlug(referralSlug)) {
+        toast({ title: "Invalid slug", description: "Use 3-30 chars: a-z, 0-9, - or _", variant: "destructive" });
+        return;
+      }
+      setLoading(true);
+      await affiliateApi.updateReferralSlug(referralSlug);
+      setSlugAvailable(true);
+      toast({ title: "Success", description: "Referral link updated" });
+    } catch (e) {
+      toast({ title: "Error", description: "Failed to save slug", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -429,7 +469,7 @@ export default function AffiliateSettings() {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               Profile
@@ -445,6 +485,10 @@ export default function AffiliateSettings() {
             <TabsTrigger value="security" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
               Security
+            </TabsTrigger>
+            <TabsTrigger value="referral" className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4" />
+              Referral
             </TabsTrigger>
           </TabsList>
 
@@ -894,6 +938,54 @@ export default function AffiliateSettings() {
                     <Save className="h-4 w-4 mr-2" />
                     Update Password
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="referral" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Custom Referral Link</CardTitle>
+                <CardDescription>Set a unique referral path</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="referralSlug">Your referral URL</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground select-none">
+                      {typeof window !== 'undefined' ? window.location.origin : ''}/ref/
+                    </span>
+                    <Input
+                      id="referralSlug"
+                      value={referralSlug}
+                      onChange={(e) => { setReferralSlug(e.target.value.toLowerCase()); setSlugAvailable(null); }}
+                      placeholder="your-code"
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Use 3-30 characters: a-z, 0-9, - or _</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={handleCheckSlug} disabled={slugCheckLoading}>
+                    {slugCheckLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Check availability
+                  </Button>
+                  <Button onClick={handleSaveSlug} disabled={loading || slugAvailable === false}>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save slug
+                  </Button>
+                  {slugAvailable !== null && (
+                    <Badge variant={slugAvailable ? "default" : "destructive"}>
+                      {slugAvailable ? "Available" : "Taken"}
+                    </Badge>
+                  )}
+                </div>
+                <Separator />
+                <div>
+                  <Label>Preview</Label>
+                  <div className="mt-1 text-sm">
+                    {(typeof window !== 'undefined' ? window.location.origin : '') + '/ref/' + (referralSlug || 'your-code')}
+                  </div>
                 </div>
               </CardContent>
             </Card>

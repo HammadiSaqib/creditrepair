@@ -216,12 +216,15 @@ export default function Dashboard() {
     if (userProfile?.role === 'admin' || userProfile?.role === 'super_admin') {
       try {
         const affiliateResponse = await api.get('/api/auth/affiliate/status');
-        const { status, affiliate_id } = affiliateResponse.data || {};
+        const { status, affiliate_id, referral_slug } = affiliateResponse.data || {};
         setHasAffiliateAccess(true);
         setAffiliateVerificationStatus(status || null);
         if (affiliate_id) {
           setAffiliateId(String(affiliate_id));
-          setAffiliateLink(`${window.location.origin}/ref/${affiliate_id}`);
+          const refPart = referral_slug && typeof referral_slug === 'string' && referral_slug.length > 0 
+            ? referral_slug 
+            : String(affiliate_id);
+          setAffiliateLink(`${window.location.origin}/ref/${refPart}`);
         } else {
           setAffiliateId(null);
           setAffiliateLink("");

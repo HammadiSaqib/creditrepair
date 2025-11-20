@@ -123,7 +123,7 @@ import {
   BellRing,
   CreditCard,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 interface UserStats {
   totalPoints: number;
@@ -445,14 +445,14 @@ export default function School() {
       const skills = Array.from(new Set(list.flatMap(x => [x.category].filter(Boolean)))).slice(0, 6) as string[];
       result.push({
         id: idCounter++,
-        name: type === 'fundamental' ? 'Credit Repair Foundation' : type === 'advanced' ? 'Advanced Professional Track' : 'Business Builder Certification',
+        name: type === 'fundamental' ? 'Funding Fundamental Foundation' : type === 'advanced' ? 'Advanced Professional Track' : 'Business Builder Certification',
         type: type as any,
-        description: type === 'fundamental' ? 'Essential knowledge for starting your credit repair journey' : type === 'advanced' ? 'Master advanced techniques and become an industry expert' : 'Build and scale your credit repair business',
+        description: type === 'fundamental' ? 'Essential knowledge for starting your funding journey' : type === 'advanced' ? 'Master advanced techniques and become an industry expert' : 'Build and scale your funding business',
         totalCourses,
         completedCourses,
         estimatedHours: totalCourses * 5,
         difficulty: type === 'fundamental' ? 'beginner' : type === 'advanced' ? 'advanced' : 'intermediate',
-        prerequisites: type !== 'fundamental' ? ['Credit Repair Foundation'] : undefined,
+        prerequisites: type !== 'fundamental' ? ['Funding Foundation'] : undefined,
         skills: skills.length > 0 ? skills : ['Credit Reports', 'Dispute Letters'],
         isEnrolled,
         progress: avgProgress,
@@ -1818,23 +1818,23 @@ export default function School() {
                               <span className="text-xs text-muted-foreground">{course.duration}</span>
                             </div>
                             <div className="flex items-center space-x-1">
-                              <Button 
-                                size="sm" 
-                                className={canAccessCourse(course) ? "gradient-primary hover:opacity-90" : "gradient-primary hover:opacity-90"}
-                                onClick={() => handleCourseAction(course)}
-                              >
-                                {canAccessCourse(course) ? (
-                                  <>
+                              {canAccessCourse(course) ? (
+                                <Button size="sm" className="gradient-primary hover:opacity-90" asChild>
+                                  <Link to={`/course/${course.id}`}>
                                     <PlayCircle className="h-3 w-3 mr-1" />
                                     {getCourseButtonText(course)}
-                                  </>
-                                ) : (
-                                  <>
-                                    <CreditCard className="h-3 w-3 mr-1" />
-                                    {getCourseButtonText(course)}
-                                  </>
-                                )}
-                              </Button>
+                                  </Link>
+                                </Button>
+                              ) : (
+                                <Button 
+                                  size="sm" 
+                                  className="gradient-primary hover:opacity-90"
+                                  onClick={() => handleCourseAction(course)}
+                                >
+                                  <CreditCard className="h-3 w-3 mr-1" />
+                                  {getCourseButtonText(course)}
+                                </Button>
+                              )}
                               
                               {/* Additional action buttons - only show if user has access */}
                               {canAccessCourse(course) && (
@@ -1938,7 +1938,7 @@ export default function School() {
                     Learning Pathways
                   </CardTitle>
                   <CardDescription>
-                    Structured learning journeys to master credit repair
+                    Structured learning journeys to master funding
                   </CardDescription>
                 </div>
                 <Button className="gradient-primary hover:opacity-90">
@@ -2339,7 +2339,7 @@ export default function School() {
                     Community Leaderboard
                   </CardTitle>
                   <CardDescription>
-                    See how you rank against other credit repair professionals
+                    See how you rank against other funding professionals
                   </CardDescription>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -2651,7 +2651,7 @@ export default function School() {
                 <Label htmlFor="courseTitle">Course Title *</Label>
                 <Input
                   id="courseTitle"
-                  placeholder="e.g., Advanced Credit Repair Strategies"
+                  placeholder="e.g., Advanced Funding Strategies"
                   value={courseFormData.title}
                   onChange={(e) => handleCourseFormChange('title', e.target.value)}
                   className={courseFormErrors.title ? 'border-red-500' : ''}

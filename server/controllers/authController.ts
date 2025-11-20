@@ -1084,6 +1084,7 @@ export class AuthController {
           status: affiliate.status,
           created_at: affiliate.created_at,
           last_login: affiliate.last_login,
+          referral_slug: affiliate.referral_slug,
         };
         
         return res.json({ success: true, user: affiliateData });

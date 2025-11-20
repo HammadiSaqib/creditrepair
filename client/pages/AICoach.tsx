@@ -437,8 +437,7 @@ export default function AICoach() {
       description="Certified USA Credit Repair & Business Funding guidance"
     >
       <div className="relative">
-        {/* Content Enabled */}
-        <div>
+        <div className="blur-sm pointer-events-none select-none opacity-60">
           {/* Stats Overview */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700">
@@ -832,8 +831,17 @@ export default function AICoach() {
             </Card>
           </div>
         </div>
-
-        {/* Live feature enabled */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Card className="border-0 shadow-xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm">
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl">Coming Soon</CardTitle>
+              <CardDescription>This feature will be available shortly</CardDescription>
+            </CardHeader>
+            <CardContent className="flex justify-center">
+              <Badge variant="outline">Carmela Credit Coach</Badge>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </DashboardLayout>
   );

@@ -40,12 +40,12 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
       ];
     } else {
       return [
-        { label: 'Payment History', value: 41, color: '#F97316' },
-        { label: 'Age/Mix', value: 20, color: '#3B82F6' },
-        { label: 'Utilization', value: 20, color: '#06B6D4' },
-        { label: 'New Credit', value: 11, color: '#F59E0B' },
-        { label: 'Balance', value: 6, color: '#6B7280' },
-        { label: 'Available Credit', value: 2, color: '#9CA3AF' }
+        { label: 'Payment History', value: 41, color: '#85BB65' },
+        { label: 'Depth of Credit', value: 20, color: '#333333' },
+        { label: 'Credit Utilization', value: 20, color: '#32CD32' },
+        { label: 'Recent Credit', value: 11, color: '#64748B' },
+        { label: 'Balance', value: 6, color: '#006400' },
+        { label: 'Available Credit', value: 2, color: '#D1D5DB' }
       ];
     }
   };
@@ -214,7 +214,7 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
             <div className="text-3xl font-black text-transparent bg-gradient-to-br from-gray-800 via-gray-900 to-black bg-clip-text mb-1 hover:scale-105 transition-transform duration-300 cursor-default">
               {score}
             </div>
-            <div className="text-xs text-gray-500 font-semibold tracking-wide bg-gray-100 px-3 py-1 rounded-full">300-850</div>
+            <div className="text-xs text-gray-500 font-semibold tracking-wide bg-gray-100 px-3 py-1 rounded-full">Avarage Score</div>
           </div>
         </div>
 

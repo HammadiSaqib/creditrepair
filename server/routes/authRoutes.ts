@@ -45,38 +45,53 @@ router.get('/affiliate/status', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
     
-    // Only allow admin and super_admin users
     if (userRole !== 'admin' && userRole !== 'super_admin') {
       return res.status(403).json({ error: 'Access denied. Admin role required.' });
     }
     
-    // Check if admin has affiliate record
-    const affiliateQuery = `
-      SELECT 
-        id,
-        status,
-        email_verified,
-        plan_type,
-        created_at
-      FROM affiliates 
-      WHERE admin_id = ?
-    `;
+    const userRows: any[] = await executeQuery('SELECT email FROM users WHERE id = ? LIMIT 1', [userId]);
+    const adminEmail = userRows && userRows[0]?.email;
     
-    const affiliate = await executeQuery(affiliateQuery, [userId]);
-    
-    if (affiliate.length === 0) {
+    const rows: any[] = await executeQuery(
+      'SELECT id, email, status, email_verified, plan_type, created_at, updated_at FROM affiliates WHERE admin_id = ?',
+      [userId]
+    );
+    if (!rows || rows.length === 0) {
       return res.status(404).json({ error: 'No affiliate access found' });
     }
-    
-    const affiliateData = affiliate[0];
-    
+    let selected = null as any;
+    if (adminEmail) {
+      selected = rows.find(r => String(r.email || '').toLowerCase() === String(adminEmail).toLowerCase()) || null;
+    }
+    if (!selected) {
+      selected = rows.find(r => r.status === 'active') || null;
+    }
+    if (!selected) {
+      selected = rows.sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime())[0];
+    }
+    if (!selected) selected = rows[0];
+
+    let referralSlug: string | null = null;
+    try {
+      const colRes: any[] = await executeQuery(
+        `SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'affiliates' AND COLUMN_NAME = 'referral_slug'`,
+        []
+      );
+      const hasSlug = colRes && (colRes[0]?.cnt || 0) > 0;
+      if (hasSlug) {
+        const slugRows: any[] = await executeQuery('SELECT referral_slug FROM affiliates WHERE id = ? LIMIT 1', [selected.id]);
+        referralSlug = slugRows && slugRows[0]?.referral_slug || null;
+      }
+    } catch {}
+
     res.json({
       success: true,
-      status: affiliateData.status,
-      email_verified: affiliateData.email_verified,
-      plan_type: affiliateData.plan_type,
-      affiliate_id: affiliateData.id,
-      created_at: affiliateData.created_at
+      status: selected.status,
+      email_verified: selected.email_verified,
+      plan_type: selected.plan_type,
+      affiliate_id: selected.id,
+      referral_slug: referralSlug,
+      created_at: selected.created_at
     });
   } catch (error) {
     console.error('Error checking affiliate status:', error);
