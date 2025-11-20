@@ -9,6 +9,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
 import SiteHeader from "@/components/SiteHeader";
+import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   CreditCard,
   Users,
@@ -33,6 +35,11 @@ import {
 } from "lucide-react";
 
 export default function Index() {
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 1000);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -60,127 +67,158 @@ export default function Index() {
         <div className="relative container mx-auto px-4 py-20 lg:py-32">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <div className="space-y-10">
-              {/* Enhanced Badge */}
-              <div className="flex items-center gap-4">
-                <Badge
-                  variant="secondary"
-                  className="bg-gradient-to-r from-ocean-blue/10 to-sea-green/10 text-white border-ocean-blue/20 px-4 py-2 text-sm font-semibold"
-                >
-                  <Sparkles className="w-4 h-4 mr-2 text-white" />
-                  AI-Powered Intelligence
-                </Badge>
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-sea-green rounded-full animate-pulse"></div>
-                  <span className="text-sm text-muted-foreground font-medium">Live System</span>
-                </div>
-              </div>
-
-              {/* Enhanced Headline */}
-              <div className="space-y-6">
-                <h1 className="text-6xl lg:text-8xl font-black leading-[0.9] tracking-tight">
-                  <span className="block text-slate-900">Transform</span>
-                  <span className="block bg-gradient-to-r from-ocean-blue via-sea-green to-ocean-blue bg-clip-text text-transparent animate-gradient bg-300% bg-pos-0">
-                    Credit Intelligence
-                  </span>
-                  <span className="block text-slate-700 text-4xl lg:text-5xl font-bold mt-2">
-                    with AI Precision
-                  </span>
-                </h1>
-              </div>
-
-              {/* Enhanced Description */}
-              <div className="space-y-4">
-                <p className="text-xl lg:text-2xl text-slate-600 leading-relaxed font-medium max-w-2xl">
-                  Meet <span className="font-bold text-ocean-blue">Score Machine</span> — the revolutionary AI platform that 
-                  <span className="bg-gradient-to-r from-sea-green to-ocean-blue bg-clip-text text-transparent font-semibold"> analyzes, optimizes, and accelerates</span> your credit journey.
-                </p>
-                <p className="text-lg text-muted-foreground leading-relaxed max-w-xl">
-                  From funding professionals to funding seekers, discover exactly where you stand 
-                  and get a precise roadmap to financial success.
-                </p>
-              </div>
-
-              {/* Enhanced Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                <Button
-                  size="lg"
-                  className="text-lg px-10 py-7 bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 shadow-2xl hover:shadow-ocean-blue/25 transition-all duration-300 transform hover:scale-105 font-semibold"
-                  asChild
-                >
-                  <Link to="/login">
-                    Start Free Analysis <ArrowRight className="ml-2 h-5 w-5" />
-                  </Link>
-                </Button>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="text-lg px-10 py-7 border-2 border-ocean-blue text-ocean-blue hover:bg-ocean-blue hover:text-white transition-all duration-300 font-semibold"
-                >
-                  <Play className="mr-2 h-5 w-5" />
-                  See It In Action
-                </Button>
-              </div>
-
-              {/* Enhanced Trust Indicators */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-8">
-                <div className="flex items-center gap-3 p-4 bg-white/60 backdrop-blur-sm rounded-xl border border-ocean-blue/10">
-                  <div className="w-10 h-10 bg-gradient-to-r from-ocean-blue to-sea-green rounded-lg flex items-center justify-center">
-                    <Shield className="h-5 w-5 text-white" />
+              {loading ? (
+                <>
+                  <div className="flex items-center gap-4">
+                    <Skeleton className="h-8 w-44" />
+                    <Skeleton className="h-4 w-24" />
                   </div>
-                  <div>
-                    <div className="text-sm font-bold text-slate-900">FCRA Compliant</div>
-                    <div className="text-xs text-muted-foreground">100% Ethical</div>
+                  <div className="space-y-6">
+                    <Skeleton className="h-14 w-3/4" />
+                    <Skeleton className="h-14 w-2/3" />
+                    <Skeleton className="h-10 w-1/2" />
                   </div>
-                </div>
-                <div className="flex items-center gap-3 p-4 bg-white/60 backdrop-blur-sm rounded-xl border border-sea-green/10">
-                  <div className="w-10 h-10 bg-gradient-to-r from-sea-green to-ocean-blue rounded-lg flex items-center justify-center">
-                    <Zap className="h-5 w-5 text-white" />
+                  <div className="space-y-4">
+                    <Skeleton className="h-4 w-4/5" />
+                    <Skeleton className="h-4 w-3/5" />
                   </div>
-                  <div>
-                    <div className="text-sm font-bold text-slate-900">AI-Powered</div>
-                    <div className="text-xs text-muted-foreground">Real-time Analysis</div>
+                  <div className="flex flex-col sm:flex-row gap-4 pt-4">
+                    <Skeleton className="h-14 w-56" />
+                    <Skeleton className="h-14 w-56" />
                   </div>
-                </div>
-                <div className="flex items-center gap-3 p-4 bg-white/60 backdrop-blur-sm rounded-xl border border-ocean-blue/10">
-                  <div className="w-10 h-10 bg-gradient-to-r from-ocean-blue to-sea-green rounded-lg flex items-center justify-center">
-                    <Award className="h-5 w-5 text-white" />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-8">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 p-4 bg-white/60 backdrop-blur-sm rounded-xl border border-ocean-blue/10">
+                        <Skeleton className="w-10 h-10 rounded-lg" />
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-28" />
+                          <Skeleton className="h-3 w-24" />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <div className="text-sm font-bold text-slate-900">Proven Results</div>
-                    <div className="text-xs text-muted-foreground">94.5% Success</div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-4">
+                    <Badge
+                      variant="secondary"
+                      className="bg-gradient-to-r from-ocean-blue/10 to-sea-green/10 text-white border-ocean-blue/20 px-4 py-2 text-sm font-semibold"
+                    >
+                      <Sparkles className="w-4 h-4 mr-2 text-white" />
+                      AI-Powered Intelligence
+                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 bg-sea-green rounded-full animate-pulse"></div>
+                      <span className="text-sm text-muted-foreground font-medium">Live System</span>
+                    </div>
                   </div>
-                </div>
-              </div>
+                  <div className="space-y-6">
+                    <h1 className="text-6xl lg:text-8xl font-black leading-[0.9] tracking-tight">
+                      <span className="block text-slate-900">Transform</span>
+                      <span className="block bg-gradient-to-r from-ocean-blue via-sea-green to-ocean-blue bg-clip-text text-transparent animate-gradient bg-300% bg-pos-0">
+                        Credit Intelligence
+                      </span>
+                      <span className="block text-slate-700 text-4xl lg:text-5xl font-bold mt-2">
+                        with AI Precision
+                      </span>
+                    </h1>
+                  </div>
+                  <div className="space-y-4">
+                    <p className="text-xl lg:text-2xl text-slate-600 leading-relaxed font-medium max-w-2xl">
+                      Meet <span className="font-bold text-ocean-blue">Score Machine</span> — the revolutionary AI platform that 
+                      <span className="bg-gradient-to-r from-sea-green to-ocean-blue bg-clip-text text-transparent font-semibold"> analyzes, optimizes, and accelerates</span> your credit journey.
+                    </p>
+                    <p className="text-lg text-muted-foreground leading-relaxed max-w-xl">
+                      From funding professionals to funding seekers, discover exactly where you stand 
+                      and get a precise roadmap to financial success.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-4 pt-4">
+                    <Button
+                      size="lg"
+                      className="text-lg px-10 py-7 bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 shadow-2xl hover:shadow-ocean-blue/25 transition-all duration-300 transform hover:scale-105 font-semibold"
+                      asChild
+                    >
+                      <Link to="/login">
+                        Start Free Analysis <ArrowRight className="ml-2 h-5 w-5" />
+                      </Link>
+                    </Button>
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="text-lg px-10 py-7 border-2 border-ocean-blue text-ocean-blue hover:bg-ocean-blue hover:text-white transition-all duration-300 font-semibold"
+                    >
+                      <Play className="mr-2 h-5 w-5" />
+                      See It In Action
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-8">
+                    <div className="flex items-center gap-3 p-4 bg-white/60 backdrop-blur-sm rounded-xl border border-ocean-blue/10">
+                      <div className="w-10 h-10 bg-gradient-to-r from-ocean-blue to-sea-green rounded-lg flex items-center justify-center">
+                        <Shield className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">FCRA Compliant</div>
+                        <div className="text-xs text-muted-foreground">100% Ethical</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-4 bg-white/60 backdrop-blur-sm rounded-xl border border-sea-green/10">
+                      <div className="w-10 h-10 bg-gradient-to-r from-sea-green to-ocean-blue rounded-lg flex items-center justify-center">
+                        <Zap className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">AI-Powered</div>
+                        <div className="text-xs text-muted-foreground">Real-time Analysis</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-4 bg-white/60 backdrop-blur-sm rounded-xl border border-ocean-blue/10">
+                      <div className="w-10 h-10 bg-gradient-to-r from-ocean-blue to-sea-green rounded-lg flex items-center justify-center">
+                        <Award className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-slate-900">Proven Results</div>
+                        <div className="text-xs text-muted-foreground">94.5% Success</div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Enhanced Visual Section */}
             <div className="relative lg:pl-8">
-              {/* Main Image Container */}
               <div className="relative group">
-                <div className="absolute inset-0 bg-gradient-to-r from-ocean-blue to-sea-green rounded-3xl blur-2xl opacity-20 group-hover:opacity-30 transition-opacity duration-500"></div>
-                <div className="relative rounded-3xl overflow-hidden shadow-2xl transform group-hover:scale-105 transition-transform duration-500">
-                  <img
-                    src="https://images.pexels.com/photos/5816286/pexels-photo-5816286.jpeg"
-                    alt="Professional financial team collaborating on funding"
-                    className="w-full h-[650px] object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent"></div>
-                  
-                  {/* Overlay Content */}
-                  <div className="absolute bottom-6 left-6 right-6">
-                    <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-sm font-medium text-muted-foreground">Live Dashboard</div>
-                          <div className="text-2xl font-bold text-slate-900">Credit Analysis Complete</div>
-                        </div>
-                        <div className="w-12 h-12 bg-gradient-to-r from-sea-green to-ocean-blue rounded-full flex items-center justify-center">
-                          <CheckCircle className="h-6 w-6 text-white" />
+                {loading ? (
+                  <div className="relative rounded-3xl overflow-hidden shadow-2xl">
+                    <Skeleton className="w-full h-[650px] rounded-3xl" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-r from-ocean-blue to-sea-green rounded-3xl blur-2xl opacity-20 group-hover:opacity-30 transition-opacity duration-500"></div>
+                    <div className="relative rounded-3xl overflow-hidden shadow-2xl transform group-hover:scale-105 transition-transform duration-500">
+                      <img
+                        src="https://images.pexels.com/photos/5816286/pexels-photo-5816286.jpeg"
+                        alt="Professional financial team collaborating on funding"
+                        className="w-full h-[650px] object-cover"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent"></div>
+                      <div className="absolute bottom-6 left-6 right-6">
+                        <div className="bg-white/95 backdrop-blur-sm rounded-2xl p-6 border border-white/20">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-medium text-muted-foreground">Live Dashboard</div>
+                              <div className="text-2xl font-bold text-slate-900">Credit Analysis Complete</div>
+                            </div>
+                            <div className="w-12 h-12 bg-gradient-to-r from-sea-green to-ocean-blue rounded-full flex items-center justify-center">
+                              <CheckCircle className="h-6 w-6 text-white" />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </div>
 
               {/* Enhanced Floating Cards */}
@@ -315,81 +353,97 @@ export default function Index() {
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
-            <Card className="group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-3 bg-white/80 backdrop-blur-sm overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-ocean-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <CardHeader className="pb-6 relative z-10">
-                <div className="w-16 h-16 bg-gradient-to-br from-ocean-blue to-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-lg">
-                  <TrendingUp className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-xl font-bold mb-3 group-hover:text-ocean-blue transition-colors">
-                  Progress Report with Score Timeline
-                </CardTitle>
-                <CardDescription className="text-base leading-relaxed text-slate-600">
-                  See how your credit profile evolves over time. Track positive and negative changes month-to-month so you can measure growth and catch issues early.
-                </CardDescription>
-                <div className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-ocean-blue/10 to-blue-100 rounded-full px-4 py-2">
-                  <DollarSign className="h-4 w-4 text-ocean-blue" />
-                  <span className="text-sm font-bold text-ocean-blue">Value: $97</span>
-                </div>
-              </CardHeader>
-            </Card>
-
-            <Card className="group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-3 bg-white/80 backdrop-blur-sm overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-sea-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <CardHeader className="pb-6 relative z-10">
-                <div className="w-16 h-16 bg-gradient-to-br from-sea-green to-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-lg">
-                  <FileText className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-xl font-bold mb-3 group-hover:text-sea-green transition-colors">
-                  Client Summary Export & PDF Download
-                </CardTitle>
-                <CardDescription className="text-base leading-relaxed text-slate-600">
-                  Easily share or save a professional-grade credit analysis. Download your entire file breakdown and action plan in one sleek, printable document.
-                </CardDescription>
-                <div className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-sea-green/10 to-emerald-100 rounded-full px-4 py-2">
-                  <DollarSign className="h-4 w-4 text-sea-green" />
-                  <span className="text-sm font-bold text-sea-green">Value: $127</span>
-                </div>
-              </CardHeader>
-            </Card>
-
-            <Card className="group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-3 bg-white/80 backdrop-blur-sm overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-ocean-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <CardHeader className="pb-6 relative z-10">
-                <div className="w-16 h-16 bg-gradient-to-br from-ocean-blue to-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-lg">
-                  <Brain className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-xl font-bold mb-3 group-hover:text-ocean-blue transition-colors">
-                  Full AI Credit File Analysis
-                </CardTitle>
-                <CardDescription className="text-base leading-relaxed text-slate-600">
-                  Our AI scans every section of your credit report to highlight errors, risks, and strengths — helping you understand what lenders see before you apply.
-                </CardDescription>
-                <div className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-ocean-blue/10 to-blue-100 rounded-full px-4 py-2">
-                  <DollarSign className="h-4 w-4 text-ocean-blue" />
-                  <span className="text-sm font-bold text-ocean-blue">Value: $147</span>
-                </div>
-              </CardHeader>
-            </Card>
-
-            <Card className="group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-3 bg-white/80 backdrop-blur-sm overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-sea-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-              <CardHeader className="pb-6 relative z-10">
-                <div className="w-16 h-16 bg-gradient-to-br from-sea-green to-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-lg">
-                  <Shield className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-xl font-bold mb-3 group-hover:text-sea-green transition-colors">
-                  Underwriting Blueprint — Are You Fundable?
-                </CardTitle>
-                <CardDescription className="text-base leading-relaxed text-slate-600">
-                  Go beyond scores. Get a full underwriting-style review that reveals whether your file is ready for approval and exactly what needs to change if it's not.
-                </CardDescription>
-                <div className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-sea-green/10 to-emerald-100 rounded-full px-4 py-2">
-                  <DollarSign className="h-4 w-4 text-sea-green" />
-                  <span className="text-sm font-bold text-sea-green">Value: $207</span>
-                </div>
-              </CardHeader>
-            </Card>
+            {loading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <Card key={i} className="group relative border-0 shadow-xl bg-white/80 backdrop-blur-sm overflow-hidden">
+                  <CardHeader className="pb-6">
+                    <Skeleton className="w-16 h-16 rounded-2xl mb-6" />
+                    <Skeleton className="h-6 w-3/4 mb-3" />
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-5/6" />
+                      <Skeleton className="h-4 w-4/6" />
+                    </div>
+                    <Skeleton className="h-7 w-32 mt-4 rounded-full" />
+                  </CardHeader>
+                </Card>
+              ))
+            ) : (
+              <>
+                <Card className="group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-3 bg-white/80 backdrop-blur-sm overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-ocean-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                  <CardHeader className="pb-6 relative z-10">
+                    <div className="w-16 h-16 bg-gradient-to-br from-ocean-blue to-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-lg">
+                      <TrendingUp className="h-8 w-8 text-white" />
+                    </div>
+                    <CardTitle className="text-xl font-bold mb-3 group-hover:text-ocean-blue transition-colors">
+                      Progress Report with Score Timeline
+                    </CardTitle>
+                    <CardDescription className="text-base leading-relaxed text-slate-600">
+                      See how your credit profile evolves over time. Track positive and negative changes month-to-month so you can measure growth and catch issues early.
+                    </CardDescription>
+                    <div className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-ocean-blue/10 to-blue-100 rounded-full px-4 py-2">
+                      <DollarSign className="h-4 w-4 text-ocean-blue" />
+                      <span className="text-sm font-bold text-ocean-blue">Value: $97</span>
+                    </div>
+                  </CardHeader>
+                </Card>
+                <Card className="group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-3 bg-white/80 backdrop-blur-sm overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-sea-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                  <CardHeader className="pb-6 relative z-10">
+                    <div className="w-16 h-16 bg-gradient-to-br from-sea-green to-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-lg">
+                      <FileText className="h-8 w-8 text-white" />
+                    </div>
+                    <CardTitle className="text-xl font-bold mb-3 group-hover:text-sea-green transition-colors">
+                      Client Summary Export & PDF Download
+                    </CardTitle>
+                    <CardDescription className="text-base leading-relaxed text-slate-600">
+                      Easily share or save a professional-grade credit analysis. Download your entire file breakdown and action plan in one sleek, printable document.
+                    </CardDescription>
+                    <div className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-sea-green/10 to-emerald-100 rounded-full px-4 py-2">
+                      <DollarSign className="h-4 w-4 text-sea-green" />
+                      <span className="text-sm font-bold text-sea-green">Value: $127</span>
+                    </div>
+                  </CardHeader>
+                </Card>
+                <Card className="group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-3 bg-white/80 backdrop-blur-sm overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-ocean-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                  <CardHeader className="pb-6 relative z-10">
+                    <div className="w-16 h-16 bg-gradient-to-br from-ocean-blue to-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-lg">
+                      <Brain className="h-8 w-8 text-white" />
+                    </div>
+                    <CardTitle className="text-xl font-bold mb-3 group-hover:text-ocean-blue transition-colors">
+                      Full AI Credit File Analysis
+                    </CardTitle>
+                    <CardDescription className="text-base leading-relaxed text-slate-600">
+                      Our AI scans every section of your credit report to highlight errors, risks, and strengths — helping you understand what lenders see before you apply.
+                    </CardDescription>
+                    <div className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-ocean-blue/10 to-blue-100 rounded-full px-4 py-2">
+                      <DollarSign className="h-4 w-4 text-ocean-blue" />
+                      <span className="text-sm font-bold text-ocean-blue">Value: $147</span>
+                    </div>
+                  </CardHeader>
+                </Card>
+                <Card className="group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-500 hover:-translate-y-3 bg-white/80 backdrop-blur-sm overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-sea-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                  <CardHeader className="pb-6 relative z-10">
+                    <div className="w-16 h-16 bg-gradient-to-br from-sea-green to-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-lg">
+                      <Shield className="h-8 w-8 text-white" />
+                    </div>
+                    <CardTitle className="text-xl font-bold mb-3 group-hover:text-sea-green transition-colors">
+                      Underwriting Blueprint — Are You Fundable?
+                    </CardTitle>
+                    <CardDescription className="text-base leading-relaxed text-slate-600">
+                      Go beyond scores. Get a full underwriting-style review that reveals whether your file is ready for approval and exactly what needs to change if it's not.
+                    </CardDescription>
+                    <div className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-sea-green/10 to-emerald-100 rounded-full px-4 py-2">
+                      <DollarSign className="h-4 w-4 text-sea-green" />
+                      <span className="text-sm font-bold text-sea-green">Value: $207</span>
+                    </div>
+                  </CardHeader>
+                </Card>
+              </>
+            )}
           </div>
 
           {/* Enhanced Value Proposition */}

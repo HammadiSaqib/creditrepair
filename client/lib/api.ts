@@ -538,6 +538,12 @@ export const superAdminApi = {
     form.append('file', file);
     return api.post('/api/super-admin/admins/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
+  importClientsCSV: (file: File, adminId: number) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('admin_id', String(adminId));
+    return api.post('/api/super-admin/clients/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
   getClients: (params?: { page?: number; limit?: number }) =>
     api.get('/api/super-admin/clients', { params }),
   getClientStatistics: () => api.get('/api/super-admin/client-statistics'),
@@ -592,6 +598,8 @@ export const superAdminApi = {
     form.append('file', file);
     return api.post('/api/super-admin/affiliates/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
+  uploadCreditReport: (data: { admin_id: number; client_id: number; platform: string; report_json: any; experian_score?: number; equifax_score?: number; transunion_score?: number; credit_score?: number; report_date?: string; notes?: string }) =>
+    api.post('/api/super-admin/credit-reports/upload', data),
 };
 
 // Affiliate API module

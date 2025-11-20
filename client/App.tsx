@@ -49,6 +49,8 @@ import SuperAdminSupportUsers from "./pages/super-admin/SuperAdminSupportUsers";
 import SuperAdminSchoolManagement from "./pages/super-admin/SuperAdminSchoolManagement";
 import SuperAdminAdminImport from "./pages/super-admin/SuperAdminAdminImport";
 import SuperAdminAffiliateImport from "./pages/super-admin/SuperAdminAffiliateImport";
+import SuperAdminClientImport from "./pages/super-admin/SuperAdminClientImport";
+import SuperAdminCreditReportUpload from "./pages/super-admin/SuperAdminCreditReportUpload";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import SuperAdminLogin from "./pages/SuperAdminLogin";
@@ -472,6 +474,22 @@ const App = () => (
             element={
               <SuperAdminProtectedRoute>
                 <SuperAdminAffiliateImport />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/client-import"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminClientImport />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/credit-report-upload"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminCreditReportUpload />
               </SuperAdminProtectedRoute>
             }
           />

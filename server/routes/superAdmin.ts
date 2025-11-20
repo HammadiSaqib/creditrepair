@@ -7,6 +7,8 @@ import { authenticateToken } from '../middleware/authMiddleware.js';
 import { SubscriptionPlan, AdminProfile, AdminSubscription, UserActivity, SystemSettings, AdminNotification } from '../database/superAdminSchema.js';
 import { getWebSocketService } from '../services/websocketService.js';
 import multer from 'multer';
+import { validateClientQuota, checkUserPlanLimits } from '../utils/planValidation.js';
+import { PLATFORMS } from '../services/scrapers/index.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -2606,6 +2608,342 @@ router.post('/admins/import-csv', authenticateToken, requireSuperAdmin, upload.s
     res.json({ success: true, results });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error?.message || 'Failed to import CSV' });
+  }
+});
+
+router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const currentUserId = (req as any).user?.id;
+    const file = (req as any).file;
+    const adminIdRaw = (req as any).body?.admin_id ?? (req as any).body?.adminId;
+    const adminId = parseInt(String(adminIdRaw || ''), 10);
+    if (!adminId || isNaN(adminId)) {
+      return res.status(400).json({ success: false, error: 'admin_id is required' });
+    }
+    const adminUser = await db.getQuery('SELECT * FROM users WHERE id = ? AND role = ?', [adminId, 'admin']);
+    if (!adminUser) {
+      return res.status(404).json({ success: false, error: 'Admin not found' });
+    }
+    if (!file || !file.buffer) {
+      return res.status(400).json({ success: false, error: 'CSV file is required' });
+    }
+    const text = file.buffer.toString('utf-8');
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) {
+      return res.status(400).json({ success: false, error: 'CSV must have header and at least one row' });
+    }
+    const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+    function parseRow(line: string): string[] {
+      const out: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = !inQuotes; }
+        } else if (ch === ',' && !inQuotes) {
+          out.push(cur);
+          cur = '';
+        } else {
+          cur += ch;
+        }
+      }
+      out.push(cur);
+      return out.map(v => v.trim());
+    }
+    function get(row: Record<string,string>, key: string): string {
+      const k = key.toLowerCase();
+      return row[k] ?? '';
+    }
+    function getAny(row: Record<string,string>, keys: string[]): string {
+      for (const key of keys) {
+        const val = get(row, key);
+        if (val && String(val).trim().length > 0) return val;
+      }
+      return '';
+    }
+    function normalizeDate(val: string): string | null {
+      if (!val) return null;
+      const s = String(val).trim();
+      if (!s) return null;
+      const iso = new Date(s);
+      if (!isNaN(iso.getTime())) {
+        const y = iso.getFullYear();
+        const m = String(iso.getMonth() + 1).padStart(2, '0');
+        const d = String(iso.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+      const mdY = s.match(/^([0-1]?\d)\/([0-3]?\d)\/(\d{4})$/);
+      if (mdY) {
+        const mm = mdY[1].padStart(2, '0');
+        const dd = mdY[2].padStart(2, '0');
+        const yyyy = mdY[3];
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      const dMY = s.match(/^([0-3]?\d)[- ]([0-1]?\d)[- ](\d{4})$/);
+      if (dMY) {
+        const dd = dMY[1].padStart(2, '0');
+        const mm = dMY[2].padStart(2, '0');
+        const yyyy = dMY[3];
+        return `${yyyy}-${mm}-${dd}`;
+      }
+      return null;
+    }
+    const rows: Record<string,string>[] = lines.slice(1).map(line => {
+      const values = parseRow(line);
+      const obj: Record<string,string> = {};
+      for (let i = 0; i < header.length; i++) obj[header[i]] = values[i] ?? '';
+      return obj;
+    });
+    const schema = z.object({
+      first_name: z.string().min(1),
+      last_name: z.string().min(1),
+      email: z.string().email().max(255).transform(v => v.toLowerCase()),
+      phone: z.string().optional(),
+      date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      address: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      zip_code: z.string().optional(),
+      status: z.enum(['active','inactive','pending']).default('active'),
+      credit_score: z.coerce.number().int().min(300).max(850).optional(),
+      target_score: z.coerce.number().int().min(300).max(850).optional(),
+      notes: z.string().optional()
+    }).refine((data) => {
+      if (data.credit_score && data.target_score) return data.target_score >= data.credit_score;
+      return true;
+    });
+    const results: any[] = [];
+    for (const row of rows) {
+      try {
+        const email = getAny(row, ['email']);
+        const fn = getAny(row, ['first_name','first name','firstname']);
+        const ln = getAny(row, ['last_name','last name','lastname']);
+        let nameCombined = getAny(row, ['name','full name']);
+        let firstName = fn;
+        let lastName = ln;
+        if ((!firstName || !lastName) && nameCombined) {
+          const parts = nameCombined.trim().split(/\s+/);
+          firstName = firstName || parts[0] || '';
+          lastName = lastName || parts.slice(1).join(' ') || '';
+        }
+        const phone = getAny(row, ['phone','phone number']);
+        const dobRaw = getAny(row, ['date_of_birth','date of birth','dob']);
+        const dob = normalizeDate(dobRaw || '');
+        const address = getAny(row, ['address']);
+        const city = getAny(row, ['city']);
+        const state = getAny(row, ['state']);
+        const zip = getAny(row, ['zip','zip_code','postal code']);
+        const statusRaw = getAny(row, ['status','client status']);
+        const status = /^(inactive|pending)$/i.test(statusRaw) ? statusRaw.toLowerCase() : 'active';
+        const credit = getAny(row, ['credit_score','credit score']);
+        const target = getAny(row, ['target_score','target score']);
+        const notes = getAny(row, ['notes','note']);
+        if (!email) {
+          results.push({ email: '', status: 'skipped', reason: 'missing email' });
+          continue;
+        }
+        if (!firstName || !lastName) {
+          results.push({ email, status: 'skipped', reason: 'missing name' });
+          continue;
+        }
+        const validated = schema.parse({
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          phone: phone || undefined,
+          date_of_birth: dob || undefined,
+          address: address || undefined,
+          city: city || undefined,
+          state: state || undefined,
+          zip_code: zip || undefined,
+          status,
+          credit_score: credit || undefined,
+          target_score: target || undefined,
+          notes: notes || undefined
+        });
+        const quota = await validateClientQuota(adminId);
+        if (!quota.canAdd) {
+          results.push({ email, status: 'skipped', reason: 'quota_exceeded' });
+          continue;
+        }
+        const dup = await db.getQuery('SELECT id FROM clients WHERE email = ? AND user_id = ? LIMIT 1', [validated.email, adminId]);
+        if (dup) {
+          results.push({ email, status: 'skipped', reason: 'duplicate' });
+          continue;
+        }
+        const ins = await db.executeQuery(
+          `INSERT INTO clients (
+            user_id, first_name, last_name, email, phone, date_of_birth,
+            employment_status, annual_income, ssn_last_four, address, city, state, zip_code, status,
+            credit_score, target_score, notes, created_by, updated_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            adminId,
+            validated.first_name,
+            validated.last_name,
+            validated.email,
+            validated.phone || null,
+            validated.date_of_birth || null,
+            null,
+            null,
+            null,
+            validated.address || null,
+            validated.city || null,
+            validated.state || null,
+            validated.zip_code || null,
+            validated.status,
+            validated.credit_score || null,
+            validated.target_score || null,
+            validated.notes || null,
+            currentUserId,
+            currentUserId
+          ]
+        );
+        const clientId = ins.insertId || ins?.lastID || 0;
+        results.push({ email, status: 'imported', client_id: clientId });
+      } catch (e: any) {
+        results.push({ email: getAny(row, ['email']), status: 'error', error: e?.message || 'row failed' });
+      }
+    }
+    res.json({ success: true, results });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to import CSV' });
+  }
+});
+
+router.post('/credit-reports/upload', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const currentUserId = (req as any).user?.id;
+    const body = (req as any).body || {};
+
+    const adminIdRaw = body.admin_id ?? body.adminId;
+    const clientIdRaw = body.client_id ?? body.clientId;
+    const platform = String(body.platform || '').toLowerCase();
+    const reportJson = body.report_json ?? body.reportJson ?? body.data;
+    const experianScoreRaw = body.experian_score ?? body.experianScore;
+    const equifaxScoreRaw = body.equifax_score ?? body.equifaxScore;
+    const transunionScoreRaw = body.transunion_score ?? body.transunionScore;
+    const creditScoreRaw = body.credit_score ?? body.creditScore;
+    const reportDateRaw = body.report_date ?? body.reportDate;
+    const notesRaw = body.notes;
+
+    const adminId = parseInt(String(adminIdRaw || ''), 10);
+    const clientId = parseInt(String(clientIdRaw || ''), 10);
+
+    if (!adminId || isNaN(adminId)) {
+      return res.status(400).json({ success: false, error: 'admin_id is required' });
+    }
+    if (!clientId || isNaN(clientId)) {
+      return res.status(400).json({ success: false, error: 'client_id is required' });
+    }
+    if (!platform) {
+      return res.status(400).json({ success: false, error: 'platform is required' });
+    }
+    if (!Object.values(PLATFORMS).includes(platform)) {
+      return res.status(400).json({ success: false, error: 'Unsupported platform' });
+    }
+    if (!reportJson) {
+      return res.status(400).json({ success: false, error: 'report_json is required' });
+    }
+
+    const adminUser = await db.getQuery('SELECT id, role FROM users WHERE id = ? AND role = ?', [adminId, 'admin']);
+    if (!adminUser) {
+      return res.status(404).json({ success: false, error: 'Admin not found' });
+    }
+    const client = await db.getQuery('SELECT id, user_id, first_name, last_name FROM clients WHERE id = ? AND user_id = ?', [clientId, adminId]);
+    if (!client) {
+      return res.status(404).json({ success: false, error: 'Client not found for the selected admin' });
+    }
+
+    let parsedData: any;
+    try {
+      parsedData = typeof reportJson === 'string' ? JSON.parse(reportJson) : reportJson;
+    } catch (e: any) {
+      return res.status(400).json({ success: false, error: 'Invalid JSON data' });
+    }
+
+    const toInt = (v: any): number | null => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = parseInt(String(v), 10);
+      return isNaN(n) ? null : n;
+    };
+
+    const experianScore = toInt(experianScoreRaw);
+    const equifaxScore = toInt(equifaxScoreRaw);
+    const transunionScore = toInt(transunionScoreRaw);
+    let creditScore = toInt(creditScoreRaw);
+    if (!creditScore) {
+      const vals = [experianScore, equifaxScore, transunionScore].filter((x) => typeof x === 'number') as number[];
+      creditScore = vals.length ? Math.max(...vals) : null;
+    }
+
+    let reportDate: any = null;
+    if (reportDateRaw) {
+      const d = new Date(String(reportDateRaw));
+      if (!isNaN(d.getTime())) reportDate = d.toISOString().slice(0, 19).replace('T', ' ');
+    }
+
+    let notes = typeof notesRaw === 'string' ? notesRaw : undefined;
+
+    const fs = await import('fs');
+    const path = await import('path');
+    const outputDir = path.join(process.cwd(), 'scraper-output');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    const timeStamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeClient = String(clientId);
+    const fileName = `manual-${platform}-client-${safeClient}-${timeStamp}.json`;
+    const filePathAbs = path.join(outputDir, fileName);
+    const filePathRel = path.join('scraper-output', fileName);
+
+    const filePayload = {
+      platform,
+      client_id: clientId,
+      created_by: currentUserId,
+      created_at: new Date().toISOString(),
+      reportData: parsedData
+    };
+
+    fs.writeFileSync(filePathAbs, JSON.stringify(filePayload, null, 2), 'utf8');
+
+    const dbUtil = await import('../database/dbConnection.js');
+    const historyData = {
+      client_id: clientId,
+      platform,
+      report_path: filePathRel,
+      status: 'completed',
+      credit_score: creditScore || null,
+      experian_score: experianScore || null,
+      equifax_score: equifaxScore || null,
+      transunion_score: transunionScore || null,
+      report_date: reportDate || null,
+      notes: notes || null
+    };
+
+    const result = await dbUtil.saveCreditReport(historyData);
+
+    res.json({
+      success: true,
+      message: 'Credit report uploaded successfully',
+      data: {
+        report_path: filePathRel,
+        id: result.insertId || result.lastID || null,
+        scores: {
+          credit_score: creditScore,
+          experian_score: experianScore,
+          equifax_score: equifaxScore,
+          transunion_score: transunionScore
+        }
+      }
+    });
+  } catch (error: any) {
+    console.error('Error uploading credit report:', error);
+    res.status(500).json({ success: false, error: error?.message || 'Failed to upload credit report' });
   }
 });
 

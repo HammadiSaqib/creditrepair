@@ -109,6 +109,18 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       badge: null,
     },
     {
+      name: "Client Import",
+      href: "/super-admin/client-import",
+      icon: FileText,
+      badge: null,
+    },
+    {
+      name: "Report Upload",
+      href: "/super-admin/credit-report-upload",
+      icon: FileText,
+      badge: null,
+    },
+    {
       name: "Settings",
       href: "/super-admin/settings",
       icon: Settings,
