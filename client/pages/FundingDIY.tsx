@@ -119,18 +119,7 @@ export default function FundingDIY() {
     return Array.from(map.values());
   }, [cards]);
 
-  const sortedBanks = useMemo(() => {
-    return [...banks].sort((a, b) => {
-      const eligA = bankEligibility(a.id);
-      const eligB = bankEligibility(b.id);
-      const matchA = (clientFundableFlags.Experian && eligA.bureauEligible.Experian) || (clientFundableFlags.Equifax && eligA.bureauEligible.Equifax) || (clientFundableFlags.TransUnion && eligA.bureauEligible.TransUnion);
-      const matchB = (clientFundableFlags.Experian && eligB.bureauEligible.Experian) || (clientFundableFlags.Equifax && eligB.bureauEligible.Equifax) || (clientFundableFlags.TransUnion && eligB.bureauEligible.TransUnion);
-      const scoreA = (eligA.stateEligible ? 1 : 0) + (matchA ? 1 : 0);
-      const scoreB = (eligB.stateEligible ? 1 : 0) + (matchB ? 1 : 0);
-      if (scoreB !== scoreA) return scoreB - scoreA;
-      return a.name.localeCompare(b.name);
-    });
-  }, [banks, clientFundableFlags]);
+  
 
   // Fetch client details for eligibility (state and scores)
   useEffect(() => {
@@ -221,6 +210,19 @@ export default function FundingDIY() {
     };
     return { stateEligible, bureauEligible };
   };
+
+  const sortedBanks = useMemo(() => {
+    return [...banks].sort((a, b) => {
+      const eligA = bankEligibility(a.id);
+      const eligB = bankEligibility(b.id);
+      const matchA = (clientFundableFlags.Experian && eligA.bureauEligible.Experian) || (clientFundableFlags.Equifax && eligA.bureauEligible.Equifax) || (clientFundableFlags.TransUnion && eligA.bureauEligible.TransUnion);
+      const matchB = (clientFundableFlags.Experian && eligB.bureauEligible.Experian) || (clientFundableFlags.Equifax && eligB.bureauEligible.Equifax) || (clientFundableFlags.TransUnion && eligB.bureauEligible.TransUnion);
+      const scoreA = (eligA.stateEligible ? 1 : 0) + (matchA ? 1 : 0);
+      const scoreB = (eligB.stateEligible ? 1 : 0) + (matchB ? 1 : 0);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return a.name.localeCompare(b.name);
+    });
+  }, [banks, clientFundableFlags]);
 
   useEffect(() => {
     if (!resolvedType) return;

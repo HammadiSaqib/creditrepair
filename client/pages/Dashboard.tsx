@@ -70,6 +70,8 @@ import {
   Lock,
   Unlock,
   Copy,
+  Building2,
+  CreditCard,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -92,6 +94,8 @@ type DashboardStats = {
   notFundable: number;
   reportPulls: number;
   fundingInvoicesPaid: number;
+  totalBanks: number;
+  totalCards: number;
 };
 
 type DashboardClient = {
@@ -177,6 +181,8 @@ export default function Dashboard() {
     notFundable: 0,
     reportPulls: 0,
     fundingInvoicesPaid: 0,
+    totalBanks: 0,
+    totalCards: 0,
   });
   const [clients, setClients] = useState<DashboardClient[]>([]);
   const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
@@ -269,7 +275,7 @@ export default function Dashboard() {
       }
 
       // Try to fetch real data from API with error handling
-      const [statsResponse, clientsResponse, activityResponse] =
+      const [statsResponse, clientsResponse, activityResponse, banksStatsResponse, cardsStatsResponse] =
         await Promise.all([
           analyticsApi
             .getDashboardAnalytics()
@@ -280,12 +286,20 @@ export default function Dashboard() {
           analyticsApi
             .getRecentActivities(4)
             .catch((err) => ({ error: err.message })),
+          api
+            .get('/api/banks/stats')
+            .catch((err) => ({ error: err.message })),
+          api
+            .get('/api/cards/stats')
+            .catch((err) => ({ error: err.message })),
         ]);
 
       console.log("Dashboard API Responses:", {
         statsResponse,
         clientsResponse,
         activityResponse,
+        banksStatsResponse,
+        cardsStatsResponse,
       });
 
       // Use API data if available, otherwise use mock data
@@ -346,6 +360,8 @@ export default function Dashboard() {
           notFundable: typeof statsResponse.data.notFundable === 'number' ? statsResponse.data.notFundable : notFundableCount,
           reportPulls: reportPullsCount,
           fundingInvoicesPaid: statsResponse.data.funding_invoices_paid_this_month || 0,
+          totalBanks: banksStatsResponse?.data?.total ? Number(banksStatsResponse.data.total) : 0,
+          totalCards: cardsStatsResponse?.data?.total ? Number(cardsStatsResponse.data.total) : 0,
         });
       } else {
         console.log("Using fallback stats, API error:", statsResponse.error);
@@ -358,6 +374,8 @@ export default function Dashboard() {
           notFundable: 60,
           reportPulls: 23,
           fundingInvoicesPaid: 5,
+          totalBanks: 0,
+          totalCards: 0,
         });
       }
 
@@ -513,6 +531,8 @@ export default function Dashboard() {
         notFundable: 38,
         reportPulls: 156,
         fundingInvoicesPaid: 12,
+        totalBanks: 0,
+        totalCards: 0,
       });
 
       setClients([
@@ -1063,8 +1083,65 @@ export default function Dashboard() {
               />
             </svg>
           </div>
+      </Card>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+        <Card
+          className="border-0 shadow-lg bg-gradient-to-br from-white to-indigo-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 cursor-pointer relative overflow-hidden"
+         
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+            <CardTitle className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Total Banks
+            </CardTitle>
+            <div className="gradient-primary p-2 rounded-lg">
+              <Building2 className="h-4 w-4 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent className="relative z-10">
+            <div className="text-3xl font-bold gradient-text-primary">
+              {loading ? "--" : (stats.totalBanks || 0).toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {loading ? "Loading..." : "Registered banks"}
+            </p>
+          </CardContent>
+          <div className="absolute bottom-0 right-0 opacity-20">
+            <svg width="80" height="40" viewBox="0 0 80 40" className="text-indigo-500">
+              <path d="M0,35 Q10,25 20,30 T40,20 T60,15 T80,10" fill="none" stroke="currentColor" strokeWidth="2" className="animate-pulse" />
+            </svg>
+          </div>
         </Card>
-        </div>
+
+        <Card
+          className="border-0 shadow-lg bg-gradient-to-br from-white to-teal-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 cursor-pointer relative overflow-hidden"
+          
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative z-10">
+            <CardTitle className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Total Products
+            </CardTitle>
+            <div className="bg-gradient-to-br from-teal-500 to-teal-600 p-2 rounded-lg">
+              <CreditCard className="h-4 w-4 text-white" />
+            </div>
+          </CardHeader>
+          <CardContent className="relative z-10">
+            <div className="text-3xl font-bold text-teal-600 dark:text-teal-400">
+              {loading ? "--" : (stats.totalCards || 0).toLocaleString()}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {loading ? "Loading..." : "Available products"}
+            </p>
+          </CardContent>
+          <div className="absolute bottom-0 right-0 opacity-20">
+            <svg width="60" height="60" viewBox="0 0 60 60" className="text-teal-500">
+              <circle cx="30" cy="30" r="20" fill="none" stroke="currentColor" strokeWidth="2" className="animate-pulse" />
+              <circle cx="30" cy="30" r="10" fill="none" stroke="currentColor" strokeWidth="2" className="animate-pulse" />
+            </svg>
+          </div>
+        </Card>
+      </div>
 
         <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700 mb-8">
           <CardContent className="p-6">
