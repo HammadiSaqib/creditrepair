@@ -54,6 +54,7 @@ export default function FundingDIY() {
   const resolvedType: CardType | null = isBusiness ? "business" : isPersonal ? "personal" : null;
 
   const [cards, setCards] = useState<FundingCard[]>([]);
+  const [allCards, setAllCards] = useState<FundingCard[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedBureau, setSelectedBureau] = useState<string>("all");
@@ -124,6 +125,18 @@ export default function FundingDIY() {
     if (banks && banks.length > 0) return banks;
     return banksFromCards;
   }, [banks, banksFromCards]);
+
+  const canonBureau = (s: string): 'Experian' | 'Equifax' | 'TransUnion' | null => {
+    const t = String(s || '').toLowerCase().replace(/\s+/g, '');
+    if (t === 'experian' || t === 'ex') return 'Experian';
+    if (t === 'equifax' || t === 'eq') return 'Equifax';
+    if (t === 'transunion' || t === 'tu') return 'TransUnion';
+    return null;
+  };
+  const cardHasBureau = (card: FundingCard, bureau: 'Experian' | 'Equifax' | 'TransUnion') => {
+    const arr = (card.credit_bureaus || []).map(canonBureau).filter(Boolean) as string[];
+    return arr.includes(bureau);
+  };
 
   
 
@@ -201,7 +214,7 @@ export default function FundingDIY() {
   // Eligibility helpers
   const bankEligibility = (bankId?: number) => {
     const state = String((selectedState || resolveClientState() || '')).toUpperCase();
-    const cardsByBank = cards.filter(c => c.bank_id === bankId);
+    const cardsByBank = allCards.filter(c => c.bank_id === bankId);
     const stateEligible = cardsByBank.some(c => {
       const statesArr = Array.isArray((c as any).states) ? (c as any).states : [];
       const stateVal = (c as any).state || null;
@@ -210,9 +223,9 @@ export default function FundingDIY() {
       return !stateVal;
     });
     const bureauEligible = {
-      Experian: cardsByBank.some(c => (c.credit_bureaus || []).includes('Experian')),
-      Equifax: cardsByBank.some(c => (c.credit_bureaus || []).includes('Equifax')),
-      TransUnion: cardsByBank.some(c => (c.credit_bureaus || []).includes('TransUnion')),
+      Experian: cardsByBank.some(c => cardHasBureau(c, 'Experian')),
+      Equifax: cardsByBank.some(c => cardHasBureau(c, 'Equifax')),
+      TransUnion: cardsByBank.some(c => cardHasBureau(c, 'TransUnion')),
     };
     return { stateEligible, bureauEligible };
   };
@@ -259,6 +272,21 @@ export default function FundingDIY() {
     };
     fetchCards();
   }, [resolvedType]);
+
+  useEffect(() => {
+    const fetchAllCards = async () => {
+      try {
+        const resp = await fetch(`/api/cards?status=active`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const fetched = (data.cards || []) as FundingCard[];
+        setAllCards(fetched);
+      } catch {}
+    };
+    fetchAllCards();
+  }, []);
 
   useEffect(() => {
     const fetchBanks = async () => {
@@ -768,16 +796,20 @@ export default function FundingDIY() {
                               if (effective === 'all') return true;
                               return (c.funding_type || '').toLowerCase() === String(effective).toLowerCase();
                             })
-                            .filter(c => selectedBureau === "all" ? true : (c.credit_bureaus || []).map(cb => cb?.toLowerCase()).includes(selectedBureau.toLowerCase()))
+                            .filter(c => {
+                              if (selectedBureau === 'all') return true;
+                              const canon = canonBureau(selectedBureau);
+                              if (!canon) return true;
+                              return cardHasBureau(c, canon);
+                            })
                             .sort((a, b) => {
                               const elig = slot.bankId ? bankEligibility(slot.bankId) : { stateEligible: false, bureauEligible: { Experian: false, Equifax: false, TransUnion: false } } as any;
                               const scoreFor = (card: typeof a) => {
-                                const bureaus = (card.credit_bureaus || []) as string[];
-                                const bureauMatch = bureaus.some(cb => (
-                                  (cb === 'Experian' && clientFundableFlags.Experian && elig.bureauEligible.Experian) ||
-                                  (cb === 'Equifax' && clientFundableFlags.Equifax && elig.bureauEligible.Equifax) ||
-                                  (cb === 'TransUnion' && clientFundableFlags.TransUnion && elig.bureauEligible.TransUnion)
-                                ));
+                                const bureauMatch = (
+                                  (cardHasBureau(card, 'Experian') && clientFundableFlags.Experian && elig.bureauEligible.Experian) ||
+                                  (cardHasBureau(card, 'Equifax') && clientFundableFlags.Equifax && elig.bureauEligible.Equifax) ||
+                                  (cardHasBureau(card, 'TransUnion') && clientFundableFlags.TransUnion && elig.bureauEligible.TransUnion)
+                                );
                                 return (elig.stateEligible ? 1 : 0) + (bureauMatch ? 1 : 0);
                               };
                               return scoreFor(b) - scoreFor(a);
