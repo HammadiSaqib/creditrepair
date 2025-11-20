@@ -108,8 +108,9 @@ export default function FundingDIY() {
   const [slotForms, setSlotForms] = useState<SlotForm[]>([{}]);
   const [selectedSlots, setSelectedSlots] = useState<Array<{ bankId: number; cardId: number }>>([]);
 
-  // Unique banks from fetched cards
-  const banks = useMemo(() => {
+  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string }>>([]);
+
+  const banksFromCards = useMemo(() => {
     const map = new Map<number, { id: number; name: string; logo?: string }>();
     for (const c of cards) {
       if (c.bank_id && !map.has(c.bank_id)) {
@@ -118,6 +119,11 @@ export default function FundingDIY() {
     }
     return Array.from(map.values());
   }, [cards]);
+
+  const allBanks = useMemo(() => {
+    if (banks && banks.length > 0) return banks;
+    return banksFromCards;
+  }, [banks, banksFromCards]);
 
   
 
@@ -195,7 +201,7 @@ export default function FundingDIY() {
   // Eligibility helpers
   const bankEligibility = (bankId?: number) => {
     const state = String((selectedState || resolveClientState() || '')).toUpperCase();
-    const cardsByBank = cards.filter(c => c.bank_id === bankId && c.card_type === resolvedType);
+    const cardsByBank = cards.filter(c => c.bank_id === bankId);
     const stateEligible = cardsByBank.some(c => {
       const statesArr = Array.isArray((c as any).states) ? (c as any).states : [];
       const stateVal = (c as any).state || null;
@@ -212,32 +218,29 @@ export default function FundingDIY() {
   };
 
   const sortedBanks = useMemo(() => {
-    return [...banks].sort((a, b) => {
+    return [...allBanks].sort((a, b) => {
       const eligA = bankEligibility(a.id);
       const eligB = bankEligibility(b.id);
-      const matchA = (clientFundableFlags.Experian && eligA.bureauEligible.Experian) || (clientFundableFlags.Equifax && eligA.bureauEligible.Equifax) || (clientFundableFlags.TransUnion && eligA.bureauEligible.TransUnion);
-      const matchB = (clientFundableFlags.Experian && eligB.bureauEligible.Experian) || (clientFundableFlags.Equifax && eligB.bureauEligible.Equifax) || (clientFundableFlags.TransUnion && eligB.bureauEligible.TransUnion);
-      const scoreA = (eligA.stateEligible ? 1 : 0) + (matchA ? 1 : 0);
-      const scoreB = (eligB.stateEligible ? 1 : 0) + (matchB ? 1 : 0);
+      const scoreA = (eligA.stateEligible ? 1 : 0);
+      const scoreB = (eligB.stateEligible ? 1 : 0);
       if (scoreB !== scoreA) return scoreB - scoreA;
       return a.name.localeCompare(b.name);
     });
-  }, [banks, clientFundableFlags]);
+  }, [allBanks, selectedState]);
 
   useEffect(() => {
-    if (!resolvedType) return;
     const fetchCards = async () => {
       try {
         setLoading(true);
         setError(null);
-        const response = await fetch(`/api/cards?type=${resolvedType}&status=active`, {
+        const url = resolvedType ? `/api/cards?type=${resolvedType}&status=active` : `/api/cards?status=active`;
+        const response = await fetch(url, {
           headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
         });
         if (!response.ok) throw new Error("Failed to fetch funding cards");
         const data = await response.json();
         const fetched = (data.cards || []) as FundingCard[];
         setCards(fetched);
-        // initialize admin inputs if not present
         setAdminData((prev) => {
           const next = { ...prev };
           for (const c of fetched) {
@@ -256,6 +259,22 @@ export default function FundingDIY() {
     };
     fetchCards();
   }, [resolvedType]);
+
+  useEffect(() => {
+    const fetchBanks = async () => {
+      try {
+        const token = localStorage.getItem("auth_token");
+        const resp = await fetch(`/api/banks?page=1&limit=1000`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const items = (data.banks || []).map((b: any) => ({ id: Number(b.id), name: String(b.name || b.bank_name || `Bank #${b.id}`), logo: b.logo || b.bank_logo }));
+        setBanks(items);
+      } catch {}
+    };
+    fetchBanks();
+  }, []);
 
   // Fetch existing submissions to lock approved cards for the selected client
   useEffect(() => {
