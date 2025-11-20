@@ -8018,10 +8018,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           </div>
                         </div>
                         <div className="bg-white rounded-lg border shadow-sm">
-                          <div className="px-4 py-3 border-b font-semibold text-red-700">New Items</div>
+                          <div className="px-4 py-3 border-b font-semibold text-red-700">Nagetive Items</div>
                           <div className="p-4 space-y-2">
                             {added.length === 0 ? (
-                              <div className="text-sm text-gray-500">No new items</div>
+                              <div className="text-sm text-gray-500">No Nagetive items</div>
                             ) : (
                               added.map((it: any, idx: number) => (
                                 <div key={`added-${idx}`} className="flex items-center justify-between text-sm">

@@ -119,6 +119,19 @@ export default function FundingDIY() {
     return Array.from(map.values());
   }, [cards]);
 
+  const sortedBanks = useMemo(() => {
+    return [...banks].sort((a, b) => {
+      const eligA = bankEligibility(a.id);
+      const eligB = bankEligibility(b.id);
+      const matchA = (clientFundableFlags.Experian && eligA.bureauEligible.Experian) || (clientFundableFlags.Equifax && eligA.bureauEligible.Equifax) || (clientFundableFlags.TransUnion && eligA.bureauEligible.TransUnion);
+      const matchB = (clientFundableFlags.Experian && eligB.bureauEligible.Experian) || (clientFundableFlags.Equifax && eligB.bureauEligible.Equifax) || (clientFundableFlags.TransUnion && eligB.bureauEligible.TransUnion);
+      const scoreA = (eligA.stateEligible ? 1 : 0) + (matchA ? 1 : 0);
+      const scoreB = (eligB.stateEligible ? 1 : 0) + (matchB ? 1 : 0);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return a.name.localeCompare(b.name);
+    });
+  }, [banks, clientFundableFlags]);
+
   // Fetch client details for eligibility (state and scores)
   useEffect(() => {
     const clientId = (Number.isFinite(clientIdDetected) && clientIdDetected > 0) ? clientIdDetected : clientIdInput;
@@ -155,6 +168,12 @@ export default function FundingDIY() {
     } catch {}
     return out;
   }, [clientDetails]);
+
+  const clientFundableFlags = useMemo(() => ({
+    Experian: fundableBureaus.includes("Experian"),
+    Equifax: fundableBureaus.includes("Equifax"),
+    TransUnion: fundableBureaus.includes("TransUnion"),
+  }), [fundableBureaus]);
 
   const US_STATE_CODES = [
     'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'
@@ -652,7 +671,7 @@ export default function FundingDIY() {
                           <SelectValue placeholder="Select bank" />
                         </SelectTrigger>
                         <SelectContent>
-                          {banks.map((b) => {
+                          {sortedBanks.map((b) => {
                             const elig = bankEligibility(b.id);
                             return (
                               <SelectItem key={b.id} value={String(b.id)}>
@@ -667,9 +686,9 @@ export default function FundingDIY() {
                                   </div>
                                   <div className="flex items-center gap-2 text-xs">
                                     <span className={elig.stateEligible ? 'text-green-600' : 'text-red-500'}>{elig.stateEligible ? '✔' : '❌'} State</span>
-                                    <span className={elig.bureauEligible.Experian ? 'text-green-600' : 'text-red-500'}>EX {elig.bureauEligible.Experian ? '✔' : '❌'}</span>
-                                    <span className={elig.bureauEligible.Equifax ? 'text-green-600' : 'text-red-500'}>EQ {elig.bureauEligible.Equifax ? '✔' : '❌'}</span>
-                                    <span className={elig.bureauEligible.TransUnion ? 'text-green-600' : 'text-red-500'}>TU {elig.bureauEligible.TransUnion ? '✔' : '❌'}</span>
+                                    <span className={elig.bureauEligible.Experian && clientFundableFlags.Experian ? 'text-green-600' : 'text-red-500'}>EX {elig.bureauEligible.Experian && clientFundableFlags.Experian ? '✔' : '❌'}</span>
+                                    <span className={elig.bureauEligible.Equifax && clientFundableFlags.Equifax ? 'text-green-600' : 'text-red-500'}>EQ {elig.bureauEligible.Equifax && clientFundableFlags.Equifax ? '✔' : '❌'}</span>
+                                    <span className={elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion ? 'text-green-600' : 'text-red-500'}>TU {elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion ? '✔' : '❌'}</span>
                                   </div>
                                 </div>
                               </SelectItem>
@@ -729,6 +748,19 @@ export default function FundingDIY() {
                               return (c.funding_type || '').toLowerCase() === String(effective).toLowerCase();
                             })
                             .filter(c => selectedBureau === "all" ? true : (c.credit_bureaus || []).map(cb => cb?.toLowerCase()).includes(selectedBureau.toLowerCase()))
+                            .sort((a, b) => {
+                              const elig = slot.bankId ? bankEligibility(slot.bankId) : { stateEligible: false, bureauEligible: { Experian: false, Equifax: false, TransUnion: false } } as any;
+                              const scoreFor = (card: typeof a) => {
+                                const bureaus = (card.credit_bureaus || []) as string[];
+                                const bureauMatch = bureaus.some(cb => (
+                                  (cb === 'Experian' && clientFundableFlags.Experian && elig.bureauEligible.Experian) ||
+                                  (cb === 'Equifax' && clientFundableFlags.Equifax && elig.bureauEligible.Equifax) ||
+                                  (cb === 'TransUnion' && clientFundableFlags.TransUnion && elig.bureauEligible.TransUnion)
+                                ));
+                                return (elig.stateEligible ? 1 : 0) + (bureauMatch ? 1 : 0);
+                              };
+                              return scoreFor(b) - scoreFor(a);
+                            })
                             .map((c) => (
                               <SelectItem key={c.id} value={String(c.id)}>
                                 <div className="flex items-center justify-between w-full">
