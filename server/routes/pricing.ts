@@ -10,14 +10,21 @@ router.get('/plans', async (req: Request, res: Response) => {
   try {
     const db = getDatabaseAdapter();
     const plans = await db.allQuery(
-      `SELECT id, name, description, price, billing_cycle, features, max_users, max_clients, max_disputes, sort_order
+      `SELECT id, name, description, price, billing_cycle, features, page_permissions, max_users, max_clients, max_disputes, sort_order
        FROM subscription_plans 
        WHERE is_active = TRUE 
        ORDER BY sort_order ASC, price ASC`
     );
 
-    // Parse features JSON for each plan
-    const formattedPlans = plans.map(plan => ({
+    const filtered = plans.filter((plan: any) => {
+      try {
+        const perm = plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
+        if (Array.isArray(perm)) return true;
+        return !perm?.is_specific;
+      } catch { return true; }
+    });
+
+    const formattedPlans = filtered.map((plan: any) => ({
       ...plan,
       features: JSON.parse(plan.features || '[]')
     }));
@@ -49,7 +56,7 @@ router.get('/plans/:id', async (req: Request, res: Response) => {
 
     const db = getDatabaseAdapter();
     const plan = await db.getQuery(
-      `SELECT id, name, description, price, billing_cycle, features, max_users, max_clients, max_disputes, sort_order
+      `SELECT id, name, description, price, billing_cycle, features, page_permissions, max_users, max_clients, max_disputes, sort_order
        FROM subscription_plans 
        WHERE id = ? AND is_active = TRUE`,
       [planId]
@@ -62,6 +69,10 @@ router.get('/plans/:id', async (req: Request, res: Response) => {
       });
     }
 
+    const perm = (() => { try { return plan.page_permissions ? JSON.parse(plan.page_permissions) : []; } catch { return []; } })();
+    if (!Array.isArray(perm) && perm?.is_specific) {
+      return res.status(404).json({ success: false, error: 'Plan not found' });
+    }
     const formattedPlan = {
       ...plan,
       features: JSON.parse(plan.features || '[]')
@@ -107,6 +118,18 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
         error: 'Plan not found or inactive'
       });
     }
+
+    try {
+      const perm = plan[0].page_permissions ? JSON.parse(plan[0].page_permissions) : [];
+      if (!Array.isArray(perm) && perm?.is_specific) {
+        const users = await db.query('SELECT email FROM users WHERE id = ?', [userId]);
+        const userEmail = users?.[0]?.email || '';
+        const allowed = Array.isArray(perm?.allowed_admin_emails) ? perm.allowed_admin_emails : [];
+        if (!userEmail || !allowed.includes(String(userEmail))) {
+          return res.status(403).json({ success: false, error: 'This plan is restricted' });
+        }
+      }
+    } catch {}
 
     // Check if user exists
     const user = await db.query(

@@ -8,7 +8,7 @@ import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { useToast } from '../hooks/use-toast';
-import { billingApi, getAuthToken, pricingApi } from '../lib/api';
+import { billingApi, getAuthToken, pricingApi, superAdminApi } from '../lib/api';
 import DashboardLayout from '../components/DashboardLayout';
 import PaymentForm from '../components/PaymentForm';
 import BillingHistory from '../components/BillingHistory';
@@ -173,17 +173,16 @@ const SubscriptionContent: React.FC = () => {
     try {
       setLoading(true);
       
-      // Fetch real subscription plans from database (public pricing endpoint)
-      console.log('🔄 Fetching subscription plans from database...');
+      // Fetch subscription plans: prefer authenticated admin endpoint to include restricted plans if allowed
+      console.log('🔄 Fetching subscription plans for dashboard...');
       let databasePlans: SubscriptionPlan[] = [];
       try {
-        const plansResponse = await pricingApi.getPlans();
-        console.log('📡 Plans API Response:', plansResponse);
-
-        if (plansResponse.data && plansResponse.data.success && plansResponse.data.data) {
-          // Convert database plans to frontend format
-          databasePlans = plansResponse.data.data.map((dbPlan: any) => ({
-            id: dbPlan.id.toString(),
+        const adminResp = await superAdminApi.getPlans({ page: 1, limit: 100 });
+        console.log('📡 Admin Plans API Response:', adminResp);
+        const plansData = adminResp.data?.data || [];
+        if (Array.isArray(plansData) && plansData.length > 0) {
+          databasePlans = plansData.map((dbPlan: any) => ({
+            id: String(dbPlan.id),
             name: dbPlan.name,
             price: parseFloat(dbPlan.price),
             billing_cycle: dbPlan.billing_cycle,
@@ -194,19 +193,41 @@ const SubscriptionContent: React.FC = () => {
                   <Crown className="h-6 w-6" />,
             popular: dbPlan.name === 'Professional'
           }));
-
-          console.log('✅ Loaded database plans:', databasePlans);
+          console.log('✅ Loaded admin-filtered plans:', databasePlans);
           setAvailablePlans(databasePlans);
         } else {
-          console.log('⚠️ Plans API returned unexpected structure, using fallback plans');
+          throw new Error('Empty admin plans');
+        }
+      } catch (adminErr) {
+        console.warn('ℹ️ Admin plans endpoint unavailable or unauthorized, falling back to public pricing:', adminErr);
+        try {
+          const plansResponse = await pricingApi.getPlans();
+          console.log('📡 Public Plans API Response:', plansResponse);
+          if (plansResponse.data && plansResponse.data.success && plansResponse.data.data) {
+            databasePlans = plansResponse.data.data.map((dbPlan: any) => ({
+              id: dbPlan.id.toString(),
+              name: dbPlan.name,
+              price: parseFloat(dbPlan.price),
+              billing_cycle: dbPlan.billing_cycle,
+              features: Array.isArray(dbPlan.features) ? dbPlan.features : [],
+              description: dbPlan.description || `${dbPlan.name} subscription plan`,
+              icon: dbPlan.name === 'Starter' ? <Users className="h-6 w-6" /> :
+                    dbPlan.name === 'Professional' ? <TrendingUp className="h-6 w-6" /> :
+                    <Crown className="h-6 w-6" />,
+              popular: dbPlan.name === 'Professional'
+            }));
+            console.log('✅ Loaded public plans:', databasePlans);
+            setAvailablePlans(databasePlans);
+          } else {
+            console.log('⚠️ Plans API returned unexpected structure, using fallback plans');
+            setAvailablePlans(enhancedPlans);
+            databasePlans = enhancedPlans;
+          }
+        } catch (plansError) {
+          console.warn('⚠️ Failed to fetch public subscription plans, falling back to hardcoded plans:', plansError);
           setAvailablePlans(enhancedPlans);
           databasePlans = enhancedPlans;
         }
-      } catch (plansError) {
-        // If fetching plans fails (e.g., 401/403 for non-admin roles), fallback to local plans
-        console.warn('⚠️ Failed to fetch subscription plans, falling back to hardcoded plans:', plansError);
-        setAvailablePlans(enhancedPlans);
-        databasePlans = enhancedPlans;
       }
       
       // Fetch current subscription

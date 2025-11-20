@@ -49,6 +49,8 @@ interface SubscriptionPlan {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  is_specific?: boolean;
+  allowed_admin_emails?: string[];
 }
 
 interface Course {
@@ -75,6 +77,8 @@ interface PlanFormData {
   max_clients?: number;
   is_active: boolean;
   sort_order: number;
+  is_specific: boolean;
+  allowed_admin_emails: string[];
 }
 
 const initialFormData: PlanFormData = {
@@ -91,7 +95,9 @@ const initialFormData: PlanFormData = {
   max_users: undefined,
   max_clients: undefined,
   is_active: true,
-  sort_order: 0
+  sort_order: 0,
+  is_specific: false,
+  allowed_admin_emails: []
 };
 
 export default function PlanManagement() {
@@ -105,6 +111,7 @@ export default function PlanManagement() {
   const [newFeature, setNewFeature] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState<boolean | null>(null);
+  const [allowedEmailsText, setAllowedEmailsText] = useState('');
   // WebSocket functionality removed to eliminate connection errors
 
   const loadPlans = useCallback(async () => {
@@ -167,6 +174,7 @@ export default function PlanManagement() {
       ...initialFormData,
       assigned_courses: []
     });
+    setAllowedEmailsText('');
     setIsDialogOpen(true);
   };
 
@@ -187,7 +195,7 @@ export default function PlanManagement() {
       price: plan.price,
       billing_cycle: plan.billing_cycle,
       features: [...plan.features],
-      page_permissions: plan.page_permissions || [], // Handle existing plans without page permissions
+      page_permissions: plan.page_permissions || [],
       assigned_courses: plan.assigned_courses || [],
       stripe_monthly_price_id: plan.stripe_monthly_price_id || '',
       stripe_yearly_price_id: plan.stripe_yearly_price_id || '',
@@ -195,8 +203,11 @@ export default function PlanManagement() {
       max_users: plan.max_users,
       max_clients: plan.max_clients,
       is_active: plan.is_active,
-      sort_order: plan.sort_order
+      sort_order: plan.sort_order,
+      is_specific: !!plan.is_specific,
+      allowed_admin_emails: Array.isArray(plan.allowed_admin_emails) ? plan.allowed_admin_emails : []
     });
+    setAllowedEmailsText(Array.isArray(plan.allowed_admin_emails) ? plan.allowed_admin_emails.join(', ') : '');
     setIsDialogOpen(true);
   };
 
@@ -204,16 +215,30 @@ export default function PlanManagement() {
     e.preventDefault();
     
     try {
+      const normalizedEmails = allowedEmailsText
+        .split(/[,\n]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+      const payload = {
+        ...formData,
+        allowed_admin_emails: normalizedEmails,
+        page_permissions: {
+          pages: formData.page_permissions,
+          is_specific: formData.is_specific,
+          allowed_admin_emails: normalizedEmails
+        }
+      };
       if (editingPlan) {
-        await superAdminApi.updatePlan(editingPlan.id, formData);
+        await superAdminApi.updatePlan(editingPlan.id, payload);
         toast.success('Plan updated successfully');
       } else {
-        await superAdminApi.createPlan(formData);
+        await superAdminApi.createPlan(payload);
         toast.success('Plan created successfully');
       }
       
       setIsDialogOpen(false);
       setFormData(initialFormData);
+      setAllowedEmailsText('');
       setEditingPlan(null);
       await loadPlans();
     } catch (error) {
@@ -631,6 +656,27 @@ export default function PlanManagement() {
                       </div>
                     </div>
                   ))}
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-4">
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="is_specific"
+                      checked={formData.is_specific}
+                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_specific: !!checked }))}
+                    />
+                    <Label htmlFor="is_specific">Specific plan (visible only to selected admins)</Label>
+                  </div>
+                  <div>
+                    <Label htmlFor="allowed_admin_emails">Allowed Admin Emails</Label>
+                    <Textarea
+                      id="allowed_admin_emails"
+                      placeholder="admin1@example.com, admin2@example.com"
+                      value={allowedEmailsText}
+                      onChange={(e) => setAllowedEmailsText(e.target.value)}
+                      rows={3}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Comma or newline separated</p>
+                  </div>
                 </div>
                 {formData.page_permissions.length > 0 && (
                   <div className="mt-3 pt-3 border-t">

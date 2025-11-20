@@ -82,7 +82,16 @@ const createPlanSchema = z.object({
   price: z.coerce.number().min(0),
   billing_cycle: z.enum(['monthly', 'yearly', 'lifetime']),
   features: z.array(z.string()),
-  page_permissions: z.array(z.string()).optional(),
+  page_permissions: z.union([
+    z.array(z.string()),
+    z.object({
+      pages: z.array(z.string()).optional(),
+      is_specific: z.boolean().optional(),
+      allowed_admin_emails: z.array(z.string()).optional()
+    })
+  ]).optional(),
+  is_specific: z.boolean().optional(),
+  allowed_admin_emails: z.array(z.string()).optional(),
   assigned_courses: z.array(z.number()).optional(),
   stripe_monthly_price_id: z.string().optional(),
   stripe_yearly_price_id: z.string().optional(),
@@ -458,25 +467,38 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
       params
     );
 
-    // Parse features and page_permissions JSON for each plan and get assigned courses
+    // Parse features/page permissions and filter restricted plans for admin role
     const plansWithFeatures = await Promise.all(plans.map(async (plan) => {
-      // Get assigned courses for this plan
       const assignedCourses = await db.allQuery(
         'SELECT course_id FROM plan_course_associations WHERE plan_id = ?',
         [plan.id]
       );
-
+      let parsedPerm: any = [];
+      try {
+        parsedPerm = plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
+      } catch {}
+      const permPages = Array.isArray(parsedPerm) ? parsedPerm : Array.isArray(parsedPerm?.pages) ? parsedPerm.pages : [];
+      const isSpecific = Array.isArray(parsedPerm) ? false : !!parsedPerm?.is_specific;
+      const allowedEmails = Array.isArray(parsedPerm) ? [] : Array.isArray(parsedPerm?.allowed_admin_emails) ? parsedPerm.allowed_admin_emails : [];
       return {
         ...plan,
         features: plan.features ? JSON.parse(plan.features) : [],
-        page_permissions: plan.page_permissions ? JSON.parse(plan.page_permissions) : [],
-        assigned_courses: assignedCourses.map(row => row.course_id)
+        page_permissions: permPages,
+        is_specific: isSpecific,
+        allowed_admin_emails: allowedEmails,
+        assigned_courses: assignedCourses.map((row: any) => row.course_id)
       };
     }));
 
+    const requesterRole = String((req as any)?.user?.role || '').toLowerCase();
+    const requesterEmail = String((req as any)?.user?.email || '');
+    const filteredPlans = requesterRole === 'super_admin'
+      ? plansWithFeatures
+      : plansWithFeatures.filter(p => !p.is_specific || (p.allowed_admin_emails && p.allowed_admin_emails.includes(requesterEmail)));
+
     res.json({
       success: true,
-      data: plansWithFeatures,
+      data: filteredPlans,
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -531,6 +553,13 @@ router.post('/plans', authenticateToken, requireSuperAdmin, async (req: Request,
     const planData = createPlanSchema.parse(req.body);
 
     const db = getDatabaseAdapter();
+    const permObj = (() => {
+      const basePages = Array.isArray(planData.page_permissions) ? planData.page_permissions : (planData.page_permissions as any)?.pages || [];
+      const isSpecific = typeof planData.is_specific === 'boolean' ? planData.is_specific : (planData.page_permissions as any)?.is_specific || false;
+      const allowedEmails = Array.isArray(planData.allowed_admin_emails) ? planData.allowed_admin_emails : (planData.page_permissions as any)?.allowed_admin_emails || [];
+      return { pages: basePages, is_specific: !!isSpecific, allowed_admin_emails: allowedEmails };
+    })();
+
     const result = await db.executeQuery(
       `INSERT INTO subscription_plans (name, description, price, billing_cycle, features, page_permissions, stripe_monthly_price_id, stripe_yearly_price_id, stripe_product_id, max_users, max_clients, max_disputes, is_active, sort_order, created_by, updated_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -539,8 +568,8 @@ router.post('/plans', authenticateToken, requireSuperAdmin, async (req: Request,
         planData.description || null,
         planData.price,
         planData.billing_cycle,
-        JSON.stringify(planData.features),
-        planData.page_permissions ? JSON.stringify(planData.page_permissions) : null,
+        JSON.stringify(planData.features || []),
+        JSON.stringify(permObj),
         planData.stripe_monthly_price_id || null,
         planData.stripe_yearly_price_id || null,
         planData.stripe_product_id || null,
@@ -582,11 +611,15 @@ router.post('/plans', authenticateToken, requireSuperAdmin, async (req: Request,
       [planId]
     );
 
+    let parsedPermCreated: any = [];
+    try { parsedPermCreated = createdPlan.page_permissions ? JSON.parse(createdPlan.page_permissions) : []; } catch {}
     const planResponse = {
       ...createdPlan,
       features: createdPlan.features ? JSON.parse(createdPlan.features) : [],
-      page_permissions: createdPlan.page_permissions ? JSON.parse(createdPlan.page_permissions) : [],
-      assigned_courses: assignedCourses.map(row => row.course_id)
+      page_permissions: Array.isArray(parsedPermCreated) ? parsedPermCreated : (parsedPermCreated?.pages || []),
+      is_specific: Array.isArray(parsedPermCreated) ? false : !!parsedPermCreated?.is_specific,
+      allowed_admin_emails: Array.isArray(parsedPermCreated) ? [] : (parsedPermCreated?.allowed_admin_emails || []),
+      assigned_courses: assignedCourses.map((row: any) => row.course_id)
     };
 
     // Broadcast plan creation to connected clients
@@ -663,16 +696,34 @@ router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Reque
     const updateValues: any[] = [];
 
     Object.entries(planData).forEach(([key, value]) => {
-      if (value !== undefined && key !== 'assigned_courses') {
-        if (key === 'features' || key === 'page_permissions') {
+      if (value !== undefined && key !== 'assigned_courses' && key !== 'is_specific' && key !== 'allowed_admin_emails') {
+        if (key === 'features') {
           updateFields.push(`${key} = ?`);
           updateValues.push(JSON.stringify(value));
-        } else {
+        } else if (key !== 'page_permissions') {
           updateFields.push(`${key} = ?`);
           updateValues.push(value);
         }
       }
     });
+
+    if (planData.page_permissions !== undefined || planData.is_specific !== undefined || planData.allowed_admin_emails !== undefined) {
+      let currentPerm: any = {};
+      try {
+        const parsed = existingPlan.page_permissions ? JSON.parse(existingPlan.page_permissions) : [];
+        if (Array.isArray(parsed)) currentPerm = { pages: parsed };
+        else if (parsed && typeof parsed === 'object') currentPerm = parsed;
+      } catch { currentPerm = {}; }
+
+      const incoming: any = planData.page_permissions;
+      const nextPerm = {
+        pages: Array.isArray(incoming) ? incoming : (incoming?.pages ?? currentPerm.pages ?? []),
+        is_specific: typeof planData.is_specific === 'boolean' ? planData.is_specific : (incoming?.is_specific ?? currentPerm.is_specific ?? false),
+        allowed_admin_emails: Array.isArray(planData.allowed_admin_emails) ? planData.allowed_admin_emails : (incoming?.allowed_admin_emails ?? currentPerm.allowed_admin_emails ?? [])
+      };
+      updateFields.push('page_permissions = ?');
+      updateValues.push(JSON.stringify(nextPerm));
+    }
 
     if (updateFields.length > 0) {
       updateFields.push('updated_by = ?');

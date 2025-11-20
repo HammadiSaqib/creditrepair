@@ -425,13 +425,28 @@ router.post('/create-subscription-checkout', authenticateToken, async (req, res)
 
     // Fetch plan to get Stripe Price IDs
     const planRows = await executeQuery<any[]>(
-      'SELECT id, name, price, stripe_monthly_price_id, stripe_yearly_price_id, stripe_product_id FROM subscription_plans WHERE id = ? AND is_active = TRUE',
+      'SELECT id, name, price, stripe_monthly_price_id, stripe_yearly_price_id, stripe_product_id, page_permissions FROM subscription_plans WHERE id = ? AND is_active = TRUE',
       [planId]
     );
     if (!Array.isArray(planRows) || planRows.length === 0) {
       return res.status(404).json({ error: 'Plan not found or inactive' });
     }
     const plan = planRows[0];
+
+    try {
+      const perm = plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
+      if (!Array.isArray(perm) && perm?.is_specific) {
+        const userRows = await executeQuery<any[]>(
+          'SELECT email FROM users WHERE id = ?',
+          [userId]
+        );
+        const userEmail = userRows?.[0]?.email || '';
+        const allowed = Array.isArray(perm?.allowed_admin_emails) ? perm.allowed_admin_emails : [];
+        if (!userEmail || !allowed.includes(String(userEmail))) {
+          return res.status(403).json({ error: 'This plan is restricted for your account' });
+        }
+      }
+    } catch {}
 
     let priceId = billingCycle === 'yearly' ? plan.stripe_yearly_price_id : plan.stripe_monthly_price_id;
     const interval = billingCycle === 'yearly' ? 'year' : 'month';
