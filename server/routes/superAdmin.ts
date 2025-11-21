@@ -89,11 +89,13 @@ const createPlanSchema = z.object({
     z.object({
       pages: z.array(z.string()).optional(),
       is_specific: z.boolean().optional(),
-      allowed_admin_emails: z.array(z.string()).optional()
+      allowed_admin_emails: z.array(z.string()).optional(),
+      restricted_to_current_subscribers: z.boolean().optional()
     })
   ]).optional(),
   is_specific: z.boolean().optional(),
   allowed_admin_emails: z.array(z.string()).optional(),
+  restricted_to_current_subscribers: z.boolean().optional(),
   assigned_courses: z.array(z.number()).optional(),
   stripe_monthly_price_id: z.string().optional(),
   stripe_yearly_price_id: z.string().optional(),
@@ -482,12 +484,14 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
       const permPages = Array.isArray(parsedPerm) ? parsedPerm : Array.isArray(parsedPerm?.pages) ? parsedPerm.pages : [];
       const isSpecific = Array.isArray(parsedPerm) ? false : !!parsedPerm?.is_specific;
       const allowedEmails = Array.isArray(parsedPerm) ? [] : Array.isArray(parsedPerm?.allowed_admin_emails) ? parsedPerm.allowed_admin_emails : [];
+      const restrictedToSubscribers = Array.isArray(parsedPerm) ? false : !!parsedPerm?.restricted_to_current_subscribers;
       return {
         ...plan,
         features: plan.features ? JSON.parse(plan.features) : [],
         page_permissions: permPages,
         is_specific: isSpecific,
         allowed_admin_emails: allowedEmails,
+        restricted_to_current_subscribers: restrictedToSubscribers,
         assigned_courses: assignedCourses.map((row: any) => row.course_id)
       };
     }));
@@ -559,7 +563,10 @@ router.post('/plans', authenticateToken, requireSuperAdmin, async (req: Request,
       const basePages = Array.isArray(planData.page_permissions) ? planData.page_permissions : (planData.page_permissions as any)?.pages || [];
       const isSpecific = typeof planData.is_specific === 'boolean' ? planData.is_specific : (planData.page_permissions as any)?.is_specific || false;
       const allowedEmails = Array.isArray(planData.allowed_admin_emails) ? planData.allowed_admin_emails : (planData.page_permissions as any)?.allowed_admin_emails || [];
-      return { pages: basePages, is_specific: !!isSpecific, allowed_admin_emails: allowedEmails };
+      const restrictedToSubscribers = typeof (planData as any).restricted_to_current_subscribers === 'boolean'
+        ? (planData as any).restricted_to_current_subscribers
+        : (planData.page_permissions as any)?.restricted_to_current_subscribers || false;
+      return { pages: basePages, is_specific: !!isSpecific, allowed_admin_emails: allowedEmails, restricted_to_current_subscribers: !!restrictedToSubscribers };
     })();
 
     const result = await db.executeQuery(
@@ -620,6 +627,7 @@ router.post('/plans', authenticateToken, requireSuperAdmin, async (req: Request,
       features: createdPlan.features ? JSON.parse(createdPlan.features) : [],
       page_permissions: Array.isArray(parsedPermCreated) ? parsedPermCreated : (parsedPermCreated?.pages || []),
       is_specific: Array.isArray(parsedPermCreated) ? false : !!parsedPermCreated?.is_specific,
+      restricted_to_current_subscribers: Array.isArray(parsedPermCreated) ? false : !!parsedPermCreated?.restricted_to_current_subscribers,
       allowed_admin_emails: Array.isArray(parsedPermCreated) ? [] : (parsedPermCreated?.allowed_admin_emails || []),
       assigned_courses: assignedCourses.map((row: any) => row.course_id)
     };
@@ -709,7 +717,7 @@ router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Reque
       }
     });
 
-    if (planData.page_permissions !== undefined || planData.is_specific !== undefined || planData.allowed_admin_emails !== undefined) {
+    if (planData.page_permissions !== undefined || planData.is_specific !== undefined || planData.allowed_admin_emails !== undefined || (planData as any).restricted_to_current_subscribers !== undefined) {
       let currentPerm: any = {};
       try {
         const parsed = existingPlan.page_permissions ? JSON.parse(existingPlan.page_permissions) : [];
@@ -721,7 +729,10 @@ router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Reque
       const nextPerm = {
         pages: Array.isArray(incoming) ? incoming : (incoming?.pages ?? currentPerm.pages ?? []),
         is_specific: typeof planData.is_specific === 'boolean' ? planData.is_specific : (incoming?.is_specific ?? currentPerm.is_specific ?? false),
-        allowed_admin_emails: Array.isArray(planData.allowed_admin_emails) ? planData.allowed_admin_emails : (incoming?.allowed_admin_emails ?? currentPerm.allowed_admin_emails ?? [])
+        allowed_admin_emails: Array.isArray(planData.allowed_admin_emails) ? planData.allowed_admin_emails : (incoming?.allowed_admin_emails ?? currentPerm.allowed_admin_emails ?? []),
+        restricted_to_current_subscribers: typeof (planData as any).restricted_to_current_subscribers === 'boolean'
+          ? (planData as any).restricted_to_current_subscribers
+          : (incoming?.restricted_to_current_subscribers ?? currentPerm.restricted_to_current_subscribers ?? false)
       };
       updateFields.push('page_permissions = ?');
       updateValues.push(JSON.stringify(nextPerm));
@@ -753,6 +764,7 @@ router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Reque
       ...updatedPlan,
       features: JSON.parse(updatedPlan.features),
       page_permissions: updatedPlan.page_permissions ? JSON.parse(updatedPlan.page_permissions) : [],
+      restricted_to_current_subscribers: (() => { try { const p = updatedPlan.page_permissions ? JSON.parse(updatedPlan.page_permissions) : []; return Array.isArray(p) ? false : !!p?.restricted_to_current_subscribers; } catch { return false; } })(),
       assigned_courses: assignedCourses.map(row => row.course_id)
     };
 
@@ -2707,12 +2719,12 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
       state: z.string().optional(),
       zip_code: z.string().optional(),
       status: z.enum(['active','inactive','pending']).default('active'),
-      credit_score: z.coerce.number().int().min(300).max(850).optional(),
-      target_score: z.coerce.number().int().min(300).max(850).optional(),
-      notes: z.string().optional()
-    }).refine((data) => {
-      if (data.credit_score && data.target_score) return data.target_score >= data.credit_score;
-      return true;
+      experian_score: z.coerce.number().int().min(300).max(850).optional(),
+      equifax_score: z.coerce.number().int().min(300).max(850).optional(),
+      transunion_score: z.coerce.number().int().min(300).max(850).optional(),
+      platform: z.string().optional(),
+      platform_email: z.string().email().optional(),
+      platform_password: z.string().optional()
     });
     const results: any[] = [];
     for (const row of rows) {
@@ -2737,9 +2749,12 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
         const zip = getAny(row, ['zip','zip_code','postal code']);
         const statusRaw = getAny(row, ['status','client status']);
         const status = /^(inactive|pending)$/i.test(statusRaw) ? statusRaw.toLowerCase() : 'active';
-        const credit = getAny(row, ['credit_score','credit score']);
-        const target = getAny(row, ['target_score','target score']);
-        const notes = getAny(row, ['notes','note']);
+        const expScore = getAny(row, ['experian_score','experian score']);
+        const eqScore = getAny(row, ['equifax_score','equifax score']);
+        const tuScore = getAny(row, ['transunion_score','transunion score','trans union score']);
+        const platform = getAny(row, ['platform']);
+        const platformEmail = getAny(row, ['platform_email','platform email']);
+        const platformPassword = getAny(row, ['platform_password','platform password']);
         if (!email) {
           results.push({ email: '', status: 'skipped', reason: 'missing email' });
           continue;
@@ -2759,9 +2774,12 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
           state: state || undefined,
           zip_code: zip || undefined,
           status,
-          credit_score: credit || undefined,
-          target_score: target || undefined,
-          notes: notes || undefined
+          experian_score: expScore || undefined,
+          equifax_score: eqScore || undefined,
+          transunion_score: tuScore || undefined,
+          platform: platform || undefined,
+          platform_email: platformEmail || undefined,
+          platform_password: platformPassword || undefined
         });
         const quota = await validateClientQuota(adminId);
         if (!quota.canAdd) {
@@ -2773,12 +2791,23 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
           results.push({ email, status: 'skipped', reason: 'duplicate' });
           continue;
         }
+        const toInt = (v: any): number | null => {
+          if (v === undefined || v === null || v === '') return null;
+          const n = parseInt(String(v), 10);
+          return isNaN(n) ? null : n;
+        };
+        const expInt = toInt(validated.experian_score);
+        const eqInt = toInt(validated.equifax_score);
+        const tuInt = toInt(validated.transunion_score);
+        const creditScoreInt = [expInt, eqInt, tuInt].filter((x) => typeof x === 'number') as number[];
+        const maxCredit = creditScoreInt.length ? Math.max(...creditScoreInt) : null;
+
         const ins = await db.executeQuery(
           `INSERT INTO clients (
             user_id, first_name, last_name, email, phone, date_of_birth,
             employment_status, annual_income, ssn_last_four, address, city, state, zip_code, status,
-            credit_score, target_score, notes, created_by, updated_by
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            experian_score, equifax_score, transunion_score, credit_score, platform, platform_email, platform_password, created_by, updated_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             adminId,
             validated.first_name,
@@ -2794,9 +2823,13 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
             validated.state || null,
             validated.zip_code || null,
             validated.status,
-            validated.credit_score || null,
-            validated.target_score || null,
-            validated.notes || null,
+            expInt,
+            eqInt,
+            tuInt,
+            maxCredit,
+            validated.platform || null,
+            validated.platform_email || null,
+            validated.platform_password || null,
             currentUserId,
             currentUserId
           ]

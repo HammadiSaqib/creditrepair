@@ -72,6 +72,9 @@ export interface Client {
   zip_code?: string;
   status: 'active' | 'inactive' | 'pending';
   payment_status: 'paid' | 'unpaid';
+  experian_score?: number;
+  equifax_score?: number;
+  transunion_score?: number;
   credit_score?: number;
   target_score?: number;
   notes?: string;
@@ -421,8 +424,22 @@ export async function initializeMySQLDatabase(): Promise<void> {
     const databaseName = process.env.MYSQL_DATABASE || 'creditrepair_db';
     await createDatabaseIfNotExists(databaseName);
     
-    // Create tables
     await createMySQLTables();
+
+    try {
+      const cols = await executeQuery(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clients'`
+      );
+      const existing = new Set((cols as any[]).map((r: any) => r.COLUMN_NAME));
+      const alters: string[] = [];
+      if (!existing.has('experian_score')) alters.push('ADD COLUMN experian_score INT NULL');
+      if (!existing.has('equifax_score')) alters.push('ADD COLUMN equifax_score INT NULL');
+      if (!existing.has('transunion_score')) alters.push('ADD COLUMN transunion_score INT NULL');
+      if (alters.length) {
+        await executeQuery(`ALTER TABLE clients ${alters.join(', ')}`);
+      }
+    } catch (e) {
+    }
     
     // Seed database with initial data (optional)
     if (ENV_CONFIG.SEED_DEMO_DATA) {
@@ -634,6 +651,9 @@ async function createMySQLTables(): Promise<void> {
       state CHAR(2) CHECK (LENGTH(state) = 2),
       zip_code VARCHAR(10) CHECK (LENGTH(zip_code) >= 5),
       status ENUM('active', 'inactive', 'pending') NOT NULL DEFAULT 'active',
+      experian_score INT,
+      equifax_score INT,
+      transunion_score INT,
       payment_status ENUM('paid', 'unpaid') NOT NULL DEFAULT 'paid',
       credit_score INT CHECK (credit_score >= 300 AND credit_score <= 850),
       previous_credit_score INT CHECK (previous_credit_score >= 300 AND previous_credit_score <= 850),

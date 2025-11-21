@@ -51,6 +51,7 @@ interface SubscriptionPlan {
   updated_at: string;
   is_specific?: boolean;
   allowed_admin_emails?: string[];
+  restricted_to_current_subscribers?: boolean;
 }
 
 interface Course {
@@ -79,6 +80,7 @@ interface PlanFormData {
   sort_order: number;
   is_specific: boolean;
   allowed_admin_emails: string[];
+  restricted_to_current_subscribers: boolean;
 }
 
 const initialFormData: PlanFormData = {
@@ -97,7 +99,8 @@ const initialFormData: PlanFormData = {
   is_active: true,
   sort_order: 0,
   is_specific: false,
-  allowed_admin_emails: []
+  allowed_admin_emails: [],
+  restricted_to_current_subscribers: false
 };
 
 export default function PlanManagement() {
@@ -205,7 +208,8 @@ export default function PlanManagement() {
       is_active: plan.is_active,
       sort_order: plan.sort_order,
       is_specific: !!plan.is_specific,
-      allowed_admin_emails: Array.isArray(plan.allowed_admin_emails) ? plan.allowed_admin_emails : []
+      allowed_admin_emails: Array.isArray(plan.allowed_admin_emails) ? plan.allowed_admin_emails : [],
+      restricted_to_current_subscribers: !!plan.restricted_to_current_subscribers
     });
     setAllowedEmailsText(Array.isArray(plan.allowed_admin_emails) ? plan.allowed_admin_emails.join(', ') : '');
     setIsDialogOpen(true);
@@ -216,7 +220,7 @@ export default function PlanManagement() {
     
     try {
       const normalizedEmails = allowedEmailsText
-        .split(/[,\n]/)
+        .split(/[\,\n]/)
         .map(s => s.trim())
         .filter(s => s.length > 0);
       const payload = {
@@ -225,7 +229,8 @@ export default function PlanManagement() {
         page_permissions: {
           pages: formData.page_permissions,
           is_specific: formData.is_specific,
-          allowed_admin_emails: normalizedEmails
+          allowed_admin_emails: normalizedEmails,
+          restricted_to_current_subscribers: formData.restricted_to_current_subscribers
         }
       };
       if (editingPlan) {
@@ -665,6 +670,14 @@ export default function PlanManagement() {
                       onCheckedChange={(checked) => setFormData(prev => ({ ...prev, is_specific: !!checked }))}
                     />
                     <Label htmlFor="is_specific">Specific plan (visible only to selected admins)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Switch
+                      id="restricted_to_current_subscribers"
+                      checked={formData.restricted_to_current_subscribers}
+                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, restricted_to_current_subscribers: !!checked }))}
+                    />
+                    <Label htmlFor="restricted_to_current_subscribers">Restricted to current subscribers</Label>
                   </div>
                   <div>
                     <Label htmlFor="allowed_admin_emails">Allowed Admin Emails</Label>

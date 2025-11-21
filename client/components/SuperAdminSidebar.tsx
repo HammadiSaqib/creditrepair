@@ -103,7 +103,7 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       badge: null,
     },
     {
-      name: "Affiliate Import",
+      name: "Affiliate Referal Import",
       href: "/super-admin/affiliate-import",
       icon: HandHeart,
       badge: null,

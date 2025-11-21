@@ -2,11 +2,12 @@ import { Router, Request, Response } from 'express';
 import { getDatabaseAdapter } from '../database/databaseAdapter.js';
 import { getWebSocketService } from '../services/websocketService.js';
 import CommissionService from '../services/commissionService.js';
+import { optionalAuth } from '../middleware/authMiddleware.js';
 
 const router = Router();
 
 // Get all active subscription plans (public endpoint)
-router.get('/plans', async (req: Request, res: Response) => {
+router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
   try {
     const db = getDatabaseAdapter();
     const plans = await db.allQuery(
@@ -16,11 +17,33 @@ router.get('/plans', async (req: Request, res: Response) => {
        ORDER BY sort_order ASC, price ASC`
     );
 
+    let isActiveSubscriber = false;
+    try {
+      const user: any = (req as any).user;
+      if (user && user.id) {
+        let subCheckUserId = Number(user.id);
+        const role = String(user.role || '').toLowerCase();
+        if (role === 'affiliate') {
+          try {
+            const aff = await db.getQuery('SELECT admin_id FROM affiliates WHERE id = ? LIMIT 1', [subCheckUserId]);
+            if (aff && aff.admin_id) subCheckUserId = Number(aff.admin_id);
+          } catch {}
+        }
+        const sub = await db.getQuery(
+          'SELECT id FROM subscriptions WHERE user_id = ? AND status = "active" LIMIT 1',
+          [subCheckUserId]
+        );
+        isActiveSubscriber = !!sub;
+      }
+    } catch {}
+
     const filtered = plans.filter((plan: any) => {
       try {
         const perm = plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
         if (Array.isArray(perm)) return true;
-        return !perm?.is_specific;
+        if (perm?.is_specific) return false;
+        if (perm?.restricted_to_current_subscribers === true) return isActiveSubscriber;
+        return true;
       } catch { return true; }
     });
 
@@ -43,7 +66,7 @@ router.get('/plans', async (req: Request, res: Response) => {
 });
 
 // Get a specific plan by ID (public endpoint)
-router.get('/plans/:id', async (req: Request, res: Response) => {
+router.get('/plans/:id', optionalAuth, async (req: Request, res: Response) => {
   try {
     const planId = parseInt(req.params.id);
     
@@ -70,8 +93,34 @@ router.get('/plans/:id', async (req: Request, res: Response) => {
     }
 
     const perm = (() => { try { return plan.page_permissions ? JSON.parse(plan.page_permissions) : []; } catch { return []; } })();
-    if (!Array.isArray(perm) && perm?.is_specific) {
-      return res.status(404).json({ success: false, error: 'Plan not found' });
+    if (!Array.isArray(perm)) {
+      if (perm?.is_specific) {
+        return res.status(404).json({ success: false, error: 'Plan not found' });
+      }
+      if (perm?.restricted_to_current_subscribers === true) {
+        let isActiveSubscriber = false;
+        try {
+          const user: any = (req as any).user;
+          if (user && user.id) {
+            let subCheckUserId = Number(user.id);
+            const role = String(user.role || '').toLowerCase();
+            if (role === 'affiliate') {
+              try {
+                const aff = await db.getQuery('SELECT admin_id FROM affiliates WHERE id = ? LIMIT 1', [subCheckUserId]);
+                if (aff && aff.admin_id) subCheckUserId = Number(aff.admin_id);
+              } catch {}
+            }
+            const sub = await db.getQuery(
+              'SELECT id FROM subscriptions WHERE user_id = ? AND status = "active" LIMIT 1',
+              [subCheckUserId]
+            );
+            isActiveSubscriber = !!sub;
+          }
+        } catch {}
+        if (!isActiveSubscriber) {
+          return res.status(404).json({ success: false, error: 'Plan not found' });
+        }
+      }
     }
     const formattedPlan = {
       ...plan,

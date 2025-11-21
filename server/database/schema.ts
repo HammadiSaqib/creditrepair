@@ -231,6 +231,9 @@ async function createTables() {
       employment_status TEXT,
       annual_income INTEGER,
       status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'completed', 'on_hold')),
+      experian_score INTEGER,
+      equifax_score INTEGER,
+      transunion_score INTEGER,
       credit_score INTEGER,
       previous_credit_score INTEGER,
       fundable_status TEXT CHECK (fundable_status IN ('fundable','not_fundable')),
@@ -249,6 +252,19 @@ async function createTables() {
     await runQuery(`ALTER TABLE clients ADD COLUMN fundable_status TEXT CHECK (fundable_status IN ('fundable','not_fundable'))`);
   } catch (err) {
     // Column may already exist; ignore errors
+  }
+
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN experian_score INTEGER`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN equifax_score INTEGER`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN transunion_score INTEGER`);
+  } catch (err) {
   }
 
   // Credit Reports table

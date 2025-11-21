@@ -44,10 +44,10 @@ const ClientCSVImport: React.FC = () => {
 
   const handleDownloadTemplate = () => {
     const headers = [
-      'First Name','Last Name','Email','Phone','DOB','Address','City','State','Zip','Status','Credit Score','Target Score','Notes'
+      'First Name','Last Name','Email','Phone','DOB','Address','City','State','Zip','Status','Experian Score','Equifax Score','TransUnion Score','Platform','Platform Email','Platform Password'
     ];
     const sample = [
-      'John','Doe','john@example.com','+15551234567','1990-01-01','123 Main St','Austin','TX','78701','active','650','700',''
+      'John','Doe','john@example.com','+15551234567','1990-01-01','123 Main St','Austin','TX','78701','active','650','645','640','smartcredit','john+smartcredit@example.com','secret123'
     ];
     const csv = [headers.join(','), sample.join(',')].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -119,7 +119,7 @@ const ClientCSVImport: React.FC = () => {
           </div>
         )}
         <div className="text-xs text-slate-600">
-          CSV columns: First Name, Last Name, Email, Phone, DOB, Address, City, State, Zip, Status, Credit Score, Target Score, Notes
+          CSV columns: First Name, Last Name, Email, Phone, DOB, Address, City, State, Zip, Status, Experian Score, Equifax Score, TransUnion Score, Platform, Platform Email, Platform Password
         </div>
       </CardContent>
     </Card>
