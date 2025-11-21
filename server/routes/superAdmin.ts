@@ -4241,7 +4241,7 @@ router.post('/affiliates/import-csv', authenticateToken, requireSuperAdmin, uplo
         const activeStatusRaw = getAny(row, ['active status','status']).trim();
         const isPaid = /^(paid|succeeded|complete|success|yes|true|1)$/i.test(payStatusRaw);
         const isActive = /^(active|yes|true|1)$/i.test(activeStatusRaw);
-        const amount = invoiceAmountRaw ? Number(invoiceAmountRaw) : 0;
+        const amount = invoiceAmountRaw ? Number(String(invoiceAmountRaw).replace(/[^0-9.\-]/g, '')) : 0;
         const nameParts = (fullName || '').trim().split(' ').filter(Boolean);
         const firstName = nameParts[0] || '';
         const lastName = nameParts.slice(1).join(' ') || '';
@@ -4264,22 +4264,28 @@ router.post('/affiliates/import-csv', authenticateToken, requireSuperAdmin, uplo
           }
         }
         if (affiliateId && userId) {
+          let rate = 0;
+          try {
+            const affInfo0 = await db.getQuery('SELECT commission_rate FROM affiliates WHERE id = ? LIMIT 1', [affiliateId]);
+            rate = affInfo0?.commission_rate ? Number(affInfo0.commission_rate) : 0;
+          } catch {}
+          const commissionAmountNum = isPaid ? Number(((amount || 0) * rate) / 100) : 0;
           let referralId: number | null = null;
           if (isPaid && invoiceId) {
             const existingRef = await db.getQuery('SELECT id FROM affiliate_referrals WHERE affiliate_id = ? AND referred_user_id = ? AND transaction_id = ? LIMIT 1', [affiliateId, userId, invoiceId]);
             if (existingRef && existingRef.id) {
               referralId = Number(existingRef.id);
               if (hasReferralPurchaseAmount) {
-                await db.executeQuery('UPDATE affiliate_referrals SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, status = ?, conversion_date = NOW(), payment_date = NOW(), updated_at = NOW() WHERE id = ?', [amount, 0, 0, 'paid', referralId]);
+                await db.executeQuery('UPDATE affiliate_referrals SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, status = ?, conversion_date = NOW(), payment_date = NOW(), updated_at = NOW() WHERE id = ?', [amount || 0, commissionAmountNum, rate, 'paid', referralId]);
               } else {
-                await db.executeQuery('UPDATE affiliate_referrals SET commission_amount = ?, commission_rate = ?, status = ?, conversion_date = NOW(), payment_date = NOW(), updated_at = NOW() WHERE id = ?', [0, 0, 'paid', referralId]);
+                await db.executeQuery('UPDATE affiliate_referrals SET commission_amount = ?, commission_rate = ?, status = ?, conversion_date = NOW(), payment_date = NOW(), updated_at = NOW() WHERE id = ?', [commissionAmountNum, rate, 'paid', referralId]);
               }
             } else {
               if (hasReferralPurchaseAmount) {
-                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate, transaction_id, status, referral_date, conversion_date, payment_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), NOW(), NOW())', [affiliateId, userId, amount, 0, 0, invoiceId, 'paid']);
+                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate, transaction_id, status, referral_date, conversion_date, payment_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), NOW(), NOW())', [affiliateId, userId, amount || 0, commissionAmountNum, rate, invoiceId, 'paid']);
                 referralId = insRef.insertId || insRef?.lastID || 0;
               } else {
-                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, commission_amount, commission_rate, transaction_id, status, referral_date, conversion_date, payment_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), NOW(), NOW())', [affiliateId, userId, 0, 0, invoiceId, 'paid']);
+                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, commission_amount, commission_rate, transaction_id, status, referral_date, conversion_date, payment_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW(), NOW(), NOW())', [affiliateId, userId, commissionAmountNum, rate, invoiceId, 'paid']);
                 referralId = insRef.insertId || insRef?.lastID || 0;
               }
             }
@@ -4288,23 +4294,21 @@ router.post('/affiliates/import-csv', authenticateToken, requireSuperAdmin, uplo
             if (pendingRef && pendingRef.id) {
               referralId = Number(pendingRef.id);
               if (hasReferralPurchaseAmount) {
-                await db.executeQuery('UPDATE affiliate_referrals SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, status = ?, updated_at = NOW() WHERE id = ?', [0, 0, 0, 'pending', referralId]);
+                await db.executeQuery('UPDATE affiliate_referrals SET purchase_amount = ?, commission_amount = ?, commission_rate = ?, status = ?, updated_at = NOW() WHERE id = ?', [0, 0, rate, 'pending', referralId]);
               } else {
-                await db.executeQuery('UPDATE affiliate_referrals SET commission_amount = ?, commission_rate = ?, status = ?, updated_at = NOW() WHERE id = ?', [0, 0, 'pending', referralId]);
+                await db.executeQuery('UPDATE affiliate_referrals SET commission_amount = ?, commission_rate = ?, status = ?, updated_at = NOW() WHERE id = ?', [0, rate, 'pending', referralId]);
               }
             } else {
               if (hasReferralPurchaseAmount) {
-                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate, status, referral_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())', [affiliateId, userId, 0, 0, 0, 'pending']);
+                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, purchase_amount, commission_amount, commission_rate, status, referral_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())', [affiliateId, userId, 0, 0, rate, 'pending']);
                 referralId = insRef.insertId || insRef?.lastID || 0;
               } else {
-                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, commission_amount, commission_rate, status, referral_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW(), NOW())', [affiliateId, userId, 0, 0, 'pending']);
+                const insRef = await db.executeQuery('INSERT INTO affiliate_referrals (affiliate_id, referred_user_id, commission_amount, commission_rate, status, referral_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW(), NOW())', [affiliateId, userId, 0, rate, 'pending']);
                 referralId = insRef.insertId || insRef?.lastID || 0;
               }
             }
           }
-          const affInfo = await db.getQuery('SELECT commission_rate FROM affiliates WHERE id = ? LIMIT 1', [affiliateId]);
-          const rate = affInfo?.commission_rate ? Number(affInfo.commission_rate) : 0;
-          const commissionAmount = isPaid ? Number(((amount || 0) * rate) / 100).toFixed(2) : '0';
+          const commissionAmount = isPaid ? String(commissionAmountNum.toFixed(2)) : '0';
           const productName = 'Subscription';
           const statusVal = isPaid ? 'paid' : 'pending';
           if (referralId) {

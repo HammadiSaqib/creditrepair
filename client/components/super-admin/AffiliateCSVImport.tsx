@@ -3,6 +3,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { superAdminApi } from "@/lib/api";
+import { Download } from "lucide-react";
 
 export default function AffiliateCSVImport() {
   const [file, setFile] = useState<File | null>(null);
@@ -29,6 +30,37 @@ export default function AffiliateCSVImport() {
     }
   };
 
+  const handleDownloadTemplate = () => {
+    const headers = [
+      "Refer By",
+      "Full Name",
+      "Email",
+      "Pay Status",
+      "Last Paid Invoice ID",
+      "Invoice Amount",
+      "Active Status",
+    ];
+    const sample = [
+      "affiliate@example.com",
+      "Jane Customer",
+      "jane@example.com",
+      "paid",
+      "INV-1001",
+      "99.00",
+      "active",
+    ];
+    const csv = [headers.join(","), sample.join(",")].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "affiliate_import_template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <Card className="max-w-3xl mx-auto">
       <CardHeader>
@@ -42,6 +74,10 @@ export default function AffiliateCSVImport() {
         <div className="flex gap-2">
           <Button onClick={handleImport} disabled={!file || loading}>
             {loading ? "Importing..." : "Import"}
+          </Button>
+          <Button variant="outline" onClick={handleDownloadTemplate}>
+            <Download className="h-4 w-4 mr-2" />
+            Download CSV Template
           </Button>
           {error && <span className="text-red-600 text-sm">{error}</span>}
         </div>
@@ -70,6 +106,9 @@ export default function AffiliateCSVImport() {
             </div>
           </div>
         )}
+        <div className="text-xs text-slate-600">
+          CSV columns: Refer By, Full Name, Email, Pay Status, Last Paid Invoice ID, Invoice Amount, Active Status
+        </div>
       </CardContent>
     </Card>
   );

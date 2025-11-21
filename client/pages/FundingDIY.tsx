@@ -127,15 +127,21 @@ export default function FundingDIY() {
   }, [banks, banksFromCards]);
 
   const canonBureau = (s: string): 'Experian' | 'Equifax' | 'TransUnion' | null => {
-    const t = String(s || '').toLowerCase().replace(/\s+/g, '');
-    if (t === 'experian' || t === 'ex') return 'Experian';
-    if (t === 'equifax' || t === 'eq') return 'Equifax';
-    if (t === 'transunion' || t === 'tu') return 'TransUnion';
+    const t = String(s || '').toLowerCase().replace(/\s+/g, '').replace(/[-_]/g, '');
+    if (t === 'experian' || t === 'ex' || t === 'exp') return 'Experian';
+    if (t === 'equifax' || t === 'eq' || t === 'equ') return 'Equifax';
+    if (t === 'transunion' || t === 'tu' || t === 'transu') return 'TransUnion';
     return null;
   };
   const cardHasBureau = (card: FundingCard, bureau: 'Experian' | 'Equifax' | 'TransUnion') => {
-    const arr = (card.credit_bureaus || []).map(canonBureau).filter(Boolean) as string[];
-    return arr.includes(bureau);
+    const raw: any = (card as any).credit_bureaus;
+    const arr = Array.isArray(raw)
+      ? raw
+      : typeof raw === 'string'
+        ? raw.split(/[\,|]/).map((x: string) => x.trim()).filter(Boolean)
+        : [];
+    const canon = arr.map(canonBureau).filter(Boolean) as string[];
+    return canon.includes(bureau);
   };
 
   
@@ -216,11 +222,20 @@ export default function FundingDIY() {
     const state = String((selectedState || resolveClientState() || '')).toUpperCase();
     const cardsByBank = allCards.filter(c => c.bank_id === bankId);
     const stateEligible = cardsByBank.some(c => {
-      const statesArr = Array.isArray((c as any).states) ? (c as any).states : [];
+      const rawStates: any = (c as any).states;
+      let statesArr: string[] = Array.isArray(rawStates)
+        ? rawStates
+        : typeof rawStates === 'string'
+          ? rawStates.split(/[\,|]/).map((s: string) => String(s).trim()).filter(Boolean)
+          : [];
+      const upperStates = statesArr.map((s: string) => s.toUpperCase());
       const stateVal = (c as any).state || null;
-      if (stateVal === 'USA') return true;
-      if (statesArr && statesArr.length > 0) return statesArr.map((s: string) => String(s).toUpperCase()).includes(state) || statesArr.includes('USA');
-      return !stateVal;
+      const stateValUpper = stateVal ? String(stateVal).toUpperCase() : '';
+      if (upperStates.includes('USA') || upperStates.includes('US') || upperStates.includes('ALL') || upperStates.includes('ANY')) return true;
+      if (['USA', 'US', 'ALL', 'ANY', 'NATIONWIDE'].includes(stateValUpper)) return true;
+      if (stateValUpper && stateValUpper === state) return true;
+      if (upperStates.length > 0) return upperStates.includes(state);
+      return !stateValUpper && upperStates.length === 0;
     });
     const bureauEligible = {
       Experian: cardsByBank.some(c => cardHasBureau(c, 'Experian')),
@@ -357,8 +372,9 @@ export default function FundingDIY() {
       ? cards
       : cards.filter((c) => (c.funding_type || "").toLowerCase() === selectedFundingType.toLowerCase());
     if (selectedBureau === "all") return byType;
-    const b = selectedBureau.toLowerCase();
-    return byType.filter((c) => (c.credit_bureaus || []).some((cb) => cb?.toLowerCase() === b));
+    const canon = canonBureau(selectedBureau);
+    if (!canon) return byType;
+    return byType.filter((c) => cardHasBureau(c, canon));
   }, [cards, selectedFundingType, selectedBureau]);
 
   // Summary metrics across all cards (not just filtered)
