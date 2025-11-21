@@ -590,65 +590,95 @@ export async function createCourse(req: Request, res: Response) {
 
     const validatedData = createCourseSchema.parse(formData);
 
-    // Create course
-    const courseResult = await db.executeQuery(
-      `INSERT INTO courses (
-        title, description, short_description, instructor_id, category_id, level,
-        duration_hours, duration_minutes, price, is_free, currency,
-        prerequisites, learning_objectives, tags, language, certificate_enabled,
-        max_enrollments, enrollment_start_date, enrollment_end_date,
-        course_start_date, course_end_date, featured, thumbnail_url, preview_video_url, created_by, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        validatedData.title,
-        validatedData.description || null,
-        validatedData.short_description || null,
-        userId,
-        parseInt(validatedData.category),
-        validatedData.level,
-        validatedData.duration_hours,
-        validatedData.duration_minutes,
-        validatedData.price,
-        validatedData.is_free ? 1 : 0,
-        validatedData.currency,
-        validatedData.prerequisites || null,
-        validatedData.learning_objectives ? JSON.stringify(validatedData.learning_objectives) : null,
-        validatedData.tags ? JSON.stringify(validatedData.tags) : null,
-        validatedData.language,
-        validatedData.certificate_enabled ? 1 : 0,
-        validatedData.max_enrollments || null,
-        validatedData.enrollment_start_date || null,
-        validatedData.enrollment_end_date || null,
-        validatedData.course_start_date || null,
-        validatedData.course_end_date || null,
-        validatedData.featured ? 1 : 0,
-        formData.thumbnail_url || null,
-        formData.preview_video_url || null,
-        userId,
-        userId
-      ]
-    );
+    let courseResult;
+    try {
+      courseResult = await db.executeQuery(
+        `INSERT INTO courses (
+          title, description, short_description, instructor_id, category_id, level,
+          duration_hours, duration_minutes, price, is_free, currency,
+          prerequisites, learning_objectives, tags, language, certificate_enabled,
+          max_enrollments, enrollment_start_date, enrollment_end_date,
+          course_start_date, course_end_date, featured, thumbnail_url, preview_video_url, created_by, updated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          validatedData.title,
+          validatedData.description || null,
+          validatedData.short_description || null,
+          userId,
+          parseInt(validatedData.category),
+          validatedData.level,
+          validatedData.duration_hours,
+          validatedData.duration_minutes,
+          validatedData.price,
+          validatedData.is_free ? 1 : 0,
+          validatedData.currency,
+          validatedData.prerequisites || null,
+          validatedData.learning_objectives ? JSON.stringify(validatedData.learning_objectives) : null,
+          validatedData.tags ? JSON.stringify(validatedData.tags) : null,
+          validatedData.language,
+          validatedData.certificate_enabled ? 1 : 0,
+          validatedData.max_enrollments || null,
+          validatedData.enrollment_start_date || null,
+          validatedData.enrollment_end_date || null,
+          validatedData.course_start_date || null,
+          validatedData.course_end_date || null,
+          validatedData.featured ? 1 : 0,
+          formData.thumbnail_url || null,
+          formData.preview_video_url || null,
+          userId,
+          userId
+        ]
+      );
+    } catch (e) {
+      const nameRow = await db.getQuery(
+        `SELECT first_name, last_name FROM users WHERE id = ?`,
+        [userId]
+      ).catch(() => null);
+      const instructorName = `${String(nameRow?.first_name || '').trim()} ${String(nameRow?.last_name || '').trim()}`.trim() || 'Instructor';
+      const durationStr = `${Number(validatedData.duration_hours || 0)}h ${Number(validatedData.duration_minutes || 0)}m`;
+      courseResult = await db.executeQuery(
+        `INSERT INTO courses (title, description, instructor, duration, difficulty, points, featured, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          validatedData.title,
+          validatedData.description || null,
+          instructorName,
+          durationStr,
+          validatedData.level,
+          0,
+          validatedData.featured ? 1 : 0,
+          userId
+        ]
+      );
+    }
 
     const courseId = courseResult.insertId;
 
-    // Get the created course
-    const createdCourse = await db.getQuery(
-      `SELECT c.*, u.first_name || ' ' || u.last_name as instructor_name
-       FROM courses c
-       LEFT JOIN users u ON c.instructor_id = u.id
-       WHERE c.id = ?`,
-      [courseId]
-    );
+    let createdCourse;
+    try {
+      createdCourse = await db.getQuery(
+        `SELECT c.*, u.first_name || ' ' || u.last_name as instructor_name
+         FROM courses c
+         LEFT JOIN users u ON c.instructor_id = u.id
+         WHERE c.id = ?`,
+        [courseId]
+      );
+    } catch {
+      createdCourse = await db.getQuery(
+        `SELECT c.* FROM courses c WHERE c.id = ?`,
+        [courseId]
+      );
+    }
 
     res.status(201).json({
       success: true,
       data: {
         ...createdCourse,
-        learning_objectives: createdCourse.learning_objectives ? JSON.parse(createdCourse.learning_objectives) : [],
-        tags: createdCourse.tags ? JSON.parse(createdCourse.tags) : [],
-        featured: Boolean(createdCourse.featured),
-        is_free: Boolean(createdCourse.is_free),
-        certificate_enabled: Boolean(createdCourse.certificate_enabled)
+        learning_objectives: createdCourse?.learning_objectives ? JSON.parse(createdCourse.learning_objectives) : [],
+        tags: createdCourse?.tags ? JSON.parse(createdCourse.tags) : [],
+        featured: Boolean((createdCourse as any)?.featured),
+        is_free: Boolean((createdCourse as any)?.is_free),
+        certificate_enabled: Boolean((createdCourse as any)?.certificate_enabled)
       }
     });
 

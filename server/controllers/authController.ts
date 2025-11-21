@@ -40,13 +40,13 @@ export interface AuthRequest extends Request {
 // Helper functions
 export function generateToken(user: any): string {
   return jwt.sign(
-    { 
-      id: user.id, 
-      email: user.email, 
-      role: user.role 
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role
     },
     JWT_SECRET,
-    { expiresIn: '24h' }
+    { expiresIn: ENV_CONFIG.JWT_EXPIRES_IN || '24h' }
   );
 }
 
@@ -59,7 +59,7 @@ export function generateRefreshToken(user: any): string {
       type: 'refresh'
     },
     JWT_SECRET,
-    { expiresIn: '30d' }
+    { expiresIn: ENV_CONFIG.JWT_REFRESH_EXPIRES_IN || '30d' }
   );
 }
 
