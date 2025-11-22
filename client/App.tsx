@@ -39,6 +39,7 @@ import SuperAdmin from "./pages/SuperAdmin";
 import SuperAdminOverview from "./pages/super-admin/SuperAdminOverview";
 import SuperAdminPlans from "./pages/super-admin/SuperAdminPlans";
 import SuperAdminAdmins from "./pages/super-admin/SuperAdminAdmins";
+import AdminDetails from "./pages/super-admin/AdminDetails";
 import SuperAdminUsers from "./pages/super-admin/SuperAdminUsers";
 import SuperAdminSubscriptions from "./pages/super-admin/SuperAdminSubscriptions";
 import SuperAdminSettings from "./pages/super-admin/SuperAdminSettings";
@@ -394,6 +395,14 @@ const App = () => (
             element={
               <SuperAdminProtectedRoute>
                 <SuperAdminAdmins />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/admins/:id"
+            element={
+              <SuperAdminProtectedRoute>
+                <AdminDetails />
               </SuperAdminProtectedRoute>
             }
           />

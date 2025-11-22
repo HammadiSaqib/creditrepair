@@ -544,7 +544,7 @@ export const superAdminApi = {
     form.append('admin_id', String(adminId));
     return api.post('/api/super-admin/clients/import-csv', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
-  getClients: (params?: { page?: number; limit?: number }) =>
+  getClients: (params?: { page?: number; limit?: number; search?: string; status?: string; admin?: string; user_id?: string | number }) =>
     api.get('/api/super-admin/clients', { params }),
   getClientStatistics: () => api.get('/api/super-admin/client-statistics'),
   getSalesChatAnalytics: () => api.get('/api/super-admin/analytics/sales-chat'),
@@ -576,6 +576,8 @@ export const superAdminApi = {
   updateSubscription: (id: number, data: any) => api.put(`/api/super-admin/subscriptions/${id}`, data),
   cancelSubscription: (id: number) => api.post(`/api/super-admin/subscriptions/${id}/cancel`),
   renewSubscription: (id: number, expires_at: string) => api.post(`/api/super-admin/subscriptions/${id}/renew`, { expires_at }),
+  getUserActivity: (userId: number | string, params?: { page?: number; limit?: number; activity_type?: string; resource_type?: string; date_from?: string; date_to?: string }) =>
+    api.get(`/api/super-admin/users/${userId}/activity`, { params }),
   
   // Affiliate Management endpoints
   getAffiliates: (params?: { page?: number; limit?: number; search?: string; status?: string }) =>

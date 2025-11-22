@@ -30,6 +30,7 @@ import {
 } from '../ui/table';
 import { Checkbox } from '../ui/checkbox';
 import { superAdminApi } from '../../lib/api';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Edit, Trash2, Search, Eye, EyeOff, User, Shield, Settings, LogIn } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
 
@@ -305,6 +306,7 @@ const AdminForm = React.memo(({
 
 const AdminProfileManagement: React.FC = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [adminProfiles, setAdminProfiles] = useState<AdminProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -751,6 +753,15 @@ const AdminProfileManagement: React.FC = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => navigate(`/super-admin/admins/${admin.id}`)}
+                              className="hover:bg-blue-50"
+                              title="View details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"

@@ -3533,6 +3533,7 @@ router.get('/clients', authenticateToken, requireSuperAdmin, async (req: Request
     const search = req.query.search as string || '';
     const status = req.query.status as string || '';
     const admin = req.query.admin as string || '';
+    const userIdFilter = req.query.user_id as string || '';
     const offset = (pageNum - 1) * limitNum;
     
     let whereConditions = [];
@@ -3552,6 +3553,10 @@ router.get('/clients', authenticateToken, requireSuperAdmin, async (req: Request
     if (admin) {
       whereConditions.push('CONCAT(u.first_name, " ", u.last_name) = ?');
       params.push(admin);
+    }
+    if (userIdFilter) {
+      whereConditions.push('c.user_id = ?');
+      params.push(userIdFilter);
     }
     
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
