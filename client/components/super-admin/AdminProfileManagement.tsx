@@ -48,6 +48,11 @@ interface AdminProfile {
   department: string;
   is_active: number;
   title: string;
+  plan_name?: string;
+  plan_type?: string;
+  plan_price?: number;
+  clients_count?: number;
+  next_billing_date?: string;
 }
 
 interface AdminFormData {
@@ -664,6 +669,10 @@ const AdminProfileManagement: React.FC = () => {
                     <TableRow>
                       <TableHead className="font-semibold">Administrator</TableHead>
                       <TableHead className="font-semibold">Role</TableHead>
+                      <TableHead className="font-semibold">Plan</TableHead>
+                      <TableHead className="font-semibold">Clients</TableHead>
+                      <TableHead className="font-semibold">Plan Price</TableHead>
+                      <TableHead className="font-semibold">Next Billing</TableHead>
                       <TableHead className="font-semibold">Access Level</TableHead>
                       <TableHead className="font-semibold">Status</TableHead>
                       <TableHead className="font-semibold">Last Login</TableHead>
@@ -689,6 +698,23 @@ const AdminProfileManagement: React.FC = () => {
                           <Badge variant="outline" className="font-medium">
                             {admin.role}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{admin.plan_name || '—'}</span>
+                            <span className="text-xs text-gray-500">{admin.plan_type || ''}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">
+                            {typeof admin.clients_count === 'number' ? admin.clients_count : 0}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {admin.plan_price !== undefined && admin.plan_price !== null ? `$${Number(admin.plan_price).toFixed(2)}` : '—'}
+                        </TableCell>
+                        <TableCell>
+                          {admin.next_billing_date ? new Date(admin.next_billing_date).toLocaleDateString() : '—'}
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">

@@ -959,23 +959,47 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
     // Get admin users (handle both MySQL and SQLite schemas)
     const dbType = db.getType();
     const statusColumn = dbType === 'mysql' ? 'u.status' : 'CASE WHEN u.is_active = 1 THEN "active" ELSE "inactive" END';
+    let hasSubscriptions = false;
+    let hasSubscriptionPlans = false;
+    try {
+      if (dbType === 'mysql') {
+        const subs = await db.allQuery('SHOW TABLES LIKE "subscriptions"');
+        const plans = await db.allQuery('SHOW TABLES LIKE "subscription_plans"');
+        hasSubscriptions = Array.isArray(subs) && subs.length > 0;
+        hasSubscriptionPlans = Array.isArray(plans) && plans.length > 0;
+      } else {
+        const subs = await db.getQuery('SELECT name FROM sqlite_master WHERE type="table" AND name="subscriptions"');
+        const plans = await db.getQuery('SELECT name FROM sqlite_master WHERE type="table" AND name="subscription_plans"');
+        hasSubscriptions = !!subs;
+        hasSubscriptionPlans = !!plans;
+      }
+    } catch {}
     
     const safeLimitAdmins = Math.max(1, Math.min(100, Number(limit)));
     const safeOffsetAdmins = Math.max(0, offset);
     let admins: any[] = [];
     try {
-      admins = await db.allQuery(
-        `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ${statusColumn} as status,
+      const extras: string[] = [];
+      extras.push('(SELECT COUNT(*) FROM clients c WHERE c.user_id = u.id) AS clients_count');
+      if (hasSubscriptions) {
+        extras.push(`(SELECT s.plan_name FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1) AS plan_name`);
+        extras.push(`(SELECT s.plan_type FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1) AS plan_type`);
+        extras.push(`(SELECT s.current_period_end FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1) AS next_billing_date`);
+      }
+      if (hasSubscriptions && hasSubscriptionPlans) {
+        extras.push(`(SELECT sp.price FROM subscription_plans sp JOIN subscriptions s2 ON sp.name = s2.plan_name WHERE s2.user_id = u.id AND s2.status = 'active' ORDER BY s2.created_at DESC LIMIT 1) AS plan_price`);
+      }
+      const selectExtras = extras.length ? `, ${extras.join(', ')}` : '';
+      const query = `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ${statusColumn} as status,
                 u.last_login, u.created_at, u.updated_at,
                 u.role as access_level, 'General' as department, 1 as is_active,
                 CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title,
-                '{}' as permissions
+                '{}' as permissions${selectExtras}
          FROM users u
          ${whereClause}
          ORDER BY u.created_at DESC
-         LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`,
-        params
-      );
+         LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`;
+      admins = await db.allQuery(query, params);
       console.log('📋 Admins list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
     } catch (listErr: any) {
       // Fallback for environments missing optional columns
@@ -999,21 +1023,25 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
         console.log('🧪 Admins query diagnostic', { whereClause, paramsLength: Array.isArray(params) ? params.length : 0, safeLimitAdmins, safeOffsetAdmins });
         // If any of the key optional columns are missing, prefer fallback immediately
         if (missing.length > 0 && !msg.includes('Unknown column')) {
-          admins = await diagDb.allQuery(
-            `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+          const extras: string[] = [];
+          extras.push('(SELECT COUNT(*) FROM clients c WHERE c.user_id = u.id) AS clients_count');
+          if (hasSubscriptions) {
+            extras.push(`(SELECT s.current_period_end FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1) AS next_billing_date`);
+          }
+          const selectExtras = extras.length ? `, ${extras.join(', ')}` : '';
+          const q = `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
                     ${statusColumn} as status,
                     u.created_at,
                     u.role as access_level,
                     'General' as department,
                     1 as is_active,
                     CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title,
-                    '{}' as permissions
+                    '{}' as permissions${selectExtras}
              FROM users u
              ${whereClause}
              ORDER BY u.created_at DESC
-             LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`,
-            Array.isArray(params) ? params : []
-          );
+             LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`;
+          admins = await diagDb.allQuery(q, Array.isArray(params) ? params : []);
           console.log('📋 Admins diagnostic fallback list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
           // Continue without throwing
         } else {
@@ -1023,21 +1051,25 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
         console.error('🛠️ Admins diagnostic failed', { message: diagErr?.message, code: diagErr?.code });
       }
       if (msg.includes('Unknown column') || listErr?.code === 'ER_BAD_FIELD_ERROR') {
-        admins = await db.allQuery(
-          `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+        const extras: string[] = [];
+        extras.push('(SELECT COUNT(*) FROM clients c WHERE c.user_id = u.id) AS clients_count');
+        if (hasSubscriptions) {
+          extras.push(`(SELECT s.current_period_end FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1) AS next_billing_date`);
+        }
+        const selectExtras = extras.length ? `, ${extras.join(', ')}` : '';
+        const qq = `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
                   ${statusColumn} as status,
                   u.created_at,
                   u.role as access_level,
                   'General' as department,
                   1 as is_active,
                   CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title,
-                  '{}' as permissions
+                  '{}' as permissions${selectExtras}
            FROM users u
            ${whereClause}
            ORDER BY u.created_at DESC
-           LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`,
-          params
-        );
+           LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`;
+        admins = await db.allQuery(qq, params);
         console.log('📋 Admins fallback list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
       } else {
         throw listErr;

@@ -8,10 +8,16 @@ import fs from 'fs';
 
 const router = express.Router();
 
+function getServerBaseUrl(req: Request): string {
+  const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+  const host = (req.headers['x-forwarded-host'] as string) || req.get('host') || 'localhost:3001';
+  return `${proto}://${host}`;
+}
+
 // Configure multer for profile image uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = 'uploads/profiles';
+    const uploadDir = path.resolve(process.cwd(), 'uploads/profiles');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -42,7 +48,7 @@ const upload = multer({
 // Configure multer for gateway logo uploads
 const gatewayStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = 'uploads/gateways';
+    const uploadDir = path.resolve(process.cwd(), 'uploads/gateways');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -89,7 +95,7 @@ router.post('/upload-avatar', authenticateToken, upload.single('avatar'), async 
     }
 
     // Create the avatar URL with full server URL for proper display
-    const baseUrl = process.env.API_URL || 'http://localhost:3001';
+    const baseUrl = getServerBaseUrl(req);
     const avatarUrl = `${baseUrl}/uploads/profiles/${req.file.filename}`;
     console.log('🔗 Avatar URL created:', avatarUrl);
 
@@ -145,7 +151,7 @@ router.post('/upload-gateway-logo', authenticateToken, gatewayUpload.single('gat
       return res.status(403).json({ message: 'Insufficient permissions to upload gateway logo' });
     }
 
-    const baseUrl = process.env.API_URL || 'http://localhost:3001';
+    const baseUrl = getServerBaseUrl(req);
     const logoUrl = `${baseUrl}/uploads/gateways/${req.file.filename}`;
 
     await runQuery(
@@ -191,9 +197,17 @@ router.delete('/delete-avatar', authenticateToken, async (req: AuthRequest, res:
     }
 
     if (user.length > 0 && user[0].avatar) {
-      const avatarPath = path.join(process.cwd(), user[0].avatar);
+      let avatarPath = '';
+      try {
+        const parsed = new URL(user[0].avatar);
+        const rel = parsed.pathname.replace(/^\/+/, '');
+        avatarPath = path.join(process.cwd(), rel);
+      } catch {
+        const rel = String(user[0].avatar).replace(/^\/+/, '');
+        avatarPath = path.join(process.cwd(), rel.startsWith('uploads/') ? rel : `uploads/${rel}`);
+      }
       console.log('📁 Avatar file path:', avatarPath);
-      
+
       // Delete file if it exists
       if (fs.existsSync(avatarPath)) {
         fs.unlinkSync(avatarPath);
