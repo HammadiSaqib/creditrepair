@@ -248,7 +248,6 @@ export class AuthController {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       
-      // Update last login
       await updateUserLastLogin(user.id);
       
       // Generate JWT token
@@ -319,8 +318,20 @@ export class AuthController {
         return res.status(401).json({ error: 'Invalid super admin credentials' });
       }
       
-      // Update last login
       await updateUserLastLogin(user.id);
+      try {
+        await runQuery(
+          `INSERT INTO user_activities (user_id, activity_type, resource_type, description, ip_address, user_agent, session_id)
+           VALUES (?, 'login', 'auth', ?, ?, ?, ?)`,
+          [
+            user.id,
+            'Super admin login successful',
+            (req as any).ip,
+            req.get('User-Agent') || null,
+            null
+          ]
+        );
+      } catch {}
       
       // Send admin login notification email
       try {
@@ -682,6 +693,21 @@ export class AuthController {
       
       // Update last login
       await updateUserLastLogin(user.id);
+      if (user.role === 'admin' || user.role === 'super_admin') {
+        try {
+          await runQuery(
+            `INSERT INTO user_activities (user_id, activity_type, resource_type, description, ip_address, user_agent, session_id)
+             VALUES (?, 'login', 'auth', ?, ?, ?, ?)`,
+            [
+              user.id,
+              'Login successful',
+              (req as any).ip,
+              req.get('User-Agent') || null,
+              null
+            ]
+          );
+        } catch {}
+      }
       
       // Send admin login notification email if user is admin
       if (user.role === 'admin' || user.role === 'super_admin') {
@@ -1310,7 +1336,31 @@ export class AuthController {
   }
 
   // Logout endpoint (mainly for clearing client-side token)
-  static logout(req: Request, res: Response) {
+  static async logout(req: Request, res: Response) {
+    try {
+      const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+      const token = typeof authHeader === 'string' && authHeader.startsWith('Bearer ')
+        ? authHeader.substring(7)
+        : '';
+      if (token) {
+        try {
+          const decoded: any = verifyTokenHelper(token);
+          if (decoded && (decoded.role === 'admin' || decoded.role === 'super_admin')) {
+            await runQuery(
+              `INSERT INTO user_activities (user_id, activity_type, resource_type, description, ip_address, user_agent, session_id)
+               VALUES (?, 'logout', 'auth', ?, ?, ?, ?)`,
+              [
+                decoded.id,
+                'Logout successful',
+                (req as any).ip,
+                req.get('User-Agent') || null,
+                null
+              ]
+            );
+          }
+        } catch {}
+      }
+    } catch {}
     res.json({ message: 'Logged out successfully' });
   }
 

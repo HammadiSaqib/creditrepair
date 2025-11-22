@@ -280,6 +280,18 @@ export async function createClient(req: AuthRequest, res: Response) {
       'client_added',
       `New client added: ${clientData.first_name} ${clientData.last_name}${clientData.platform ? ` (via ${clientData.platform})` : ''}`
     ]);
+
+    await runQuery(`
+      INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description, ip_address, user_agent, session_id)
+      VALUES (?, 'create', 'client', ?, ?, ?, ?, ?)
+    `, [
+      req.user!.id,
+      insertedId,
+      `New client added: ${clientData.first_name} ${clientData.last_name}${clientData.platform ? ` (via ${clientData.platform})` : ''}`,
+      req.ip,
+      req.get('User-Agent') || null,
+      null
+    ]);
     
     res.status(201).json(newClient);
   } catch (error) {
