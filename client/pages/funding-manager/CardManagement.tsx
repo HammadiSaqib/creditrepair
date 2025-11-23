@@ -6,7 +6,6 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 
 interface Bank {
   id: number;
@@ -69,12 +68,10 @@ const CardManagement: React.FC = () => {
     card_link: '',
     card_type: 'business' as 'business' | 'personal',
     funding_type: '',
-    credit_bureaus: [] as string[],
   });
-  const [selectedStates, setSelectedStates] = useState<string[]>([]);
+  
   const [bankFilterOpen, setBankFilterOpen] = useState(false);
   const [bankSelectOpen, setBankSelectOpen] = useState(false);
-  const [stateSelectOpen, setStateSelectOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
   const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1 });
@@ -90,7 +87,7 @@ const CardManagement: React.FC = () => {
     personal: ['Credit Card', 'Loans', 'Sub Prime Lenders', 'Line of Credit']
   };
 
-  const creditBureauOptions = ['Experian', 'Equifax', 'TransUnion'];
+  
 
   // United States states (labels include short code in parentheses)
   const US_STATES: { value: string; label: string }[] = [
@@ -266,9 +263,7 @@ const CardManagement: React.FC = () => {
       card_link: '',
       card_type: 'business',
       funding_type: '',
-      credit_bureaus: [],
     });
-    setSelectedStates([]);
     setEditingCard(null);
     setShowAddForm(false);
   };
@@ -279,13 +274,8 @@ const CardManagement: React.FC = () => {
     try {
       const url = editingCard ? `${API_BASE}/api/cards/${editingCard.id}` : `${API_BASE}/api/cards`;
       const method = editingCard ? 'PUT' : 'POST';
-      
-      if (selectedStates.length === 0) {
-        throw new Error('Please select at least one state');
-      }
       const payload = {
         ...formData,
-        states: selectedStates,
       };
       console.log('submit payload', payload);
       const response = await fetch(url, {
@@ -322,10 +312,6 @@ const CardManagement: React.FC = () => {
       if (res.ok) {
         const data = await res.json();
         const fetched = data?.card || card;
-        const parsedStates: string[] = Array.isArray(fetched?.states)
-          ? fetched.states
-          : (() => { try { return JSON.parse(fetched?.states || '[]'); } catch { return []; } })();
-        console.log('edit fetched card', fetched.id, { states: fetched.states, state: fetched.state }, { parsedStates });
         setFormData({
           card_image: fetched.card_image || '',
           bank_id: fetched.bank_id.toString(),
@@ -333,9 +319,7 @@ const CardManagement: React.FC = () => {
           card_link: fetched.card_link,
           card_type: fetched.card_type,
           funding_type: fetched.funding_type,
-          credit_bureaus: fetched.credit_bureaus,
         });
-        setSelectedStates(parsedStates);
       } else {
         // Fallback to existing list data
         setFormData({
@@ -345,11 +329,7 @@ const CardManagement: React.FC = () => {
           card_link: card.card_link,
           card_type: card.card_type,
           funding_type: card.funding_type,
-          credit_bureaus: card.credit_bureaus,
         });
-        const ss = Array.isArray(card.states) ? card.states : [];
-        console.log('edit fallback card', card.id, { states: card.states, state: card.state }, { parsedStates: ss });
-        setSelectedStates(ss);
       }
     } catch {
       // Network error: fallback to existing list data
@@ -360,11 +340,7 @@ const CardManagement: React.FC = () => {
         card_link: card.card_link,
         card_type: card.card_type,
         funding_type: card.funding_type,
-        credit_bureaus: card.credit_bureaus,
       });
-      const ss = Array.isArray(card.states) ? card.states : [];
-      console.log('edit network fallback card', card.id, { states: card.states, state: card.state }, { parsedStates: ss });
-      setSelectedStates(ss);
     }
   };
 
@@ -810,72 +786,6 @@ const CardManagement: React.FC = () => {
                   </select>
                 </div>
 
-                {/* Card States (Multi-select with search) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    State (USA) *
-                  </label>
-                  <Popover open={stateSelectOpen} onOpenChange={setStateSelectOpen}>
-                    <PopoverTrigger asChild>
-                      <button type="button" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between">
-                        <span className="truncate">
-                          {selectedStates.length > 0 ? selectedStates.map((code) => formatStateLabel(code)).join(', ') : 'Select states'}
-                        </span>
-                        <ChevronDown className="h-4 w-4 text-gray-500" />
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[380px] p-0">
-                      <Command>
-                        <CommandInput placeholder="Search states..." />
-                        <CommandList>
-                          <CommandEmpty>No state found.</CommandEmpty>
-                          <CommandGroup>
-                            {US_STATES.map((st) => {
-                              const checked = selectedStates.includes(st.value);
-                              return (
-                                <CommandItem
-                                  key={st.value}
-                                  onSelect={() => {
-                                    setSelectedStates((prev) =>
-                                      prev.includes(st.value)
-                                        ? prev.filter((v) => v !== st.value)
-                                        : [...prev, st.value]
-                                    );
-                                  }}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <Checkbox checked={checked} onCheckedChange={() => { /* handled via onSelect */ }} />
-                                    <span>{st.label}</span>
-                                  </div>
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-
-              {/* Credit Bureau */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Credit Bureau (Select all that apply)
-                </label>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {creditBureauOptions.map((bureau) => (
-                    <label key={bureau} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        checked={formData.credit_bureaus.includes(bureau)}
-                        onChange={() => handleCreditBureauChange(bureau)}
-                      />
-                      <span className="ml-2 text-sm text-gray-700">{bureau}</span>
-                    </label>
-                  ))}
-                </div>
               </div>
               
               <div className="flex justify-end space-x-3">
@@ -914,12 +824,6 @@ const CardManagement: React.FC = () => {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Funding Type
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  States
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Credit Bureaus
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Total Amount Approve
@@ -990,34 +894,7 @@ const CardManagement: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {card.funding_type}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {Array.isArray(card.states) && card.states.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {card.states.map((st) => (
-                        <span
-                          key={st}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-                        >
-                          {formatStateLabel(st)}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    '-'
-                  )}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <div className="flex flex-wrap gap-1">
-                      {card.credit_bureaus.map((bureau) => (
-                        <span
-                          key={bureau}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-                        >
-                          {bureau}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
+                  
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {card.total_amount_approved != null
                       ? `$${card.total_amount_approved.toLocaleString()}`

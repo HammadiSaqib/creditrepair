@@ -3,17 +3,25 @@ import { z } from 'zod';
 import { executeQuery } from '../database/mysqlConfig.js';
 import { AuthRequest } from '../middleware/authMiddleware.js';
 
+const US_STATE_CODES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'
+];
+const STATE_OR_COUNTRY_CODES = [...US_STATE_CODES, 'USA'] as const;
+
 // Validation schemas
 const createBankSchema = z.object({
-  name: z.string().min(1, 'Bank name is required').max(100, 'Bank name too long'),
-  logo: z.string().url('Invalid logo URL').optional().or(z.literal('')),
-  // Admins may optionally specify a funding manager to associate the bank with
+  name: z.string().min(1).max(100),
+  logo: z.string().url().optional().or(z.literal('')),
+  state: z.enum(STATE_OR_COUNTRY_CODES),
+  credit_bureaus: z.array(z.enum(['Experian', 'Equifax', 'TransUnion'] as const)).min(1),
   funding_manager_id: z.number().int().positive().optional(),
 });
 
 const updateBankSchema = z.object({
-  name: z.string().min(1, 'Bank name is required').max(100, 'Bank name too long').optional(),
-  logo: z.string().url('Invalid logo URL').optional().or(z.literal('')),
+  name: z.string().min(1).max(100).optional(),
+  logo: z.string().url().optional().or(z.literal('')),
+  state: z.enum(STATE_OR_COUNTRY_CODES).optional(),
+  credit_bureaus: z.array(z.enum(['Experian', 'Equifax', 'TransUnion'] as const)).min(1).optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -53,7 +61,7 @@ export async function getBanks(req: Request, res: Response) {
 
     // Get banks with pagination
     const query = `
-      SELECT id, name, logo, is_active, created_at, updated_at 
+      SELECT id, name, logo, state, credit_bureaus, is_active, created_at, updated_at 
       FROM banks 
       ${whereClause}
       ORDER BY created_at DESC 
@@ -82,7 +90,7 @@ export async function getBank(req: Request, res: Response) {
   try {
     const { id } = req.params;
     
-    const query = 'SELECT id, name, logo, is_active, created_at, updated_at FROM banks WHERE id = ?';
+    const query = 'SELECT id, name, logo, state, credit_bureaus, is_active, created_at, updated_at FROM banks WHERE id = ?';
     const result = await executeQuery(query, [id]);
     
     if (result.length === 0) {
@@ -117,21 +125,23 @@ export async function createBank(req: Request, res: Response) {
     }
     
     const query = `
-      INSERT INTO banks (funding_manager_id, name, logo, is_active, created_at, updated_at) 
-      VALUES (?, ?, ?, true, NOW(), NOW())
+      INSERT INTO banks (funding_manager_id, name, logo, state, credit_bureaus, is_active, created_at, updated_at) 
+      VALUES (?, ?, ?, ?, ?, true, NOW(), NOW())
     `;
     
     const result = await executeQuery(query, [
       fundingManagerId,
       validatedData.name,
       validatedData.logo || null,
+      validatedData.state,
+      JSON.stringify(validatedData.credit_bureaus),
     ]);
     
     const bankId = (result as any).insertId;
     
     // Fetch the created bank
     const createdBank = await executeQuery(
-      'SELECT id, name, logo, is_active, created_at, updated_at FROM banks WHERE id = ?',
+      'SELECT id, name, logo, state, credit_bureaus, is_active, created_at, updated_at FROM banks WHERE id = ?',
       [bankId]
     );
     
@@ -171,6 +181,14 @@ export async function updateBank(req: Request, res: Response) {
       updateFields.push('logo = ?');
       updateValues.push(validatedData.logo || null);
     }
+    if (validatedData.state !== undefined) {
+      updateFields.push('state = ?');
+      updateValues.push(validatedData.state);
+    }
+    if (validatedData.credit_bureaus !== undefined) {
+      updateFields.push('credit_bureaus = ?');
+      updateValues.push(JSON.stringify(validatedData.credit_bureaus));
+    }
     
     if (validatedData.is_active !== undefined) {
       updateFields.push('is_active = ?');
@@ -189,7 +207,7 @@ export async function updateBank(req: Request, res: Response) {
     
     // Fetch updated bank
     const updatedBank = await executeQuery(
-      'SELECT id, name, logo, is_active, created_at, updated_at FROM banks WHERE id = ?',
+      'SELECT id, name, logo, state, credit_bureaus, is_active, created_at, updated_at FROM banks WHERE id = ?',
       [id]
     );
     

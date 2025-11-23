@@ -1,12 +1,76 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, Building2, AlertCircle, Upload, Download } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, Building2, AlertCircle, Upload, Download, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import FundingManagerLayout from '@/components/FundingManagerLayout';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
+import { Checkbox } from '@/components/ui/checkbox';
+
+const creditBureauOptions = ['Experian', 'Equifax', 'TransUnion'];
+const US_STATES: { value: string; label: string }[] = [
+  { value: 'USA', label: 'USA (Nationwide)' },
+  { value: 'AL', label: 'Alabama (AL)' },
+  { value: 'AK', label: 'Alaska (AK)' },
+  { value: 'AZ', label: 'Arizona (AZ)' },
+  { value: 'AR', label: 'Arkansas (AR)' },
+  { value: 'CA', label: 'California (CA)' },
+  { value: 'CO', label: 'Colorado (CO)' },
+  { value: 'CT', label: 'Connecticut (CT)' },
+  { value: 'DE', label: 'Delaware (DE)' },
+  { value: 'FL', label: 'Florida (FL)' },
+  { value: 'GA', label: 'Georgia (GA)' },
+  { value: 'HI', label: 'Hawaii (HI)' },
+  { value: 'ID', label: 'Idaho (ID)' },
+  { value: 'IL', label: 'Illinois (IL)' },
+  { value: 'IN', label: 'Indiana (IN)' },
+  { value: 'IA', label: 'Iowa (IA)' },
+  { value: 'KS', label: 'Kansas (KS)' },
+  { value: 'KY', label: 'Kentucky (KY)' },
+  { value: 'LA', label: 'Louisiana (LA)' },
+  { value: 'ME', label: 'Maine (ME)' },
+  { value: 'MD', label: 'Maryland (MD)' },
+  { value: 'MA', label: 'Massachusetts (MA)' },
+  { value: 'MI', label: 'Michigan (MI)' },
+  { value: 'MN', label: 'Minnesota (MN)' },
+  { value: 'MS', label: 'Mississippi (MS)' },
+  { value: 'MO', label: 'Missouri (MO)' },
+  { value: 'MT', label: 'Montana (MT)' },
+  { value: 'NE', label: 'Nebraska (NE)' },
+  { value: 'NV', label: 'Nevada (NV)' },
+  { value: 'NH', label: 'New Hampshire (NH)' },
+  { value: 'NJ', label: 'New Jersey (NJ)' },
+  { value: 'NM', label: 'New Mexico (NM)' },
+  { value: 'NY', label: 'New York (NY)' },
+  { value: 'NC', label: 'North Carolina (NC)' },
+  { value: 'ND', label: 'North Dakota (ND)' },
+  { value: 'OH', label: 'Ohio (OH)' },
+  { value: 'OK', label: 'Oklahoma (OK)' },
+  { value: 'OR', label: 'Oregon (OR)' },
+  { value: 'PA', label: 'Pennsylvania (PA)' },
+  { value: 'RI', label: 'Rhode Island (RI)' },
+  { value: 'SC', label: 'South Carolina (SC)' },
+  { value: 'SD', label: 'South Dakota (SD)' },
+  { value: 'TN', label: 'Tennessee (TN)' },
+  { value: 'TX', label: 'Texas (TX)' },
+  { value: 'UT', label: 'Utah (UT)' },
+  { value: 'VT', label: 'Vermont (VT)' },
+  { value: 'VA', label: 'Virginia (VA)' },
+  { value: 'WA', label: 'Washington (WA)' },
+  { value: 'WV', label: 'West Virginia (WV)' },
+  { value: 'WI', label: 'Wisconsin (WI)' },
+  { value: 'WY', label: 'Wyoming (WY)' }
+];
+const formatStateLabel = (code: string) => {
+  const st = US_STATES.find(s => s.value === code);
+  return st ? st.label : code;
+};
 
 interface Bank {
   id: number;
   name: string;
   logo?: string;
+  state?: string;
+  credit_bureaus?: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -28,11 +92,16 @@ const BankManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [editingBank, setEditingBank] = useState<Bank | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     logo: '',
+    state: '',
+    credit_bureaus: [] as string[],
   });
+  const [selectedState, setSelectedState] = useState<string>('');
+  const [stateSelectOpen, setStateSelectOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(100); // Default to show up to 100 per page
   const [pagination, setPagination] = useState({ page: 1, limit: 100, total: 0, totalPages: 1 });
@@ -74,7 +143,13 @@ const BankManagement: React.FC = () => {
       }
       
       const data = await response.json();
-      setBanks(data.banks || []);
+      const normalizedBanks: Bank[] = (data.banks || []).map((b: any) => ({
+        ...b,
+        credit_bureaus: Array.isArray(b?.credit_bureaus)
+          ? b.credit_bureaus
+          : (() => { try { return JSON.parse(b?.credit_bureaus || '[]'); } catch { return []; } })(),
+      }));
+      setBanks(normalizedBanks);
       if (data.pagination) {
         setPagination({
           page: Number(data.pagination.page) || 1,
@@ -134,7 +209,10 @@ const BankManagement: React.FC = () => {
     setFormData({
       name: '',
       logo: '',
+      state: '',
+      credit_bureaus: [],
     });
+    setSelectedState('');
     setEditingBank(null);
     setShowAddForm(false);
   };
@@ -146,13 +224,18 @@ const BankManagement: React.FC = () => {
       const url = editingBank ? `${API_BASE}/api/banks/${editingBank.id}` : `${API_BASE}/api/banks`;
       const method = editingBank ? 'PUT' : 'POST';
       
+      const payload = {
+        ...formData,
+        state: selectedState || formData.state || '',
+        credit_bureaus: formData.credit_bureaus,
+      };
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       
       if (!response.ok) {
@@ -168,13 +251,45 @@ const BankManagement: React.FC = () => {
     }
   };
 
-  const handleEdit = (bank: Bank) => {
+  const handleEdit = async (bank: Bank) => {
     setEditingBank(bank);
-    setFormData({
-      name: bank.name,
-      logo: bank.logo || '',
-    });
     setShowAddForm(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/banks/${bank.id}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const bureaus = Array.isArray(data?.credit_bureaus)
+          ? data.credit_bureaus
+          : (() => { try { return JSON.parse(data?.credit_bureaus || '[]'); } catch { return []; } })();
+        setFormData({
+          name: data.name || bank.name,
+          logo: data.logo || bank.logo || '',
+          state: data.state || bank.state || '',
+          credit_bureaus: bureaus,
+        });
+        setSelectedState(data.state || bank.state || '');
+      } else {
+        setFormData({
+          name: bank.name,
+          logo: bank.logo || '',
+          state: bank.state || '',
+          credit_bureaus: bank.credit_bureaus || [],
+        });
+        setSelectedState(bank.state || '');
+      }
+    } catch {
+      setFormData({
+        name: bank.name,
+        logo: bank.logo || '',
+        state: bank.state || '',
+        credit_bureaus: bank.credit_bureaus || [],
+      });
+      setSelectedState(bank.state || '');
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -299,8 +414,8 @@ const BankManagement: React.FC = () => {
       {/* Controls */}
       <div className="bg-white rounded-lg shadow mb-6">
         <div className="p-6 border-b border-gray-200">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <input
@@ -335,6 +450,23 @@ const BankManagement: React.FC = () => {
                   <option value={100}>100</option>
                 </select>
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`inline-flex items-center px-2.5 py-1.5 rounded-md text-sm border ${viewMode === 'table' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}
+              >
+                <span className="sr-only">List</span>
+                {/* simple icon replacement using unicode list if lucide Table not imported here */}
+                List
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`inline-flex items-center px-2.5 py-1.5 rounded-md text-sm border ${viewMode === 'grid' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300'}`}
+              >
+                <span className="sr-only">Grid</span>
+                Grid
+              </button>
             </div>
             
             <button
@@ -423,98 +555,258 @@ const BankManagement: React.FC = () => {
                   />
                 </div>
               </div>
-              
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  {editingBank ? 'Update Bank' : 'Add Bank'}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
 
-        {/* Banks Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredBanks.map((bank) => (
-            <div
-              key={bank.id}
-              onClick={() => navigate(`/funding-manager/banks/${bank.id}`)}
-              className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 cursor-pointer border border-gray-200 hover:border-blue-300"
-            >
-              <div className="p-6">
-                <div className="flex flex-col items-center text-center">
-                  {/* Bank Logo */}
-                  <div className="mb-4">
-                    {bank.logo ? (
-                      <img
-                        src={bank.logo}
-                        alt={bank.name}
-                        className="h-16 w-16 rounded-lg object-contain border-2 border-gray-200 bg-white p-1"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <div className={`h-16 w-16 bg-blue-100 rounded-lg flex items-center justify-center border-2 border-gray-200 ${bank.logo ? 'hidden' : ''}`}>
-                      <Building2 className="h-8 w-8 text-blue-600" />
-                    </div>
-                  </div>
-                  
-                  {/* Bank Name */}
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{bank.name}</h3>
-                  
-                  {/* Status Badge */}
-                  <div className="mb-4">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        bank.is_active
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {bank.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                  
-                  {/* Action Buttons */}
-                  <div className="flex space-x-2 w-full">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(bank);
-                      }}
-                      className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(bank.id);
-                      }}
-                      className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    State (USA) *
+                  </label>
+                  <Popover open={stateSelectOpen} onOpenChange={setStateSelectOpen}>
+                    <PopoverTrigger asChild>
+                      <button type="button" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between">
+                        <span className="truncate">
+                          {selectedState ? formatStateLabel(selectedState) : 'Select a state'}
+                        </span>
+                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[380px] p-0">
+                      <Command>
+                        <CommandInput placeholder="Search states..." />
+                        <CommandList>
+                          <CommandEmpty>No state found.</CommandEmpty>
+                          <CommandGroup>
+                            {US_STATES.map((st) => {
+                              const checked = selectedState === st.value;
+                              return (
+                                <CommandItem
+                                  key={st.value}
+                                  onSelect={() => {
+                                    setSelectedState(st.value);
+                                    setFormData((prev) => ({ ...prev, state: st.value }));
+                                  }}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox checked={checked} onCheckedChange={() => {}} />
+                                    <span>{st.label}</span>
+                                  </div>
+                                </CommandItem>
+                              );
+                            })}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Credit Bureaus *
+                  </label>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {creditBureauOptions.map((bureau) => (
+                      <label key={bureau} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          checked={formData.credit_bureaus.includes(bureau)}
+                          onChange={() => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              credit_bureaus: prev.credit_bureaus.includes(bureau)
+                                ? prev.credit_bureaus.filter((b) => b !== bureau)
+                                : [...prev.credit_bureaus, bureau],
+                            }));
+                          }}
+                        />
+                        <span className="ml-2 text-sm text-gray-700">{bureau}</span>
+                      </label>
+                    ))}
                   </div>
                 </div>
               </div>
+              
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={resetForm}
+                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                {editingBank ? 'Update Bank' : 'Add Bank'}
+              </button>
             </div>
-          ))}
-        </div>
+          </form>
+          </div>
+        )}
+
+        {viewMode === 'grid' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredBanks.map((bank) => (
+              <div
+                key={bank.id}
+                onClick={() => navigate(`/funding-manager/banks/${bank.id}`)}
+                className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 cursor-pointer border border-gray-200 hover:border-blue-300"
+              >
+                <div className="p-6">
+                  <div className="flex flex-col items-center text-center">
+                    <div className="mb-4">
+                      {bank.logo ? (
+                        <img
+                          src={bank.logo}
+                          alt={bank.name}
+                          className="h-16 w-16 rounded-lg object-contain border-2 border-gray-200 bg-white p-1"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null}
+                      <div className={`h-16 w-16 bg-blue-100 rounded-lg flex items-center justify-center border-2 border-gray-200 ${bank.logo ? 'hidden' : ''}`}>
+                        <Building2 className="h-8 w-8 text-blue-600" />
+                      </div>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">{bank.name}</h3>
+                    <div className="mb-2 text-sm text-gray-700">
+                      {bank.state ? formatStateLabel(bank.state) : '-'}
+                    </div>
+                    <div className="mb-4">
+                      <div className="flex flex-wrap gap-1 justify-center">
+                        {(bank.credit_bureaus || []).map((b) => (
+                          <span key={b} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                            {b}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mb-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          bank.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}
+                      >
+                        {bank.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="flex space-x-2 w-full">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(bank);
+                        }}
+                        className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(bank.id);
+                        }}
+                        className="flex-1 inline-flex items-center justify-center px-3 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {viewMode === 'table' && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bank</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">State</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit Bureaus</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredBanks.map((bank) => (
+                  <tr key={bank.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        {bank.logo ? (
+                          <img
+                            src={bank.logo}
+                            alt={bank.name}
+                            className="h-10 w-10 rounded object-contain mr-4 border"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="h-10 w-10 bg-blue-100 rounded flex items-center justify-center mr-4">
+                            <Building2 className="h-5 w-5 text-blue-600" />
+                          </div>
+                        )}
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{bank.name}</div>
+                          <button
+                            onClick={() => navigate(`/funding-manager/banks/${bank.id}`)}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            View Details
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {bank.state ? formatStateLabel(bank.state) : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <div className="flex flex-wrap gap-1">
+                        {(bank.credit_bureaus || []).map((bureau) => (
+                          <span key={bureau} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                            {bureau}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <button
+                        onClick={() => toggleBankStatus(bank)}
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${bank.is_active ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-red-100 text-red-800 hover:bg-red-200'}`}
+                      >
+                        {bank.is_active ? 'Active' : 'Inactive'}
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => handleEdit(bank)}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(bank.id)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Pagination Controls */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-6">

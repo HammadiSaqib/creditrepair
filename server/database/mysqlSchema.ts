@@ -1890,6 +1890,21 @@ async function createMySQLTables(): Promise<void> {
       console.log('⚠️  Error adding states column to cards:', error.message);
     }
   }
+
+  // Add credit_bureaus JSON column to banks if it doesn't exist
+  try {
+    await executeQuery(`
+      ALTER TABLE banks 
+      ADD COLUMN credit_bureaus JSON NULL AFTER state
+    `);
+    console.log('✅ Added credit_bureaus JSON column to banks table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  credit_bureaus column already exists on banks');
+    } else {
+      console.log('⚠️  Error adding credit_bureaus column to banks:', error.message);
+    }
+  }
 }
 
 // Seed MySQL database with initial data

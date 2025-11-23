@@ -31,8 +31,8 @@ const createCardValidation = [
   body('card_link').isURL().withMessage('Card link must be a valid URL'),
   body('card_type').isIn(['business', 'personal']).withMessage('Card type must be either business or personal'),
   body('funding_type').trim().isLength({ min: 1, max: 100 }).withMessage('Funding type is required'),
-  body('credit_bureaus').isArray({ min: 1 }).withMessage('At least one credit bureau must be selected'),
-  body('credit_bureaus.*').isIn(['Experian', 'Equifax', 'TransUnion']).withMessage('Invalid credit bureau'),
+  body('credit_bureaus').optional().isArray().withMessage('Credit bureaus must be an array if provided'),
+  body('credit_bureaus.*').optional().isIn(['Experian', 'Equifax', 'TransUnion']).withMessage('Invalid credit bureau'),
   body('states').optional().isArray({ min: 1 }).withMessage('States must be an array'),
   body('states.*').optional().isIn(STATE_OR_COUNTRY_CODES).withMessage('Invalid state code'),
   body('state').optional().isIn(STATE_OR_COUNTRY_CODES).withMessage('State must be a valid US state code or USA'),
@@ -532,7 +532,7 @@ router.post('/', authenticateToken, createCardValidation, async (req: Request, r
       card_link,
       card_type,
       funding_type,
-      JSON.stringify(credit_bureaus),
+      JSON.stringify(Array.isArray(credit_bureaus) ? credit_bureaus : []),
       stateValue || null,
       normalizedStates.length > 0 ? JSON.stringify(normalizedStates) : null
     ]) as ResultSetHeader;
@@ -547,7 +547,7 @@ router.post('/', authenticateToken, createCardValidation, async (req: Request, r
         card_link,
       card_type,
       funding_type,
-      credit_bureaus,
+      credit_bureaus: Array.isArray(credit_bureaus) ? credit_bureaus : [],
       states: normalizedStates,
       state: stateValue || null,
       is_active: true
