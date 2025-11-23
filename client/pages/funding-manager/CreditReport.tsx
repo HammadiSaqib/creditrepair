@@ -955,6 +955,8 @@ export default function CreditReport() {
   const [compareMode, setCompareMode] = useState<'personal' | 'business' | 'both'>('both');
   const [dynamicFundingData, setDynamicFundingData] = useState(null);
   const [gapAnalysisData, setGapAnalysisData] = useState(null);
+  const [refreshAuditNonce, setRefreshAuditNonce] = useState(0);
+  const [isRerunningAudit, setIsRerunningAudit] = useState(false);
 
   // Calculate dynamic funding projections when report data changes
   useEffect(() => {
@@ -1689,7 +1691,7 @@ export default function CreditReport() {
       }
 
       try {
-        setLoading(true);
+        if (!isRerunningAudit) setLoading(true);
         setError(null);
         
         const token = localStorage.getItem('auth_token');
@@ -2088,6 +2090,27 @@ export default function CreditReport() {
             recentInquiries: detailedReport.recentInquiries
           };
           
+          try {
+            const qc = qualificationCriteria;
+            const isPass = (c: any) => Boolean(c?.score700Plus || c?.score730Plus) && Boolean(c?.openRevolvingUnder30) && Boolean(c?.allRevolvingUnder30) && Boolean(c?.minFiveOpenRevolving) && Boolean(c?.creditCard3YearsOld5KLimit) && Boolean(c?.maxFourUnsecuredIn12Months) && Boolean(c?.noInquiries) && Boolean(c?.noBankruptcies) && Boolean(c?.noCollectionsLiensJudgements);
+            const fundable_in_tu = isPass(qc?.[1]);
+            const fundable_in_ex = isPass(qc?.[3]);
+            const fundable_in_eq = isPass(qc?.[2]);
+            const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
+
+            const updateRes = await fetch(`/api/clients/${clientId}`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ fundable_in_tu, fundable_in_ex, fundable_in_eq, fundable_status })
+            });
+            console.log('🔍 DEBUG: Persist fundability flags response status:', updateRes.status);
+          } catch (persistErr) {
+            console.warn('⚠️ Failed to persist fundability flags:', persistErr);
+          }
+
           console.log('🔍 DEBUG: Final transformedData scores:', transformedData.scores);
           console.log('🔍 DEBUG: Final transformedData accounts:', transformedData.accounts);
           console.log('🔍 DEBUG: Setting report data with scores:', transformedData.scores);
@@ -2215,6 +2238,29 @@ export default function CreditReport() {
             reportHistory: [] // Add empty report history for mock data
           };
           setReportData(updatedMockData);
+
+          try {
+            const qc = mockQualificationCriteria;
+            const isPass = (c: any) => Boolean(c?.score700Plus || c?.score730Plus) && Boolean(c?.openRevolvingUnder30) && Boolean(c?.allRevolvingUnder30) && Boolean(c?.minFiveOpenRevolving) && Boolean(c?.creditCard3YearsOld5KLimit) && Boolean(c?.maxFourUnsecuredIn12Months) && Boolean(c?.noInquiries) && Boolean(c?.noBankruptcies) && Boolean(c?.noCollectionsLiensJudgements);
+            const fundable_in_tu = isPass(qc?.[1]);
+            const fundable_in_ex = isPass(qc?.[3]);
+            const fundable_in_eq = isPass(qc?.[2]);
+            const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
+
+            const tokenLocal = localStorage.getItem('auth_token');
+            if (tokenLocal) {
+              await fetch(`/api/clients/${clientId}`, {
+                method: 'PUT',
+                headers: {
+                  'Authorization': `Bearer ${tokenLocal}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ fundable_in_tu, fundable_in_ex, fundable_in_eq, fundable_status })
+              });
+            }
+          } catch (persistErr) {
+            console.warn('⚠️ Failed to persist fundability flags (mock branch):', persistErr);
+          }
         }
       } catch (err) {
         console.error('Error fetching credit report:', err);
@@ -2222,11 +2268,12 @@ export default function CreditReport() {
         // Keep using mock data on error
       } finally {
         setLoading(false);
+        setIsRerunningAudit(false);
       }
     };
 
     fetchCreditReport();
-  }, [clientId]);
+  }, [clientId, refreshAuditNonce]);
 
   const getScoreChange = (current: number, previous: number) => {
     const change = current - previous;
@@ -2752,20 +2799,28 @@ export default function CreditReport() {
           {/* Qualify View Toggle */}
           <div className="flex justify-end items-center gap-2 mt-4 mb-2">
             <span className="text-xs text-gray-600">Qualification view:</span>
-            <ToggleGroup
-              type="single"
-              value={qualifyView}
-              onValueChange={(v) => v && setQualifyView(v as 'cards' | 'table')}
-              className="bg-white border rounded-md shadow-sm"
-            >
-              <ToggleGroupItem value="cards" className="px-3 py-1 text-sm">
-                Summary
-              </ToggleGroupItem>
-              <ToggleGroupItem value="table" className="px-3 py-1 text-sm">
-                Criteria
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
+          <ToggleGroup
+            type="single"
+            value={qualifyView}
+            onValueChange={(v) => v && setQualifyView(v as 'cards' | 'table')}
+            className="bg-white border rounded-md shadow-sm"
+          >
+            <ToggleGroupItem value="cards" className="px-3 py-1 text-sm">
+              Summary
+            </ToggleGroupItem>
+            <ToggleGroupItem value="table" className="px-3 py-1 text-sm">
+              Criteria
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <Button
+            onClick={() => { setIsRerunningAudit(true); setRefreshAuditNonce(n => n + 1); }}
+            variant="outline"
+            className="text-sm"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
+            Rerun Funding Audit
+          </Button>
+        </div>
 
           {/* Debt Utilization - Full Width */}
           <Card className={`${qualifyView !== 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50`}>
@@ -4028,8 +4083,16 @@ export default function CreditReport() {
 
           {/* Do You Qualify */}
           <Card className={`${qualifyView !== 'table' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50`}>
-            <CardHeader>
+            <CardHeader className="flex items-center justify-between">
               <CardTitle className="text-2xl font-bold text-gray-800">Do You Qualify</CardTitle>
+              <Button
+                onClick={() => { setIsRerunningAudit(true); setRefreshAuditNonce(n => n + 1); }}
+                variant="outline"
+                className="text-sm"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
+                Rerun Funding Audit
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">

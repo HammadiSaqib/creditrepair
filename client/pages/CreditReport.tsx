@@ -676,6 +676,8 @@ export default function CreditReport() {
   const [reportData, setReportData] = useState(detailedReport);
   const [apiData, setApiData] = useState<any>(null);
   const [qualifyView, setQualifyView] = useState<'cards' | 'table'>('table');
+  const [refreshAuditNonce, setRefreshAuditNonce] = useState(0);
+  const [isRerunningAudit, setIsRerunningAudit] = useState(false);
   const [eligibilityBureau, setEligibilityBureau] = useState<'all' | 'tu' | 'ex' | 'eq'>('all');
   const analysisRef = useRef<HTMLDivElement>(null);
   const [personalInfoMode, setPersonalInfoMode] = useState<'normal' | 'credit_repair'>('normal');
@@ -2719,21 +2721,38 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         // Keep using mock data on error
       } finally {
         setLoading(false);
+        setIsRerunningAudit(false);
       }
     };
 
     fetchCreditReport();
-  }, [clientId]);
+  }, [clientId, refreshAuditNonce]);
 
   const runEligibilityAudit = async () => {
     if (!clientId) return;
     try {
       setAuditRunning(true);
-      const eligible = Boolean(effectiveFundingEligible);
+      const qc: any = (reportData as any)?.qualificationCriteria || {};
+      const isPass = (c: any) => Boolean(c?.score700Plus || c?.score730Plus)
+        && Boolean(c?.openRevolvingUnder30)
+        && Boolean(c?.allRevolvingUnder30)
+        && Boolean(c?.minFiveOpenRevolving)
+        && Boolean(c?.creditCard3YearsOld5KLimit)
+        && Boolean(c?.maxFourUnsecuredIn12Months)
+        && Boolean(c?.noInquiries)
+        && Boolean(c?.noBankruptcies)
+        && Boolean(c?.noCollectionsLiensJudgements);
+      const fundable_in_tu = isPass(qc?.[1]);
+      const fundable_in_ex = isPass(qc?.[3]);
+      const fundable_in_eq = isPass(qc?.[2]);
+      const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
       await clientsApi.updateClient(String(clientId), {
-        fundable_status: eligible ? 'fundable' : 'not_fundable'
+        fundable_in_tu,
+        fundable_in_ex,
+        fundable_in_eq,
+        fundable_status
       });
-      setAuditResult(eligible ? 'Client is fundable. Status saved.' : 'Client is not fundable. Status saved.');
+      setAuditResult(fundable_status === 'fundable' ? 'Client is fundable. Status saved.' : 'Client is not fundable. Status saved.');
       setShowEligibilityAuditModal(false);
     } catch (err) {
       console.error('Eligibility audit update failed:', err);
@@ -3632,6 +3651,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
                 <CardTitle className="text-2xl font-bold text-gray-800">Do You Qualify</CardTitle>
+                <Button onClick={() => { setIsRerunningAudit(true); setRefreshAuditNonce(n => n + 1); }} variant="outline" className="text-sm">
+                  <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
+                  Rerun Funding Audit
+                </Button>
                   <span className="text-sm font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-3 py-1 rounded-full">
                   {(() => {
                     // Compute an overall 0–10 score by averaging category grades
@@ -5446,6 +5469,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardTitle className="text-2xl font-bold text-gray-800">Do You Qualify</CardTitle>
                 <div className="flex items-center flex-wrap gap-2">
+                  <Button onClick={() => { setIsRerunningAudit(true); setRefreshAuditNonce(n => n + 1); }} variant="outline" className="text-sm">
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
+                    Rerun Funding Audit
+                  </Button>
                   <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
                     <CheckCircle className="h-3 w-3" /> Good to go
                   </span>

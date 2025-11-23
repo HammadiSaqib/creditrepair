@@ -32,6 +32,9 @@ const clientSchema = z.object({
   platform_email: z.string().optional(),
   platform_password: z.string().optional(),
   fundable_status: z.enum(['fundable','not_fundable']).optional()
+  ,fundable_in_tu: z.boolean().optional()
+  ,fundable_in_ex: z.boolean().optional()
+  ,fundable_in_eq: z.boolean().optional()
 });
 
 const updateClientSchema = clientSchema.partial();

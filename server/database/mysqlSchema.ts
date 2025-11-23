@@ -435,6 +435,17 @@ export async function initializeMySQLDatabase(): Promise<void> {
       if (!existing.has('experian_score')) alters.push('ADD COLUMN experian_score INT NULL');
       if (!existing.has('equifax_score')) alters.push('ADD COLUMN equifax_score INT NULL');
       if (!existing.has('transunion_score')) alters.push('ADD COLUMN transunion_score INT NULL');
+      if (!existing.has('fundable_status')) alters.push("ADD COLUMN fundable_status ENUM('fundable','not_fundable') NULL");
+      if (!existing.has('fundable_in_tu')) alters.push('ADD COLUMN fundable_in_tu BOOLEAN NOT NULL DEFAULT FALSE');
+      if (!existing.has('fundable_in_ex')) alters.push('ADD COLUMN fundable_in_ex BOOLEAN NOT NULL DEFAULT FALSE');
+      if (!existing.has('fundable_in_eq')) alters.push('ADD COLUMN fundable_in_eq BOOLEAN NOT NULL DEFAULT FALSE');
+      if (!existing.has('platform')) alters.push('ADD COLUMN platform VARCHAR(50) NULL');
+      if (!existing.has('platform_email')) alters.push('ADD COLUMN platform_email VARCHAR(255) NULL');
+      if (!existing.has('platform_password')) alters.push('ADD COLUMN platform_password VARCHAR(255) NULL');
+      if (!existing.has('payment_status')) alters.push("ADD COLUMN payment_status ENUM('paid','unpaid') NOT NULL DEFAULT 'paid'");
+      if (!existing.has('credit_score')) alters.push('ADD COLUMN credit_score INT NULL');
+      if (!existing.has('previous_credit_score')) alters.push('ADD COLUMN previous_credit_score INT NULL');
+      if (!existing.has('target_score')) alters.push('ADD COLUMN target_score INT NULL');
       if (alters.length) {
         await executeQuery(`ALTER TABLE clients ${alters.join(', ')}`);
       }
@@ -659,6 +670,9 @@ async function createMySQLTables(): Promise<void> {
       previous_credit_score INT CHECK (previous_credit_score >= 300 AND previous_credit_score <= 850),
       target_score INT CHECK (target_score >= 300 AND target_score <= 850),
       fundable_status ENUM('fundable','not_fundable'),
+      fundable_in_tu BOOLEAN NOT NULL DEFAULT FALSE,
+      fundable_in_ex BOOLEAN NOT NULL DEFAULT FALSE,
+      fundable_in_eq BOOLEAN NOT NULL DEFAULT FALSE,
       notes TEXT,
       platform VARCHAR(50),
       platform_email VARCHAR(255),

@@ -31,11 +31,6 @@ const createCardValidation = [
   body('card_link').isURL().withMessage('Card link must be a valid URL'),
   body('card_type').isIn(['business', 'personal']).withMessage('Card type must be either business or personal'),
   body('funding_type').trim().isLength({ min: 1, max: 100 }).withMessage('Funding type is required'),
-  body('credit_bureaus').optional().isArray().withMessage('Credit bureaus must be an array if provided'),
-  body('credit_bureaus.*').optional().isIn(['Experian', 'Equifax', 'TransUnion']).withMessage('Invalid credit bureau'),
-  body('states').optional().isArray({ min: 1 }).withMessage('States must be an array'),
-  body('states.*').optional().isIn(STATE_OR_COUNTRY_CODES).withMessage('Invalid state code'),
-  body('state').optional().isIn(STATE_OR_COUNTRY_CODES).withMessage('State must be a valid US state code or USA'),
 ];
 
 const updateCardValidation = [
@@ -48,12 +43,7 @@ const updateCardValidation = [
   body('card_link').optional().isURL().withMessage('Card link must be a valid URL'),
   body('card_type').optional().isIn(['business', 'personal']).withMessage('Card type must be either business or personal'),
   body('funding_type').optional().trim().isLength({ min: 1, max: 100 }).withMessage('Funding type is required'),
-  body('credit_bureaus').optional().isArray({ min: 1 }).withMessage('At least one credit bureau must be selected'),
-  body('credit_bureaus.*').optional().isIn(['Experian', 'Equifax', 'TransUnion']).withMessage('Invalid credit bureau'),
   body('is_active').optional().isBoolean().withMessage('is_active must be a boolean'),
-  body('states').optional().isArray({ min: 1 }).withMessage('States must be an array'),
-  body('states.*').optional().isIn(STATE_OR_COUNTRY_CODES).withMessage('Invalid state code'),
-  body('state').optional().isIn(STATE_OR_COUNTRY_CODES).withMessage('State must be a valid US state code or USA'),
 ];
 
 // Get all cards with filtering and pagination
@@ -129,9 +119,6 @@ router.get('/', authenticateToken, [
         c.card_link,
         c.card_type,
         c.funding_type,
-        c.credit_bureaus,
-        c.state,
-        c.states,
         c.is_active,
         c.created_at,
         c.updated_at
@@ -144,18 +131,8 @@ router.get('/', authenticateToken, [
 
     const cards = await executeQuery(cardsQuery, queryParams) as RowDataPacket[];
 
-    const parsedCards = cards.map(card => ({
-      ...card,
-      credit_bureaus: Array.isArray(card.credit_bureaus)
-        ? card.credit_bureaus
-        : (() => { try { return JSON.parse(card.credit_bureaus || '[]'); } catch { return []; } })(),
-      states: Array.isArray(card.states)
-        ? card.states
-        : (() => { try { return JSON.parse(card.states || '[]'); } catch { return []; } })()
-    }));
-
     res.json({
-      cards: parsedCards,
+      cards,
       pagination: {
         page,
         limit,
@@ -237,9 +214,6 @@ router.get('/export', authenticateToken, async (req: Request, res: Response) => 
         c.card_link,
         c.card_type,
         c.funding_type,
-        c.credit_bureaus,
-        c.state,
-        c.states,
         c.is_active,
         c.created_at,
         c.updated_at
@@ -252,16 +226,10 @@ router.get('/export', authenticateToken, async (req: Request, res: Response) => 
     const rows = await executeQuery(query, queryParams) as RowDataPacket[];
 
     const header = [
-      'id','bank_id','bank_name','card_name','card_image','card_link','card_type','funding_type','credit_bureaus','states','state','is_active','created_at','updated_at'
+      'id','bank_id','bank_name','card_name','card_image','card_link','card_type','funding_type','is_active','created_at','updated_at'
     ];
     const csvRows = [header.join(',')];
     rows.forEach((r) => {
-      const bureaus = Array.isArray(r.credit_bureaus)
-        ? r.credit_bureaus
-        : (() => { try { return JSON.parse(r.credit_bureaus || '[]'); } catch { return []; } })();
-      const states = Array.isArray(r.states)
-        ? r.states
-        : (() => { try { return JSON.parse(r.states || '[]'); } catch { return []; } })();
       const values = [
         r.id,
         r.bank_id,
@@ -271,9 +239,6 @@ router.get('/export', authenticateToken, async (req: Request, res: Response) => 
         r.card_link || '',
         r.card_type || '',
         r.funding_type || '',
-        JSON.stringify(bureaus),
-        JSON.stringify(states),
-        r.state || '',
         r.is_active ? 'true' : 'false',
         r.created_at,
         r.updated_at
@@ -341,9 +306,9 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Req
       const cardLinkVal = get('card_link');
       const cardTypeVal = get('card_type');
       const fundingTypeVal = get('funding_type');
-      const bureausStr = get('credit_bureaus');
-      const statesStr = get('states');
-      const stateStr = get('state');
+      const bureausStr = '';
+      const statesStr = '';
+      const stateStr = '';
       const activeStr = get('is_active');
       const bankNameVal = get('bank_name')?.trim();
 
@@ -365,31 +330,10 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Req
       }
 
       let bureaus: string[] = [];
-      try { const parsed = JSON.parse(bureausStr); if (Array.isArray(parsed)) bureaus = parsed; } catch {}
-      if (bureaus.length === 0 && bureausStr) {
-        bureaus = bureausStr.split(/[;,]/).map(s => s.trim()).filter(Boolean);
-      }
-      bureaus = bureaus.map(b => {
-        const k = b.toLowerCase();
-        if (k === 'tu' || k === 'trans union' || k === 'transunion') return 'TransUnion';
-        if (k === 'eq' || k === 'equifax') return 'Equifax';
-        if (k === 'ex' || k === 'experian') return 'Experian';
-        return b;
-      }).filter(b => ['Experian','Equifax','TransUnion'].includes(b));
 
       let statesArr: string[] = [];
-      try { const parsedS = JSON.parse(statesStr); if (Array.isArray(parsedS)) statesArr = parsedS; } catch {}
-      if (statesArr.length === 0 && statesStr) {
-        statesArr = statesStr.split(/[;,]/).map(s => s.trim()).filter(Boolean);
-      }
-      statesArr = statesArr.map(s => {
-        const upper = s.toUpperCase();
-        if (STATE_OR_COUNTRY_CODES.includes(upper)) return upper;
-        const code = STATE_NAME_TO_CODE[s.toLowerCase()];
-        return code ? code : upper;
-      });
-      const normalizedStates = statesArr.length > 0 ? statesArr.map(s => s.toUpperCase()) : (stateStr ? [stateStr.toUpperCase()] : []);
-      const stateVal = normalizedStates.length > 0 ? normalizedStates[0] : null;
+      const normalizedStates: string[] = [];
+      const stateVal: string | null = null;
       const activeNorm = String(activeStr).toLowerCase();
       const isActiveVal = activeNorm === 'true' || activeNorm === '1' || activeNorm === 'active' || activeNorm === 'yes';
 
@@ -397,8 +341,8 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Req
         const existing = await executeQuery('SELECT id FROM cards WHERE id = ?', [idVal]) as RowDataPacket[];
         if (existing.length > 0) {
           await executeQuery(
-            'UPDATE cards SET card_image = ?, bank_id = ?, card_name = ?, card_link = ?, card_type = ?, funding_type = ?, credit_bureaus = ?, state = ?, states = ?, is_active = ?, updated_at = NOW() WHERE id = ?',
-            [null, resolvedBankId, cardNameVal, cardLinkVal, cardTypeVal, fundingTypeVal, JSON.stringify(bureaus), stateVal, normalizedStates.length > 0 ? JSON.stringify(normalizedStates) : null, isActiveVal, idVal]
+            'UPDATE cards SET card_image = ?, bank_id = ?, card_name = ?, card_link = ?, card_type = ?, funding_type = ?, is_active = ?, updated_at = NOW() WHERE id = ?',
+            [null, resolvedBankId, cardNameVal, cardLinkVal, cardTypeVal, fundingTypeVal, isActiveVal, idVal]
           );
           updated += 1;
           continue;
@@ -406,8 +350,8 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Req
       }
 
       const result = await executeQuery(
-        'INSERT INTO cards (card_image, bank_id, card_name, card_link, card_type, funding_type, credit_bureaus, state, states, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
-        [null, resolvedBankId, cardNameVal, cardLinkVal, String(cardTypeVal).toLowerCase() === 'personal' ? 'personal' : 'business', fundingTypeVal, JSON.stringify(bureaus), stateVal, normalizedStates.length > 0 ? JSON.stringify(normalizedStates) : null, isActiveVal]
+        'INSERT INTO cards (card_image, bank_id, card_name, card_link, card_type, funding_type, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())',
+        [null, resolvedBankId, cardNameVal, cardLinkVal, String(cardTypeVal).toLowerCase() === 'personal' ? 'personal' : 'business', fundingTypeVal, isActiveVal]
       ) as ResultSetHeader;
       if (result.insertId) inserted += 1;
     }
@@ -437,9 +381,6 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
         c.card_link,
         c.card_type,
         c.funding_type,
-        c.credit_bureaus,
-        c.state,
-        c.states,
         c.is_active,
         c.created_at,
         c.updated_at
@@ -454,17 +395,7 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    const raw = result[0] as any;
-    const card = {
-      ...raw,
-      credit_bureaus: Array.isArray(raw.credit_bureaus)
-        ? raw.credit_bureaus
-        : (() => { try { return JSON.parse(raw.credit_bureaus || '[]'); } catch { return []; } })(),
-      states: Array.isArray(raw.states)
-        ? raw.states
-        : (() => { try { return JSON.parse(raw.states || '[]'); } catch { return []; } })()
-    };
-
+    const card = result[0];
     res.json({ card });
   } catch (error) {
     console.error('Error fetching card:', error);
@@ -486,10 +417,7 @@ router.post('/', authenticateToken, createCardValidation, async (req: Request, r
       card_name,
       card_link,
       card_type,
-      funding_type,
-      credit_bureaus,
-      state,
-      states
+      funding_type
     } = req.body;
 
     // Verify bank exists
@@ -515,15 +443,9 @@ router.post('/', authenticateToken, createCardValidation, async (req: Request, r
     const query = `
       INSERT INTO cards (
         card_image, bank_id, card_name, card_link, card_type, 
-        funding_type, credit_bureaus, state, states, is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, true, NOW(), NOW())
+        funding_type, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, true, NOW(), NOW())
     `;
-
-    const normalizedStates = Array.isArray(states)
-      ? states.map((s: string) => s.trim().toUpperCase())
-      : (state ? [String(state).trim().toUpperCase()] : []);
-
-    const stateValue = normalizedStates.length > 0 ? normalizedStates[0] : (state || null);
 
     const result = await executeQuery(query, [
       (card_image && card_image.length > 0) ? card_image : null,
@@ -531,10 +453,7 @@ router.post('/', authenticateToken, createCardValidation, async (req: Request, r
       card_name,
       card_link,
       card_type,
-      funding_type,
-      JSON.stringify(Array.isArray(credit_bureaus) ? credit_bureaus : []),
-      stateValue || null,
-      normalizedStates.length > 0 ? JSON.stringify(normalizedStates) : null
+      funding_type
     ]) as ResultSetHeader;
 
     res.status(201).json({
@@ -547,9 +466,6 @@ router.post('/', authenticateToken, createCardValidation, async (req: Request, r
         card_link,
       card_type,
       funding_type,
-      credit_bureaus: Array.isArray(credit_bureaus) ? credit_bureaus : [],
-      states: normalizedStates,
-      state: stateValue || null,
       is_active: true
     }
     });
@@ -588,23 +504,11 @@ router.put('/:id', authenticateToken, updateCardValidation, async (req: Request,
     // Build dynamic update query
     Object.keys(req.body).forEach(key => {
       if (req.body[key] !== undefined) {
-        if (key === 'credit_bureaus') {
-          updateFields.push(`${key} = ?`);
-          updateValues.push(JSON.stringify(req.body[key]));
-        } else if (key === 'states') {
-          const normalized = Array.isArray(req.body[key])
-            ? req.body[key].map((s: string) => String(s).trim().toUpperCase())
-            : [];
-          updateFields.push(`states = ?`);
-          updateValues.push(normalized.length > 0 ? JSON.stringify(normalized) : null);
-          if (req.body.state === undefined) {
-            updateFields.push(`state = ?`);
-            updateValues.push(normalized.length > 0 ? normalized[0] : null);
-          }
-        } else {
-          updateFields.push(`${key} = ?`);
-          updateValues.push(req.body[key]);
+        if (['credit_bureaus','states','state'].includes(key)) {
+          return;
         }
+        updateFields.push(`${key} = ?`);
+        updateValues.push(req.body[key]);
       }
     });
 

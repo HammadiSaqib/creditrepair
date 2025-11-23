@@ -32,6 +32,13 @@ export interface Client {
   status: "active" | "inactive" | "completed" | "on_hold";
   credit_score?: number;
   previous_credit_score?: number;
+  experian_score?: number;
+  equifax_score?: number;
+  transunion_score?: number;
+  fundable_status?: 'fundable' | 'not_fundable';
+  fundable_in_tu?: boolean;
+  fundable_in_ex?: boolean;
+  fundable_in_eq?: boolean;
   notes?: string;
   platform?: string;
   platform_email?: string;
@@ -237,6 +244,9 @@ async function createTables() {
       credit_score INTEGER,
       previous_credit_score INTEGER,
       fundable_status TEXT CHECK (fundable_status IN ('fundable','not_fundable')),
+      fundable_in_tu BOOLEAN DEFAULT 0,
+      fundable_in_ex BOOLEAN DEFAULT 0,
+      fundable_in_eq BOOLEAN DEFAULT 0,
       notes TEXT,
       platform TEXT,
       platform_email TEXT,
@@ -264,6 +274,30 @@ async function createTables() {
   }
   try {
     await runQuery(`ALTER TABLE clients ADD COLUMN transunion_score INTEGER`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN fundable_in_tu BOOLEAN DEFAULT 0`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN fundable_in_ex BOOLEAN DEFAULT 0`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN fundable_in_eq BOOLEAN DEFAULT 0`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN platform TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN platform_email TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN platform_password TEXT`);
   } catch (err) {
   }
 
