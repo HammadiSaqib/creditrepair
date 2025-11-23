@@ -17,7 +17,7 @@ router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
        ORDER BY sort_order ASC, price ASC`
     );
 
-    let isActiveSubscriber = false;
+    let activePlanIds: number[] = [];
     try {
       const user: any = (req as any).user;
       if (user && user.id) {
@@ -29,11 +29,28 @@ router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
             if (aff && aff.admin_id) subCheckUserId = Number(aff.admin_id);
           } catch {}
         }
-        const sub = await db.getQuery(
-          'SELECT id FROM subscriptions WHERE user_id = ? AND status = "active" LIMIT 1',
+        const rows = await db.allQuery(
+          `SELECT asub.plan_id 
+           FROM admin_subscriptions asub
+           JOIN admin_profiles ap ON ap.id = asub.admin_id
+           WHERE ap.user_id = ? AND asub.status = 'active'`,
           [subCheckUserId]
         );
-        isActiveSubscriber = !!sub;
+        const rowsDirect = await db.allQuery(
+          `SELECT plan_id FROM admin_subscriptions WHERE admin_id = ? AND status = 'active'`,
+          [subCheckUserId]
+        );
+        const rowsSubs = await db.allQuery(
+          `SELECT sp.id as plan_id
+           FROM subscriptions s
+           LEFT JOIN subscription_plans sp ON sp.name = s.plan_name
+           WHERE s.user_id = ? AND s.status = 'active'`,
+          [subCheckUserId]
+        );
+        const idsA = Array.isArray(rows) ? rows.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+        const idsB = Array.isArray(rowsDirect) ? rowsDirect.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+        const idsC = Array.isArray(rowsSubs) ? rowsSubs.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+        activePlanIds = Array.from(new Set([...idsA, ...idsB, ...idsC]));
       }
     } catch {}
 
@@ -42,7 +59,7 @@ router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
         const perm = plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
         if (Array.isArray(perm)) return true;
         if (perm?.is_specific) return false;
-        if (perm?.restricted_to_current_subscribers === true) return isActiveSubscriber;
+        if (perm?.restricted_to_current_subscribers === true) return activePlanIds.includes(Number(plan.id));
         return true;
       } catch { return true; }
     });
@@ -98,7 +115,7 @@ router.get('/plans/:id', optionalAuth, async (req: Request, res: Response) => {
         return res.status(404).json({ success: false, error: 'Plan not found' });
       }
       if (perm?.restricted_to_current_subscribers === true) {
-        let isActiveSubscriber = false;
+        let hasPlan = false;
         try {
           const user: any = (req as any).user;
           if (user && user.id) {
@@ -110,14 +127,37 @@ router.get('/plans/:id', optionalAuth, async (req: Request, res: Response) => {
                 if (aff && aff.admin_id) subCheckUserId = Number(aff.admin_id);
               } catch {}
             }
-            const sub = await db.getQuery(
-              'SELECT id FROM subscriptions WHERE user_id = ? AND status = "active" LIMIT 1',
-              [subCheckUserId]
+            let row = await db.getQuery(
+              `SELECT asub.id 
+               FROM admin_subscriptions asub
+               JOIN admin_profiles ap ON ap.id = asub.admin_id
+               WHERE ap.user_id = ? AND asub.plan_id = ? AND asub.status = 'active' 
+               LIMIT 1`,
+              [subCheckUserId, planId]
             );
-            isActiveSubscriber = !!sub;
+            if (!row) {
+              row = await db.getQuery(
+                `SELECT id FROM admin_subscriptions WHERE admin_id = ? AND plan_id = ? AND status = 'active' LIMIT 1`,
+                [subCheckUserId, planId]
+              );
+            }
+            if (!row) {
+              const planRow = await db.getQuery(
+                `SELECT name FROM subscription_plans WHERE id = ?`,
+                [planId]
+              );
+              if (planRow && planRow.name) {
+                const rowSub = await db.getQuery(
+                  `SELECT s.id FROM subscriptions s WHERE s.user_id = ? AND s.status = 'active' AND s.plan_name = ? LIMIT 1`,
+                  [subCheckUserId, planRow.name]
+                );
+                if (rowSub) row = rowSub;
+              }
+            }
+            hasPlan = !!row;
           }
         } catch {}
-        if (!isActiveSubscriber) {
+        if (!hasPlan) {
           return res.status(404).json({ success: false, error: 'Plan not found' });
         }
       }

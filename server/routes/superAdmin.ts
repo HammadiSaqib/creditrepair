@@ -498,9 +498,44 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
 
     const requesterRole = String((req as any)?.user?.role || '').toLowerCase();
     const requesterEmail = String((req as any)?.user?.email || '');
+    let activePlanIds: number[] = [];
+    if (requesterRole !== 'super_admin') {
+      try {
+        const db2 = getDatabaseAdapter();
+        const userId = Number((req as any)?.user?.id);
+        if (!isNaN(userId) && userId > 0) {
+          const rows = await db2.allQuery(
+            `SELECT asub.plan_id 
+             FROM admin_subscriptions asub
+             JOIN admin_profiles ap ON ap.id = asub.admin_id
+             WHERE ap.user_id = ? AND asub.status = 'active'`,
+            [userId]
+          );
+          const rowsDirect = await db2.allQuery(
+            `SELECT plan_id FROM admin_subscriptions WHERE admin_id = ? AND status = 'active'`,
+            [userId]
+          );
+          const rowsSubs = await db2.allQuery(
+            `SELECT sp.id as plan_id
+             FROM subscriptions s
+             LEFT JOIN subscription_plans sp ON sp.name = s.plan_name
+             WHERE s.user_id = ? AND s.status = 'active'`,
+            [userId]
+          );
+          const idsA = Array.isArray(rows) ? rows.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+          const idsB = Array.isArray(rowsDirect) ? rowsDirect.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+          const idsC = Array.isArray(rowsSubs) ? rowsSubs.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+          activePlanIds = Array.from(new Set([...idsA, ...idsB, ...idsC]));
+        }
+      } catch {}
+    }
+
     const filteredPlans = requesterRole === 'super_admin'
       ? plansWithFeatures
-      : plansWithFeatures.filter(p => !p.is_specific || (p.allowed_admin_emails && p.allowed_admin_emails.includes(requesterEmail)));
+      : plansWithFeatures.filter(p => (
+          (!p.is_specific || (p.allowed_admin_emails && p.allowed_admin_emails.includes(requesterEmail))) &&
+          (!p.restricted_to_current_subscribers || activePlanIds.includes(Number(p.id)))
+        ));
 
     res.json({
       success: true,
@@ -536,6 +571,46 @@ router.get('/plans/:id', authenticateToken, requireAdmin, async (req: Request, r
 
     if (!plan) {
       return res.status(404).json({ success: false, error: 'Subscription plan not found' });
+    }
+
+    let permObj: any = [];
+    try { permObj = plan.page_permissions ? JSON.parse(plan.page_permissions) : []; } catch {}
+    const isRestricted = !Array.isArray(permObj) && !!permObj?.restricted_to_current_subscribers;
+    if (isRestricted) {
+      try {
+        const userId = Number((req as any)?.user?.id);
+        if (!isNaN(userId) && userId > 0) {
+          let hasPlan = false;
+          let row = await db.getQuery(
+            `SELECT asub.id 
+             FROM admin_subscriptions asub
+             JOIN admin_profiles ap ON ap.id = asub.admin_id
+             WHERE ap.user_id = ? AND asub.plan_id = ? AND asub.status = 'active' 
+             LIMIT 1`,
+            [userId, planId]
+          );
+          if (!row) {
+            row = await db.getQuery(
+              `SELECT id FROM admin_subscriptions WHERE admin_id = ? AND plan_id = ? AND status = 'active' LIMIT 1`,
+              [userId, planId]
+            );
+          }
+          if (!row) {
+            const rowSub = await db.getQuery(
+              `SELECT s.id 
+               FROM subscriptions s
+               WHERE s.user_id = ? AND s.status = 'active' AND s.plan_name = ?
+               LIMIT 1`,
+              [userId, plan.name]
+            );
+            if (rowSub) row = rowSub;
+          }
+          hasPlan = !!row;
+          if (!hasPlan) {
+            return res.status(404).json({ success: false, error: 'Subscription plan not found' });
+          }
+        }
+      } catch {}
     }
 
     res.json({
@@ -706,7 +781,11 @@ router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Reque
     const updateValues: any[] = [];
 
     Object.entries(planData).forEach(([key, value]) => {
-      if (value !== undefined && key !== 'assigned_courses' && key !== 'is_specific' && key !== 'allowed_admin_emails') {
+      if (value !== undefined 
+        && key !== 'assigned_courses' 
+        && key !== 'is_specific' 
+        && key !== 'allowed_admin_emails'
+        && key !== 'restricted_to_current_subscribers') {
         if (key === 'features') {
           updateFields.push(`${key} = ?`);
           updateValues.push(JSON.stringify(value));
