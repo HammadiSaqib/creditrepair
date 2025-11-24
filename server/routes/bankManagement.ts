@@ -12,15 +12,17 @@ const STATE_OR_COUNTRY_CODES = [...US_STATE_CODES, 'USA'] as const;
 const createBankSchema = z.object({
   name: z.string().min(1).max(100),
   logo: z.string().url().optional().or(z.literal('')),
-  state: z.enum(STATE_OR_COUNTRY_CODES),
+  state: z.enum(STATE_OR_COUNTRY_CODES).optional(),
+  states: z.array(z.enum(STATE_OR_COUNTRY_CODES)).min(1).optional(),
   credit_bureaus: z.array(z.enum(['Experian', 'Equifax', 'TransUnion'] as const)).min(1),
   funding_manager_id: z.number().int().positive().optional(),
-});
+}).refine((data) => !!data.state || !!data.states, { message: 'state or states is required' });
 
 const updateBankSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   logo: z.string().url().optional().or(z.literal('')),
   state: z.enum(STATE_OR_COUNTRY_CODES).optional(),
+  states: z.array(z.enum(STATE_OR_COUNTRY_CODES)).min(1).optional(),
   credit_bureaus: z.array(z.enum(['Experian', 'Equifax', 'TransUnion'] as const)).min(1).optional(),
   is_active: z.boolean().optional(),
 });
@@ -129,11 +131,16 @@ export async function createBank(req: Request, res: Response) {
       VALUES (?, ?, ?, ?, ?, true, NOW(), NOW())
     `;
     
+    const statesArr = Array.isArray(validatedData.states) && validatedData.states.length > 0
+      ? validatedData.states
+      : (validatedData.state ? [validatedData.state] : []);
+    const stateValue = statesArr.length > 1 ? JSON.stringify(statesArr) : (statesArr[0] || null);
+
     const result = await executeQuery(query, [
       fundingManagerId,
       validatedData.name,
       validatedData.logo || null,
-      validatedData.state,
+      stateValue,
       JSON.stringify(validatedData.credit_bureaus),
     ]);
     
@@ -181,7 +188,12 @@ export async function updateBank(req: Request, res: Response) {
       updateFields.push('logo = ?');
       updateValues.push(validatedData.logo || null);
     }
-    if (validatedData.state !== undefined) {
+    if (validatedData.states !== undefined) {
+      updateFields.push('state = ?');
+      updateValues.push(
+        validatedData.states.length > 1 ? JSON.stringify(validatedData.states) : (validatedData.states[0] || null)
+      );
+    } else if (validatedData.state !== undefined) {
       updateFields.push('state = ?');
       updateValues.push(validatedData.state);
     }

@@ -245,14 +245,14 @@ const BankDetails: React.FC = () => {
                         
                         {/* Credit Bureaus */}
                         <div className="flex flex-wrap gap-1 mb-3">
-                          {card.credit_bureaus.map((bureau) => (
+                          {Array.isArray(card.credit_bureaus) ? card.credit_bureaus.map((bureau) => (
                             <span
                               key={bureau}
                               className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
                             >
                               {bureau}
                             </span>
-                          ))}
+                          )) : null}
                         </div>
                         
                         {/* Card Metrics */}

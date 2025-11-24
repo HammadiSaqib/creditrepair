@@ -1576,7 +1576,7 @@ export default function CreditReport() {
   };
 
   const { userId: urlUserId } = useParams<{ userId: string }>();
-  const clientId = urlUserId || searchParams.get("clientId");
+  const clientId = searchParams.get("clientId") || urlUserId;
   const clientName = searchParams.get("clientName") || "Client";
 
   // Transform API account data to match frontend structure
@@ -2035,6 +2035,20 @@ export default function CreditReport() {
               );
               criteria[bureauId].noCollectionsLiensJudgements = negativeAccounts.length === 0;
 
+              const collectionsCount = negativeAccounts.filter((acc: any) => 
+                acc.PaymentStatus?.includes('Collection') || acc.AccountType?.includes('Collection')
+              ).length;
+              const chargeOffsCount = negativeAccounts.filter((acc: any) => 
+                acc.PaymentStatus?.includes('Charge')
+              ).length;
+              const latePaymentsCount = negativeAccounts.filter((acc: any) => 
+                acc.PaymentStatus?.includes('Late') || acc.WorstPayStatus?.includes('Late')
+              ).length;
+              (criteria[bureauId] as any).noCollections = collectionsCount === 0;
+              (criteria[bureauId] as any).noChargeOffs = chargeOffsCount === 0;
+              (criteria[bureauId] as any).noLatePaymentsIn12Months = latePaymentsCount === 0;
+              (criteria[bureauId] as any).noLatePayments = (criteria[bureauId] as any).noLatePaymentsIn12Months;
+
               // Check inquiries for this bureau
               const bureauInquiries = apiData.reportData.reportData.Inquiries?.filter((inq: any) => 
                 inq.BureauId === bureauId && inq.InquiryType === 'I'
@@ -2077,7 +2091,7 @@ export default function CreditReport() {
               purpose: inquiry.Industry || 'Unknown Purpose',
               type: inquiry.InquiryType === 'I' ? 'Hard' : 'Soft',
               date: inquiry.DateInquiry || new Date().toISOString().split('T')[0],
-              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : 'Equifax'
+              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Equifax' : 'Experian'
             })),
             publicRecords: data.data.reportData.reportData?.PublicRecords || [],
             // Keep the original structure for other data
@@ -2092,10 +2106,35 @@ export default function CreditReport() {
           
           try {
             const qc = qualificationCriteria;
-            const isPass = (c: any) => Boolean(c?.score700Plus || c?.score730Plus) && Boolean(c?.openRevolvingUnder30) && Boolean(c?.allRevolvingUnder30) && Boolean(c?.minFiveOpenRevolving) && Boolean(c?.creditCard3YearsOld5KLimit) && Boolean(c?.maxFourUnsecuredIn12Months) && Boolean(c?.noInquiries) && Boolean(c?.noBankruptcies) && Boolean(c?.noCollectionsLiensJudgements);
-            const fundable_in_tu = isPass(qc?.[1]);
-            const fundable_in_ex = isPass(qc?.[3]);
-            const fundable_in_eq = isPass(qc?.[2]);
+            const getInquiryCountByName = (name: string) => {
+              try {
+                const listA = (reportData as any)?.inquiries || [];
+                if (Array.isArray(listA) && listA.length > 0) {
+                  return listA.filter((inq: any) => String(inq?.bureau) === name && (String(inq?.type).toLowerCase() === 'hard' || String(inq?.InquiryType) === 'I')).length;
+                }
+                const rawB = (data as any)?.data?.reportData?.reportData?.Inquiries || (data as any)?.data?.reportData?.Inquiries || [];
+                const mapId = (n: string) => n === 'TransUnion' ? 1 : (n === 'Experian' ? 2 : 3);
+                return rawB.filter((inq: any) => Number(inq?.BureauId) === mapId(name) && String(inq?.InquiryType) === 'I').length;
+              } catch {
+                return 0;
+              }
+            };
+            const inquiriesUnderLimit = (name: string) => getInquiryCountByName(name) < 4;
+            const isPass = (c: any, name: string) => Boolean(c?.score700Plus || c?.score730Plus)
+              && Boolean(c?.openRevolvingUnder30)
+              && Boolean(c?.allRevolvingUnder30)
+              && Boolean(c?.minFiveOpenRevolving)
+              && Boolean(c?.creditCard3YearsOld5KLimit)
+              && Boolean(c?.maxFourUnsecuredIn12Months)
+              && Boolean(inquiriesUnderLimit(name))
+              && Boolean(c?.noCollections)
+              && Boolean(c?.noChargeOffs)
+              && Boolean(c?.noLatePayments)
+              && Boolean(c?.noBankruptcies)
+              && Boolean(c?.noCollectionsLiensJudgements);
+            const fundable_in_tu = isPass(qc?.[1], 'TransUnion');
+            const fundable_in_ex = isPass(qc?.[3], 'Experian');
+            const fundable_in_eq = isPass(qc?.[2], 'Equifax');
             const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
 
             const updateRes = await fetch(`/api/clients/${clientId}`, {
@@ -2241,10 +2280,34 @@ export default function CreditReport() {
 
           try {
             const qc = mockQualificationCriteria;
-            const isPass = (c: any) => Boolean(c?.score700Plus || c?.score730Plus) && Boolean(c?.openRevolvingUnder30) && Boolean(c?.allRevolvingUnder30) && Boolean(c?.minFiveOpenRevolving) && Boolean(c?.creditCard3YearsOld5KLimit) && Boolean(c?.maxFourUnsecuredIn12Months) && Boolean(c?.noInquiries) && Boolean(c?.noBankruptcies) && Boolean(c?.noCollectionsLiensJudgements);
-            const fundable_in_tu = isPass(qc?.[1]);
-            const fundable_in_ex = isPass(qc?.[3]);
-            const fundable_in_eq = isPass(qc?.[2]);
+            const getInquiryCountByName = (name: string) => {
+              try {
+                const listA = (updatedMockData as any)?.inquiries || [];
+                if (Array.isArray(listA) && listA.length > 0) {
+                  return listA.filter((inq: any) => String(inq?.bureau) === name && (String(inq?.type).toLowerCase() === 'hard' || String(inq?.InquiryType) === 'I')).length;
+                }
+                const rawB = [] as any[];
+                return 0;
+              } catch {
+                return 0;
+              }
+            };
+            const inquiriesUnderLimit = (name: string) => getInquiryCountByName(name) < 4;
+            const isPass = (c: any, name: string) => Boolean(c?.score700Plus || c?.score730Plus)
+              && Boolean(c?.openRevolvingUnder30)
+              && Boolean(c?.allRevolvingUnder30)
+              && Boolean(c?.minFiveOpenRevolving)
+              && Boolean(c?.creditCard3YearsOld5KLimit)
+              && Boolean(c?.maxFourUnsecuredIn12Months)
+              && Boolean(inquiriesUnderLimit(name))
+              && Boolean(c?.noCollections)
+              && Boolean(c?.noChargeOffs)
+              && Boolean(c?.noLatePayments)
+              && Boolean(c?.noBankruptcies)
+              && Boolean(c?.noCollectionsLiensJudgements);
+            const fundable_in_tu = isPass(qc?.[1], 'TransUnion');
+            const fundable_in_ex = isPass(qc?.[3], 'Experian');
+            const fundable_in_eq = isPass(qc?.[2], 'Equifax');
             const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
 
             const tokenLocal = localStorage.getItem('auth_token');

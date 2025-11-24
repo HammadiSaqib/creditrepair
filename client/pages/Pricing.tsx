@@ -369,12 +369,12 @@ export default function Pricing() {
                     
                     <CardContent className="space-y-6">
                       <div className="space-y-3">
-                        {plan.features.map((feature, index) => (
+                        {Array.isArray(plan.features) ? plan.features.map((feature, index) => (
                           <div key={index} className="flex items-start space-x-3">
                             <Check className="h-5 w-5 text-emerald-600 mt-0.5 flex-shrink-0" />
                             <span className="text-sm">{feature}</span>
                           </div>
-                        ))}
+                        )) : null}
                       </div>
                       
                       {(plan.max_users || plan.max_clients || plan.max_disputes) && (

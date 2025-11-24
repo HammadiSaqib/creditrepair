@@ -70,6 +70,7 @@ interface Bank {
   name: string;
   logo?: string;
   state?: string;
+  states?: string[];
   credit_bureaus?: string[];
   is_active: boolean;
   created_at: string;
@@ -98,9 +99,10 @@ const BankManagement: React.FC = () => {
     name: '',
     logo: '',
     state: '',
+    states: [] as string[],
     credit_bureaus: [] as string[],
   });
-  const [selectedState, setSelectedState] = useState<string>('');
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [stateSelectOpen, setStateSelectOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(100); // Default to show up to 100 per page
@@ -143,12 +145,23 @@ const BankManagement: React.FC = () => {
       }
       
       const data = await response.json();
-      const normalizedBanks: Bank[] = (data.banks || []).map((b: any) => ({
-        ...b,
-        credit_bureaus: Array.isArray(b?.credit_bureaus)
-          ? b.credit_bureaus
-          : (() => { try { return JSON.parse(b?.credit_bureaus || '[]'); } catch { return []; } })(),
-      }));
+      const normalizedBanks: Bank[] = (data.banks || []).map((b: any) => {
+        let statesArr: string[] = [];
+        try {
+          if (typeof b?.state === 'string' && b.state.trim().startsWith('[')) {
+            statesArr = JSON.parse(b.state);
+          } else if (b?.state) {
+            statesArr = [b.state];
+          }
+        } catch {}
+        return {
+          ...b,
+          states: statesArr,
+          credit_bureaus: Array.isArray(b?.credit_bureaus)
+            ? b.credit_bureaus
+            : (() => { try { return JSON.parse(b?.credit_bureaus || '[]'); } catch { return []; } })(),
+        } as Bank;
+      });
       setBanks(normalizedBanks);
       if (data.pagination) {
         setPagination({
@@ -210,9 +223,10 @@ const BankManagement: React.FC = () => {
       name: '',
       logo: '',
       state: '',
+      states: [],
       credit_bureaus: [],
     });
-    setSelectedState('');
+    setSelectedStates([]);
     setEditingBank(null);
     setShowAddForm(false);
   };
@@ -226,9 +240,10 @@ const BankManagement: React.FC = () => {
       
       const payload = {
         ...formData,
-        state: selectedState || formData.state || '',
+        states: selectedStates.length > 0 ? selectedStates : (formData.state ? [formData.state] : []),
+        state: undefined,
         credit_bureaus: formData.credit_bureaus,
-      };
+      } as any;
       const response = await fetch(url, {
         method,
         headers: {
@@ -265,30 +280,41 @@ const BankManagement: React.FC = () => {
         const bureaus = Array.isArray(data?.credit_bureaus)
           ? data.credit_bureaus
           : (() => { try { return JSON.parse(data?.credit_bureaus || '[]'); } catch { return []; } })();
+        let statesArr: string[] = [];
+        try {
+          if (typeof data?.state === 'string' && data.state.trim().startsWith('[')) {
+            statesArr = JSON.parse(data.state);
+          } else if (data?.state) {
+            statesArr = [data.state];
+          }
+        } catch {}
         setFormData({
           name: data.name || bank.name,
           logo: data.logo || bank.logo || '',
-          state: data.state || bank.state || '',
+          state: statesArr[0] || '',
+          states: statesArr,
           credit_bureaus: bureaus,
         });
-        setSelectedState(data.state || bank.state || '');
+        setSelectedStates(statesArr);
       } else {
         setFormData({
           name: bank.name,
           logo: bank.logo || '',
-          state: bank.state || '',
+          state: (bank.states && bank.states[0]) || bank.state || '',
+          states: bank.states || (bank.state ? [bank.state] : []),
           credit_bureaus: bank.credit_bureaus || [],
         });
-        setSelectedState(bank.state || '');
+        setSelectedStates(bank.states || (bank.state ? [bank.state] : []));
       }
     } catch {
       setFormData({
         name: bank.name,
         logo: bank.logo || '',
-        state: bank.state || '',
+        state: (bank.states && bank.states[0]) || bank.state || '',
+        states: bank.states || (bank.state ? [bank.state] : []),
         credit_bureaus: bank.credit_bureaus || [],
       });
-      setSelectedState(bank.state || '');
+      setSelectedStates(bank.states || (bank.state ? [bank.state] : []));
     }
   };
 
@@ -559,13 +585,13 @@ const BankManagement: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    State (USA) *
+                    States (USA) *
                   </label>
                   <Popover open={stateSelectOpen} onOpenChange={setStateSelectOpen}>
                     <PopoverTrigger asChild>
                       <button type="button" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between">
                         <span className="truncate">
-                          {selectedState ? formatStateLabel(selectedState) : 'Select a state'}
+                          {selectedStates.length === 0 ? 'Select states' : selectedStates.includes('USA') ? 'USA (Nationwide)' : `${selectedStates.length} selected`}
                         </span>
                         <ChevronDown className="h-4 w-4 text-gray-500" />
                       </button>
@@ -577,13 +603,23 @@ const BankManagement: React.FC = () => {
                           <CommandEmpty>No state found.</CommandEmpty>
                           <CommandGroup>
                             {US_STATES.map((st) => {
-                              const checked = selectedState === st.value;
+                              const checked = selectedStates.includes(st.value);
                               return (
                                 <CommandItem
                                   key={st.value}
                                   onSelect={() => {
-                                    setSelectedState(st.value);
-                                    setFormData((prev) => ({ ...prev, state: st.value }));
+                                    const next = (() => {
+                                      if (st.value === 'USA') {
+                                        return selectedStates.includes('USA') ? [] : ['USA'];
+                                      }
+                                      const withoutUSA = selectedStates.filter((v) => v !== 'USA');
+                                      if (withoutUSA.includes(st.value)) {
+                                        return withoutUSA.filter((v) => v !== st.value);
+                                      }
+                                      return [...withoutUSA, st.value];
+                                    })();
+                                    setSelectedStates(next);
+                                    setFormData((prev) => ({ ...prev, state: '', states: next }));
                                   }}
                                 >
                                   <div className="flex items-center gap-2">
@@ -674,7 +710,13 @@ const BankManagement: React.FC = () => {
                     </div>
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{bank.name}</h3>
                     <div className="mb-2 text-sm text-gray-700">
-                      {bank.state ? formatStateLabel(bank.state) : '-'}
+                      <div className="flex flex-wrap gap-1 justify-center">
+                        {(bank.states && bank.states.length > 0 ? bank.states : (bank.state ? [bank.state] : [])).map((code) => (
+                          <span key={code} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                            {formatStateLabel(code)}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                     <div className="mb-4">
                       <div className="flex flex-wrap gap-1 justify-center">
@@ -766,7 +808,13 @@ const BankManagement: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {bank.state ? formatStateLabel(bank.state) : '-'}
+                      <div className="flex flex-wrap gap-1">
+                        {(bank.states && bank.states.length > 0 ? bank.states : (bank.state ? [bank.state] : [])).map((code) => (
+                          <span key={code} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                            {formatStateLabel(code)}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="flex flex-wrap gap-1">

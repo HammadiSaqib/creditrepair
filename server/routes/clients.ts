@@ -32,9 +32,9 @@ const clientSchema = z.object({
   platform_email: z.string().optional(),
   platform_password: z.string().optional(),
   fundable_status: z.enum(['fundable','not_fundable']).optional()
-  ,fundable_in_tu: z.boolean().optional()
-  ,fundable_in_ex: z.boolean().optional()
-  ,fundable_in_eq: z.boolean().optional()
+  ,fundable_in_tu: z.union([z.boolean(), z.number().int().min(0).max(1)]).optional()
+  ,fundable_in_ex: z.union([z.boolean(), z.number().int().min(0).max(1)]).optional()
+  ,fundable_in_eq: z.union([z.boolean(), z.number().int().min(0).max(1)]).optional()
 });
 
 const updateClientSchema = clientSchema.partial();
@@ -328,18 +328,38 @@ export async function updateClient(req: AuthRequest, res: Response) {
   try {
     const { id } = req.params;
     const updates = updateClientSchema.parse(req.body);
+    const normalizedUpdates: any = { ...updates };
+    if (typeof normalizedUpdates.fundable_in_tu !== 'undefined') {
+      normalizedUpdates.fundable_in_tu = Number(Boolean(normalizedUpdates.fundable_in_tu));
+    }
+    if (typeof normalizedUpdates.fundable_in_ex !== 'undefined') {
+      normalizedUpdates.fundable_in_ex = Number(Boolean(normalizedUpdates.fundable_in_ex));
+    }
+    if (typeof normalizedUpdates.fundable_in_eq !== 'undefined') {
+      normalizedUpdates.fundable_in_eq = Number(Boolean(normalizedUpdates.fundable_in_eq));
+    }
     if (typeof updates.date_of_birth !== 'undefined') {
       updates.date_of_birth = normalizeDateInput(updates.date_of_birth) || null as any;
     }
     
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(normalizedUpdates).length === 0) {
       return res.status(400).json({ error: 'No updates provided' });
     }
     
-    // Check if client exists and belongs to user
+    const isFundingManager = req.user!.role === 'funding_manager';
+    let baseUserId: number = req.user!.id;
+    if (!isFundingManager && req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+      const employeeLink = await getQuery(
+        'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+        [req.user!.id, 'active']
+      );
+      if (employeeLink?.admin_id) {
+        baseUserId = employeeLink.admin_id;
+      }
+    }
     const existingClient = await getQuery(
-      'SELECT * FROM clients WHERE id = ? AND user_id = ?',
-      [id, req.user!.id]
+      isFundingManager ? 'SELECT * FROM clients WHERE id = ?' : 'SELECT * FROM clients WHERE id = ? AND user_id = ?',
+      isFundingManager ? [id] : [id, baseUserId]
     );
     
     if (!existingClient) {
@@ -347,13 +367,14 @@ export async function updateClient(req: AuthRequest, res: Response) {
     }
     
     // Build dynamic update query
-    const fields = Object.keys(updates);
+    const fields = Object.keys(normalizedUpdates);
     const setClause = fields.map(field => `${field} = ?`).join(', ');
-    const values = fields.map(field => updates[field as keyof typeof updates]);
-    
+    const values = fields.map(field => normalizedUpdates[field as keyof typeof normalizedUpdates]);
+    const whereClause = isFundingManager ? 'id = ?' : 'id = ? AND user_id = ?';
+    const params = isFundingManager ? [...values, id] : [...values, id, baseUserId];
     await runQuery(
-      `UPDATE clients SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
-      [...values, id, req.user!.id]
+      `UPDATE clients SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE ${whereClause}`,
+      params
     );
     
     const updatedClient = await getQuery(

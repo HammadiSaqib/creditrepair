@@ -2569,7 +2569,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               purpose: inquiry.Industry || 'Unknown Purpose',
               type: inquiry.InquiryType === 'I' ? 'Hard' : 'Soft',
               date: inquiry.DateInquiry || new Date().toISOString().split('T')[0],
-              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : 'Equifax'
+              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Equifax' : 'Experian'
             })),
             publicRecords: apiData?.PublicRecords || [],
             // Keep the original structure for other data
@@ -2733,18 +2733,35 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     try {
       setAuditRunning(true);
       const qc: any = (reportData as any)?.qualificationCriteria || {};
-      const isPass = (c: any) => Boolean(c?.score700Plus || c?.score730Plus)
+      const getInquiryCountByName = (name: string) => {
+        try {
+          const listA = (reportData as any)?.inquiries || [];
+          if (Array.isArray(listA) && listA.length > 0) {
+            return listA.filter((inq: any) => String(inq?.bureau) === name && (String(inq?.type).toLowerCase() === 'hard' || String(inq?.InquiryType) === 'I')).length;
+          }
+          const rawB = (apiData as any)?.reportData?.reportData?.Inquiries || (apiData as any)?.reportData?.Inquiries || [];
+          const mapId = (n: string) => n === 'TransUnion' ? 1 : (n === 'Experian' ? 2 : 3);
+          return rawB.filter((inq: any) => Number(inq?.BureauId) === mapId(name) && String(inq?.InquiryType) === 'I').length;
+        } catch {
+          return 0;
+        }
+      };
+      const inquiriesUnderLimit = (name: string) => getInquiryCountByName(name) < 4;
+      const isPass = (c: any, name: string) => Boolean(c?.score700Plus || c?.score730Plus)
         && Boolean(c?.openRevolvingUnder30)
         && Boolean(c?.allRevolvingUnder30)
         && Boolean(c?.minFiveOpenRevolving)
         && Boolean(c?.creditCard3YearsOld5KLimit)
         && Boolean(c?.maxFourUnsecuredIn12Months)
-        && Boolean(c?.noInquiries)
+        && Boolean(inquiriesUnderLimit(name))
+        && Boolean(c?.noCollections)
+        && Boolean(c?.noChargeOffs)
+        && Boolean(c?.noLatePayments)
         && Boolean(c?.noBankruptcies)
         && Boolean(c?.noCollectionsLiensJudgements);
-      const fundable_in_tu = isPass(qc?.[1]);
-      const fundable_in_ex = isPass(qc?.[3]);
-      const fundable_in_eq = isPass(qc?.[2]);
+      const fundable_in_tu = isPass(qc?.[1], 'TransUnion');
+      const fundable_in_ex = isPass(qc?.[3], 'Experian');
+      const fundable_in_eq = isPass(qc?.[2], 'Equifax');
       const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
       await clientsApi.updateClient(String(clientId), {
         fundable_in_tu,
