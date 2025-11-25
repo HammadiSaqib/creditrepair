@@ -46,7 +46,7 @@ const AdminNotifications: React.FC = () => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await adminNotificationApi.getNotifications({ limit: 20 });
+      const response = await adminNotificationApi.getNotifications({ limit: 20, scope: 'personal' });
       const data: NotificationData = response.data.data;
       
       setNotifications(data.notifications);

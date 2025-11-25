@@ -28,7 +28,7 @@ router.get('/notifications', authenticateToken, async (req: AuthRequest, res: Re
     if (!adminId) {
       return res.status(403).json({ success: false, error: 'Admin access required' });
     }
-    const { limit = 10, offset = 0, unread_only = false } = req.query;
+    const { limit = 10, offset = 0, unread_only = false, scope = 'all' } = req.query as any;
 
     const db = getDatabaseAdapter();
     
@@ -44,8 +44,11 @@ router.get('/notifications', authenticateToken, async (req: AuthRequest, res: Re
     
     const params: any[] = [adminId];
     
-    if (unread_only === 'true') {
+    if (String(unread_only) === 'true') {
       query += ' AND an.is_read = FALSE';
+    }
+    if (String(scope).toLowerCase() === 'personal') {
+      query += ' AND an.sender_id = ?';
     }
     
     query += ' AND (an.expires_at IS NULL OR an.expires_at > NOW())';
@@ -56,7 +59,7 @@ router.get('/notifications', authenticateToken, async (req: AuthRequest, res: Re
     query += ` LIMIT ${limitNum} OFFSET ${offsetNum}`;
     // Note: LIMIT and OFFSET cannot use parameter placeholders in MySQL
 
-    const notifications = await db.allQuery(query, params);
+    const notifications = await db.allQuery(query, String(scope).toLowerCase() === 'personal' ? [...params, adminId] : params);
 
     // Get unread count
     const unreadCountQuery = `
