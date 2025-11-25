@@ -53,6 +53,7 @@ const CardManagement: React.FC = () => {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [stats, setStats] = useState<CardStats>({ total: 0, active: 0, inactive: 0, business: 0, personal: 0 });
   const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -228,6 +229,7 @@ const CardManagement: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to fetch cards');
     } finally {
       setLoading(false);
+      setInitialLoad(false);
     }
   };
 
@@ -413,7 +415,7 @@ const CardManagement: React.FC = () => {
     return matchesSearch && matchesStatus && matchesType && matchesBank;
   });
 
-  if (loading) {
+  if (initialLoad && loading) {
     return (
       <FundingManagerLayout title="Card Management" description="Manage your credit cards and funding options">
         <div className="flex items-center justify-center h-64">

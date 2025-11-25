@@ -107,6 +107,7 @@ export default function FundingDIY() {
     limitOverride?: number;
   };
   const [slotForms, setSlotForms] = useState<SlotForm[]>([{}]);
+  const [bankSearchMap, setBankSearchMap] = useState<Record<number, string>>({});
   const [selectedSlots, setSelectedSlots] = useState<Array<{ bankId: number; cardId: number }>>([]);
 
   const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[] }>>([]);
@@ -357,23 +358,32 @@ export default function FundingDIY() {
     const fetchBanks = async () => {
       try {
         const token = localStorage.getItem("auth_token");
-        const resp = await fetch(`/api/banks?page=1&limit=1000`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const items = (data.banks || []).map((b: any) => ({
-          id: Number(b.id),
-          name: String(b.name || b.bank_name || `Bank #${b.id}`),
-          logo: b.logo || b.bank_logo,
-          state: b?.state ?? undefined,
-          credit_bureaus: Array.isArray(b?.credit_bureaus)
-            ? b.credit_bureaus
-            : (typeof b?.credit_bureaus === 'string'
-              ? (() => { try { const arr = JSON.parse(b.credit_bureaus); return Array.isArray(arr) ? arr : []; } catch { return []; } })()
-              : [])
-        }));
-        setBanks(items);
+        const all: Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[] }> = [];
+        let page = 1;
+        const limit = 1000;
+        while (true) {
+          const resp = await fetch(`/api/banks?page=${page}&limit=${limit}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!resp.ok) break;
+          const data = await resp.json();
+          const items = (data.banks || []).map((b: any) => ({
+            id: Number(b.id),
+            name: String(b.name || b.bank_name || `Bank #${b.id}`),
+            logo: b.logo || b.bank_logo,
+            state: b?.state ?? undefined,
+            credit_bureaus: Array.isArray(b?.credit_bureaus)
+              ? b.credit_bureaus
+              : (typeof b?.credit_bureaus === 'string'
+                ? (() => { try { const arr = JSON.parse(b.credit_bureaus); return Array.isArray(arr) ? arr : []; } catch { return []; } })()
+                : [])
+          }));
+          all.push(...items);
+          const totalPages = Number((data?.pagination?.totalPages ?? 1));
+          if (!Number.isFinite(totalPages) || page >= totalPages) break;
+          page += 1;
+        }
+        setBanks(all);
       } catch {}
     };
     fetchBanks();
@@ -796,7 +806,17 @@ export default function FundingDIY() {
                           <SelectValue placeholder="Select bank" />
                         </SelectTrigger>
                         <SelectContent>
-                          {sortedBanks.map((b) => {
+                          <div className="p-2 border-b">
+                            <Input
+                              placeholder="Search banks..."
+                              value={bankSearchMap[idx] || ''}
+                              onChange={(e) => setBankSearchMap((prev) => ({ ...prev, [idx]: e.target.value }))}
+                            />
+                          </div>
+                          {(sortedBanks.filter((b) => {
+                            const q = String(bankSearchMap[idx] || '').toLowerCase();
+                            return q ? String(b.name || '').toLowerCase().includes(q) : true;
+                          })).map((b) => {
                             const elig = bankEligibility(b.id);
                             return (
                               <SelectItem key={b.id} value={String(b.id)}>
@@ -859,13 +879,13 @@ export default function FundingDIY() {
                             return next;
                           });
                         }}
-                        disabled={!slot.bankId || (selectedFundingType === 'all' && !slot.fundingType)}
+                        disabled={!slot.bankId}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select card" />
                         </SelectTrigger>
                         <SelectContent>
-                          {cards
+                          {(cards.length > 0 ? cards : allCards)
                             .filter(c => c.bank_id === slot.bankId && c.card_type === resolvedType)
                             .filter(c => {
                               const effective = selectedFundingType === 'all' ? (slot.fundingType || 'all') : selectedFundingType;

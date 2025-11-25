@@ -40,7 +40,7 @@ export async function getBanks(req: Request, res: Response) {
     const { page = 1, limit = 10, search, status } = querySchema.parse(req.query);
     // Sanitize and cap pagination values, then inline into SQL to avoid ER_WRONG_ARGUMENTS
     const pageNum = Math.max(1, Number.isFinite(page) ? Number(page) : 1);
-    const limitNum = Math.max(1, Math.min(100, Number.isFinite(limit) ? Number(limit) : 10));
+    const limitNum = Math.max(1, Math.min(5000, Number.isFinite(limit) ? Number(limit) : 10));
     const offsetNum = (pageNum - 1) * limitNum;
 
     let whereClause = 'WHERE 1=1';
