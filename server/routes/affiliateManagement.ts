@@ -82,7 +82,23 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
         u.last_name as admin_last_name,
         pa.first_name as parent_first_name,
         pa.last_name as parent_last_name,
-        pa.email as parent_email
+        pa.email as parent_email,
+        (
+          COALESCE(
+            (
+              SELECT SUM(ac.commission_amount)
+              FROM affiliate_commissions ac
+              WHERE ac.affiliate_id = a.id
+            ), 0
+          )
+          -
+          COALESCE(
+            (
+              SELECT SUM(cp.amount)
+              FROM commission_payments cp
+              WHERE cp.affiliate_id = a.id AND cp.status = 'completed'
+            ), 0
+          ) AS computed_total_earnings
       FROM affiliates a
       LEFT JOIN users u ON a.admin_id = u.id
       LEFT JOIN affiliates pa ON a.parent_affiliate_id = pa.id
@@ -93,7 +109,7 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
     // Super admin can see all affiliates, regular admin only sees their own
     if (userRole !== 'super_admin') {
       query += ' WHERE a.admin_id = ?';
-      queryParams.push(adminId);
+      queryParams.push(adminIdValue);
     }
     
     query += ' ORDER BY a.created_at DESC';
@@ -117,7 +133,9 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
       commission_rate: parseFloat(affiliate.commission_rate) || 0,
       parent_commission_rate: parseFloat(affiliate.parent_commission_rate) || 0,
       affiliate_level: parseInt(affiliate.affiliate_level) || 1,
-      total_earnings: parseFloat(affiliate.total_earnings) || 0,
+      total_earnings: (affiliate.computed_total_earnings != null
+        ? parseFloat(affiliate.computed_total_earnings)
+        : parseFloat(affiliate.total_earnings)) || 0,
       total_referrals: parseInt(affiliate.total_referrals) || 0,
       status: affiliate.status,
       email_verified: affiliate.email_verified || false,
