@@ -136,12 +136,14 @@ export default function FundingDIY() {
   };
   const cardHasBureau = (card: FundingCard, bureau: 'Experian' | 'Equifax' | 'TransUnion') => {
     const raw: any = (card as any).credit_bureaus;
-    const arr = Array.isArray(raw)
+    const arrA = Array.isArray(raw)
       ? raw
       : typeof raw === 'string'
         ? raw.split(/[\,|]/).map((x: string) => x.trim()).filter(Boolean)
         : [];
-    const canon = arr.map(canonBureau).filter(Boolean) as string[];
+    const bankArr = (allBanks.find((b) => b.id === card.bank_id)?.credit_bureaus || []) as string[];
+    const merged = Array.from(new Set([...(arrA || []), ...(bankArr || [])]));
+    const canon = merged.map(canonBureau).filter(Boolean) as string[];
     return canon.includes(bureau);
   };
 
@@ -312,17 +314,28 @@ export default function FundingDIY() {
       try {
         setLoading(true);
         setError(null);
-        const url = resolvedType ? `/api/cards?type=${resolvedType}&status=active` : `/api/cards?status=active`;
-        const response = await fetch(url, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
-        });
-        if (!response.ok) throw new Error("Failed to fetch funding cards");
-        const data = await response.json();
-        const fetched = (data.cards || []) as FundingCard[];
-        setCards(fetched);
+        const limit = 100;
+        let page = 1;
+        let collected: FundingCard[] = [];
+        while (true) {
+          const url = resolvedType
+            ? `/api/cards?type=${resolvedType}&status=active&page=${page}&limit=${limit}`
+            : `/api/cards?status=active&page=${page}&limit=${limit}`;
+          const response = await fetch(url, {
+            headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+          });
+          if (!response.ok) throw new Error("Failed to fetch funding cards");
+          const data = await response.json();
+          const fetched = (data.cards || []) as FundingCard[];
+          collected = collected.concat(fetched);
+          const pages = Number((data?.pagination?.pages ?? 1));
+          if (!Number.isFinite(pages) || page >= pages) break;
+          page += 1;
+        }
+        setCards(collected);
         setAdminData((prev) => {
           const next = { ...prev };
-          for (const c of fetched) {
+          for (const c of collected) {
             if (!next[c.id]) {
               next[c.id] = { status: "not_approved", amountApproved: 0, description: "" };
             }
@@ -342,13 +355,22 @@ export default function FundingDIY() {
   useEffect(() => {
     const fetchAllCards = async () => {
       try {
-        const resp = await fetch(`/api/cards?status=active`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-        });
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const fetched = (data.cards || []) as FundingCard[];
-        setAllCards(fetched);
+        const limit = 100;
+        let page = 1;
+        let collected: FundingCard[] = [];
+        while (true) {
+          const resp = await fetch(`/api/cards?status=active&page=${page}&limit=${limit}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+          });
+          if (!resp.ok) break;
+          const data = await resp.json();
+          const fetched = (data.cards || []) as FundingCard[];
+          collected = collected.concat(fetched);
+          const pages = Number((data?.pagination?.pages ?? 1));
+          if (!Number.isFinite(pages) || page >= pages) break;
+          page += 1;
+        }
+        setAllCards(collected);
       } catch {}
     };
     fetchAllCards();
