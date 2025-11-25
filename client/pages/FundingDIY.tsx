@@ -109,7 +109,7 @@ export default function FundingDIY() {
   const [slotForms, setSlotForms] = useState<SlotForm[]>([{}]);
   const [selectedSlots, setSelectedSlots] = useState<Array<{ bankId: number; cardId: number }>>([]);
 
-  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string }>>([]);
+  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[] }>>([]);
 
   const banksFromCards = useMemo(() => {
     const map = new Map<number, { id: number; name: string; logo?: string }>();
@@ -169,16 +169,23 @@ export default function FundingDIY() {
     fetchClient();
   }, [clientIdDetected, clientIdInput]);
 
-  // Derive fundable bureaus from client scores (simple threshold)
+  // Derive fundable bureaus from explicit DB flags on clients table
   const fundableBureaus = useMemo(() => {
     const out: string[] = [];
+    const normalize = (v: any) => {
+      if (typeof v === 'boolean') return v;
+      const n = Number(v);
+      if (Number.isFinite(n)) return n === 1;
+      const s = String(v || '').toLowerCase();
+      return s === 'true' || s === 'yes' || s === '1';
+    };
     try {
-      const ex = Number(clientDetails?.experian_score || clientDetails?.credit_score || 0);
-      const eq = Number(clientDetails?.equifax_score || clientDetails?.credit_score || 0);
-      const tu = Number(clientDetails?.transunion_score || clientDetails?.credit_score || 0);
-      if (ex >= 700) out.push("Experian");
-      if (eq >= 700) out.push("Equifax");
-      if (tu >= 700) out.push("TransUnion");
+      const exFlag = normalize((clientDetails as any)?.fundable_in_ex);
+      const eqFlag = normalize((clientDetails as any)?.fundable_in_eq);
+      const tuFlag = normalize((clientDetails as any)?.fundable_in_tu);
+      if (exFlag) out.push("Experian");
+      if (eqFlag) out.push("Equifax");
+      if (tuFlag) out.push("TransUnion");
     } catch {}
     return out;
   }, [clientDetails]);
@@ -221,7 +228,29 @@ export default function FundingDIY() {
   const bankEligibility = (bankId?: number) => {
     const state = String((selectedState || resolveClientState() || '')).toUpperCase();
     const cardsByBank = allCards.filter(c => c.bank_id === bankId);
-    const stateEligible = cardsByBank.some(c => {
+    let stateRank = 0;
+    let isNationwide = false;
+    const norm = (s: string) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const nationwideTokens = new Set<string>([
+      'USA','US','ALL','ANY','NATIONWIDE','ALLSTATES','ANYSTATE','UNITEDSTATES','UNITEDSTATESOFAMERICA','ANYWHERE','50STATES'
+    ]);
+    const bankObj = allBanks.find(b => b.id === bankId);
+    const bankStatesRaw: any = bankObj?.state;
+    const bankStatesArr: string[] = Array.isArray(bankStatesRaw)
+      ? bankStatesRaw
+      : (typeof bankStatesRaw === 'string' && bankStatesRaw.trim().length > 0
+        ? (() => { try { const parsed = JSON.parse(bankStatesRaw); return Array.isArray(parsed) ? parsed : [bankStatesRaw]; } catch { return [bankStatesRaw]; } })()
+        : []);
+    const bankStatesUpper = bankStatesArr.map(s => String(s).toUpperCase());
+    const bankStatesNorm = bankStatesArr.map(norm);
+    if (bankStatesUpper.some(s => ['USA','US','ALL','ANY','NATIONWIDE'].includes(s)) || bankStatesNorm.some(t => nationwideTokens.has(t))) {
+      isNationwide = true;
+      stateRank = Math.max(stateRank, 2);
+    }
+    if (state && (bankStatesUpper.includes(state) || bankStatesNorm.includes(norm(state)))) {
+      stateRank = Math.max(stateRank, 3);
+    }
+    const isCardEligible = (c: any) => {
       const rawStates: any = (c as any).states;
       let statesArr: string[] = Array.isArray(rawStates)
         ? rawStates
@@ -229,32 +258,53 @@ export default function FundingDIY() {
           ? rawStates.split(/[\,|]/).map((s: string) => String(s).trim()).filter(Boolean)
           : [];
       const upperStates = statesArr.map((s: string) => s.toUpperCase());
+      const normalizedStates = statesArr.map(norm);
       const stateVal = (c as any).state || null;
       const stateValUpper = stateVal ? String(stateVal).toUpperCase() : '';
-      if (upperStates.includes('USA') || upperStates.includes('US') || upperStates.includes('ALL') || upperStates.includes('ANY')) return true;
-      if (['USA', 'US', 'ALL', 'ANY', 'NATIONWIDE'].includes(stateValUpper)) return true;
-      if (stateValUpper && stateValUpper === state) return true;
-      if (upperStates.length > 0) return upperStates.includes(state);
-      return !stateValUpper && upperStates.length === 0;
-    });
-    const bureauEligible = {
-      Experian: cardsByBank.some(c => cardHasBureau(c, 'Experian')),
-      Equifax: cardsByBank.some(c => cardHasBureau(c, 'Equifax')),
-      TransUnion: cardsByBank.some(c => cardHasBureau(c, 'TransUnion')),
+      const stateValNorm = norm(stateValUpper);
+      if (upperStates.includes('USA') || upperStates.includes('US') || upperStates.includes('ALL') || upperStates.includes('ANY') || normalizedStates.some(t => nationwideTokens.has(t))) {
+        stateRank = Math.max(stateRank, 2);
+        isNationwide = true;
+        return true;
+      }
+      if (['USA', 'US', 'ALL', 'ANY', 'NATIONWIDE'].includes(stateValUpper) || nationwideTokens.has(stateValNorm)) {
+        stateRank = Math.max(stateRank, 2);
+        isNationwide = true;
+        return true;
+      }
+      if (stateValUpper && stateValUpper === state) {
+        stateRank = Math.max(stateRank, 3);
+        return true;
+      }
+      if (upperStates.length > 0 && upperStates.includes(state)) {
+        stateRank = Math.max(stateRank, 3);
+        return true;
+      }
+      if (!stateValUpper && upperStates.length === 0) {
+        stateRank = Math.max(stateRank, 1);
+        return true;
+      }
+      return false;
     };
-    return { stateEligible, bureauEligible };
+    const stateEligible = cardsByBank.some(isCardEligible) || isNationwide || (state && (bankStatesUpper.includes(state) || bankStatesNorm.includes(norm(state))));
+    const bureauEligible = {
+      Experian: cardsByBank.some(c => cardHasBureau(c, 'Experian')) || Boolean((bankObj as any)?.credit_bureaus?.includes('Experian')),
+      Equifax: cardsByBank.some(c => cardHasBureau(c, 'Equifax')) || Boolean((bankObj as any)?.credit_bureaus?.includes('Equifax')),
+      TransUnion: cardsByBank.some(c => cardHasBureau(c, 'TransUnion')) || Boolean((bankObj as any)?.credit_bureaus?.includes('TransUnion')),
+    };
+    return { stateEligible, bureauEligible, stateRank, isNationwide };
   };
 
   const sortedBanks = useMemo(() => {
     return [...allBanks].sort((a, b) => {
       const eligA = bankEligibility(a.id);
       const eligB = bankEligibility(b.id);
-      const scoreA = (eligA.stateEligible ? 1 : 0);
-      const scoreB = (eligB.stateEligible ? 1 : 0);
+      const scoreA = Number(eligA.stateRank || (eligA.stateEligible ? 1 : 0));
+      const scoreB = Number(eligB.stateRank || (eligB.stateEligible ? 1 : 0));
       if (scoreB !== scoreA) return scoreB - scoreA;
       return a.name.localeCompare(b.name);
     });
-  }, [allBanks, selectedState]);
+  }, [allBanks, selectedState, allCards]);
 
   useEffect(() => {
     const fetchCards = async () => {
@@ -312,7 +362,17 @@ export default function FundingDIY() {
         });
         if (!resp.ok) return;
         const data = await resp.json();
-        const items = (data.banks || []).map((b: any) => ({ id: Number(b.id), name: String(b.name || b.bank_name || `Bank #${b.id}`), logo: b.logo || b.bank_logo }));
+        const items = (data.banks || []).map((b: any) => ({
+          id: Number(b.id),
+          name: String(b.name || b.bank_name || `Bank #${b.id}`),
+          logo: b.logo || b.bank_logo,
+          state: b?.state ?? undefined,
+          credit_bureaus: Array.isArray(b?.credit_bureaus)
+            ? b.credit_bureaus
+            : (typeof b?.credit_bureaus === 'string'
+              ? (() => { try { const arr = JSON.parse(b.credit_bureaus); return Array.isArray(arr) ? arr : []; } catch { return []; } })()
+              : [])
+        }));
         setBanks(items);
       } catch {}
     };
@@ -750,7 +810,7 @@ export default function FundingDIY() {
                                     <span>{b.name}</span>
                                   </div>
                                   <div className="flex items-center gap-2 text-xs">
-                                    <span className={elig.stateEligible ? 'text-green-600' : 'text-red-500'}>{elig.stateEligible ? '✔' : '❌'} State</span>
+                                    <span className={elig.stateEligible ? 'text-green-600' : 'text-red-500'}>{elig.stateEligible ? (elig.isNationwide ? '✅' : '✔') : '❌'} State</span>
                                     <span className={elig.bureauEligible.Experian && clientFundableFlags.Experian ? 'text-green-600' : 'text-red-500'}>EX {elig.bureauEligible.Experian && clientFundableFlags.Experian ? '✔' : '❌'}</span>
                                     <span className={elig.bureauEligible.Equifax && clientFundableFlags.Equifax ? 'text-green-600' : 'text-red-500'}>EQ {elig.bureauEligible.Equifax && clientFundableFlags.Equifax ? '✔' : '❌'}</span>
                                     <span className={elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion ? 'text-green-600' : 'text-red-500'}>TU {elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion ? '✔' : '❌'}</span>
