@@ -83,25 +83,21 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
         pa.first_name as parent_first_name,
         pa.last_name as parent_last_name,
         pa.email as parent_email,
-        (
-          COALESCE(
-            (
-              SELECT SUM(ac.commission_amount)
-              FROM affiliate_commissions ac
-              WHERE ac.affiliate_id = a.id
-            ), 0
-          )
-          -
-          COALESCE(
-            (
-              SELECT SUM(cp.amount)
-              FROM commission_payments cp
-              WHERE cp.affiliate_id = a.id AND cp.status = 'completed'
-            ), 0
-          ) AS computed_total_earnings
+        COALESCE(acsum.total_commission, 0) - COALESCE(cpsum.total_paid, 0) AS computed_total_earnings
       FROM affiliates a
       LEFT JOIN users u ON a.admin_id = u.id
       LEFT JOIN affiliates pa ON a.parent_affiliate_id = pa.id
+      LEFT JOIN (
+        SELECT affiliate_id, SUM(commission_amount) AS total_commission
+        FROM affiliate_commissions
+        GROUP BY affiliate_id
+      ) acsum ON acsum.affiliate_id = a.id
+      LEFT JOIN (
+        SELECT affiliate_id, SUM(amount) AS total_paid
+        FROM commission_payments
+        WHERE status = 'completed'
+        GROUP BY affiliate_id
+      ) cpsum ON cpsum.affiliate_id = a.id
     `;
     
     let queryParams = [];

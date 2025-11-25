@@ -56,3 +56,6 @@ scraper-output/
 # Build and cache
 .cache/
 build/
+
+# Local screenshots
+credit-report-screenshot.png
