@@ -248,10 +248,6 @@ const ReferralLandingPage: React.FC = () => {
                       <Users className="h-4 w-4" />
                       {affiliate.totalReferrals} referrals
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Award className="h-4 w-4" />
-                      {affiliate.commissionRate}% commission
-                    </div>
                   </div>
                 </div>
               )}
@@ -268,7 +264,7 @@ const ReferralLandingPage: React.FC = () => {
                   className="text-lg px-8 py-6 bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 shadow-xl"
                   onClick={() => handleGetStarted()}
                 >
-                  Start Free Trial <ArrowRight className="ml-2 h-5 w-5" />
+                  Start Today <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
                 <Button
                   size="lg"

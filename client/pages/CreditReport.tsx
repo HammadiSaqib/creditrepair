@@ -4267,6 +4267,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 </td>
                               </tr>
                             ));
+
+                            
                             
                             // Add indicator row for values below the lowest scale
                             const hasLowValues = (tuUtilization !== null && tuUtilization !== undefined && tuUtilization < scales[0]) || 

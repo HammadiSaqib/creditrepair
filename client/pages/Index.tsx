@@ -141,7 +141,7 @@ export default function Index() {
                       asChild
                     >
                       <Link to="/login">
-                        Start Free Analysis <ArrowRight className="ml-2 h-5 w-5" />
+                        Start Analysis Today <ArrowRight className="ml-2 h-5 w-5" />
                       </Link>
                     </Button>
                     <Button
