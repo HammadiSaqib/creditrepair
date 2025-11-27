@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { employeesApi } from '@/lib/api';
 import DashboardLayout from '@/components/DashboardLayout';
+import AddClientDialog from '@/components/AddClientDialog';
 import { Plus, Pencil, Trash2, RefreshCw, Users, ToggleLeft, ToggleRight } from 'lucide-react';
 
 type EmployeeUser = {
@@ -181,6 +182,7 @@ export default function Employees() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Employee | null>(null);
+  const [showAddClient, setShowAddClient] = useState(false);
 
   const [formCreate, setFormCreate] = useState<CreateEmployeeInput>({
     email: '',
@@ -212,7 +214,11 @@ export default function Employees() {
   };
 
   return (
-    <DashboardLayout title="Employees" description="Manage internal staff accounts and roles">
+    <DashboardLayout 
+      title="Employees" 
+      description="Manage internal staff accounts and roles"
+      onAddClient={() => setShowAddClient(true)}
+    >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <ActionButton icon={RefreshCw} variant="outline" onClick={() => refetch()} disabled={isFetching}>Refresh</ActionButton>
@@ -363,6 +369,11 @@ export default function Employees() {
           </div>
         </div>
       )}
+
+      <AddClientDialog
+        isOpen={showAddClient}
+        onClose={() => setShowAddClient(false)}
+      />
     </DashboardLayout>
   );
 }

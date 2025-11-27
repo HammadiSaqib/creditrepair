@@ -40,6 +40,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import DashboardLayout from "@/components/DashboardLayout";
+import AddClientDialog from "@/components/AddClientDialog";
 import PaymentForm from "@/components/PaymentForm";
 import { CommunityFeed } from "@/components/community/CommunityFeed";
 import Groups from "@/components/community/Groups";
@@ -305,6 +306,7 @@ export default function School() {
   const [userLoading, setUserLoading] = useState(true);
   const [courses, setCourses] = useState<Course[]>([]);
   const [coursesLoading, setCoursesLoading] = useState(true);
+  const [showAddClient, setShowAddClient] = useState(false);
   
   // Subscription and enrollment state
   const [userSubscription, setUserSubscription] = useState<any>(null);
@@ -852,7 +854,7 @@ export default function School() {
   const handleCourseAction = (course: Course) => {
     if (canAccessCourse(course)) {
       // Navigate to course page
-      navigate(`/course/${course.id}`);
+      safeNavigate(`/course/${course.id}`, { state: { from: 'school', courseId: course.id }, preserveSearch: true });
     } else {
       // Call handlePurchaseCourse to create payment intent and show payment form
       handlePurchaseCourse(course.id);
@@ -1139,7 +1141,7 @@ export default function School() {
         setPaymentData(null);
 
         // Navigate to the course
-        navigate(`/course/${paymentData.courseId}`);
+        safeNavigate(`/course/${paymentData.courseId}`, { state: { from: 'school', courseId: paymentData.courseId }, preserveSearch: true });
       }
     } catch (error) {
       console.error('Error handling payment success:', error);
@@ -1180,7 +1182,7 @@ export default function School() {
       }
 
       // Navigate to course learning page
-      navigate(`/course/${courseId}`);
+      safeNavigate(`/course/${courseId}`, { state: { from: 'school', courseId }, preserveSearch: true });
 
     } catch (error) {
       console.error('Error opening course:', error);
@@ -1492,6 +1494,7 @@ export default function School() {
     <DashboardLayout
       title="Score Machine Academy"
       description="Learn, grow, and earn points in our gamified learning platform"
+      onAddClient={() => setShowAddClient(true)}
     >
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="flex w-full flex-nowrap overflow-x-auto gap-2 text-xs -mx-2 px-2 lg:grid lg:w-auto lg:grid-cols-6">
@@ -1820,7 +1823,7 @@ export default function School() {
                             <div className="flex items-center space-x-1">
                               {canAccessCourse(course) ? (
                                 <Button size="sm" className="gradient-primary hover:opacity-90" asChild>
-                                  <Link to={`/course/${course.id}`}>
+                                  <Link to={`/course/${course.id}`} state={{ from: 'school', courseId: course.id }}>
                                     <PlayCircle className="h-3 w-3 mr-1" />
                                     {getCourseButtonText(course)}
                                   </Link>
@@ -3105,6 +3108,34 @@ export default function School() {
           </DialogContent>
         </Dialog>
       )}
+      <AddClientDialog
+        isOpen={showAddClient}
+        onClose={() => setShowAddClient(false)}
+      />
     </DashboardLayout>
   );
 }
+  const safeNavigate = (
+    to: string,
+    opts?: { replace?: boolean; state?: any; preserveSearch?: boolean }
+  ) => {
+    try {
+      const search = opts?.preserveSearch ? window.location.search : '';
+      const finalTo = `${to}${search}`;
+      console.log('[Nav] navigating to', finalTo, { replace: opts?.replace, state: opts?.state });
+      navigate(finalTo, { replace: opts?.replace, state: opts?.state });
+    } catch (err) {
+      console.error('[Nav] navigate error', err);
+      toast({
+        title: 'Navigation Failed',
+        description: 'We could not navigate to the requested page. Retrying with full reload...',
+        variant: 'destructive',
+      });
+      try {
+        const search = opts?.preserveSearch ? window.location.search : '';
+        window.location.assign(`${to}${search}`);
+      } catch (assignErr) {
+        console.error('[Nav] window.location.assign error', assignErr);
+      }
+    }
+  };

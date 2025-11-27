@@ -1,15 +1,15 @@
 /**
- * final-identityiq-scraper.js
+ * final-myscoreiq-scraper.js
  *
- * Hybrid IdentityIQ scraper:
+ * Hybrid MyScoreIQ scraper:
  * - UI login (handles SSN last-4 security step)
  * - Visits CreditReport.aspx (hard-coded per your choice)
  * - Captures JSON XHRs when available
  * - Always writes fallback artifacts and a unified JSON payload
  *
  * Usage:
- * import fetchIdentityIQReport from './final-identityiq-scraper.js';
- * await fetchIdentityIQReport(username, password, { outputDir:'./scraper-output', clientId:'abc', ssnLast4:'1234' });
+ * import fetchMyScoreIQReport from './final-myscoreiq-scraper.js';
+ * await fetchMyScoreIQReport(username, password, { outputDir:'./scraper-output', clientId:'abc', ssnLast4:'1234' });
  */
 
 import fs from 'fs';
@@ -19,7 +19,7 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 puppeteer.use(StealthPlugin());
 import { Scraper } from '../../../scraper/scrapper.js';
 
-const configPath = path.resolve(process.cwd(), 'configs/identityiq_config.json');
+const configPath = path.resolve(process.cwd(), 'configs/myscoreiq_config.json');
 function loadConfig() {
   try { return JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (e) { return {}; }
 }
@@ -115,7 +115,7 @@ function parseScoresFromSections(sectionsObj) {
       // look for three numbers like "799 806 810" or "TransUnion 799 Experian 806 Equifax 810"
       const nums = Array.from(creditSection.matchAll(/\b(3\d{2}|4\d{2}|5\d{2}|6\d{2}|7\d{2}|8\d{2}|9\d{2})\b/g)).map(m => m[1]);
       if (nums.length >= 3) {
-        // common order on IdentityIQ sample: TransUnion Experian Equifax
+        // common order on sample: TransUnion Experian Equifax
         out.transunion = nums[0];
         out.experian = nums[1];
         out.equifax = nums[2];
@@ -150,16 +150,16 @@ function parseReportDateFromSections(sectionsObj) {
   return null;
 }
 
-async function fetchIdentityIQReport(username, password, options = {}) {
+async function fetchMyScoreIQReport(username, password, options = {}) {
   const { outputDir = './scraper-output', clientId, ssnLast4, puppeteerOverrides = {}, saveHtml = true, takeScreenshots = true } = options;
   config = loadConfig();
   ensureDir(outputDir);
-  console.log('[IdentityIQ] Config reloaded. loginUrl=', config.loginUrl || config.url, 'base url=', config.url);
+  console.log('[MyScoreIQ] Config reloaded. loginUrl=', config.loginUrl || config.url, 'base url=', config.url);
 
   let browser = null;
   let page = null;
   try {
-    console.log(`[IdentityIQ] Starting scraper for clientId=${clientId || 'unknown'} username=${String(username).slice(0,3)}***`);
+    console.log(`[MyScoreIQ] Starting scraper for clientId=${clientId || 'unknown'} username=${String(username).slice(0,3)}***`);
     const launchOpts = {
       headless: true,
       slowMo: puppeteerOverrides.slowMo ?? config.puppeteerConfig?.slowMo ?? 0,
@@ -201,7 +201,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
           if (parsed && Object.keys(parsed || {}).length) {
             rawCreditData = parsed;
             capturedResponses.push({ url, status: resp.status(), size: (text||'').length });
-            console.log('[IdentityIQ] Captured JSON-like response from', url);
+            console.log('[MyScoreIQ] Captured JSON-like response from', url);
           } else {
             capturedResponses.push({ url, status: resp.status(), length: (text||'').length });
           }
@@ -209,8 +209,8 @@ async function fetchIdentityIQReport(username, password, options = {}) {
       } catch (e) { /* ignore */ }
     });
 
-    const loginUrl = config.loginUrl || 'https://member.identityiq.com/';
-    console.log('[IdentityIQ] Navigating to login URL:', loginUrl);
+    const loginUrl = config.loginUrl || 'https://member.myscoreiq.com/';
+    console.log('[MyScoreIQ] Navigating to login URL:', loginUrl);
     await page.goto(loginUrl, { waitUntil: 'networkidle2', timeout: config.waitTimeouts?.navigation || 60000 });
     await sleep(700); // let SPA hydrate
 
@@ -218,18 +218,18 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     try {
       const ts = new Date().toISOString().replace(/[:.]/g,'-');
       if (takeScreenshots) await page.screenshot({ path: path.join(outputDir, `login_ready_${ts}.png`), fullPage: true });
-      console.log('[IdentityIQ] Login ready screenshot saved to', takeScreenshots ? `login_ready_${ts}.png` : '(skipped)');
+      console.log('[MyScoreIQ] Login ready screenshot saved to', takeScreenshots ? `login_ready_${ts}.png` : '(skipped)');
       if (saveHtml) {
         const htmlPath = path.join(outputDir, `login_ready_${ts}.html`);
         fs.writeFileSync(htmlPath, await page.content(), 'utf8');
-        console.log('[IdentityIQ] Login ready HTML saved to', htmlPath);
+        console.log('[MyScoreIQ] Login ready HTML saved to', htmlPath);
       }
-    } catch (e) { console.log('[IdentityIQ] Could not save ready screenshot/HTML:', e?.message||e); }
+    } catch (e) { console.log('[MyScoreIQ] Could not save ready screenshot/HTML:', e?.message||e); }
 
     // detect bot/captcha early
     const htmlInitial = await page.content();
     if (/captcha|recaptcha|botcheck|cloudflare/i.test(htmlInitial)) {
-      console.error('[IdentityIQ] Bot protection detected on initial page.');
+      console.error('[MyScoreIQ] Bot protection detected on initial page.');
       await saveDebugArtifacts(page, outputDir, 'bot_protection');
       throw new Error('Bot protection detected');
     }
@@ -241,7 +241,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     const passFound = await findVisibleInContexts(page, passwordSelectors, 4000);
 
     if (!userFound && !passFound) {
-      console.log('[IdentityIQ] Login inputs not found; saving DOM inputs and failing.');
+      console.log('[MyScoreIQ] Login inputs not found; saving DOM inputs and failing.');
       await saveDebugArtifacts(page, outputDir, 'login_failed_no_inputs');
       throw new Error('Login inputs not found on page');
     }
@@ -253,7 +253,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     } else if (userFound) { loginCtx = userFound.ctx; userSel = userFound.selector; passSel = passFound?.selector; }
     else { loginCtx = passFound.ctx; passSel = passFound.selector; userSel = userFound?.selector; }
 
-    console.log('[IdentityIQ] Detected login context and selectors:', { userSelector: userSel, passSelector: passSel, contextUrl: loginCtx.url?.() || 'frame/page' });
+    console.log('[MyScoreIQ] Detected login context and selectors:', { userSelector: userSel, passSelector: passSel, contextUrl: loginCtx.url?.() || 'frame/page' });
 
     // type credentials
     const typeSafely = async (ctx, selector, value) => {
@@ -296,7 +296,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     }
 
     if (!loginBtn) {
-      console.log('[IdentityIQ] Login button not found; saving debug and failing.');
+      console.log('[MyScoreIQ] Login button not found; saving debug and failing.');
       await saveDebugArtifacts(page, outputDir, 'login_failed_no_button');
       throw new Error('Login button not found');
     }
@@ -316,14 +316,14 @@ async function fetchIdentityIQReport(username, password, options = {}) {
         }).catch(() => null);
       }
     } catch (e) {
-      console.log('[IdentityIQ] Error clicking login button:', e?.message || e);
+      console.log('[MyScoreIQ] Error clicking login button:', e?.message || e);
     }
 
 
       // ==================================================================
     // FINAL 2025-PROOF SSN HANDLER — WORKS ON REAL ACCOUNTS TODAY
     // ==================================================================
-    console.log('[IdentityIQ] Waiting for SSN security question (up to 30s)...');
+    console.log('[MyScoreIQ] Waiting for SSN security question (up to 30s)...');
     await sleep(3000); // let iframe settle
 
     const ssnInputFound = await findVisibleInContexts(page, [
@@ -339,7 +339,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     ], 30000);
 
         if (ssnInputFound) {
-      console.log('[IdentityIQ] SSN field FOUND → entering last 4 digits');
+      console.log('[MyScoreIQ] SSN field FOUND → entering last 4 digits');
       const { ctx: ssnCtx, selector: ssnSel } = ssnInputFound;
       const ssnDigits = String(ssnLast4).replace(/\D/g, '').slice(-4);
 
@@ -372,7 +372,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
       for (const ctx of [page, ...page.frames()]) {
         const res = await clickByTextInContext(ctx, ['submit', 'continue', 'verify']);
         if (res.clicked) {
-          console.log('[IdentityIQ] Submit button clicked');
+          console.log('[MyScoreIQ] Submit button clicked');
           clicked = true;
           break;
         }
@@ -384,9 +384,9 @@ async function fetchIdentityIQReport(username, password, options = {}) {
         () => !window.location.pathname.includes('security-question'),
         { timeout: 20000 }
       );
-      console.log('[IdentityIQ] Successfully passed SSN → Dashboard loaded!');
+      console.log('[MyScoreIQ] Successfully passed SSN → Dashboard loaded!');
     } else {
-      console.log('[IdentityIQ] No SSN challenge → proceeding (rare case)');
+      console.log('[MyScoreIQ] No SSN challenge → proceeding (rare case)');
     }
     // ==================================================================
 
@@ -396,20 +396,20 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     if (!loginSucceeded) {
       const indicators = config.selectors?.dashboard_indicators || ['#dashboard','.dashboard','.account','.home','a[href*="account"]'];
       for (const sel of indicators) {
-        try { await page.waitForSelector(sel, { timeout: 6000 }); loginSucceeded = true; console.log('[IdentityIQ] Dashboard indicator found:', sel); break; } catch {}
+        try { await page.waitForSelector(sel, { timeout: 6000 }); loginSucceeded = true; console.log('[MyScoreIQ] Dashboard indicator found:', sel); break; } catch {}
       }
     }
     if (!loginSucceeded) {
       const cookies = await page.cookies();
-      if (cookies && cookies.length > 5) { loginSucceeded = true; console.log('[IdentityIQ] Cookies present after login:', cookies.length); }
+      if (cookies && cookies.length > 5) { loginSucceeded = true; console.log('[MyScoreIQ] Cookies present after login:', cookies.length); }
     }
     if (!loginSucceeded) {
-      console.error('[IdentityIQ] Login did not reach dashboard; saving debug artifacts.');
+      console.error('[MyScoreIQ] Login did not reach dashboard; saving debug artifacts.');
       await saveDebugArtifacts(page, outputDir, 'login_failed_post');
       throw new Error('Login failed to reach dashboard after SSN step (if applicable)');
     }
-    console.log('[IdentityIQ] Login appears successful. Proceeding to report fetch.');
-    console.log('[IdentityIQ] Dashboard ready. Ensuring cookies and session persistence.');
+    console.log('[MyScoreIQ] Login appears successful. Proceeding to report fetch.');
+    console.log('[MyScoreIQ] Dashboard ready. Ensuring cookies and session persistence.');
     await sleep(3000 + Math.random() * 2000);
     try { await page.mouse.move(Math.random()*800, Math.random()*600); } catch {}
     try {
@@ -418,14 +418,14 @@ async function fetchIdentityIQReport(username, password, options = {}) {
         const urlForCookies = page.url();
         const withUrl = cookies.map(c => (c.url ? c : { ...c, url: urlForCookies }));
         await page.setCookie(...withUrl);
-        console.log('[IdentityIQ] Session cookies applied via page.setCookie:', withUrl.length);
+        console.log('[MyScoreIQ] Session cookies applied via page.setCookie:', withUrl.length);
       }
-    } catch (e) { console.log('[IdentityIQ] Failed to set cookies on page:', e?.message || e); }
+    } catch (e) { console.log('[MyScoreIQ] Failed to set cookies on page:', e?.message || e); }
     try {
       page.on('framenavigated', async (frame) => {
         try {
           const url = frame.url() || '';
-          if (url.startsWith('https://www.identityiq.com/')) {
+          if (url.startsWith('https://www.myscoreiq.com/')) {
             console.warn('[Redirect noticed] Frame navigated to main site:', url);
           }
         } catch {}
@@ -434,37 +434,73 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     try { await page.waitForTimeout(3000); } catch {}
 
     // Visit the chosen report page (CreditReport.aspx per your choice)
-    console.log('[IdentityIQ] Clicking "View Credit Report" from dashboard...');
-    await sleep(4000);
-    let reportClicked = { success: false };
+    console.log('[MyScoreIQ] Attempting to open Credit Report from Dashboard...');
+
+    let reportOpened = false;
+
+    // 1. Direct <a href="/CreditReport.aspx"> click (your exact button)
     try {
-      reportClicked = await page.evaluate(() => {
-        const patterns = /credit report|3.?bureau|view report|full report|credit scores|my report/i;
-        const els = Array.from(document.querySelectorAll('a, button, div[role="button"], span, li'));
-        for (const el of els) {
-          const text = (el.innerText || el.textContent || '');
-          const href = el.getAttribute('href') || '';
-          if (patterns.test(text) || /CreditReport\.aspx/i.test(href)) {
-            try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
-            el.click();
-            return { success: true, text: text.slice(0, 100) };
-          }
+      const clicked = await page.evaluate(() => {
+        const link = document.querySelector('a[href*="CreditReport.aspx"], a[href="/CreditReport.aspx"]');
+        if (link) {
+          link.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          link.click();
+          return true;
         }
-        return { success: false };
+        return false;
       });
-    } catch {}
-    if (!reportClicked.success) {
+      if (clicked) {
+        console.log('[MyScoreIQ] Success: Clicked direct <a href="/CreditReport.aspx">');
+        reportOpened = true;
+      }
+    } catch (e) {}
+
+    // 2. Fallback: button with exact text
+    if (!reportOpened) {
       try {
-        const clicked2 = await page.evaluate(() => {
-          const anchors = Array.from(document.querySelectorAll('a[href]'));
-          for (const a of anchors) {
-            const href = a.getAttribute('href') || '';
-            if (/CreditReport\.aspx/i.test(href)) { a.click(); return true; }
+        const clicked = await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('a, button'));
+          for (const b of buttons) {
+            const text = (b.innerText || b.textContent || '').trim();
+            if (text.includes('View Most Recent Report') || text.includes('View Credit Report')) {
+              b.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              b.click();
+              return true;
+            }
           }
           return false;
         });
-        if (clicked2) reportClicked = { success: true };
-      } catch {}
+        if (clicked) {
+          console.log('[MyScoreIQ] Success: Clicked button by visible text');
+          reportOpened = true;
+        }
+      } catch (e) {}
+    }
+
+    // 3. Final fallback: click any element inside .dashboard_score_btn
+    if (!reportOpened) {
+      try {
+        const clicked = await page.evaluate(() => {
+          const container = document.querySelector('.dashboard_score_btn, .fb_btn, [class*="score_btn"]');
+          if (container) {
+            const clickable = container.querySelector('a, button') || container;
+            clickable.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            clickable.click();
+            return true;
+          }
+          return false;
+        });
+        if (clicked) {
+          console.log('[MyScoreIQ] Success: Clicked inside .dashboard_score_btn container');
+          reportOpened = true;
+        }
+      } catch (e) {}
+    }
+
+    if (!reportOpened) {
+      console.warn('[MyScoreIQ] Could not click report button automatically — manual click may be required');
+      await saveDebugArtifacts(page, outputDir, 'dashboard_no_auto_click');
+      // Optional: throw new Error('Failed to auto-click report button');
     }
     try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: Math.max(30000, config.waitTimeouts?.navigation || 30000) }); } catch {}
     await sleep(8000);
@@ -473,8 +509,8 @@ async function fetchIdentityIQReport(username, password, options = {}) {
         const ts = new Date().toISOString().replace(/[:.]/g,'-');
         const htmlPath = path.join(outputDir, `credit_report_page_${ts}.html`);
         fs.writeFileSync(htmlPath, await page.content(), 'utf8');
-        console.log('[IdentityIQ] Credit report page HTML saved to', htmlPath);
-      } catch (e) { console.log('[IdentityIQ] Failed to save credit report page HTML:', e?.message || e); }
+        console.log('[MyScoreIQ] Credit report page HTML saved to', htmlPath);
+      } catch (e) { console.log('[MyScoreIQ] Failed to save credit report page HTML:', e?.message || e); }
     }
 
     // wait for report XHRs (best-effort)
@@ -500,7 +536,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
         if (hasReport) { reportCtx = f; break; }
       }
       const ctxURL = reportCtx === page ? page.url() : reportCtx.url();
-      console.log('[IdentityIQ] Report context selected:', ctxURL);
+      console.log('[MyScoreIQ] Report context selected:', ctxURL);
       try {
         await reportCtx.waitForFunction(() => {
           try { return /Credit Report Date|Personal Information|Account History|Summary|Inquiries/i.test(document.body.innerText || ''); } catch { return false; }
@@ -513,12 +549,12 @@ async function fetchIdentityIQReport(username, password, options = {}) {
       const ts = new Date().toISOString().replace(/[:.]/g,'-');
       reportScreenshotPath = path.join(outputDir, `credit_report_loaded_${ts}.png`);
       await page.screenshot({ path: reportScreenshotPath, fullPage: true });
-      console.log('[IdentityIQ] Credit report screenshot saved to', reportScreenshotPath);
+      console.log('[MyScoreIQ] Credit report screenshot saved to', reportScreenshotPath);
 
       const fullText = await reportCtx.evaluate(() => { try { return document.body ? (document.body.innerText || '') : ''; } catch { return ''; } });
-      reportTextPath = path.join(outputDir, `client_${clientId||'unknown'}_identityiq_credit_report_text_${ts}.txt`);
+      reportTextPath = path.join(outputDir, `client_${clientId||'unknown'}_myscoreiq_credit_report_text_${ts}.txt`);
       fs.writeFileSync(reportTextPath, fullText, 'utf8');
-      console.log('[IdentityIQ] Credit report text saved to', reportTextPath);
+      console.log('[MyScoreIQ] Credit report text saved to', reportTextPath);
 
       // split into sections by known headings (keeps raw text per section)
       const sections = await reportCtx.evaluate(() => {
@@ -545,9 +581,9 @@ async function fetchIdentityIQReport(username, password, options = {}) {
         if (Object.keys(obj).length === 0) obj['full_text'] = t;
         return obj;
       });
-      reportSectionsPath = path.join(outputDir, `client_${clientId||'unknown'}_identityiq_sections_${ts}.json`);
+      reportSectionsPath = path.join(outputDir, `client_${clientId||'unknown'}_myscoreiq_sections_${ts}.json`);
       fs.writeFileSync(reportSectionsPath, JSON.stringify(sections, null, 2), 'utf8');
-      console.log('[IdentityIQ] Credit report sections saved to', reportSectionsPath);
+      console.log('[MyScoreIQ] Credit report sections saved to', reportSectionsPath);
       try {
         let popupPage = null;
         page.once('popup', (p) => { popupPage = p; });
@@ -568,15 +604,15 @@ async function fetchIdentityIQReport(username, password, options = {}) {
           await Promise.race([sleep(1500), (async () => { try { await page.waitForFunction(() => document.readyState === 'complete', { timeout: 3000 }); } catch {} })() ]);
           const dlPage = popupPage || page;
           try { await dlPage.waitForFunction(() => document.readyState === 'complete', { timeout: 8000 }); } catch {}
-          const fname = `client_${clientId||'unknown'}_identityiq_download_${new Date().toISOString().replace(/[:.]/g,'-')}.html`;
+          const fname = `client_${clientId||'unknown'}_myscoreiq_download_${new Date().toISOString().replace(/[:.]/g,'-')}.html`;
           const fpath = path.join(outputDir, fname);
           const html = await dlPage.content();
           fs.writeFileSync(fpath, html, 'utf8');
           htmlDownloadPath = fpath;
-          console.log('[IdentityIQ] Downloaded HTML report saved to', fpath);
+          console.log('[MyScoreIQ] Downloaded HTML report saved to', fpath);
         }
-      } catch (e) { console.log('[IdentityIQ] Download button handling failed:', e?.message || e); }
-    } catch (e) { console.log('[IdentityIQ] Report screenshot/text extraction failed:', e?.message || e); }
+      } catch (e) { console.log('[MyScoreIQ] Download button handling failed:', e?.message || e); }
+    } catch (e) { console.log('[MyScoreIQ] Report screenshot/text extraction failed:', e?.message || e); }
 
     // If we haven't captured rawCreditData yet, try to discover in global objects or script tags
     if (!rawCreditData) {
@@ -614,9 +650,9 @@ async function fetchIdentityIQReport(username, password, options = {}) {
       try {
         const scraper = new Scraper(config);
         reportStructured = await scraper.Parse(rawCreditData);
-        console.log('[IdentityIQ] Scraper.Parse complete, keys=', Object.keys(reportStructured || {}).length);
+        console.log('[MyScoreIQ] Scraper.Parse complete, keys=', Object.keys(reportStructured || {}).length);
       } catch (e) {
-        console.log('[IdentityIQ] Scraper.Parse error:', e?.message || e);
+        console.log('[MyScoreIQ] Scraper.Parse error:', e?.message || e);
         // keep rawCreditData as fallback
         reportStructured = {};
       }
@@ -663,7 +699,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
 
     // Build final payload and always save to JSON file
     const tsFinal = new Date().toISOString().replace(/[:.]/g,'-');
-    const finalJsonPath = path.join(outputDir, `client_${clientId||'unknown'}_identityiq_unified_${tsFinal}.json`);
+    const finalJsonPath = path.join(outputDir, `client_${clientId||'unknown'}_myscoreiq_unified_${tsFinal}.json`);
     const payload = {
       clientInfo: {
         clientId: clientId || 'unknown',
@@ -691,7 +727,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     };
 
     fs.writeFileSync(finalJsonPath, safeStringify(payload), 'utf8');
-    console.log('[IdentityIQ] Final unified JSON saved to', finalJsonPath);
+    console.log('[MyScoreIQ] Final unified JSON saved to', finalJsonPath);
 
     // Return a consistent API: reportData (structured if any), filePath, rawCreditData, scores, artifacts
     let resultFilePath = finalJsonPath;
@@ -708,7 +744,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
         };
         const convertPath = path.join(outputDir, `client_${clientId||'unknown'}_report_${tsFinal}.json`);
         fs.writeFileSync(convertPath, safeStringify(conv), 'utf8');
-        console.log('[IdentityIQ] Converted report JSON saved to', convertPath);
+        console.log('[MyScoreIQ] Converted report JSON saved to', convertPath);
         resultFilePath = convertPath;
       }
     } catch (e) {}
@@ -722,14 +758,14 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     };
 
   } catch (err) {
-    console.error('[IdentityIQ] Scraper error:', err?.message || err);
+    console.error('[MyScoreIQ] Scraper error:', err?.message || err);
     if (page) await saveDebugArtifacts(page, outputDir, 'login_failed');
     throw err;
   } finally {
     try { if (page) await page.close(); } catch {}
     try { if (browser) await browser.close(); } catch {}
-    console.log('[IdentityIQ] Browser closed');
+    console.log('[MyScoreIQ] Browser closed');
   }
 }
 
-export default fetchIdentityIQReport;
+export default fetchMyScoreIQReport;

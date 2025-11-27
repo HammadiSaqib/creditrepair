@@ -35,6 +35,7 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
     platform: "",
     email: "",
     password: "",
+    ssnLast4: "",
   });
 
   const handleSubmitClient = async (e: React.FormEvent) => {
@@ -72,6 +73,9 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
           options: {
             saveHtml: false,
             takeScreenshots: false,
+            ...(((newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && newClient.ssnLast4)
+              ? { ssnLast4: newClient.ssnLast4 }
+              : {}),
           },
         }),
       });
@@ -369,6 +373,7 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
         platform: "",
         email: "",
         password: "",
+        ssnLast4: "",
       });
       onClose();
 
@@ -418,6 +423,7 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
       platform: "",
       email: "",
       password: "",
+      ssnLast4: "",
     });
     onClose();
   };
@@ -448,10 +454,9 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
                   <SelectValue placeholder="Select platform" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="creditkarma">Credit Karma</SelectItem>
-                  <SelectItem value="experian">Experian</SelectItem>
-                  <SelectItem value="equifax">Equifax</SelectItem>
-                  <SelectItem value="transunion">TransUnion</SelectItem>
+                  <SelectItem value="myfreescorenow">My Free Score Now</SelectItem>
+                  <SelectItem value="identityiq">IdentityIQ</SelectItem>
+                  <SelectItem value="myscoreiq">MyScoreIQ</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -483,6 +488,26 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
                 required
               />
             </div>
+            {(newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && (
+              <div className="space-y-2">
+                <Label htmlFor="ssnLast4">SSN Last 4 *</Label>
+                <Input
+                  id="ssnLast4"
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]{4}"
+                  maxLength={4}
+                  autoComplete="off"
+                  title="Please enter 4 digits (e.g., 1234)"
+                  value={newClient.ssnLast4}
+                  onChange={(e) =>
+                    setNewClient({ ...newClient, ssnLast4: e.target.value.replace(/[^0-9]/g, "") })
+                  }
+                  placeholder="1234"
+                  required
+                />
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2">

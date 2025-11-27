@@ -659,7 +659,7 @@ export default function Dashboard() {
           options: {
             saveHtml: false,
             takeScreenshots: false,
-            ...(newClient.platform === "identityiq" && newClient.ssnLast4
+            ...(((newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && newClient.ssnLast4)
               ? { ssnLast4: newClient.ssnLast4 }
               : {}),
           },
@@ -785,17 +785,18 @@ export default function Dashboard() {
       }
 
       // Create client with extracted information
-       const clientData = {
-         first_name: firstName,
-         last_name: lastName,
-         email: newClient.email,
-         date_of_birth: dateOfBirth || undefined,
-         status: "active" as const,
-         platform: newClient.platform,
-         platform_email: newClient.email,
-         platform_password: newClient.password,
-         notes: `Client created via credit report scraping from ${newClient.platform}`,
-       };
+      const clientData = {
+        first_name: firstName,
+        last_name: lastName,
+        email: newClient.email,
+        date_of_birth: dateOfBirth || undefined,
+        status: "active" as const,
+        platform: newClient.platform,
+        platform_email: newClient.email,
+        platform_password: newClient.password,
+        ...(newClient.ssnLast4 ? { ssn_last_four: newClient.ssnLast4 } : {}),
+        notes: `Client created via credit report scraping from ${newClient.platform}`,
+      };
 
       console.log("Creating client with extracted data:", clientData);
       const response = await clientsApi.createClient(clientData);
@@ -1658,6 +1659,8 @@ export default function Dashboard() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="myfreescorenow">MyFreeScoreNow</SelectItem>
+                    <SelectItem value="identityiq">IdentityIQ</SelectItem>
+                    <SelectItem value="myscoreiq">MyScoreIQ</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1686,9 +1689,9 @@ export default function Dashboard() {
                 />
               </div>
 
-              {newClient.platform === "identityiq" && (
+              {(newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && (
                 <div className="space-y-2">
-                  <Label htmlFor="ssnLast4">SSN Last 4 (IdentityIQ) *</Label>
+                  <Label htmlFor="ssnLast4">SSN Last 4 *</Label>
                   <Input
                     id="ssnLast4"
                     type="tel"
@@ -1725,7 +1728,7 @@ export default function Dashboard() {
                   !newClient.platform ||
                   !newClient.email ||
                   !newClient.password ||
-                  (newClient.platform === "identityiq" && (!newClient.ssnLast4 || newClient.ssnLast4.length !== 4))
+                  ((newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && (!newClient.ssnLast4 || newClient.ssnLast4.length !== 4))
                 }
               >
                 {isSubmitting ? (

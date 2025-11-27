@@ -6,6 +6,8 @@
 
 import express from 'express';
 import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
 import { fetchCreditReport, PLATFORMS } from '../services/scrapers/index.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { getDatabaseAdapter } from '../database/databaseAdapter.js';
@@ -77,8 +79,792 @@ router.post('/scrape', authenticateToken, async (req, res) => {
       credentials.password,
       scraperOptions
     );
+    console.log("🔥🔥 FULL RAW MyScoreIQ SCRAPER OUTPUT:", JSON.stringify(reportData, null, 2));
+
     const durationMs = Date.now() - startTime;
     console.log(`Scrape finished for ${platform} in ${durationMs}ms`);
+
+    // Normalize MyScoreIQ output to MyFreeScoreNow-like and extract section paths
+    try {
+      // --- Start robust MyScoreIQ conversion block ---
+if (platform && String(platform).toLowerCase() === String(PLATFORMS.MYSCOREIQ).toLowerCase()) {
+  const outDir = scraperOptions.outputDir || './scraper-output';
+  const cid = String(clientId || 'unknown');
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+
+  // 1) Debug: log top-level keys and small sample so we know what the scraper returned
+  try {
+    console.log("🔥 RAW SCRAPER OUTPUT KEYS:", Object.keys(reportData || {}).join(', '));
+    // print a small sample (protect large outputs)
+    const sample = (() => {
+      try {
+        const preview = { keys: Object.keys(reportData || {}) };
+        if (reportData && typeof reportData === 'object') {
+          // include the first-level small values for quick diagnosis
+          for (const k of Object.keys(reportData)) {
+            try {
+              const v = reportData[k];
+              if (typeof v === 'string' && v.length < 200) preview[k] = v;
+              else if (Array.isArray(v)) preview[k] = `array(${v.length})`;
+              else if (v && typeof v === 'object') preview[k] = `object(${Object.keys(v).slice(0,5).join(',')}${Object.keys(v).length>5 ? ',...' : ''})`;
+            } catch {}
+          }
+        }
+        return preview;
+      } catch { return null; }
+    })();
+    console.log('🔥 RAW SCRAPER OUTPUT SAMPLE:', JSON.stringify(sample, null, 2));
+  } catch (e) {
+    console.warn('Failed to log raw scraper output sample:', e?.message || e);
+  }
+
+  // Helper: safe read
+  const safeGet = (obj, pathArr) => {
+    try {
+      return pathArr.reduce((acc, p) => (acc && typeof acc === 'object' ? acc[p] : undefined), obj);
+    } catch { return undefined; }
+  };
+
+  // Helper: merge arrays across object of bureaus if present
+  const mergeAcrossBureaus = (obj, keyNames = []) => {
+    const bureaus = ['TransUnion','Experian','Equifax','transunion','experian','equifax'];
+    const out = [];
+    for (const b of bureaus) {
+      if (obj && obj[b] && typeof obj[b] === 'object') {
+        for (const k of keyNames) {
+          if (Array.isArray(obj[b][k])) out.push(...obj[b][k]);
+          // try alternative key name casing
+          const alt = Object.keys(obj[b]).find(x => x.toLowerCase() === k.toLowerCase());
+          if (alt && Array.isArray(obj[b][alt])) out.push(...obj[b][alt]);
+        }
+      }
+    }
+    return out;
+  };
+
+  const flattenRawData = (obj, key) => {
+    const out = [];
+    try {
+      const list = obj && obj.data;
+      if (Array.isArray(list)) {
+        for (const entry of list) {
+          const v = entry && entry[key];
+          if (!v) continue;
+          if (Array.isArray(v)) out.push(...v);
+          else out.push(v);
+        }
+      }
+    } catch {}
+    return out;
+  };
+
+  const bureauToId = (b) => {
+    try {
+      const s = String(b || '').toLowerCase();
+      if (s.includes('trans')) return 1;
+      if (s.includes('exper')) return 2;
+      if (s.includes('equif')) return 3;
+    } catch {}
+    return null;
+  };
+
+  // Helper: shallow find arrays by name on an object (case-insensitive)
+  const findArrayByNames = (obj, nameCandidates=[]) => {
+    if (!obj || typeof obj !== 'object') return null;
+    for (const key of Object.keys(obj)) {
+      for (const cand of nameCandidates) {
+        if (key.toLowerCase() === cand.toLowerCase() && Array.isArray(obj[key])) {
+          return obj[key];
+        }
+      }
+    }
+    return null;
+  };
+
+  // Helper: recursively scan object for arrays which look like accounts/inquiries
+  const looksLikeAccountArray = (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return false;
+    const first = arr.find(i => i && typeof i === 'object');
+    if (!first) return false;
+    const accountHints = ['creditor','creditorName','creditor_name','accountNumber','account_number','currentBalance','current_balance','dateOpened','date_opened','paymentHistory','payStatusHistory'];
+    let hits = 0;
+    for (const h of accountHints) if (Object.keys(first).some(k => k.toLowerCase().includes(h.toLowerCase()))) hits++;
+    return hits >= 1;
+  };
+
+  const looksLikeInquiryArray = (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return false;
+    const first = arr.find(i => i && typeof i === 'object');
+    if (!first) return false;
+    const hints = ['company_name','company_type','date_of_inquiry','creditorname','industry','dateinquiry'];
+    return hints.some(h => Object.keys(first).some(k => k.toLowerCase().includes(h)));
+  };
+
+  const looksLikeEmployerArray = (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return false;
+    const first = arr.find(i => i && typeof i === 'object');
+    if (!first) return false;
+    const hints = ['employername','dateupdated','datereported','name','date_first_reported','date_last_updated'];
+    return hints.some(h => Object.keys(first).some(k => k.toLowerCase().includes(h)));
+  };
+
+  const looksLikeAddressArray = (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return false;
+    const first = arr.find(i => i && typeof i === 'object');
+    if (!first) return false;
+    const hints = ['house_number','street_name','suffix','city','state','zipcode','streetaddress','zip'];
+    return hints.some(h => Object.keys(first).some(k => k.toLowerCase().includes(h)));
+  };
+
+  const looksLikePublicRecordArray = (arr) => {
+    if (!Array.isArray(arr) || arr.length === 0) return false;
+    const first = arr.find(i => i && typeof i === 'object');
+    if (!first) return false;
+    const hints = ['public','bankruptcy','court','filing','case'];
+    return hints.some(h => Object.keys(first).some(k => k.toLowerCase().includes(h)));
+  };
+
+  const findArrayRecursively = (obj, nameCandidates=[]) => {
+    const seen = new Set();
+    const queue = [obj];
+    while (queue.length) {
+      const cur = queue.shift();
+      if (!cur || typeof cur !== 'object') continue;
+      if (Array.isArray(cur)) {
+        if (nameCandidates.length) {
+          if (looksLikeAccountArray(cur)) return cur;
+        } else {
+          // if no nameCandidates, return the first array that looks like accounts
+          if (looksLikeAccountArray(cur)) return cur;
+        }
+      }
+      for (const k of Object.keys(cur)) {
+        const v = cur[k];
+        if (v && typeof v === 'object' && !seen.has(v)) {
+          seen.add(v);
+          queue.push(v);
+        }
+        // also check named arrays directly
+        if (Array.isArray(v) && nameCandidates.length) {
+          if (nameCandidates.some(n => k.toLowerCase() === n.toLowerCase()) && looksLikeAccountArray(v)) return v;
+        }
+      }
+    }
+    return null;
+  };
+
+  const findArrayRecursivelyTyped = (obj, predicate) => {
+    const seen = new Set();
+    const queue = [obj];
+    while (queue.length) {
+      const cur = queue.shift();
+      if (!cur || typeof cur !== 'object') continue;
+      if (Array.isArray(cur)) {
+        if (predicate(cur)) return cur;
+      }
+      for (const k of Object.keys(cur)) {
+        const v = cur[k];
+        if (v && typeof v === 'object' && !seen.has(v)) {
+          seen.add(v);
+          queue.push(v);
+        }
+      }
+    }
+    return null;
+  };
+
+  // possible candidate containers to inspect (order matters)
+  const candidates = [
+    reportData?.rawCreditData,
+    reportData?.raw,
+    reportData?.reportData,
+    reportData?.data,
+    reportData?.report,
+    reportData?.parsed,
+    reportData?.scraped,
+    reportData?.artifacts,
+    reportData?.artifacts?.sections,
+    reportData
+  ].filter(Boolean);
+
+  // default arrays
+  let accounts = [], inquiries = [], publicRecords = [], addresses = [], employers = [];
+
+  // 1) If rawCreditData is object of bureaus: merge across bureaus
+  const firstRaw = reportData?.rawCreditData || reportData?.report || reportData?.reportData || reportData?.data || null;
+  if (firstRaw && typeof firstRaw === 'object') {
+    // try merge by common keys
+    accounts = mergeAcrossBureaus(firstRaw, ['Accounts','accounts','AccountsList','tradelines']);
+    inquiries = mergeAcrossBureaus(firstRaw, ['Inquiries','inquiries','CreditInquiries']);
+    publicRecords = mergeAcrossBureaus(firstRaw, ['PublicRecords','public_records','PublicRecordsList']);
+    addresses = mergeAcrossBureaus(firstRaw, ['Addresses','addresses']);
+    employers = mergeAcrossBureaus(firstRaw, ['Employers','employers']);
+  }
+
+  // 2) If still empty, try find arrays by name at top-level candidates
+  if (!accounts.length) {
+    for (const c of candidates) {
+      const found = findArrayByNames(c, ['Accounts','AccountsList','accounts','tradelines','creditAccounts']);
+      if (Array.isArray(found) && found.length) { accounts = found; break; }
+    }
+  }
+  if (!inquiries.length) {
+    for (const c of candidates) {
+      const found = findArrayByNames(c, ['Inquiries','inquiries','CreditInquiries']);
+      if (Array.isArray(found) && found.length) { inquiries = found; break; }
+    }
+  }
+  if (!publicRecords.length) {
+    for (const c of candidates) {
+      const found = findArrayByNames(c, ['PublicRecords','public_records','publicrecords']);
+      if (Array.isArray(found) && found.length) { publicRecords = found; break; }
+    }
+  }
+  if (!addresses.length) {
+    for (const c of candidates) {
+      const found = findArrayByNames(c, ['Addresses','addresses','Address']);
+      if (Array.isArray(found) && found.length) { addresses = found; break; }
+    }
+  }
+  if (!employers.length) {
+    for (const c of candidates) {
+      const found = findArrayByNames(c, ['Employers','employers','Employer']);
+      if (Array.isArray(found) && found.length) { employers = found; break; }
+    }
+  }
+
+  // 3) Final fallback: recursive scan for any array that looks like accounts
+  if (!accounts.length) {
+    const found = findArrayRecursively(reportData, ['Accounts','accounts','tradelines']);
+    if (found) accounts = found;
+  }
+  if (!inquiries.length) {
+    const found = findArrayRecursivelyTyped(reportData, looksLikeInquiryArray);
+    if (found) inquiries = found;
+  }
+  if (!publicRecords.length) {
+    const found = findArrayRecursivelyTyped(reportData, looksLikePublicRecordArray);
+    if (found) publicRecords = found;
+  }
+  if (!addresses.length) {
+    const found = findArrayRecursivelyTyped(reportData, looksLikeAddressArray);
+    if (found) addresses = found;
+  }
+  if (!employers.length) {
+    const found = findArrayRecursivelyTyped(reportData, looksLikeEmployerArray);
+    if (found) employers = found;
+  }
+
+  // Final normalization: ensure arrays (maybe null -> empty)
+  accounts = Array.isArray(accounts) ? accounts : [];
+  inquiries = Array.isArray(inquiries) ? inquiries : [];
+  publicRecords = Array.isArray(publicRecords) ? publicRecords : [];
+  addresses = Array.isArray(addresses) ? addresses : [];
+  employers = Array.isArray(employers) ? employers : [];
+
+  // Extra debug logs so you can see counts quickly
+  console.log(`MyScoreIQ -> extracted counts: accounts=${accounts.length}, inquiries=${inquiries.length}, publicRecords=${publicRecords.length}, addresses=${addresses.length}, employers=${employers.length}`);
+
+  // Normalize accounts to MyFreeScoreNow-like shape and ensure creditor is a string
+  const normalizeStr = (v, def = '') => {
+    if (v === null || v === undefined) return def;
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number') return String(v);
+    if (typeof v === 'object') {
+      if (v && typeof v.name === 'string') return v.name;
+    }
+    try { return JSON.stringify(v); } catch { return def; }
+  };
+  const parseDate = (v) => {
+    const s = normalizeStr(v, '');
+    if (!s) return null;
+    const d = new Date(s);
+    if (isNaN(d.getTime())) {
+      const m = s.match(/\d{4}-\d{2}-\d{2}/) || s.match(/\d{2}\/\d{2}\/\d{4}/);
+      return m ? m[0] : null;
+    }
+    return d.toISOString();
+  };
+  const toNumber = (v) => {
+    const s = normalizeStr(v, '');
+    const n = parseFloat(s.replace(/[^0-9.\-]/g, ''));
+    return isNaN(n) ? 0 : n;
+  };
+  const toTitle = (s) => {
+    const str = normalizeStr(s, '');
+    return str ? str.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) : str;
+  };
+  const statusToLetter = (s) => {
+    const t = normalizeStr(s, '').toLowerCase();
+    if (!t) return 'C';
+    if (t.includes('ok') || t.includes('current') || t.includes('paid') || t.includes('as agreed')) return 'C';
+    if (t.includes('30')) return '1';
+    if (t.includes('60')) return '2';
+    if (t.includes('90')) return '3';
+    if (t.includes('late') || t.includes('delinquent')) return 'L';
+    if (t.includes('charge')) return 'X';
+    return 'C';
+  };
+
+  const buildPayStatusHistory = (a) => {
+    if (Array.isArray(a?.payment_histories)) {
+      const monthsOrder = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+      const parts = [];
+      for (const ph of a.payment_histories) {
+        for (const m of monthsOrder) {
+          if (ph[m]) parts.push(statusToLetter(ph[m]));
+        }
+      }
+      return parts.join('');
+    }
+    const hist = normalizeStr(a?.PayStatusHistory?.status || a?.paymentHistory || '', '');
+    if (!hist) return '';
+    return hist.split(/[\s,;|]+/).map(statusToLetter).join('');
+  };
+
+  const accountsFormal = accounts.map((a, idx) => {
+    const creditorName = normalizeStr(a?.CreditorName || a?.name || a?.creditor?.name || a?.creditor, '');
+    const bureauId = a?.bureau_id ?? bureauToId(a?.bureau || a?.Bureau || a?.Source?.Bureau?.symbol) ?? (idx % 3) + 1;
+    return {
+      BureauId: bureauId,
+      AccountTypeDescription: toTitle(a?.AccountTypeDescription || a?.classification || a?.type),
+      HighBalance: normalizeStr(a?.HighBalance || a?.high_balance || a?.GrantedTrade?.highBalance || toNumber(a?.high_balance), ''),
+      DateReported: (parseDate(a?.DateReported || a?.dateReported || a?.status_date) || '')?.slice(0,10) || '',
+      DateOpened: (parseDate(a?.DateOpened || a?.dateOpened || a?.date_opened || a?.opened) || '')?.slice(0,10) || '',
+      AccountNumber: normalizeStr(a?.AccountNumber || a?.accountNumber || a?.number, '').replace(/\*/g, ''),
+      DateAccountStatus: (parseDate(a?.dateAccountStatus || a?.status_date || a?.DateReported || a?.dateReported) || '')?.slice(0,10) || '',
+      CurrentBalance: String(toNumber(a?.CurrentBalance || a?.balance || a?.current_balance)),
+      CreditorName: creditorName || normalizeStr(a?.CreditorName, ''),
+      AccountCondition: normalizeStr(a?.AccountCondition?.description || a?.type_definition_flags?.account_status || a?.account_condition, ''),
+      AccountDesignator: normalizeStr(a?.AccountDesignator?.description || a?.responsibility, ''),
+      DisputeFlag: normalizeStr(a?.DisputeFlag?.description || 'Account not disputed', ''),
+      Industry: normalizeStr(a?.Industry || a?.IndustryCode?.description || a?.business_type, ''),
+      AccountStatus: normalizeStr(a?.OpenClosed?.description || a?.account_status || a?.type_definition_flags?.account_status, ''),
+      PaymentStatus: normalizeStr(a?.PayStatus?.description || a?.payment_status_class || a?.payment_status, ''),
+      AmountPastDue: String(toNumber(a?.GrantedTrade?.amountPastDue || a?.past_due_amount)),
+      AccountType: toTitle(a?.GrantedTrade?.AccountType?.description || a?.type_raw),
+      CreditType: toTitle(a?.GrantedTrade?.CreditType?.description || a?.classification || a?.type),
+      PaymentFrequency: normalizeStr(a?.GrantedTrade?.PaymentFrequency?.description || '', ''),
+      TermType: normalizeStr(a?.GrantedTrade?.TermType?.description || 'Provided', ''),
+      WorstPayStatus: normalizeStr(a?.GrantedTrade?.WorstPayStatus?.description || 'Current', ''),
+      PayStatusHistoryStartDate: (parseDate(a?.GrantedTrade?.PayStatusHistory?.startDate || a?.balance_date || a?.status_date) || '')?.slice(0,10) || '',
+      PayStatusHistory: buildPayStatusHistory(a) || '',
+      Remark: (Array.isArray(a?.Remark) && a.Remark[0]?.RemarkCode?.description) ? a.Remark[0].RemarkCode.description : null,
+      CreditLimit: String(toNumber(a?.CreditLimit || a?.limit || a?.credit_limit))
+    };
+  });
+
+  const accountsAlias = accounts.map((a) => {
+    const creditorName = normalizeStr(a?.CreditorName || a?.name || a?.creditor?.name || a?.creditor, 'Unknown Creditor');
+    return {
+      creditor: creditorName,
+      name: normalizeStr(a?.name || a?.CreditorName || creditorName, ''),
+      type: normalizeStr(a?.AccountTypeDescription || a?.classification || a?.type, ''),
+      CurrentBalance: toNumber(a?.CurrentBalance || a?.balance),
+      CreditLimit: toNumber(a?.CreditLimit || a?.limit),
+      DateOpened: parseDate(a?.DateOpened || a?.date_opened || a?.opened),
+      DateReported: parseDate(a?.DateReported || a?.status_date),
+    };
+  });
+
+  const inquiriesFormal = inquiries.map((inq, idx) => ({
+    BureauId: inq?.bureau_id ?? bureauToId(inq?.bureau) ?? (idx % 3) + 1,
+    DateInquiry: (parseDate(inq?.DateInquiry || inq?.date || inq?.date_of_inquiry || inq?.inquiry_date) || '')?.slice(0,10) || '',
+    CreditorName: normalizeStr(inq?.company_name || inq?.companyName || inq?.CreditorName || inq?.creditor?.name || inq?.creditor, ''),
+    InquiryType: normalizeStr(inq?.InquiryType || inq?.type || inq?.inquiry_type, ''),
+    Industry: normalizeStr(inq?.company_type || inq?.companyType || inq?.Industry || inq?.industry, '')
+  }));
+
+  const employersFormal = (Array.isArray(employers) ? employers : []).map((emp, idx) => ({
+    EmployerName: normalizeStr(emp?.EmployerName || emp?.name || '', ''),
+    BureauId: emp?.bureau_id ?? bureauToId(emp?.bureau) ?? (idx % 3) + 1,
+    DateReported: (parseDate(emp?.DateReported || emp?.date_first_reported) || '')?.slice(0,10) || '',
+    DateUpdated: (parseDate(emp?.DateUpdated || emp?.date_last_updated) || '')?.slice(0,10) || '',
+    Position: normalizeStr(emp?.Position || '', ''),
+    Income: toNumber(emp?.Income || emp?.income)
+  }));
+
+  const pickLatestAddressDate = (arr) => {
+    let latest = null;
+    for (const a of arr || []) {
+      const d = parseDate(a?.date_first_reported || a?.DateFirstReported || a?.DateReported);
+      if (!d) continue;
+      const t = new Date(d).getTime();
+      if (!latest || t > latest.time) latest = { time: t };
+    }
+    return latest?.time || 0;
+  };
+  const latestTime = pickLatestAddressDate(addresses);
+  const combineStreet = (a) => {
+    const parts = [a?.house_number, a?.pre_directional, a?.street_name, a?.suffix, a?.post_directional]
+      .map((p) => normalizeStr(p, '').trim())
+      .filter((p) => !!p);
+    let street = parts.join(' ').replace(/\s+/g, ' ').trim();
+    const unit = normalizeStr(a?.unit, '').trim();
+    if (unit) street = `${street} ${unit}`;
+    return street;
+  };
+  const addressesFormal = (Array.isArray(addresses) ? addresses : []).map((a) => {
+    const reported = parseDate(a?.date_first_reported || a?.DateFirstReported || a?.DateReported);
+    const reportedTime = reported ? new Date(reported).getTime() : 0;
+    return {
+      StreetAddress: combineStreet(a),
+      City: normalizeStr(a?.city || a?.City, ''),
+      State: normalizeStr(a?.state || a?.State, ''),
+      Zip: normalizeStr(a?.zipcode || a?.Zip || a?.zip, ''),
+      AddressType: reportedTime && reportedTime === latestTime ? 'Current' : 'Previous',
+      DateReported: (reported || '')?.slice(0,10) || ''
+    };
+  });
+
+  // Build converted report (UCS-style simplified)
+  // ===== Add MyFreeScoreNow-format extras (CreditReport, Name, DOB, Score) =====
+
+// Extract Score arrays
+let scoreArray = [];
+try {
+  scoreArray =
+    mergeAcrossBureaus(firstRaw, ["Score", "Scores", "VantageScore"]) ||
+    findArrayByNames(reportData, ["Score", "Scores"]) ||
+    [];
+} catch (e) {}
+
+if (!scoreArray || scoreArray.length === 0) {
+  const rawScores = flattenRawData(firstRaw, 'score_details');
+  scoreArray = rawScores.map((s, idx) => ({
+    BureauId: s?.bureau_id ?? bureauToId(s?.bureau) ?? (idx + 1),
+    Score: s?.score || '',
+    ScoreType: s?.model || '',
+    DateScore: s?.score_dt ? String(s.score_dt).split('T')[0] : null
+  }));
+}
+
+// Extract Names
+let nameArray = [];
+try {
+  nameArray =
+    mergeAcrossBureaus(firstRaw, ["Name", "Names"]) ||
+    findArrayByNames(reportData, ["Name", "Names"]) ||
+    [];
+} catch (e) {}
+
+if (!nameArray || nameArray.length === 0) {
+  const rawNames = flattenRawData(firstRaw, 'names');
+  nameArray = rawNames.map((n, idx) => ({
+    BureauId: n?.bureau_id ?? bureauToId(n?.bureau) ?? (idx + 1),
+    FirstName: n?.first_name || '',
+    Middle: n?.middle_name || '',
+    LastName: n?.last_name || '',
+    NameType: 'Primary'
+  }));
+}
+
+// Extract DOBs
+let dobArray = [];
+try {
+  dobArray =
+    mergeAcrossBureaus(firstRaw, ["DOB", "DateOfBirth"]) ||
+    findArrayByNames(reportData, ["DOB", "DateOfBirth"]) ||
+    [];
+} catch (e) {}
+
+if (!dobArray || dobArray.length === 0) {
+  const rawNamesForDob = flattenRawData(firstRaw, 'names');
+  dobArray = rawNamesForDob.map((n, idx) => ({
+    BureauId: n?.bureau_id ?? bureauToId(n?.bureau) ?? (idx + 1),
+    DOB: n?.dob || n?.date_of_birth || ''
+  }));
+}
+
+console.log(`MyScoreIQ -> extras extracted counts: name=${nameArray.length}, dob=${dobArray.length}, score=${scoreArray.length}`);
+
+// Extract Credit Report Metadata (Date + Provider)
+const creditReportArray = [
+  {
+    DateReport:
+      reportData.reportDate ||
+      reportData?.ReportDate ||
+      new Date().toISOString().substring(0, 10),
+
+    ReportProvider: "MyScoreIQ"
+  }
+];
+
+// ===== Final converted report (UCS full schema) =====
+  const converted = {
+  clientInfo: {
+    clientId: cid,
+    username: credentials.username,
+    timestamp: new Date().toISOString(),
+    reportDate: reportData.reportDate || null
+  },
+
+  reportData: {
+    CreditReport: creditReportArray,
+    Name: nameArray,
+    DOB: dobArray,
+    Score: scoreArray,
+
+    Accounts: accountsFormal,
+    accounts: accountsAlias,
+    Inquiries: inquiriesFormal,
+    inquiries: inquiries,
+    PublicRecords: publicRecords,
+    publicRecords: publicRecords,
+    Address: addressesFormal,
+    addresses: addressesFormal,
+    Employer: employersFormal
+  }
+  ,
+  _diagnostics: {
+    extractedFrom: candidates.map(c => (c && typeof c === 'object' ? Object.keys(c).slice(0,10) : String(c))).slice(0,5)
+  }
+  };
+
+
+  // Write converted file
+  try {
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+    const convertedPath = path.join(outDir, `client_${cid}_myscoreiq_converted_${ts}.json`);
+    fs.writeFileSync(convertedPath, JSON.stringify(converted, null, 2), 'utf8');
+    reportData.converted_report_path = convertedPath;
+    reportData.filePath = convertedPath;
+    try {
+      reportData.reportData = converted.reportData;
+      reportData.Score = converted.reportData?.Score;
+      reportData.CreditReport = converted.reportData?.CreditReport;
+      reportData.ReportDate = converted.reportData?.CreditReport?.[0]?.DateReport;
+    } catch {}
+    console.log('MyScoreIQ converted report saved to:', convertedPath);
+  } catch (e) {
+    console.error('Failed to save converted report:', e?.message || e);
+  }
+}
+// --- End robust MyScoreIQ conversion block ---
+
+
+    } catch (convErr) {
+      console.warn('MyScoreIQ conversion warning:', convErr?.message || convErr);
+    }
+
+    try {
+      if (platform && String(platform).toLowerCase() === String(PLATFORMS.IDENTITYIQ).toLowerCase()) {
+        const outDir = scraperOptions.outputDir || './scraper-output';
+        const cid = String(clientId || 'unknown');
+        const ts = new Date().toISOString().replace(/[:.]/g, '-');
+        const raw = reportData?.rawCreditData || reportData;
+        const bureauFromType = (t) => {
+          const s = String(t || '').toLowerCase();
+          if (s.includes('tuc')) return 1;
+          if (s.includes('exp')) return 2;
+          if (s.includes('eqf')) return 3;
+          return null;
+        };
+        const bureauFromStr = (b) => {
+          const s = String(b || '').toLowerCase();
+          if (s.includes('trans')) return 1;
+          if (s.includes('exper')) return 2;
+          if (s.includes('equif')) return 3;
+          return null;
+        };
+        const bureauFromCode = (c) => {
+          const s = String(c || '').toLowerCase();
+          if (s.includes('tuc')) return 1;
+          if (s.includes('exp')) return 2;
+          if (s.includes('eqf')) return 3;
+          return null;
+        };
+        const normalizeStr = (v, def = '') => {
+          if (v === null || v === undefined) return def;
+          if (typeof v === 'string') return v;
+          if (typeof v === 'number') return String(v);
+          if (typeof v === 'object') {
+            if (v && typeof v.name === 'string') return v.name;
+            if (v && typeof v.$ === 'string') return v.$;
+          }
+          try { return JSON.stringify(v); } catch { return def; }
+        };
+        const parseDate = (v) => {
+          const s = normalizeStr(v, '');
+          if (!s) return null;
+          const d = new Date(s);
+          if (isNaN(d.getTime())) {
+            const m = s.match(/\d{4}-\d{2}-\d{2}/) || s.match(/\d{2}\/\d{2}\/\d{4}/);
+            return m ? m[0] : null;
+          }
+          return d.toISOString();
+        };
+        const toNumber = (v) => {
+          const s = normalizeStr(v, '');
+          const n = parseFloat(s.replace(/[^0-9.\-]/g, ''));
+          return isNaN(n) ? 0 : n;
+        };
+        const toTitle = (s) => {
+          const str = normalizeStr(s, '');
+          return str ? str.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) : str;
+        };
+        const accountsIQ = [];
+        const inquiriesIQ = [];
+        const employersIQ = [];
+        const scoresIQ = [];
+        const namesIQ = [];
+        const birthsIQ = [];
+        const q = [{ node: raw, bureau: null }];
+        const seen = new Set();
+        while (q.length) {
+          const { node, bureau } = q.shift();
+          if (!node || typeof node !== 'object') continue;
+          if (seen.has(node)) continue;
+          seen.add(node);
+          const typeVal = normalizeStr(node?.Type?.$, null);
+          const nextBureau = typeVal ? bureauFromType(typeVal) : bureau;
+          for (const k of Object.keys(node)) {
+            const v = node[k];
+            if (!v) continue;
+            if (k === 'Tradeline' && Array.isArray(v)) {
+              for (const a of v) {
+                const bi = a?.['@bureau'] ? bureauFromStr(a['@bureau']) : nextBureau;
+                accountsIQ.push({ a, bi });
+              }
+            } else if (k === 'Inquiry' && Array.isArray(v)) {
+              for (const inq of v) {
+                const bi = nextBureau;
+                inquiriesIQ.push({ inq, bi });
+              }
+            } else if (k === 'Inquiry' && typeof v === 'object' && !Array.isArray(v)) {
+              const bi = nextBureau;
+              inquiriesIQ.push({ inq: v, bi });
+            } else if (k === 'BorrowerName' && Array.isArray(v)) {
+              for (const n of v) {
+                const bi = bureauFromStr(n?.Source?.Bureau?.['@abbreviation']) || bureauFromCode(n?.Source?.Bureau?.['@symbol']) || nextBureau;
+                namesIQ.push({ n, bi });
+              }
+            } else if (k === 'Birth' && Array.isArray(v)) {
+              for (const b of v) {
+                const bi = bureauFromStr(b?.Source?.Bureau?.['@abbreviation']) || bureauFromCode(b?.Source?.Bureau?.['@symbol']) || nextBureau;
+                birthsIQ.push({ b, bi });
+              }
+            } else if (k === 'Employer' && Array.isArray(v)) {
+              for (const emp of v) {
+                const bi = nextBureau;
+                employersIQ.push({ emp, bi });
+              }
+            } else if (k === 'CreditScoreType' && typeof v === 'object') {
+              const bi = nextBureau;
+              scoresIQ.push({ s: v, bi });
+            }
+            if (typeof v === 'object') q.push({ node: v, bureau: nextBureau });
+          }
+        }
+        const accountsFormal = accountsIQ.map(({ a, bi }, idx) => ({
+          BureauId: bi ?? ((idx % 3) + 1),
+          AccountTypeDescription: toTitle(a?.['@accountTypeDescription'] || a?.GrantedTrade?.AccountType?.['@description'] || a?.GrantedTrade?.AccountType?.description || ''),
+          HighBalance: normalizeStr(a?.['@highBalance'] || a?.GrantedTrade?.highBalance || ''),
+          DateReported: (parseDate(a?.['@dateReported']) || '')?.slice(0,10) || '',
+          DateOpened: (parseDate(a?.['@dateOpened']) || '')?.slice(0,10) || '',
+          AccountNumber: normalizeStr(a?.['@accountNumber'] || '').replace(/\*/g, ''),
+          DateAccountStatus: (parseDate(a?.['@dateAccountStatus']) || '')?.slice(0,10) || '',
+          CurrentBalance: String(toNumber(a?.['@currentBalance'])),
+          CreditorName: normalizeStr(a?.['@creditorName'] || ''),
+          AccountCondition: normalizeStr(a?.AccountCondition?.['@description'] || a?.AccountCondition?.description || ''),
+          AccountDesignator: normalizeStr(a?.AccountDesignator?.['@description'] || a?.AccountDesignator?.description || ''),
+          DisputeFlag: normalizeStr(a?.DisputeFlag?.['@description'] || a?.DisputeFlag?.description || ''),
+          Industry: normalizeStr(a?.Industry?.['@description'] || ''),
+          AccountStatus: normalizeStr(a?.AccountCondition?.['@description'] || ''),
+          PaymentStatus: normalizeStr(a?.GrantedTrade?.PayStatus?.['@description'] || a?.GrantedTrade?.PayStatus?.description || ''),
+          AmountPastDue: String(toNumber(a?.GrantedTrade?.amountPastDue || a?.GrantedTrade?.AmountPastDue)),
+          AccountType: toTitle(a?.['@accountTypeDescription'] || a?.GrantedTrade?.CreditType?.['@description'] || a?.GrantedTrade?.CreditType?.description || ''),
+          CreditType: toTitle(a?.GrantedTrade?.AccountType?.['@description'] || a?.GrantedTrade?.AccountType?.description || ''),
+          PaymentFrequency: normalizeStr(a?.GrantedTrade?.PaymentFrequency?.['@description'] || a?.GrantedTrade?.PaymentFrequency?.description || ''),
+          TermType: normalizeStr(a?.GrantedTrade?.TermType?.['@description'] || a?.GrantedTrade?.TermType?.description || ''),
+          WorstPayStatus: normalizeStr(a?.GrantedTrade?.WorstPayStatus?.['@description'] || a?.GrantedTrade?.WorstPayStatus?.description || ''),
+          PayStatusHistoryStartDate: (parseDate(a?.GrantedTrade?.PayStatusHistory?.['@startDate'] || a?.GrantedTrade?.PayStatusHistory?.startDate) || '')?.slice(0,10) || '',
+          PayStatusHistory: normalizeStr(a?.GrantedTrade?.PayStatusHistory?.status || ''),
+          Remark: null,
+          CreditLimit: String(toNumber(a?.['@creditLimit'] || a?.GrantedTrade?.creditLimit))
+        }));
+        const inquiriesFormal = inquiriesIQ.map(({ inq, bi }, idx) => ({
+          BureauId: bi ?? ((idx % 3) + 1),
+          DateInquiry: (parseDate(inq?.['@inquiryDate']) || '')?.slice(0,10) || '',
+          CreditorName: normalizeStr(inq?.['@subscriberName'] || ''),
+          InquiryType: normalizeStr(
+            inq?.InquiryType?.['@description'] || inq?.InquiryType?.['@abbreviation'] || inq?.['@inquiryType'] || ''
+          ),
+          Industry: normalizeStr(
+            inq?.IndustryCode?.['@description'] || inq?.IndustryCode?.['@abbreviation'] || inq?.Industry?.['@description'] || inq?.Industry?.['@abbreviation'] || ''
+          )
+        }));
+        const employersFormal = employersIQ.map(({ emp, bi }, idx) => ({
+          EmployerName: normalizeStr(emp?.['@name'] || ''),
+          BureauId: bi ?? ((idx % 3) + 1),
+          DateReported: (parseDate(emp?.['@dateReported']) || '')?.slice(0,10) || '',
+          DateUpdated: (parseDate(emp?.['@dateUpdated']) || '')?.slice(0,10) || '',
+          Position: '',
+          Income: 0
+        }));
+        const namesFormal = namesIQ.map(({ n, bi }, idx) => ({
+          BureauId: bi ?? ((idx % 3) + 1),
+          FirstName: normalizeStr(n?.Name?.['@first'] || ''),
+          Middle: normalizeStr(n?.Name?.['@middle'] || ''),
+          LastName: normalizeStr(n?.Name?.['@last'] || ''),
+          NameType: normalizeStr(n?.NameType?.['@description'] || n?.NameType?.description || 'Primary')
+        }));
+        const dobsFormal = birthsIQ.map(({ b, bi }, idx) => {
+          const y = normalizeStr(b?.BirthDate?.['@year'] || '');
+          const m = normalizeStr(b?.BirthDate?.['@month'] || '');
+          const d = normalizeStr(b?.BirthDate?.['@day'] || '');
+          const dateRaw = normalizeStr(b?.['@date'] || '');
+          const date = (parseDate(dateRaw || (y && m && d ? `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` : '')) || '')?.slice(0,10) || '';
+          return {
+            BureauId: bi ?? ((idx % 3) + 1),
+            DOB: date
+          };
+        });
+        const scoreArray = scoresIQ.map(({ s, bi }) => ({
+          BureauId: bi ?? null,
+          Score: normalizeStr(s?.['@riskScore'] || ''),
+          ScoreType: normalizeStr(s?.['@scoreName'] || s?.['@model'] || ''),
+          DateScore: (parseDate(reportData?.clientInfo?.timestamp) || '')?.slice(0,10) || null
+        })).filter(x => x.Score);
+        const creditReportDates = [1,2,3].map(id => ({ BureauId: id, DateReport: (parseDate(reportData?.clientInfo?.timestamp) || '')?.slice(0,10) || '' }));
+        const converted = {
+          reportData: {
+            CreditReport: creditReportDates,
+            Score: scoreArray,
+            Name: namesFormal,
+            DOB: dobsFormal,
+            Accounts: accountsFormal,
+            Inquiries: inquiriesFormal,
+            PublicRecords: [],
+            Address: [],
+            Employer: employersFormal
+          },
+          platform,
+          clientId,
+          ts,
+          rawKeys: Object.keys(reportData || {}),
+          extractedCounts: {
+            accounts: accountsFormal.length,
+            inquiries: inquiriesFormal.length,
+            employers: employersFormal.length,
+            scores: scoreArray.length
+          }
+        };
+        try {
+          if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+          const convertedPath = path.join(outDir, `client_${cid}_identityiq_converted_${ts}.json`);
+          fs.writeFileSync(convertedPath, JSON.stringify(converted, null, 2), 'utf8');
+          reportData.converted_report_path = convertedPath;
+          reportData.filePath = convertedPath;
+          try {
+            reportData.reportData = converted.reportData;
+            reportData.Score = converted.reportData?.Score;
+            reportData.CreditReport = converted.reportData?.CreditReport;
+            reportData.ReportDate = converted.reportData?.CreditReport?.[0]?.DateReport;
+          } catch {}
+        } catch {}
+      }
+    } catch {}
     
     // Save to database
     try {
@@ -113,15 +899,31 @@ router.post('/scrape', authenticateToken, async (req, res) => {
         if (validScores.length > 0) {
           creditScore = Math.max(...validScores);
         }
+      } else if (reportData && reportData.Score && Array.isArray(reportData.Score)) {
+        const scores = reportData.Score;
+        scores.forEach(score => {
+          const scoreValue = parseInt(score.Score);
+          if (!isNaN(scoreValue)) {
+            if (score.BureauId === 1) transunionScore = scoreValue;
+            if (score.BureauId === 2) experianScore = scoreValue;
+            if (score.BureauId === 3) equifaxScore = scoreValue;
+          }
+        });
+        const validScores = [experianScore, equifaxScore, transunionScore].filter(score => score !== null);
+        if (validScores.length > 0) {
+          creditScore = Math.max(...validScores);
+        }
       }
 
       // Extract report date if available
       if (reportData && reportData.reportData && reportData.reportData.ReportDate) {
         reportDate = reportData.reportData.ReportDate;
+      } else if (reportData && reportData.CreditReport && Array.isArray(reportData.CreditReport) && reportData.CreditReport[0]?.DateReport) {
+        reportDate = reportData.CreditReport[0].DateReport;
       }
 
       // Create notes with additional report information
-      if (reportData && reportData.reportData) {
+      if (reportData && (reportData.reportData || reportData.Score)) {
         const noteData = {
           platform: platform,
           scraped_at: new Date().toISOString(),
@@ -139,7 +941,7 @@ router.post('/scrape', authenticateToken, async (req, res) => {
       const historyData = {
         client_id: clientId,
         platform: platform,
-        report_path: reportData.filePath || null,
+        report_path: reportData.converted_report_path || reportData.filePath || null,
         status: 'completed',
         credit_score: creditScore,
         experian_score: experianScore,
@@ -167,6 +969,8 @@ router.post('/scrape', authenticateToken, async (req, res) => {
         success: true,
         message: 'Credit report scraped successfully',
         data: reportData,
+        extractedPaths: reportData.extracted_paths || null,
+        convertedReportPath: reportData.converted_report_path || null,
         reportId: reportId,
         clientId: clientId // Include client ID in response (will be "unknown" if not provided)
       });

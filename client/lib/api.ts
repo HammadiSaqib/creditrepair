@@ -345,12 +345,13 @@ export const creditReportScraperApi = {
       saveHtml?: boolean;
       takeScreenshots?: boolean;
       outputDir?: string;
+      ssnLast4?: string;
     };
   }) => api.post('/api/credit-reports/scrape', data),
   
-  fetchReport: (platform: string, username: string, password: string, clientId?: string) => 
+  fetchReport: (platform: string, username: string, password: string, clientId?: string, ssnLast4?: string) => 
     api.get('/api/credit-reports/fetch', { 
-      params: { platform, username, password, clientId } 
+      params: { platform, username, password, clientId, ssnLast4 } 
     }),
   
   getReportHistory: (clientId?: number) => {

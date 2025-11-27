@@ -436,7 +436,7 @@ const getScoreChange = (current: number, previous: number) => {
           options: {
             saveHtml: false,
             takeScreenshots: false,
-            ...(addPlatform === "identityiq" && addSsnLast4
+            ...(((addPlatform === "identityiq" || addPlatform === "myscoreiq") && addSsnLast4)
               ? { ssnLast4: addSsnLast4 }
               : {}),
           },
@@ -529,6 +529,7 @@ const getScoreChange = (current: number, previous: number) => {
         platform: addPlatform,
         platform_email: addEmail,
         platform_password: addPassword,
+        ...(addSsnLast4 ? { ssn_last_four: addSsnLast4 } : {}),
         notes: `Client created via credit report scraping from ${addPlatform}`,
       };
 
@@ -737,6 +738,8 @@ const getScoreChange = (current: number, previous: number) => {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="myfreescorenow">MyFreeScoreNow</SelectItem>
+                    <SelectItem value="identityiq">IdentityIQ</SelectItem>
+                    <SelectItem value="myscoreiq">MyScoreIQ</SelectItem>
                   </SelectContent>
                 </Select>
                 <Input
@@ -752,12 +755,16 @@ const getScoreChange = (current: number, previous: number) => {
                   value={addPassword}
                   onChange={(e) => setAddPassword(e.target.value)}
                 />
-                {addPlatform === "identityiq" && (
+                {(addPlatform === "identityiq" || addPlatform === "myscoreiq") && (
                   <Input
                     className="w-full sm:w-28"
                     placeholder="SSN Last 4"
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]{4}"
+                    maxLength={4}
                     value={addSsnLast4}
-                    onChange={(e) => setAddSsnLast4(e.target.value)}
+                    onChange={(e) => setAddSsnLast4(e.target.value.replace(/[^0-9]/g, ""))}
                   />
                 )}
                 <Button type="submit" size="sm" disabled={isAddingClient}>

@@ -1183,7 +1183,7 @@ export default function Reports() {
           options: {
             saveHtml: false,
             takeScreenshots: false,
-            ...(addPlatform === "identityiq" && addSsnLast4
+            ...(((addPlatform === "identityiq" || addPlatform === "myscoreiq") && addSsnLast4)
               ? { ssnLast4: addSsnLast4 }
               : {}),
           },
@@ -1276,6 +1276,7 @@ export default function Reports() {
         platform: addPlatform,
         platform_email: addEmail,
         platform_password: addPassword,
+        ...(addSsnLast4 ? { ssn_last_four: addSsnLast4 } : {}),
         notes: `Client created via credit report scraping from ${addPlatform}`,
       };
 
@@ -1417,11 +1418,26 @@ export default function Reports() {
         return;
       }
 
+      const platformLower = String(client.platform || '').toLowerCase();
+      const requiresSsn = platformLower === 'identityiq' || platformLower === 'myscoreiq';
+      const ssn = client.ssn_last_four || '';
+      if (requiresSsn && (!ssn || String(ssn).length !== 4)) {
+        toast({
+          title: 'SSN Last 4 Required',
+          description: 'Please set SSN Last 4 on the client profile for IdentityIQ/MyScoreIQ.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       await creditReportScraperApi.scrapeReport({
         platform: client.platform,
         credentials: {
           username: client.platform_email,
           password: client.platform_password,
+        },
+        options: {
+          ...(requiresSsn ? { ssnLast4: ssn } : {}),
         },
         clientId: parseInt(clientId, 10),
       });
@@ -1763,6 +1779,8 @@ export default function Reports() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="myfreescorenow">MyFreeScoreNow</SelectItem>
+                  <SelectItem value="identityiq">IdentityIQ</SelectItem>
+                  <SelectItem value="myscoreiq">MyScoreIQ</SelectItem>
                 </SelectContent>
               </Select>
               <Input
@@ -1778,12 +1796,16 @@ export default function Reports() {
                 value={addPassword}
                 onChange={(e) => setAddPassword(e.target.value)}
               />
-              {addPlatform === "identityiq" && (
+              {(addPlatform === "identityiq" || addPlatform === "myscoreiq") && (
                 <Input
                   className="w-full sm:w-28"
                   placeholder="SSN Last 4"
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]{4}"
+                  maxLength={4}
                   value={addSsnLast4}
-                  onChange={(e) => setAddSsnLast4(e.target.value)}
+                  onChange={(e) => setAddSsnLast4(e.target.value.replace(/[^0-9]/g, ''))}
                 />
               )}
               <Button type="submit" disabled={isAddingClient} className="w-full sm:w-auto">

@@ -180,11 +180,27 @@ export default function ClientProfile() {
 
     setScrapingLoading(true);
     try {
+      const platformLower = String(client.platform || '').toLowerCase();
+      const requiresSsn = platformLower === 'identityiq' || platformLower === 'myscoreiq';
+      const ssn = client.ssn_last_four || '';
+      if (requiresSsn && (!ssn || String(ssn).length !== 4)) {
+        toast({
+          title: 'SSN Last 4 Required',
+          description: 'Please set SSN Last 4 on the client profile for IdentityIQ/MyScoreIQ.',
+          variant: 'destructive',
+        });
+        setScrapingLoading(false);
+        return;
+      }
+
       const response = await creditReportScraperApi.scrapeReport({
         platform: client.platform,
         credentials: {
           username: client.platform_email,
           password: client.platform_password,
+        },
+        options: {
+          ...(requiresSsn ? { ssnLast4: ssn } : {}),
         },
         clientId: client.id,
       });

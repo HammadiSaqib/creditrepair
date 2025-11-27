@@ -11,6 +11,7 @@ const scraperFormSchema = z.object({
   username: z.string().min(1, { message: 'Username is required' }),
   password: z.string().min(1, { message: 'Password is required' }),
   clientId: z.string().optional(),
+  ssnLast4: z.string().optional(),
 });
 
 type ScraperFormValues = z.infer<typeof scraperFormSchema>;
@@ -70,6 +71,7 @@ const CreditReportScraper: React.FC = () => {
     setReportData(null);
 
     try {
+      const requiresSsn = ['identityiq', 'myscoreiq'].includes(String(data.platform).toLowerCase());
       const response = await creditReportScraperApi.scrapeReport({
         platform: data.platform,
         credentials: {
@@ -79,6 +81,7 @@ const CreditReportScraper: React.FC = () => {
         options: {
           saveHtml: false,
           takeScreenshots: false,
+          ...(requiresSsn && data.ssnLast4 ? { ssnLast4: data.ssnLast4 } : {}),
         },
         clientId: data.clientId,
       });
@@ -106,11 +109,13 @@ const CreditReportScraper: React.FC = () => {
 
     try {
       const formValues = getValues();
+      const requiresSsn = ['identityiq', 'myscoreiq'].includes(String(formValues.platform).toLowerCase());
       const response = await creditReportScraperApi.fetchReport(
         formValues.platform,
         formValues.username,
         formValues.password,
-        formValues.clientId
+        formValues.clientId,
+        requiresSsn ? formValues.ssnLast4 : undefined
       );
 
       if (response.data) {
@@ -171,6 +176,27 @@ const CreditReportScraper: React.FC = () => {
             <p className="text-red-500 text-sm mt-1">{errors.platform.message}</p>
           )}
         </div>
+
+        {['identityiq', 'myscoreiq'].includes(String(getValues().platform).toLowerCase()) && (
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="ssnLast4">
+              SSN Last 4 (IdentityIQ/MyScoreIQ)
+            </label>
+            <input
+              id="ssnLast4"
+              type="tel"
+              inputMode="numeric"
+              pattern="[0-9]{4}"
+              maxLength={4}
+              className="w-full p-2 border rounded-md"
+              placeholder="1234"
+              {...register('ssnLast4')}
+            />
+            {errors.ssnLast4 && (
+              <p className="text-red-500 text-sm mt-1">{errors.ssnLast4.message}</p>
+            )}
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium mb-1" htmlFor="username">

@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import DashboardLayout from "@/components/DashboardLayout";
+import AddClientDialog from "@/components/AddClientDialog";
 import { useEffect, useRef, useState } from "react";
 import api, { clientsApi, creditReportScraperApi } from "@/lib/api";
 import {
@@ -250,6 +251,7 @@ export default function AICoach() {
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [analysisStructured, setAnalysisStructured] = useState<any | null>(null);
   const [analysisSections, setAnalysisSections] = useState<any | null>(null);
+  const [showAddClient, setShowAddClient] = useState(false);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -435,6 +437,7 @@ export default function AICoach() {
     <DashboardLayout
       title="Carmela Credit Coach"
       description="Certified USA Credit Repair & Business Funding guidance"
+      onAddClient={() => setShowAddClient(true)}
     >
       <div className="relative">
         <div className="blur-sm pointer-events-none select-none opacity-60">
@@ -843,6 +846,11 @@ export default function AICoach() {
           </Card>
         </div>
       </div>
+
+      <AddClientDialog
+        isOpen={showAddClient}
+        onClose={() => setShowAddClient(false)}
+      />
     </DashboardLayout>
   );
 }

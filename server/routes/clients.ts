@@ -28,7 +28,7 @@ const clientSchema = z.object({
   transunion_score: z.number().optional(),
   previous_credit_score: z.number().optional(),
   notes: z.string().optional(),
-  platform: z.enum(['creditkarma', 'creditwise', 'freecreditscore', 'experian', 'equifax', 'transunion', 'myfreescorenow', 'other']).optional(),
+  platform: z.enum(['creditkarma', 'creditwise', 'freecreditscore', 'experian', 'equifax', 'transunion', 'myfreescorenow', 'identityiq', 'myscoreiq', 'other']).optional(),
   platform_email: z.string().optional(),
   platform_password: z.string().optional(),
   fundable_status: z.enum(['fundable','not_fundable']).optional()

@@ -27,7 +27,8 @@ const scraperRequestSchema = z.object({
   options: z.object({
     saveHtml: z.boolean().optional(),
     takeScreenshots: z.boolean().optional(),
-    outputDir: z.string().optional()
+    outputDir: z.string().optional(),
+    ssnLast4: z.string().optional()
   }).optional()
 });
 
@@ -604,7 +605,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.get('/fetch', authenticateToken, async (req, res) => {
   try {
     // Get query parameters
-    const { platform, username, password, clientId } = req.query;
+    const { platform, username, password, clientId, ssnLast4 } = req.query;
     
     // Validate required parameters
     if (!platform || !username || !password) {
@@ -627,7 +628,8 @@ router.get('/fetch', authenticateToken, async (req, res) => {
       saveHtml: false,
       takeScreenshots: false,
       outputDir: './scraper-output',
-      clientId: clientId ? parseInt(clientId as string, 10) : undefined
+      clientId: clientId ? parseInt(clientId as string, 10) : undefined,
+      ...(ssnLast4 ? { ssnLast4: String(ssnLast4) } : {})
     };
     
     console.log(`Fetching credit report for platform: ${platform}${clientId ? `, client ID: ${clientId}` : ''}`);
