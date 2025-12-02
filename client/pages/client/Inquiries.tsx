@@ -2784,7 +2784,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       </div>
 
         
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm">
             <CardHeader className="bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-purple-600/10 rounded-t-lg border-b border-blue-100/50">
               <CardTitle className="flex items-center gap-3 text-lg font-semibold">
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-md">
@@ -2794,7 +2794,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   Credit Inquiries by Bureau
                 </span>
               </CardTitle>
-              <CardDescription className="text-gray-600 font-medium">
+              <CardDescription className="text-muted-foreground font-medium">
                 Recent credit inquiries from each credit bureau
               </CardDescription>
             </CardHeader>
@@ -2813,10 +2813,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   return (
                     <>
                       {/* Experian Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-green-50/30 to-emerald-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-green-50/30 to-emerald-50/40 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
                         <CardHeader className="pb-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 rounded-t-lg border-b border-green-100/50">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-white rounded-xl shadow-md border border-green-100/50">
+                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
                               <img 
                                 src="/Experian_logo.svg.png" 
                                 alt="Experian" 
@@ -2830,28 +2830,28 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             <div className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
                               {experianInquiries.length}
                             </div>
-                            <div className="text-sm text-gray-600 font-medium">
+                            <div className="text-sm text-muted-foreground font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {experianInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {experianInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-green-50/50 border border-green-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-green-300/50">
+                                <div key={idx} className="bg-gradient-to-r from-white to-green-50/50 dark:from-slate-800 dark:to-slate-700 border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
                                       <div className="p-1.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-sm font-semibold text-foreground">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <FileText className="h-3 w-3 text-green-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <CalendarIcon className="h-3 w-3 text-green-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -2876,10 +2876,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* TransUnion Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-purple-50/30 to-violet-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-purple-50/30 to-violet-50/40 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
                         <CardHeader className="pb-4 bg-gradient-to-r from-purple-500/10 to-violet-500/10 rounded-t-lg border-b border-purple-100/50">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-white rounded-xl shadow-md border border-purple-100/50">
+                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
                               <img 
                                 src="/TransUnion_logo.svg.png" 
                                 alt="TransUnion" 
@@ -2893,28 +2893,28 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent">
                               {transUnionInquiries.length}
                             </div>
-                            <div className="text-sm text-gray-600 font-medium">
+                            <div className="text-sm text-muted-foreground font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {transUnionInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {transUnionInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-purple-50/50 border border-purple-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-purple-300/50">
+                                <div key={idx} className="bg-gradient-to-r from-white to-purple-50/50 dark:from-slate-800 dark:to-slate-700 border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
                                       <div className="p-1.5 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-sm font-semibold text-foreground">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <FileText className="h-3 w-3 text-purple-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <CalendarIcon className="h-3 w-3 text-purple-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -2939,10 +2939,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* Equifax Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-red-50/30 to-rose-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-red-50/30 to-rose-50/40 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
                         <CardHeader className="pb-4 bg-gradient-to-r from-red-500/10 to-rose-500/10 rounded-t-lg border-b border-red-100/50">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-white rounded-xl shadow-md border border-red-100/50">
+                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
                               <img 
                                 src="/Equifax_Logo.svg.png" 
                                 alt="Equifax" 
@@ -2956,28 +2956,28 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             <div className="text-3xl font-bold bg-gradient-to-r from-red-600 to-rose-600 bg-clip-text text-transparent">
                               {equifaxInquiries.length}
                             </div>
-                            <div className="text-sm text-gray-600 font-medium">
+                            <div className="text-sm text-muted-foreground font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {equifaxInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {equifaxInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-red-50/50 border border-red-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-red-300/50">
+                                <div key={idx} className="bg-gradient-to-r from-white to-red-50/50 dark:from-slate-800 dark:to-slate-700 border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
                                       <div className="p-1.5 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-sm font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-sm font-semibold text-foreground">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <FileText className="h-3 w-3 text-red-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                       <CalendarIcon className="h-3 w-3 text-red-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>

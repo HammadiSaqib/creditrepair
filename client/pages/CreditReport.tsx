@@ -2792,13 +2792,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   const getAccountStatusColor = (status: string) => {
     switch (status) {
       case "Open":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-slate-800 dark:text-blue-300 dark:border-slate-700";
       case "Closed":
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-foreground border-border";
       case "Charge Off":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "bg-red-100 text-red-800 border-red-200 dark:bg-slate-800 dark:text-red-300 dark:border-slate-700";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-foreground border-border";
     }
   };
 
@@ -2862,7 +2862,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold gradient-text-primary">
+            <h1 className="text-3xl font-bold text-foreground">
               {clientName}
             </h1>
             <p className="text-muted-foreground">Credit Report Analysis</p>
@@ -2872,7 +2872,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <Download className="h-4 w-4 mr-2" />
               Download PDF
             </Button>
-            <Button size="sm" className="gradient-primary">
+            <Button size="sm" variant="default">
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
             </Button>
@@ -2941,8 +2941,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         <div className="w-full mb-8 space-y-6">
           {/* Work Area group */}
           <div>
-            <div className="text-xs font-semibold text-gray-500 mb-2">Work Area</div>
-            <div className="hidden md:flex items-center justify-between bg-white rounded-2xl shadow-lg border border-gray-100 p-6 overflow-x-auto">
+            <div className="text-xs font-semibold text-muted-foreground mb-2">Work Area</div>
+            <div className="hidden md:flex items-center justify-between bg-card rounded-2xl shadow-lg border border-border p-6 overflow-x-auto">
               {/* Analysis */}
               <div className="flex items-center">
                 <button
@@ -2952,22 +2952,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-110'
                       : ['progress', 'underwriting', 'funding'].includes(activeTab)
                       ? 'bg-orange-500 border-orange-500 text-white'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-orange-300 hover:text-orange-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-orange-300 hover:text-orange-500'
                   }`}
                 >
                   <BarChart3 className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'analysis' ? 'text-orange-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'analysis' ? 'text-orange-600' : 'text-muted-foreground'}`}>
                     Analysis
                   </div>
-                  <div className="text-xs text-gray-400">Insights</div>
+                  <div className="text-xs text-muted-foreground">Insights</div>
                 </div>
               </div>
 
               {/* Connector */}
-              <div className="flex-1 h-0.5 bg-gray-200 mx-4">
-                <div className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ${
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   ['progress', 'underwriting', 'funding','fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -2981,22 +2981,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       ? 'bg-teal-500 border-teal-500 text-white shadow-lg scale-110'
                       : ['underwriting', 'funding'].includes(activeTab)
                       ? 'bg-teal-500 border-teal-500 text-white'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-teal-300 hover:text-teal-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-teal-300 hover:text-teal-500'
                   }`}
                 >
                   <TrendUp className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'progress' ? 'text-teal-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'progress' ? 'text-teal-600' : 'text-muted-foreground'}`}>
                     Progress Report
                   </div>
-                  <div className="text-xs text-gray-400">Reports</div>
+                  <div className="text-xs text-muted-foreground">Reports</div>
                 </div>
               </div>
 
               {/* Connector */}
-              <div className="flex-1 h-0.5 bg-gray-200 mx-4">
-                <div className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ${
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   ['underwriting', 'funding','fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -3010,22 +3010,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       ? 'bg-indigo-500 border-indigo-500 text-white shadow-lg scale-110'
                       : ['funding'].includes(activeTab)
                       ? 'bg-indigo-500 border-indigo-500 text-white'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-indigo-300 hover:text-indigo-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-indigo-300 hover:text-indigo-500'
                   }`}
                 >
                   <FileSearch className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'underwriting' ? 'text-indigo-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'underwriting' ? 'text-indigo-600' : 'text-muted-foreground'}`}>
                     Underwriting
                   </div>
-                  <div className="text-xs text-gray-400">Assessment</div>
+                  <div className="text-xs text-muted-foreground">Assessment</div>
                 </div>
               </div>
 
               {/* Connector */}
-              <div className="flex-1 h-0.5 bg-gray-200 mx-4">
-                <div className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ${
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   ['funding','fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -3037,22 +3037,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'funding'
                       ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg scale-110'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-emerald-300 hover:text-emerald-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-emerald-300 hover:text-emerald-500'
                   }`}
                 >
                   <Banknote className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'funding' ? 'text-emerald-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'funding' ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                     Funding Audit
                   </div>
-                  <div className="text-xs text-gray-400">Options</div>
+                  <div className="text-xs text-muted-foreground">Options</div>
                 </div>
               </div>
 
               {/* Connector */}
-              <div className="flex-1 h-0.5 bg-gray-200 mx-4">
-                <div className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ${
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   activeTab === 'fundingApplications' ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -3064,19 +3064,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   onClick={() => effectiveFundingEligible && setActiveTab('fundingApplications')}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     !effectiveFundingEligible
-                      ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed'
+                      ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
                       : activeTab === 'fundingApplications'
                         ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg scale-110'
-                        : 'bg-white border-gray-300 text-gray-400 hover:border-emerald-300 hover:text-emerald-500'
+                        : 'bg-card border-border text-muted-foreground hover:border-emerald-300 hover:text-emerald-500'
                   }`}
                 >
                   <Wallet className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'fundingApplications' ? 'text-emerald-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'fundingApplications' ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                     Funding
                   </div>
-                  <div className="text-xs text-gray-400">Apply</div>
+                  <div className="text-xs text-muted-foreground">Apply</div>
                 </div>
               </div>
             </div>
@@ -3084,8 +3084,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
           {/* Credit Report group */}
           <div>
-            <div className="text-xs font-semibold text-gray-500 mb-2">Credit Report</div>
-            <div className="hidden md:flex items-center justify-between bg-white rounded-2xl shadow-lg border border-gray-100 p-6 overflow-x-auto">
+            <div className="text-xs font-semibold text-muted-foreground mb-2">Credit Report</div>
+            <div className="hidden md:flex items-center justify-between bg-card rounded-2xl shadow-lg border border-border p-6 overflow-x-auto">
               {/* Overview */}
               <div className="flex items-center">
                 <button
@@ -3095,22 +3095,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       ? 'bg-blue-500 border-blue-500 text-white shadow-lg scale-110'
                       : ['accounts','inquiries','personal','public'].includes(activeTab)
                       ? 'bg-blue-500 border-blue-500 text-white'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-blue-300 hover:text-blue-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-blue-300 hover:text-blue-500'
                   }`}
                 >
                   <Home className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'overview' ? 'text-blue-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'overview' ? 'text-blue-600' : 'text-muted-foreground'}`}>
                     Overview
                   </div>
-                  <div className="text-xs text-gray-400">Dashboard</div>
+                  <div className="text-xs text-muted-foreground">Dashboard</div>
                 </div>
               </div>
 
               {/* Connector */}
-              <div className="flex-1 h-0.5 bg-gray-200 mx-4">
-                <div className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ${
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   ['accounts','personal','inquiries','public'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -3124,22 +3124,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       ? 'bg-purple-500 border-purple-500 text-white shadow-lg scale-110'
                       : ['inquiries','public','accounts'].includes(activeTab)
                       ? 'bg-purple-500 border-purple-500 text-white'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-purple-300 hover:text-purple-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-purple-300 hover:text-purple-500'
                   }`}
                 >
                   <UserCheck className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'personal' ? 'text-purple-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'personal' ? 'text-purple-600' : 'text-muted-foreground'}`}>
                     Personal
                   </div>
-                  <div className="text-xs text-gray-400">Identity</div>
+                  <div className="text-xs text-muted-foreground">Identity</div>
                 </div>
               </div>
 
               {/* Connector */}
-              <div className="flex-1 h-0.5 bg-gray-200 mx-4">
-                <div className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ${
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   ['inquiries','public','accounts'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -3153,22 +3153,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       ? 'bg-yellow-500 border-yellow-500 text-white shadow-lg scale-110'
                       : ['public','accounts'].includes(activeTab)
                       ? 'bg-yellow-500 border-yellow-500 text-white'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-yellow-300 hover:text-yellow-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-yellow-300 hover:text-yellow-500'
                   }`}
                 >
                   <Search className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'inquiries' ? 'text-yellow-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'inquiries' ? 'text-yellow-600' : 'text-muted-foreground'}`}>
                     Inquiries
                   </div>
-                  <div className="text-xs text-gray-400">Credit Pulls</div>
+                  <div className="text-xs text-muted-foreground">Credit Pulls</div>
                 </div>
               </div>
 
               {/* Connector */}
-              <div className="flex-1 h-0.5 bg-gray-200 mx-4">
-                <div className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ${
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   ['public','accounts'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -3181,22 +3181,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
                       : ['accounts'].includes(activeTab)
                       ? 'bg-red-500 border-red-500 text-white'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-red-300 hover:text-red-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
                   }`}
                 >
                   <ScrollText className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'public' ? 'text-red-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${activeTab === 'public' ? 'text-red-600' : 'text-muted-foreground'}`}>
                     Public Records
                   </div>
-                  <div className="text-xs text-gray-400">Legal</div>
+                  <div className="text-xs text-muted-foreground">Legal</div>
                 </div>
               </div>
 
               {/* Connector */}
-              <div className="flex-1 h-0.5 bg-gray-200 mx-4">
-                <div className={`h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ${
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   ['accounts'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -3208,19 +3208,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   disabled={!subscriptionStatus.hasActiveSubscription}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     !subscriptionStatus.hasActiveSubscription
-                      ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed'
+                      ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
                       : activeTab === 'accounts'
                       ? 'bg-green-500 border-green-500 text-white shadow-lg scale-110'
-                      : 'bg-white border-gray-300 text-gray-400 hover:border-green-300 hover:text-green-500'
+                      : 'bg-card border-border text-muted-foreground hover:border-green-300 hover:text-green-500'
                   }`}
                 >
                   <CreditCard className="w-5 h-5" />
                 </button>
                 <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${!subscriptionStatus.hasActiveSubscription ? 'text-gray-400' : activeTab === 'accounts' ? 'text-green-600' : 'text-gray-600'}`}>
+                  <div className={`text-sm font-semibold ${!subscriptionStatus.hasActiveSubscription ? 'text-muted-foreground' : activeTab === 'accounts' ? 'text-green-600' : 'text-muted-foreground'}`}>
                     Accounts
                   </div>
-                  <div className="text-xs text-gray-400">Credit Lines</div>
+                  <div className="text-xs text-muted-foreground">Credit Lines</div>
                 </div>
               </div>
 
@@ -3234,7 +3234,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           <div className="fixed bottom-6 right-6 z-40">
             <Popover>
               <PopoverTrigger asChild>
-                <Button className="rounded-full shadow-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white px-4 py-2 hover:from-indigo-500 hover:to-pink-500 transition-colors">
+                <Button className="rounded-full shadow-xl px-4 py-2" variant="default">
                   Underwriting Nav
                 </Button>
               </PopoverTrigger>
@@ -3267,7 +3267,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
           {/* Underwriting Section Navigation */}
           <div className="sticky top-4 z-30">
-            <div className="mx-auto w-full max-w-5xl bg-white/90 backdrop-blur-md border shadow-lg rounded-full px-3 py-2">
+            <div className="mx-auto w-full max-w-5xl bg-card/90 backdrop-blur-md border shadow-lg rounded-full px-3 py-2">
               <div className="flex flex-wrap justify-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => document.getElementById('uw-client-information')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Client Information</Button>
                 <Button variant="outline" size="sm" onClick={() => document.getElementById('uw-credit-scores')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Credit Scores</Button>
@@ -3280,9 +3280,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             </div>
           </div>
           {/* Client Information Header */}
-          <Card id="uw-client-information" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 scroll-mt-24">
+          <Card id="uw-client-information" className="border-0 shadow-xl bg-card scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Client Information</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground">Client Information</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4">
@@ -3318,18 +3318,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Credit Scores with Speedometers */}
-          <Card id="uw-credit-scores" className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50 scroll-mt-24">
+          <Card id="uw-credit-scores" className="border-0 shadow-xl bg-card scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Credit Scores</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground">Credit Scores</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-3 gap-6 mb-8">
                 {/* TransUnion Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg font-bold text-blue-800">TransUnion</CardTitle>
-                      <div className="text-xs text-slate-600 font-medium">
+                      <CardTitle className="text-lg font-bold text-foreground">TransUnion</CardTitle>
+                      <div className="text-xs text-muted-foreground font-medium">
                         {reportData?.bureauDates?.transunion || 'N/A'}
                       </div>
                     </div>
@@ -3373,7 +3373,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <circle cx="160" cy="50" r="6" fill="#94a3b8" />
                           <circle cx="280" cy="130" r="6" fill="#94a3b8" />
                           {/* Score number in center */}
-                          <text x="160" y="120" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                          <text x="160" y="120" textAnchor="middle" className="fill-current text-foreground text-6xl font-bold">
                             {reportData.scores.transunion}
                           </text>
                         </svg>
@@ -3394,7 +3394,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.transunion,
                           reportData.previousScores.transunion,
@@ -3431,11 +3431,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Experian Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-green-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg font-bold text-green-800">Experian</CardTitle>
-                      <div className="text-xs text-slate-600 font-medium">
+                      <CardTitle className="text-lg font-bold text-foreground">Experian</CardTitle>
+                      <div className="text-xs text-muted-foreground font-medium">
                         {reportData?.bureauDates?.experian || 'N/A'}
                       </div>
                     </div>
@@ -3479,7 +3479,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <circle cx="150" cy="40" r="6" fill="#94a3b8" />
                           <circle cx="260" cy="120" r="6" fill="#94a3b8" />
                           {/* Score number in center */}
-                          <text x="150" y="110" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                          <text x="150" y="110" textAnchor="middle" className="fill-current text-foreground text-6xl font-bold">
                             {reportData.scores.experian}
                           </text>
                         </svg>
@@ -3500,7 +3500,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.experian,
                           reportData.previousScores.experian,
@@ -3537,11 +3537,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Equifax Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg font-bold text-purple-800">Equifax</CardTitle>
-                      <div className="text-xs text-slate-600 font-medium">
+                      <CardTitle className="text-lg font-bold text-foreground">Equifax</CardTitle>
+                      <div className="text-xs text-muted-foreground font-medium">
                         {reportData?.bureauDates?.equifax || 'N/A'}
                       </div>
                     </div>
@@ -3585,7 +3585,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <circle cx="160" cy="50" r="6" fill="#94a3b8" />
                           <circle cx="280" cy="130" r="6" fill="#94a3b8" />
                           {/* Score number in center */}
-                          <text x="160" y="120" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                          <text x="160" y="120" textAnchor="middle" className="fill-current text-foreground text-6xl font-bold">
                             {reportData.scores.equifax}
                           </text>
                         </svg>
@@ -3606,7 +3606,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.equifax,
                           reportData.previousScores.equifax,
@@ -3647,12 +3647,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
           {/* Qualify View Toggle */}
           <div className="flex justify-end items-center gap-2 mt-4 mb-2">
-            <span className="text-xs text-gray-600">Qualification view:</span>
+            <span className="text-xs text-muted-foreground">Qualification view:</span>
             <ToggleGroup
               type="single"
               value={qualifyView}
               onValueChange={(v) => v && setQualifyView(v as 'cards' | 'table')}
-              className="bg-white border rounded-md shadow-sm"
+              className="bg-card border-border rounded-md shadow-sm"
             >
               <ToggleGroupItem value="table" className="px-3 py-1 text-sm">
                 Basic
@@ -3664,15 +3664,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
 
           {/* Debt Utilization - Full Width (Do You Qualify) */}
-          <Card id="uw-do-you-qualify" className={`${qualifyView === 'table' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 scroll-mt-24`}>
+          <Card id="uw-do-you-qualify" className={`${qualifyView === 'table' ? 'hidden' : ''} border-0 shadow-xl bg-card scroll-mt-24`}>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <CardTitle className="text-2xl font-bold text-gray-800">Do You Qualify</CardTitle>
+                <CardTitle className="text-2xl font-bold text-foreground">Do You Qualify</CardTitle>
                 <Button onClick={() => { setIsRerunningAudit(true); setRefreshAuditNonce(n => n + 1); }} variant="outline" className="text-sm">
                   <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
                   Rerun Funding Audit
                 </Button>
-                  <span className="text-sm font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-3 py-1 rounded-full">
+                  <span className="text-sm font-bold bg-primary text-primary-foreground px-3 py-1 rounded-full">
                   {(() => {
                     // Compute an overall 0–10 score by averaging category grades
                     const grades: number[] = [];
@@ -4042,9 +4042,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 {/* Credit Score Card */}
                 <Card className="border border-gray-200 shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Credit Score
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the highest score from the three bureaus
                           const tuScore = parseInt(reportData?.scores?.transunion || '0');
@@ -4165,9 +4165,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 {/* Credit Usage Card */}
                 <Card className="border border-gray-200 shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Credit Usage
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the lowest utilization from the three bureaus (lower is better)
                           const debtData = getDebtUtilizationData();
@@ -4277,8 +4277,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowValues) {
                               rows.unshift(
-                                <tr key="below-scale" className="border-b bg-gray-50">
-                                  <td className="py-1 px-1 text-gray-600">Below {scales[0]}%</td>
+                                <tr key="below-scale" className="border-b bg-muted">
+                                  <td className="py-1 px-1 text-muted-foreground">Below {scales[0]}%</td>
                                   <td className="text-center py-1 px-1 font-semibold text-blue-600">
                                     {(tuUtilization !== null && tuUtilization !== undefined && tuUtilization < scales[0]) ? `${tuUtilization?.toFixed(1)}%` : ''}
                                   </td>
@@ -4325,9 +4325,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 {/* Open Accounts Card */}
                 <Card className="border border-gray-200 shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Open Accounts
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the highest number of open accounts from the three bureaus (more is better)
                           const getOpenAccountCount = (bureauId) => {
@@ -4436,8 +4436,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowCounts) {
                               rows.push(
-                                <tr key="below-scale" className="border-b bg-gray-50">
-                                  <td className="py-1 px-1 text-gray-600">Below {scales[scales.length - 1]}</td>
+                                <tr key="below-scale" className="border-b bg-muted">
+                                  <td className="py-1 px-1 text-muted-foreground">Below {scales[scales.length - 1]}</td>
                                   <td className="text-center py-1 px-1 font-medium">
                                     {tuOpenAccounts < scales[scales.length - 1] ? tuOpenAccounts : ''}
                                   </td>
@@ -4462,9 +4462,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 {/* High-Limit Accounts Card */}
                 <Card className="border border-gray-200 shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       High-Limit Accounts
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the highest number of high-limit accounts from the three bureaus (more is better)
                           const getHighLimitAccountCount = (bureauId) => {
@@ -4583,8 +4583,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowCounts) {
                               rows.push(
-                                <tr key="below-5" className="border-t bg-gray-50">
-                                  <td className="py-1 px-1 text-gray-600">Below 5</td>
+                                <tr key="below-5" className="border-t bg-muted">
+                                  <td className="py-1 px-1 text-muted-foreground">Below 5</td>
                                   <td className="text-center py-1 px-1 font-medium">
                                     {tuScale === null ? tuHighLimitAccounts : ''}
                                   </td>
@@ -4631,9 +4631,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 {/* New Accounts Card */}
                 <Card className="border border-gray-200 shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       New Accounts
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the lowest number of new accounts from the three bureaus (fewer is better)
                           const getNewAccountCount = (bureauId) => {
@@ -4770,9 +4770,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 {/* Over 50% Usage Card */}
                 <Card className="border border-gray-200 shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Over 50% Usage
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Grade based on lowest count of high-usage accounts across bureaus (lower is better)
                           const getHighUsageAccountCount = (bureauId: number) => {
@@ -4907,9 +4907,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 {/* Installment Accounts Card */}
                 <Card className="border border-gray-200 shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Installment Accounts
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Grade based on highest count of installment accounts (more is better)
                           const getInstallmentAccountCount = (bureauId: number) => {
@@ -5030,9 +5030,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Age Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-border shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Age
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -5198,9 +5198,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Inquiries Card (All-Time) */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-border shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Inquiries
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -5307,9 +5307,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Bankruptcy Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-border shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Bankruptcy
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -5387,9 +5387,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Negative Marks Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-border shadow-sm">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
                       Negative Marks
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -5483,10 +5483,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
 
           {/* Do You Qualify */}
-          <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50`}>
+          <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800`}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <CardTitle className="text-2xl font-bold text-gray-800">Do You Qualify</CardTitle>
+                <CardTitle className="text-2xl font-bold text-foreground">Do You Qualify</CardTitle>
                 <div className="flex items-center flex-wrap gap-2">
                   <Button onClick={() => { setIsRerunningAudit(true); setRefreshAuditNonce(n => n + 1); }} variant="outline" className="text-sm">
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
@@ -6049,9 +6049,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             const criteriaTotal = Object.values(criteriaFlags).length;
 
             return (
-              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50">
+              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800">
                 <CardHeader>
-                  <CardTitle className="text-2xl font-bold text-gray-800">Next Steps</CardTitle>
+                  <CardTitle className="text-2xl font-bold text-foreground">Next Steps</CardTitle>
                   <CardDescription>
                     {effectiveEligible
                       ? "You meet the underwriting criteria. Proceed to funding."
@@ -6090,9 +6090,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           })()}
 
           {/* Debt Utilization Table */}
-          <Card id="uw-debt-utilization" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 scroll-mt-24">
+          <Card id="uw-debt-utilization" className="border-0 shadow-xl bg-card scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Debt Utilization</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground">Debt Utilization</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -6249,14 +6249,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Accounts impeding your eligibility */}
-          <Card id="uw-accounts-impeding" className={`border-0 shadow-xl bg-gradient-to-br ${
-            eligibilityBureau === 'tu' ? 'from-white via-purple-50/30 to-violet-100/50' :
-            eligibilityBureau === 'ex' ? 'from-white via-green-50/30 to-emerald-100/50' :
-            eligibilityBureau === 'eq' ? 'from-white via-red-50/30 to-rose-100/50' :
-            'from-white via-red-50/30 to-pink-50/50'
-          } scroll-mt-24`}>
+          <Card id="uw-accounts-impeding" className={`border-0 shadow-xl bg-card scroll-mt-24`}>
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Negative Accounts Impacting Your Qualification</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground">Negative Accounts Impacting Your Qualification</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="mb-4 flex items-center justify-between">
@@ -6422,9 +6417,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Inquiries impeding your eligibility */}
-          <Card id="uw-inquiries-impeding" className="border-0 shadow-xl bg-gradient-to-br from-white via-orange-50/30 to-yellow-50/50 scroll-mt-24">
+          <Card id="uw-inquiries-impeding" className="border-0 shadow-xl bg-card scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Inquiries lowering your chances of approval</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground">Inquiries lowering your chances of approval</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="mb-4">
@@ -6534,10 +6529,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Pay Down */}
-          <Card id="uw-paydown" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-cyan-50/50 scroll-mt-24">
+          <Card id="uw-paydown" className="border-0 shadow-xl bg-card scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Pay Down</CardTitle>
-              <CardDescription>Payments needed to reach target utilization levels</CardDescription>
+              <CardTitle className="text-2xl font-bold text-foreground">Pay Down</CardTitle>
+              <CardDescription className="text-muted-foreground">Payments needed to reach target utilization levels</CardDescription>
             </CardHeader>
             <CardContent>
               {(() => {
@@ -6834,9 +6829,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         {/* Comprehensive Credit Analysis Progress Report */}
         <TabsContent value="progress" className="space-y-8 mt-6">
           {/* Header Section */}
-          <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-8 border-0 shadow-lg">
+          <div className="bg-card rounded-2xl p-8 border-0 shadow-lg">
             <div className="text-center">
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+              <h1 className="text-4xl font-bold text-foreground mb-2">
                 My Credit Analysis
               </h1>
               <p className="text-xl text-gray-600 mb-6">
@@ -6860,31 +6855,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
 
           {/* Credit Score Overview - Enhanced with Speedometer Style */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50">
+          <Card className="border-0 shadow-xl bg-card">
             <CardHeader className="text-center pb-6">
-              <CardTitle className="text-2xl font-bold text-gray-800 mb-2">
+              <CardTitle className="text-2xl font-bold text-foreground mb-2">
                 Your Current Credit Status
               </CardTitle>
-              <CardDescription className="text-lg text-gray-600">
+              <CardDescription className="text-lg text-muted-foreground">
                 Credit scores typically range from 300 to 850
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* TransUnion Enhanced with Speedometer */}
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl p-6 border border-blue-200">
+                <div className="bg-card rounded-2xl p-6 border border-border">
                   <div className="text-center mb-4">
-                    <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md mx-auto mb-3 w-fit">
+                    <div className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md mx-auto mb-3 w-fit">
                       <img 
                         src="/TransUnion_logo.svg.png" 
                         alt="TransUnion" 
                         className="h-6 w-auto filter brightness-0 invert"
                       />
                     </div>
-                    <h3 className="text-lg font-semibold text-blue-800">
+                    <h3 className="text-lg font-semibold text-foreground">
                       TRANSUNION
                     </h3>
-                    <p className="text-sm text-blue-600">{reportData?.bureauDates?.transunion || 'N/A'}</p>
+                    <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.transunion || 'N/A'}</p>
                   </div>
 
                   {/* Speedometer with score inside */}
@@ -6968,19 +6963,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </div>
 
                 {/* Experian Enhanced with Speedometer */}
-                <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl p-6 border border-green-200">
+                <div className="bg-card rounded-2xl p-6 border border-border">
                   <div className="text-center mb-4">
-                    <div className="p-2 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg shadow-md mx-auto mb-3 w-fit">
+                    <div className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md mx-auto mb-3 w-fit">
                       <img 
                         src="/Experian_logo.svg.png" 
                         alt="Experian" 
                         className="h-6 w-auto filter brightness-0 invert"
                       />
                     </div>
-                    <h3 className="text-lg font-semibold text-green-800">
+                    <h3 className="text-lg font-semibold text-foreground">
                       EXPERIAN
                     </h3>
-                    <p className="text-sm text-green-600">{reportData?.bureauDates?.experian || 'N/A'}</p>
+                    <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.experian || 'N/A'}</p>
                   </div>
 
                   {/* Speedometer with score inside */}
@@ -7021,10 +7016,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         <circle cx="80" cy="25" r="3" fill="#94a3b8" />
                         <circle cx="140" cy="70" r="3" fill="#94a3b8" />
                         {/* Score number in center */}
-                        <text x="80" y="60" textAnchor="middle" className="fill-green-700 text-3xl font-bold">
+                        <text x="80" y="60" textAnchor="middle" className="fill-current text-foreground text-3xl font-bold">
                           {reportData.scores.experian}
                         </text>
-                        <text x="80" y="75" textAnchor="middle" className="fill-green-600 text-xs font-medium">
+                        <text x="80" y="75" textAnchor="middle" className="fill-current text-muted-foreground text-xs font-medium">
                           {(() => {
                             const score = reportData.scores.experian;
                             if (score >= 800) return 'Excellent';
@@ -7064,19 +7059,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </div>
 
                 {/* Equifax Enhanced with Speedometer */}
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl p-6 border border-purple-200">
+                <div className="bg-card rounded-2xl p-6 border border-border">
                   <div className="text-center mb-4">
-                    <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md mx-auto mb-3 w-fit">
+                    <div className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md mx-auto mb-3 w-fit">
                       <img 
                         src="/Equifax_Logo.svg.png" 
                         alt="Equifax" 
                         className="h-6 w-auto filter brightness-0 invert"
                       />
                     </div>
-                    <h3 className="text-lg font-semibold text-purple-800">
+                    <h3 className="text-lg font-semibold text-foreground">
                       EQUIFAX
                     </h3>
-                    <p className="text-sm text-purple-600">{reportData?.bureauDates?.equifax || 'N/A'}</p>
+                    <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.equifax || 'N/A'}</p>
                   </div>
 
                   {/* Speedometer with score inside */}
@@ -7117,10 +7112,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         <circle cx="80" cy="25" r="3" fill="#94a3b8" />
                         <circle cx="140" cy="70" r="3" fill="#94a3b8" />
                         {/* Score number in center */}
-                        <text x="80" y="60" textAnchor="middle" className="fill-purple-700 text-3xl font-bold">
+                        <text x="80" y="60" textAnchor="middle" className="fill-current text-foreground text-3xl font-bold">
                           {reportData.scores.equifax}
                         </text>
-                        <text x="80" y="75" textAnchor="middle" className="fill-purple-600 text-xs font-medium">
+                        <text x="80" y="75" textAnchor="middle" className="fill-current text-muted-foreground text-xs font-medium">
                           {(() => {
                             const score = reportData.scores.equifax;
                             if (score >= 800) return 'Excellent';
@@ -7284,9 +7279,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
 
           {/* Types of Negative Accounts - simplified counts */}
-          <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-slate-50 mb-8">
+          <Card className="border-0 shadow-lg bg-card mb-8">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-slate-800">
+              <CardTitle className="flex items-center gap-2 text-foreground">
                 <AlertTriangle className="h-6 w-6 text-red-600" />
                 Types of Negative Accounts
               </CardTitle>
@@ -7311,40 +7306,40 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
                 return (
                   <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-                    <div className="group bg-gradient-to-br from-white to-blue-50 rounded-xl p-4 border border-blue-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
-                      <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
+                      <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3">
                         <Search className="h-5 w-5 text-white" />
                       </div>
-                      <div className="text-2xl font-bold text-blue-600 text-center mb-1">{counts.inquiries}</div>
-                      <div className="text-sm text-blue-600 font-medium text-center">Inquiries</div>
+                      <div className="text-2xl font-bold text-foreground text-center mb-1">{counts.inquiries}</div>
+                      <div className="text-sm text-muted-foreground font-medium text-center">Inquiries</div>
                     </div>
-                    <div className="group bg-gradient-to-br from-white to-red-50 rounded-xl p-4 border border-red-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
-                      <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
+                      <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3">
                         <Clock className="h-5 w-5 text-white" />
                       </div>
-                      <div className="text-2xl font-bold text-red-600 text-center mb-1">{counts.latePayments}</div>
-                      <div className="text-sm text-red-600 font-medium text-center">Late Payments</div>
+                      <div className="text-2xl font-bold text-foreground text-center mb-1">{counts.latePayments}</div>
+                      <div className="text-sm text-muted-foreground font-medium text-center">Late Payments</div>
                     </div>
-                    <div className="group bg-gradient-to-br from-white to-orange-50 rounded-xl p-4 border border-orange-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
-                      <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-red-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
+                      <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3">
                         <AlertTriangle className="h-5 w-5 text-white" />
                       </div>
-                      <div className="text-2xl font-bold text-orange-600 text-center mb-1">{counts.collections}</div>
-                      <div className="text-sm text-orange-600 font-medium text-center">Collections</div>
+                      <div className="text-2xl font-bold text-foreground text-center mb-1">{counts.collections}</div>
+                      <div className="text-sm text-muted-foreground font-medium text-center">Collections</div>
                     </div>
-                    <div className="group bg-gradient-to-br from-white to-amber-50 rounded-xl p-4 border border-amber-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
-                      <div className="w-10 h-10 bg-gradient-to-r from-amber-500 to-red-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
+                      <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3">
                         <AlertTriangle className="h-5 w-5 text-white" />
                       </div>
-                      <div className="text-2xl font-bold text-amber-600 text-center mb-1">{counts.chargeOffs}</div>
-                      <div className="text-sm text-amber-600 font-medium text-center">Charge Off</div>
+                      <div className="text-2xl font-bold text-foreground text-center mb-1">{counts.chargeOffs}</div>
+                      <div className="text-sm text-muted-foreground font-medium text-center">Charge Off</div>
                     </div>
-                    <div className="group bg-gradient-to-br from-white to-purple-50 rounded-xl p-4 border border-purple-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
-                      <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105">
+                      <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3">
                         <FileText className="h-5 w-5 text-white" />
                       </div>
-                      <div className="text-2xl font-bold text-purple-600 text-center mb-1">{counts.publicRecords}</div>
-                      <div className="text-sm text-purple-600 font-medium text-center">Public Records</div>
+                      <div className="text-2xl font-bold text-foreground text-center mb-1">{counts.publicRecords}</div>
+                      <div className="text-sm text-muted-foreground font-medium text-center">Public Records</div>
                     </div>
                   </div>
                 );
@@ -7355,9 +7350,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           {/* Credit Analysis Dashboard */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Analysis of Negative Entries */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-green-50 to-emerald-50">
+            <Card className="border-0 shadow-lg bg-card">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-800">
+                <CardTitle className="flex items-center gap-2 text-foreground">
                   <CheckCircle className="h-6 w-6 text-green-600" />
                   Analysis of Negative Entries
                 </CardTitle>
@@ -7367,37 +7362,37 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="group bg-gradient-to-br from-white to-blue-50 rounded-xl p-4 border border-blue-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                  <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
+                    <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
                       <Search className="h-5 w-5 text-white" />
                     </div>
-                    <div className="text-2xl font-bold text-blue-600 text-center mb-1 group-hover:text-blue-700 transition-colors">{reportData.inquiries.length}</div>
-                    <div className="text-sm text-blue-600 font-medium text-center">Inquiries</div>
-                    <div className="mt-2 h-0.5 bg-gradient-to-r from-blue-400 to-indigo-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="text-2xl font-bold text-foreground text-center mb-1">{reportData.inquiries.length}</div>
+                    <div className="text-sm text-muted-foreground font-medium text-center">Inquiries</div>
+                    <div className="mt-2 h-0.5 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                   </div>
-                  <div className="group bg-gradient-to-br from-white to-red-50 rounded-xl p-4 border border-red-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
-                    <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                  <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
+                    <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
                       <Clock className="h-5 w-5 text-white" />
                     </div>
-                    <div className="text-2xl font-bold text-red-600 text-center mb-1 group-hover:text-red-700 transition-colors">{reportData.accounts.filter(account => account.paymentHistory && account.paymentHistory.includes('Late')).length}</div>
-                    <div className="text-sm text-red-600 font-medium text-center">Late Payments</div>
-                    <div className="mt-2 h-0.5 bg-gradient-to-r from-red-400 to-pink-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="text-2xl font-bold text-foreground text-center mb-1">{reportData.accounts.filter(account => account.paymentHistory && account.paymentHistory.includes('Late')).length}</div>
+                    <div className="text-sm text-muted-foreground font-medium text-center">Late Payments</div>
+                    <div className="mt-2 h-0.5 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                   </div>
-                  <div className="group bg-gradient-to-br from-white to-orange-50 rounded-xl p-4 border border-orange-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
-                    <div className="w-10 h-10 bg-gradient-to-r from-orange-500 to-red-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                  <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
+                    <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
                       <AlertTriangle className="h-5 w-5 text-white" />
                     </div>
-                    <div className="text-2xl font-bold text-orange-600 text-center mb-1 group-hover:text-orange-700 transition-colors">{reportData.collections.length}</div>
-                    <div className="text-sm text-orange-600 font-medium text-center">Collections</div>
-                    <div className="mt-2 h-0.5 bg-gradient-to-r from-orange-400 to-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="text-2xl font-bold text-foreground text-center mb-1">{reportData.collections.length}</div>
+                    <div className="text-sm text-muted-foreground font-medium text-center">Collections</div>
+                    <div className="mt-2 h-0.5 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                   </div>
-                  <div className="group bg-gradient-to-br from-white to-purple-50 rounded-xl p-4 border border-purple-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
-                    <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                  <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
+                    <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
                       <FileText className="h-5 w-5 text-white" />
                     </div>
-                    <div className="text-2xl font-bold text-purple-600 text-center mb-1 group-hover:text-purple-700 transition-colors">{reportData.publicRecords?.length || 0}</div>
-                    <div className="text-sm text-purple-600 font-medium text-center">Public Records</div>
-                    <div className="mt-2 h-0.5 bg-gradient-to-r from-purple-400 to-indigo-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    <div className="text-2xl font-bold text-foreground text-center mb-1">{reportData.publicRecords?.length || 0}</div>
+                    <div className="text-sm text-muted-foreground font-medium text-center">Public Records</div>
+                    <div className="mt-2 h-0.5 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                   </div>
                 </div>
                 <div className={`${reportData.inquiries.length + reportData.collections.length + (reportData.publicRecords?.length || 0) === 0 ? 'bg-green-100' : 'bg-yellow-100'} rounded-lg p-4`}>
@@ -7501,7 +7496,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </div>
 
                 <div className="space-y-3">
-                  <div className="bg-white rounded-lg p-3 border border-blue-200">
+                  <div className="bg-card rounded-lg p-3 border border-border">
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-medium">
                         High Utilization Accounts
@@ -7723,7 +7718,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             </Card>
 
             {/* Recent Inquiries */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-yellow-50 to-orange-50">
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-slate-800 dark:to-slate-700">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-orange-800">
                   <Search className="h-6 w-6 text-orange-600" />
@@ -7733,17 +7728,17 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <CardContent>
                 <div className="space-y-3">
                   {reportData.inquiries.slice(0, 3).map((inquiry, index) => (
-                    <div key={index} className="bg-white rounded-lg p-3 border border-orange-200">
+                    <div key={index} className="bg-card rounded-lg p-3 border border-border">
                       <div className="font-medium text-sm">{inquiry.creditorName || 'Unknown Creditor'}</div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-muted-foreground">
                         {inquiry.bureau || 'Unknown Bureau'} • {inquiry.date ? new Date(inquiry.date).toLocaleDateString() : 'Unknown Date'}
                       </div>
                       <div className="text-xs text-orange-600">Inquiry</div>
                     </div>
                   ))}
                   {reportData.inquiries.length === 0 && (
-                    <div className="bg-white rounded-lg p-3 border border-orange-200 text-center">
-                      <div className="text-sm text-gray-500">No recent inquiries</div>
+                    <div className="bg-card rounded-lg p-3 border border-border text-center">
+                      <div className="text-sm text-muted-foreground">No recent inquiries</div>
                     </div>
                   )}
                   <div className={`${reportData.inquiries.length <= 2 ? 'bg-green-100' : 'bg-orange-100'} rounded-lg p-3 text-center`}>
@@ -7768,7 +7763,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="group bg-gradient-to-br from-white to-green-50 rounded-xl p-4 border border-green-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm text-center">
+                  <div className="group bg-gradient-to-br from-white to-green-50 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 border border-green-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm text-center">
                     <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
                       <CheckCircle className="h-5 w-5 text-white" />
                     </div>
@@ -7778,7 +7773,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="text-xs text-green-600 font-medium">Good Standing</div>
                     <div className="mt-2 h-0.5 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                   </div>
-                  <div className="group bg-gradient-to-br from-white to-red-50 rounded-xl p-4 border border-red-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm text-center">
+                  <div className="group bg-gradient-to-br from-white to-red-50 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 border border-red-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm text-center">
                     <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
                       <XCircle className="h-5 w-5 text-white" />
                     </div>
@@ -8271,22 +8266,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               return (
                 <div className="space-y-4">
                   {/* Header with bureau logos */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-gradient-to-r from-slate-50 to-gray-100 rounded-xl p-4 border border-gray-200 shadow-sm">
-                    <div className="font-bold text-base text-gray-800 flex items-center gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-card rounded-xl p-4 border border-border shadow-sm">
+                    <div className="font-bold text-base text-foreground flex items-center gap-2">
                       <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
                       </svg>
                       Account Details
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Experian_logo.svg.png" alt="Experian" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-blue-700"></div>
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-purple-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-purple-700"></div>
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-green-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-green-700"></div>
                     </div>
@@ -8298,7 +8293,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     const activeTab = getActiveTab(accountKey);
                     
                     return (
-                    <div key={index} className="bg-gradient-to-r from-white via-gray-50/30 to-white border border-gray-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-gray-300 mb-6">
+                    <div key={index} className="bg-card border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 mb-6">
                       {/* Tabs for filtering fields */}
                       <div className="mb-4 border-b border-gray-200">
                         <div className="flex space-x-1">
@@ -10253,38 +10248,38 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         <TabsContent value="overview" className="space-y-6 mt-6">
           {/* Upgrade Message for Users Without Active Subscription */}
           {!subscriptionStatus.hasActiveSubscription && (
-            <Card className="border-2 border-orange-200 bg-gradient-to-r from-orange-50 to-yellow-50 shadow-lg">
+            <Card className="border-2 border-border bg-card shadow-lg">
               <CardContent className="p-6">
                 <div className="flex items-center space-x-4">
                   <div className="flex-shrink-0">
-                    <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                    <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
                       <Lock className="w-6 h-6 text-orange-600" />
                     </div>
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-orange-800 mb-2">
+                    <h3 className="text-lg font-semibold text-foreground mb-2">
                       Unlock Full Credit Report Access
                     </h3>
-                    <p className="text-orange-700 mb-4">
+                    <p className="text-muted-foreground mb-4">
                       You're currently viewing the overview. Upgrade to access detailed accounts, inquiries, personal information, and advanced analysis tools.
                     </p>
                     <div className="flex flex-wrap gap-2 mb-4">
-                      <span className="px-3 py-1 bg-orange-200 text-orange-800 rounded-full text-sm font-medium">
+                      <span className="px-3 py-1 bg-primary/20 text-primary rounded-full text-sm font-medium">
                         ✓ Detailed Account Analysis
                       </span>
-                      <span className="px-3 py-1 bg-orange-200 text-orange-800 rounded-full text-sm font-medium">
+                      <span className="px-3 py-1 bg-primary/20 text-primary rounded-full text-sm font-medium">
                         ✓ Credit Inquiries Review
                       </span>
-                      <span className="px-3 py-1 bg-orange-200 text-orange-800 rounded-full text-sm font-medium">
+                      <span className="px-3 py-1 bg-primary/20 text-primary rounded-full text-sm font-medium">
                         ✓ Personal Information Verification
                       </span>
-                      <span className="px-3 py-1 bg-orange-200 text-orange-800 rounded-full text-sm font-medium">
+                      <span className="px-3 py-1 bg-primary/20 text-primary rounded-full text-sm font-medium">
                         ✓ Advanced Analytics
                       </span>
                     </div>
                     <button 
                       onClick={() => navigate('/subscription')}
-                      className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-semibold py-2 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 shadow-md"
+                      className="bg-primary text-primary-foreground font-semibold py-2 px-6 rounded-lg transition-all duration-200 transform hover:scale-105 shadow-md"
                     >
                       Upgrade Now
                     </button>
@@ -10297,11 +10292,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           {/* Credit Scores - Always visible for trial users */}
           <TrialScoreWrapper>
           <div className="grid md:grid-cols-3 gap-6 mb-8">
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
-              <CardHeader className="pb-4 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+            <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+              <CardHeader className="pb-4 bg-card border-b border-border">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-center text-base">
-                    <div className="p-3 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
+                    <div className="p-3 bg-primary text-primary-foreground rounded-lg shadow-md">
                       <img 
                         src="/Experian_logo.svg.png" 
                         alt="Experian" 
@@ -10410,11 +10405,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
-              <CardHeader className="pb-4 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+            <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+              <CardHeader className="pb-4 bg-card border-b border-border">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-center text-base">
-                    <div className="p-3 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
+                    <div className="p-3 bg-primary text-primary-foreground rounded-lg shadow-md">
                       <img 
                         src="/TransUnion_logo.svg.png" 
                         alt="TransUnion" 
@@ -10523,11 +10518,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </CardContent>
             </Card>
 
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
-              <CardHeader className="pb-4 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+            <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+              <CardHeader className="pb-4 bg-card border-b border-border">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-center text-base">
-                    <div className="p-3 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
+                    <div className="p-3 bg-primary text-primary-foreground rounded-lg shadow-md">
                       <img 
                         src="/Equifax_Logo.svg.png" 
                         alt="Equifax" 
@@ -10712,7 +10707,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             </Card>
           </div>
 
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm">
             <CardHeader className="bg-gradient-to-r from-blue-600/10 to-indigo-600/10 border-b border-blue-200/30 backdrop-blur-sm">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
@@ -10722,7 +10717,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   Personal Information
                 </span>
               </CardTitle>
-              <CardDescription className="text-gray-600 font-medium ml-11">
+              <CardDescription className="text-muted-foreground font-medium ml-11">
                 Identity verification across all credit bureaus
               </CardDescription>
               <div className="ml-auto mt-2">
@@ -10773,7 +10768,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   return (
                     <>
                       {/* Experian Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                         <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
@@ -10873,7 +10868,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* TransUnion Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                         <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
@@ -10973,7 +10968,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* Equifax Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                         <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
@@ -11082,7 +11077,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           {/* Detailed Credit Report Information - Restricted for trial users */}
           <TrialCreditReportWrapper featureName="Detailed Credit Report">
           {/* Employer Details Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm mt-8">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm mt-8">
             <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
@@ -11368,10 +11363,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* TransUnion Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-purple-50/30 to-violet-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                        <CardHeader className="pb-4 bg-gradient-to-r from-purple-500/10 to-violet-500/10 rounded-t-lg border-b border-purple-100/50">
+                      <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <CardHeader className="pb-4 rounded-t-lg border-b border-border bg-card">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-white rounded-xl shadow-md border border-purple-100/50">
+                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
                               <img 
                                 src="/TransUnion_logo.svg.png" 
                                 alt="TransUnion" 
@@ -11382,31 +11377,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </CardHeader>
                         <CardContent className="space-y-4 p-4">
                           <div className="text-center mb-4">
-                            <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent">
+                            <div className="text-3xl font-bold text-foreground">
                               {transUnionInquiries.length}
                             </div>
-                            <div className="text-sm text-gray-600 font-medium">
+                            <div className="text-sm text-muted-foreground font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {transUnionInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {transUnionInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-purple-50/50 border border-purple-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-purple-300/50">
+                                <div key={idx} className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                      <div className="p-1.5 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg">
+                                      <div className="p-1.5 bg-primary text-primary-foreground rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-foreground">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <FileText className="h-3 w-3 text-purple-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <CalendarIcon className="h-3 w-3 text-purple-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -11415,14 +11410,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               ))}
                             </div>
                           ) : (
-                            <div className="text-center py-6 bg-gradient-to-br from-purple-50/30 to-violet-50/30 rounded-xl border border-purple-100/50">
-                              <div className="p-3 bg-gradient-to-br from-purple-500 to-violet-600 rounded-full w-fit mx-auto mb-3 shadow-md">
+                            <div className="text-center py-6 bg-card rounded-xl border border-border">
+                              <div className="p-3 bg-primary text-primary-foreground rounded-full w-fit mx-auto mb-3 shadow-md">
                                 <Search className="h-6 w-6 text-white" />
                               </div>
-                              <p className="text-sm text-gray-600 font-medium">
+                              <p className="text-sm text-muted-foreground font-medium">
                                 No inquiries found
                               </p>
-                              <p className="text-xs text-gray-500 mt-1">
+                              <p className="text-xs text-muted-foreground mt-1">
                                 This bureau has no recent inquiries
                               </p>
                             </div>
@@ -11431,10 +11426,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* Equifax Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-red-50/30 to-rose-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                        <CardHeader className="pb-4 bg-gradient-to-r from-red-500/10 to-rose-500/10 rounded-t-lg border-b border-red-100/50">
+                      <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <CardHeader className="pb-4 rounded-t-lg border-b border-border bg-card">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-white rounded-xl shadow-md border border-red-100/50">
+                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
                               <img 
                                 src="/Equifax_Logo.svg.png" 
                                 alt="Equifax" 
@@ -11445,31 +11440,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </CardHeader>
                         <CardContent className="space-y-4 p-4">
                           <div className="text-center mb-4">
-                            <div className="text-3xl font-bold bg-gradient-to-r from-red-600 to-rose-600 bg-clip-text text-transparent">
+                            <div className="text-3xl font-bold text-foreground">
                               {equifaxInquiries.length}
                             </div>
-                            <div className="text-sm text-gray-600 font-medium">
+                            <div className="text-sm text-muted-foreground font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {equifaxInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {equifaxInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-red-50/50 border border-red-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-red-300/50">
+                                <div key={idx} className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                      <div className="p-1.5 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg">
+                                      <div className="p-1.5 bg-primary text-primary-foreground rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-foreground">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <FileText className="h-3 w-3 text-red-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <CalendarIcon className="h-3 w-3 text-red-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -11478,14 +11473,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               ))}
                             </div>
                           ) : (
-                            <div className="text-center py-6 bg-gradient-to-br from-red-50/30 to-rose-50/30 rounded-xl border border-red-100/50">
-                              <div className="p-3 bg-gradient-to-br from-red-500 to-rose-600 rounded-full w-fit mx-auto mb-3 shadow-md">
+                            <div className="text-center py-6 bg-card rounded-xl border border-border">
+                              <div className="p-3 bg-primary text-primary-foreground rounded-full w-fit mx-auto mb-3 shadow-md">
                                 <Search className="h-6 w-6 text-white" />
                               </div>
-                              <p className="text-sm text-gray-600 font-medium">
+                              <p className="text-sm text-muted-foreground font-medium">
                                 No inquiries found
                               </p>
-                              <p className="text-xs text-gray-500 mt-1">
+                              <p className="text-xs text-muted-foreground mt-1">
                                 This bureau has no recent inquiries
                               </p>
                             </div>
@@ -11875,22 +11870,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               return (
                 <div className="space-y-4">
                   {/* Header with bureau logos */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-gradient-to-r from-slate-50 to-gray-100 rounded-xl p-4 border border-gray-200 shadow-sm">
-                    <div className="font-bold text-base text-gray-800 flex items-center gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-card rounded-xl p-4 border border-border shadow-sm">
+                    <div className="font-bold text-base text-foreground flex items-center gap-2">
                       <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
                       </svg>
                       Account Details
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Experian_logo.svg.png" alt="Experian" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-blue-700"></div>
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-purple-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-purple-700"></div>
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-green-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-green-700"></div>
                     </div>
@@ -13268,17 +13263,17 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         {/* Inquiries Tab */}
         <TabsContent value="inquiries" className="space-y-6 mt-6">
           <TrialCreditReportWrapper featureName="Credit Inquiries">
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 backdrop-blur-sm">
-            <CardHeader className="bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-purple-600/10 rounded-t-lg border-b border-blue-100/50">
+          <Card className="border-0 shadow-xl bg-card backdrop-blur-sm">
+            <CardHeader className="rounded-t-lg border-b border-border bg-card">
               <CardTitle className="flex items-center gap-3 text-lg font-semibold">
-                <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-md">
+                <div className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md">
                   <Search className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-blue-700 to-indigo-700 bg-clip-text text-transparent">
+                <span className="text-foreground">
                   Credit Inquiries by Bureau
                 </span>
               </CardTitle>
-              <CardDescription className="text-gray-600 font-medium">
+              <CardDescription className="text-muted-foreground font-medium">
                 Recent credit inquiries from each credit bureau
               </CardDescription>
             </CardHeader>
@@ -13297,10 +13292,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   return (
                     <>
                       {/* Experian Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-green-50/30 to-emerald-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                        <CardHeader className="pb-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 rounded-t-lg border-b border-green-100/50">
+                      <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <CardHeader className="pb-4 rounded-t-lg border-b border-border bg-card">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-white rounded-xl shadow-md border border-green-100/50">
+                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
                               <img 
                                 src="/Experian_logo.svg.png" 
                                 alt="Experian" 
@@ -13311,31 +13306,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </CardHeader>
                         <CardContent className="space-y-4 p-4">
                           <div className="text-center mb-4">
-                            <div className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                            <div className="text-3xl font-bold text-foreground">
                               {experianInquiries.length}
                             </div>
-                            <div className="text-sm text-gray-600 font-medium">
+                            <div className="text-sm text-muted-foreground font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {experianInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {experianInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-green-50/50 border border-green-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-green-300/50">
+                                <div key={idx} className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                      <div className="p-1.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg">
+                                      <div className="p-1.5 bg-primary text-primary-foreground rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-foreground">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <FileText className="h-3 w-3 text-green-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <CalendarIcon className="h-3 w-3 text-green-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -13497,17 +13492,17 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         {/* Personal Tab */}
         <TabsContent value="personal" className="space-y-6 mt-6">
           <TrialCreditReportWrapper featureName="Personal Information">
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 backdrop-blur-sm">
-            <CardHeader className="bg-gradient-to-r from-blue-600/10 to-indigo-600/10 border-b border-blue-200/30 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-card backdrop-blur-sm">
+            <CardHeader className="border-b border-border backdrop-blur-sm bg-card">
               <CardTitle className="flex items-center gap-3">
-                <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
+                <div className="p-2 bg-primary text-primary-foreground rounded-xl shadow-lg">
                   <CreditCard className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-bold text-xl">
+                <span className="text-foreground font-bold text-xl">
                   Personal Information
                 </span>
               </CardTitle>
-              <CardDescription className="text-gray-600 font-medium ml-11">
+              <CardDescription className="text-muted-foreground font-medium ml-11">
                 Identity verification across all credit bureaus
               </CardDescription>
               <div className="ml-auto mt-2">
@@ -14218,12 +14213,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         <TabsContent value="analysis" className="space-y-8 mt-6">
           <div ref={analysisRef} className="analysis-pdf-root space-y-8">
           {/* Header Section */}
-          <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-8 border-0 shadow-lg">
+          <div className="bg-card rounded-2xl p-8 border-0 shadow-lg">
             <div className="text-center">
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+              <h1 className="text-4xl font-bold text-foreground mb-2">
                 My Credit Analysis
               </h1>
-              <p className="text-xl text-gray-600 mb-6">
+              <p className="text-xl text-muted-foreground mb-6">
                 Company Profile • Understanding Your Credit • How Credit Affects
                 You
               </p>
@@ -14263,13 +14258,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
 
           {/* Understanding Your Credit Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50">
+          <Card className="border-0 shadow-xl bg-card">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-2xl font-bold text-gray-800">
+              <CardTitle className="flex items-center gap-2 text-2xl font-bold text-foreground">
                 <Info className="h-8 w-8 text-blue-600" />
                 Understanding Your Credit
               </CardTitle>
-              <CardDescription className="text-lg text-gray-600">
+              <CardDescription className="text-lg text-muted-foreground">
                 Introduction to Credit Bureaus and Credit Reports
               </CardDescription>
             </CardHeader>

@@ -2789,7 +2789,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
 
           
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm">
             <CardHeader className="bg-gradient-to-r from-blue-600/10 to-indigo-600/10 border-b border-blue-200/30 backdrop-blur-sm">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
@@ -2799,7 +2799,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   Personal Information
                 </span>
               </CardTitle>
-              <CardDescription className="text-gray-600 font-medium ml-11">
+              <CardDescription className="text-muted-foreground font-medium ml-11">
                 Identity verification across all credit bureaus
               </CardDescription>
             </CardHeader>
@@ -2844,7 +2844,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   return (
                     <>
                       {/* Experian Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                         <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
@@ -2936,7 +2936,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* TransUnion Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                         <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
@@ -3028,7 +3028,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* Equifax Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                         <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
@@ -3124,7 +3124,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </div>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm">
             <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
@@ -3134,14 +3134,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>
-              <CardDescription className="text-slate-600 font-medium">
+              <CardDescription className="text-muted-foreground font-medium">
                 Employment information reported by Experian, TransUnion, and Equifax
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-3 gap-6">
                 {/* Experian Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                   <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
@@ -3201,7 +3201,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* TransUnion Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                   <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
@@ -3261,7 +3261,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Equifax Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
                   <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">

@@ -2820,7 +2820,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
           {/* Underwriting Section Navigation */}
           <div className="sticky top-4 z-30">
-            <div className="mx-auto w-full max-w-5xl bg-white/90 backdrop-blur-md border shadow-lg rounded-full px-3 py-2">
+            <div className="mx-auto w-full max-w-5xl bg-card/90 dark:bg-slate-800/80 backdrop-blur-md border border-border/40 shadow-lg rounded-full px-3 py-2">
               <div className="flex flex-wrap justify-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => document.getElementById('uw-client-information')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Client Information</Button>
                 <Button variant="outline" size="sm" onClick={() => document.getElementById('uw-credit-scores')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Credit Scores</Button>
@@ -2833,7 +2833,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             </div>
           </div>
           {/* Client Information Header */}
-          <Card id="uw-client-information" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 scroll-mt-24">
+          <Card id="uw-client-information" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 scroll-mt-24">
             <CardHeader>
               <CardTitle className="text-2xl font-bold text-gray-800">Client Information</CardTitle>
             </CardHeader>
@@ -2871,14 +2871,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Credit Scores with Speedometers */}
-          <Card id="uw-credit-scores" className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50 scroll-mt-24">
+          <Card id="uw-credit-scores" className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Credit Scores</CardTitle>
+              <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Credit Scores</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-3 gap-6 mb-8">
                 {/* TransUnion Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg font-bold text-blue-800">TransUnion</CardTitle>
@@ -2947,7 +2947,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 dark:bg-slate-700/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.transunion,
                           reportData.previousScores.transunion,
@@ -2984,7 +2984,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Experian Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-green-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-green-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg font-bold text-green-800">Experian</CardTitle>
@@ -3053,7 +3053,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 dark:bg-slate-700/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.experian,
                           reportData.previousScores.experian,
@@ -3090,7 +3090,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Equifax Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg font-bold text-purple-800">Equifax</CardTitle>
@@ -3159,7 +3159,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 dark:bg-slate-700/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.equifax,
                           reportData.previousScores.equifax,
@@ -3200,12 +3200,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
           {/* Qualify View Toggle */}
           <div className="flex justify-end items-center gap-2 mt-4 mb-2">
-            <span className="text-xs text-gray-600">Qualification view:</span>
+            <span className="text-xs text-muted-foreground">Qualification view:</span>
             <ToggleGroup
               type="single"
               value={qualifyView}
               onValueChange={(v) => v && setQualifyView(v as 'cards' | 'table')}
-              className="bg-white border rounded-md shadow-sm"
+              className="bg-card dark:bg-slate-800 border border-border/40 rounded-md shadow-sm"
             >
               <ToggleGroupItem value="table" className="px-3 py-1 text-sm">
                 Basic
@@ -3217,10 +3217,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
 
           {/* Debt Utilization - Full Width (Do You Qualify) */}
-          <Card id="uw-do-you-qualify" className={`${qualifyView === 'table' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 scroll-mt-24`}>
+          <Card id="uw-do-you-qualify" className={`${qualifyView === 'table' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 scroll-mt-24`}>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <CardTitle className="text-2xl font-bold text-gray-800">Do You Qualify</CardTitle>
+                <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Do You Qualify</CardTitle>
                   <span className="text-sm font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-3 py-1 rounded-full">
                   {(() => {
                     // Compute an overall 0–10 score by averaging category grades
@@ -5030,10 +5030,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
 
           {/* Do You Qualify */}
-          <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50`}>
+          <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800`}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <CardTitle className="text-2xl font-bold text-gray-800">Do You Qualify</CardTitle>
+                <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Do You Qualify</CardTitle>
                 <div className="flex items-center flex-wrap gap-2">
                   <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
                     <CheckCircle className="h-3 w-3" /> Good to go
@@ -5591,9 +5591,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             const criteriaTotal = Object.values(criteriaFlags).length;
 
             return (
-              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50">
+              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800">
                 <CardHeader>
-                  <CardTitle className="text-2xl font-bold text-gray-800">Next Steps</CardTitle>
+                  <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Next Steps</CardTitle>
                   <CardDescription>
                     {effectiveEligible
                       ? "You meet the underwriting criteria. Proceed to funding."
@@ -5632,16 +5632,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           })()}
 
           {/* Debt Utilization Table */}
-          <Card id="uw-debt-utilization" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 scroll-mt-24">
+          <Card id="uw-debt-utilization" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Debt Utilization</CardTitle>
+              <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Debt Utilization</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <Table className="w-full">
                   <TableHeader>
                     <TableRow className="bg-gray-50">
-                      <TableHead className="text-left font-semibold text-gray-700 py-3 px-4"></TableHead>
+                      <TableHead className="text-left font-semibold text-muted-foreground py-3 px-4"></TableHead>
                       <TableHead className="text-center font-semibold text-blue-600 py-3 px-4">TU</TableHead>
                       <TableHead className="text-center font-semibold text-green-600 py-3 px-4">EX</TableHead>
                       <TableHead className="text-center font-semibold text-purple-600 py-3 px-4">EQ</TableHead>
@@ -5653,8 +5653,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       return (
                         <>
                           {/* Total Balance Utilization (Open Revolving) */}
-                          <TableRow className="border-b bg-purple-50/30">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Total Balance Utilization (Open Revolving):</TableCell>
+                          <TableRow className="border-b bg-purple-50/30 dark:bg-muted">
+                            <TableCell className="font-medium text-muted-foreground py-3 px-4">Total Balance Utilization (Open Revolving):</TableCell>
                             <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
                               ${debtData[1]?.openRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
@@ -6386,14 +6386,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 <h3 className="text-3xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   Choose Your Funding Path
                 </h3>
-                <p className="text-gray-600 max-w-2xl mx-auto text-lg leading-relaxed">
+                <p className="text-muted-foreground max-w-2xl mx-auto text-lg leading-relaxed">
                   Select the option that best fits your needs and let us help you secure the funding you deserve
                 </p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
                 <Card 
-                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-blue-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-blue-50"
+                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-blue-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-blue-50 dark:from-slate-800 dark:to-slate-700"
                   onClick={() => {
                     navigate(`/funding/apply/${fundingType}`);
                     setShowFundingModal(false);
@@ -6404,8 +6404,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-500 shadow-xl">
                       <Users className="h-12 w-12 text-white" />
                     </div>
-                    <h4 className="text-2xl font-bold mb-4 text-gray-800 group-hover:text-blue-700 transition-colors duration-300">Done For You</h4>
-                    <p className="text-gray-600 text-base mb-6 leading-relaxed">
+                    <h4 className="text-2xl font-bold mb-4 text-gray-800 dark:text-foreground group-hover:text-blue-700 transition-colors duration-300">Done For You</h4>
+                    <p className="text-muted-foreground text-base mb-6 leading-relaxed">
                       Our funding experts handle everything for you. Complete application assistance, document preparation, and personalized guidance throughout the entire process.
                     </p>
                     <div className="space-y-3 mb-8">
@@ -6437,7 +6437,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 <Card 
-                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-green-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-green-50"
+                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-green-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-green-50 dark:from-slate-800 dark:to-slate-700"
                   onClick={() => {
                     navigate(`/funding/diy/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined } });
                     setShowFundingModal(false);
@@ -6448,8 +6448,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="w-24 h-24 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-500 shadow-xl">
                       <FileText className="h-12 w-12 text-white" />
                     </div>
-                    <h4 className="text-2xl font-bold mb-4 text-gray-800 group-hover:text-green-700 transition-colors duration-300">DIY Funding</h4>
-                    <p className="text-gray-600 text-base mb-6 leading-relaxed">
+                    <h4 className="text-2xl font-bold mb-4 text-gray-800 dark:text-foreground group-hover:text-green-700 transition-colors duration-300">DIY Funding</h4>
+                    <p className="text-muted-foreground text-base mb-6 leading-relaxed">
                       Take control of your funding journey. Complete the application yourself with our comprehensive step-by-step guidance and resources.
                     </p>
                     <div className="space-y-3 mb-8">
@@ -7573,10 +7573,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 )}
 
                 {/* Navigation Buttons */}
-                <div className="flex justify-between items-center pt-6 border-t border-gray-200">
+                <div className="flex justify-between items-center pt-6 border-t border-border">
                   <Button 
                     variant="outline" 
-                    className="group relative overflow-hidden px-6 py-3 border-2 border-gray-300 hover:border-blue-500 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-white hover:bg-blue-50"
+                    className="group relative overflow-hidden px-6 py-3 border-2 border-border hover:border-blue-500 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-card hover:bg-muted"
                     onClick={() => handleStepNavigation('back')}
                   >
                     <div className="flex items-center gap-2">

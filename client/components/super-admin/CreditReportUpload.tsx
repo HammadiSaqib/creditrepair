@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { Textarea } from '@/components/ui/textarea';
 import { superAdminApi, creditReportScraperApi } from '@/lib/api';
 import { FileText, CheckCircle, AlertTriangle } from 'lucide-react';
@@ -24,6 +26,8 @@ const CreditReportUpload: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<{ message: string; path?: string } | null>(null);
+  const [adminSelectOpen, setAdminSelectOpen] = useState(false);
+  const [clientSelectOpen, setClientSelectOpen] = useState(false);
 
   const adminMap = useMemo(() => {
     const map: Record<string, any> = {};
@@ -117,32 +121,70 @@ const CreditReportUpload: React.FC = () => {
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
           <div>
-            <Select value={selectedAdminId} onValueChange={setSelectedAdminId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select Admin" />
-              </SelectTrigger>
-              <SelectContent>
-                {admins.map((a: any) => (
-                  <SelectItem key={a.id} value={String(a.id)}>
-                    {`${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email || String(a.id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={adminSelectOpen} onOpenChange={setAdminSelectOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between">
+                  {selectedAdminId
+                    ? (() => { const a = admins.find((x: any) => String(x.id) === selectedAdminId); return a ? (`${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email || String(a.id)) : 'Select Admin'; })()
+                    : 'Select Admin'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0 w-72">
+                <Command>
+                  <CommandInput placeholder="Search admin by email..." />
+                  <CommandList>
+                    <CommandEmpty>No admin found.</CommandEmpty>
+                    <CommandGroup>
+                      {admins.map((a: any) => (
+                        <CommandItem
+                          key={a.id}
+                          value={`${a.email || ''} ${a.first_name || ''} ${a.last_name || ''}`.trim()}
+                          onSelect={() => { setSelectedAdminId(String(a.id)); setAdminSelectOpen(false); }}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm">{`${a.first_name || ''} ${a.last_name || ''}`.trim() || a.email || String(a.id)}</span>
+                            {a.email ? <span className="text-xs text-muted-foreground">{a.email}</span> : null}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div>
-            <Select value={selectedClientId} onValueChange={setSelectedClientId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select Client" />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((c: any) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {`${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || String(c.id)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={clientSelectOpen} onOpenChange={setClientSelectOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" className="w-full justify-between">
+                  {selectedClientId
+                    ? (() => { const c = clients.find((x: any) => String(x.id) === selectedClientId); return c ? (`${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || String(c.id)) : 'Select Client'; })()
+                    : 'Select Client'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0 w-72">
+                <Command>
+                  <CommandInput placeholder="Search client by email..." />
+                  <CommandList>
+                    <CommandEmpty>No client found.</CommandEmpty>
+                    <CommandGroup>
+                      {clients.map((c: any) => (
+                        <CommandItem
+                          key={c.id}
+                          value={`${c.email || ''} ${c.first_name || ''} ${c.last_name || ''}`.trim()}
+                          onSelect={() => { setSelectedClientId(String(c.id)); setClientSelectOpen(false); }}
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm">{`${c.first_name || ''} ${c.last_name || ''}`.trim() || c.email || String(c.id)}</span>
+                            {c.email ? <span className="text-xs text-muted-foreground">{c.email}</span> : null}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div>
             <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>

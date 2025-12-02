@@ -2954,22 +2954,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               return (
                 <div className="space-y-4">
                   {/* Header with bureau logos */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-gradient-to-r from-slate-50 to-gray-100 rounded-xl p-4 border border-gray-200 shadow-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-gradient-to-r from-slate-50 to-gray-100 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 border border-border shadow-sm">
                     <div className="font-bold text-base text-gray-800 flex items-center gap-2">
                       <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
                       </svg>
                       Account Details
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-blue-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Experian_logo.svg.png" alt="Experian" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-blue-700"></div>
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-purple-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-purple-700"></div>
                     </div>
-                    <div className="text-center bg-white rounded-lg p-3 border border-green-100 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-8 w-auto mx-auto mb-2" />
                       <div className="text-sm font-semibold text-green-700"></div>
                     </div>
@@ -2981,7 +2981,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     const activeTab = getActiveTab(accountKey);
                     
                     return (
-                    <div key={index} className="bg-gradient-to-r from-white via-gray-50/30 to-white border border-gray-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-gray-300 mb-6">
+                    <div key={index} className="bg-gradient-to-r from-white via-gray-50/30 to-white dark:from-slate-800 dark:via-slate-800/30 dark:to-slate-800 border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 mb-6">
                       {/* Tabs for filtering fields */}
                       <div className="mb-4 border-b border-gray-200">
                         <div className="flex space-x-1">
@@ -3008,68 +3008,68 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <div className="space-y-4">
                             <div className="flex items-center gap-3 pb-3 border-b border-slate-300">
                               <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full shadow-sm"></div>
-                              <div className="font-bold text-lg text-gray-800">{accountGroup.creditor}</div>
+                              <div className="font-bold text-lg text-foreground">{accountGroup.creditor}</div>
                             </div>
                             
                             <div className="space-y-3 text-sm">
-                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                <span className="text-gray-600 font-medium flex items-center gap-2">
+                              <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
+                                <span className="text-muted-foreground font-medium flex items-center gap-2">
                                   <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                   </svg>
                                   Account #:
                                 </span>
-                                <span className="font-semibold text-gray-800 text-xs">{accountGroup.accountNumber}</span>
+                                <span className="font-semibold text-foreground text-xs">{accountGroup.accountNumber}</span>
                               </div>
-                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                <span className="text-gray-600 font-medium flex items-center gap-2">
+                              <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
+                                <span className="text-muted-foreground font-medium flex items-center gap-2">
                                   <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
                                   </svg>
                                   Type:
                                 </span>
-                                <span className="font-semibold text-gray-800">{accountGroup.type}</span>
+                                <span className="font-semibold text-foreground">{accountGroup.type}</span>
                               </div>
                               {/* Get additional details from first available bureau */}
                               {(() => {
                                 const firstBureau = Object.values(accountGroup.bureaus)[0];
                                 return firstBureau ? (
                                   <>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
+                                      <span className="text-muted-foreground font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                         </svg>
                                         Designator:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.designator || 'N/A'}</span>
+                                      <span className="font-semibold text-foreground">{firstBureau.designator || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
+                                      <span className="text-muted-foreground font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
                                         Opened:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.opened ? new Date(firstBureau.opened).toLocaleDateString() : 'N/A'}</span>
+                                      <span className="font-semibold text-foreground">{firstBureau.opened ? new Date(firstBureau.opened).toLocaleDateString() : 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
+                                      <span className="text-muted-foreground font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                                         </svg>
                                         Industry:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.industry || 'N/A'}</span>
+                                      <span className="font-semibold text-foreground">{firstBureau.industry || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
+                                      <span className="text-muted-foreground font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-1l-4 4z" />
                                         </svg>
                                         Remark:
                                       </span>
-                                      <span className="font-semibold text-gray-800 text-xs truncate max-w-[120px]" title={firstBureau.remark || 'N/A'}>{firstBureau.remark || 'N/A'}</span>
+                                      <span className="font-semibold text-foreground text-xs truncate max-w-[120px]" title={firstBureau.remark || 'N/A'}>{firstBureau.remark || 'N/A'}</span>
                                     </div>
                                   </>
                                 ) : null;
@@ -3080,7 +3080,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         )}
 
                         {/* Experian Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-card rounded-lg p-4 border border-border">
                           {accountGroup.bureaus.Experian ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -3101,9 +3101,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100 dark:from-slate-800 dark:to-slate-700">
+                                  <div className="font-bold text-xl text-foreground">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
+                                  <div className="text-muted-foreground text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
                                   {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
                                     <div className="space-y-1 mt-1">
                                       <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.Experian.utilization)}`}>
@@ -3132,7 +3132,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                         </svg>
                                         Payment:
                                       </span>
-                                      <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.paymentHistory}</span>
+                                      <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.paymentHistory}</span>
                                     </div>
                                   )}
                                   {shouldShowField('reported', activeTab) && (
@@ -3163,7 +3163,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.reported ? new Date(accountGroup.bureaus.Experian.reported).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.reported ? new Date(accountGroup.bureaus.Experian.reported).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3195,7 +3195,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.opened ? new Date(accountGroup.bureaus.Experian.opened).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.opened ? new Date(accountGroup.bureaus.Experian.opened).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3227,7 +3227,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.dateAccountStatus ? new Date(accountGroup.bureaus.Experian.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.dateAccountStatus ? new Date(accountGroup.bureaus.Experian.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3254,7 +3254,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.creditorName || accountGroup.bureaus.Experian.CreditorName || accountGroup.bureaus.Experian.creditor || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.creditorName || accountGroup.bureaus.Experian.CreditorName || accountGroup.bureaus.Experian.creditor || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3286,7 +3286,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.accountNumber || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.accountNumber || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3318,7 +3318,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.designator}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.designator}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3345,7 +3345,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.accountTypeDescription || accountGroup.type}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.accountTypeDescription || accountGroup.type}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3372,7 +3372,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.accountType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.accountType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3399,7 +3399,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.creditType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.creditType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3426,7 +3426,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.paymentFrequency || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.paymentFrequency || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3453,7 +3453,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.accountCondition || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.accountCondition || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3480,7 +3480,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.disputeFlag || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.disputeFlag || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3507,7 +3507,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.industry || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.industry || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3534,7 +3534,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.termType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.termType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3600,7 +3600,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.Experian.highBalance || 0).toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-foreground">${parseInt(accountGroup.bureaus.Experian.highBalance || 0).toLocaleString()}</span>
                                       </div>
                                     </div>
                                   )}
@@ -3640,7 +3640,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 
                                 {shouldShowField('payStatusHistory', activeTab) && accountGroup.bureaus.Experian.payStatusHistory && accountGroup.bureaus.Experian.payStatusHistory !== 'N/A' && (
                                   <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2 flex items-center justify-between">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-foreground mb-2 flex items-center justify-between">
                                       <span>Payment History:</span>
                                       {activeTab === 'credit-repair' && (() => {
                                         const b = accountGroup.bureaus;
@@ -3662,7 +3662,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                         return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                       })()}
                                     </div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                    <div className="text-xs font-mono bg-card p-2 rounded border border-border overflow-x-auto">
                                       {accountGroup.bureaus.Experian.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.Experian.payStatusHistoryStartDate && accountGroup.bureaus.Experian.payStatusHistoryStartDate !== 'N/A' && (
@@ -3684,7 +3684,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* TransUnion Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-card rounded-lg p-4 border border-border">
                           {accountGroup.bureaus.TransUnion ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -3706,8 +3706,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               
                               <div className="space-y-2">
                                 <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
+                                  <div className="font-bold text-xl text-foreground">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
+                                  <div className="text-muted-foreground text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
                                   {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
                                     <div className="space-y-1 mt-1">
                                       <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.TransUnion.utilization)}`}>
@@ -4285,7 +4285,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* Equifax Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-card rounded-lg p-4 border border-border">
                           {accountGroup.bureaus.Equifax ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -4307,8 +4307,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               
                               <div className="space-y-2">
                                 <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
+                                  <div className="font-bold text-xl text-foreground">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
+                                  <div className="text-muted-foreground text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
                                   {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
                                     <div className="space-y-1 mt-1">
                                       <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.Equifax.utilization)}`}>

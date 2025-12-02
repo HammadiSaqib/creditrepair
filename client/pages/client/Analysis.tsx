@@ -2830,23 +2830,23 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
 
           {/* Understanding Your Credit Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-2xl font-bold text-gray-800">
+              <CardTitle className="flex items-center gap-2 text-2xl font-bold text-gray-800 dark:text-foreground">
                 <Info className="h-8 w-8 text-blue-600" />
                 Understanding Your Credit
               </CardTitle>
-              <CardDescription className="text-lg text-gray-600">
+              <CardDescription className="text-lg text-muted-foreground">
                 Introduction to Credit Bureaus and Credit Reports
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-8">
               {/* What Are Credit Bureaus */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">
+              <div className="bg-card rounded-xl p-6 border border-border shadow-sm">
+                <h3 className="text-xl font-bold text-foreground mb-4">
                   What Are Credit Bureaus?
                 </h3>
-                <p className="text-gray-700 mb-4">
+                <p className="text-muted-foreground mb-4">
                   Credit bureaus, also known as credit reporting agencies, are
                   organizations that play a critical role in the financial
                   landscape. Their primary function is to collect and maintain

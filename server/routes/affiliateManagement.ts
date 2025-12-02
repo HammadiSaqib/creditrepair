@@ -598,7 +598,21 @@ router.get('/:id/referrals', authenticateToken, requireSuperAdminRole, async (re
         ar.notes,
         u.email as referred_user_email,
         u.first_name as referred_user_first_name,
-        u.last_name as referred_user_last_name
+        u.last_name as referred_user_last_name,
+        (
+          SELECT bt.plan_name 
+          FROM billing_transactions bt 
+          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded' 
+          ORDER BY bt.created_at DESC 
+          LIMIT 1
+        ) AS plan_name,
+        (
+          SELECT bt.plan_type 
+          FROM billing_transactions bt 
+          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded' 
+          ORDER BY bt.created_at DESC 
+          LIMIT 1
+        ) AS plan_type
       FROM affiliate_referrals ar
       LEFT JOIN users u ON ar.referred_user_id = u.id
       WHERE ar.affiliate_id = ?
@@ -611,6 +625,45 @@ router.get('/:id/referrals', authenticateToken, requireSuperAdminRole, async (re
   } catch (error) {
     console.error('Error fetching affiliate referrals:', error);
     res.status(500).json({ error: 'Failed to fetch affiliate referrals' });
+  }
+});
+
+// GET /api/affiliate-management/:id/earnings/monthly - Get current month's earnings for an affiliate
+router.get('/:id/earnings/monthly', authenticateToken, requireSuperAdminRole, async (req, res) => {
+  try {
+    const adminId = (req as any).user.id;
+    const userRole = (req as any).user.role;
+    const affiliateId = String(req.params.id).replace('AFF-', '');
+
+    // Verify affiliate exists; super_admin can view any affiliate
+    let verifyQuery = 'SELECT id FROM affiliates WHERE id = ?';
+    const verifyParams: any[] = [affiliateId];
+    if (userRole !== 'super_admin') {
+      verifyQuery += ' AND admin_id = ?';
+      verifyParams.push(adminId);
+    }
+    const affiliate = await executeQuery(verifyQuery, verifyParams);
+
+    if (!affiliate || affiliate.length === 0) {
+      return res.status(404).json({ error: 'Affiliate not found or access denied' });
+    }
+
+    const monthlyEarningsQuery = `
+      SELECT COALESCE(SUM(commission_amount), 0) as monthly_earnings
+      FROM affiliate_commissions 
+      WHERE affiliate_id = ? 
+        AND MONTH(created_at) = MONTH(CURRENT_DATE()) 
+        AND YEAR(created_at) = YEAR(CURRENT_DATE())
+        AND status IN ('paid','pending')
+    `;
+
+    const result = await executeQuery(monthlyEarningsQuery, [affiliateId]);
+    const monthly_earnings = Number(result?.[0]?.monthly_earnings || 0);
+
+    res.json({ success: true, data: { monthly_earnings } });
+  } catch (error) {
+    console.error('Error fetching monthly earnings:', error);
+    res.status(500).json({ error: 'Failed to fetch monthly earnings' });
   }
 });
 

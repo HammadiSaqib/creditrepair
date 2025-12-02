@@ -9,6 +9,7 @@ export interface CommissionItem {
   status: 'pending' | 'approved' | 'paid' | 'rejected';
   tier: string;
   product: string;
+  commission_type?: string;
   order_date: string;
   payment_date?: string;
 }
@@ -68,6 +69,7 @@ export function mergeReferralsWithCommissions(referrals: ReferralItem[], commiss
       package_name: latest?.product || null,
       package_price: latest?.order_value || null,
       last_purchase_date: latest?.order_date || null,
+      purchase_type: latest?.product || null,
       commission_earned: cs.reduce((sum, x) => sum + (Number(x.commission_amount) || 0), 0),
     } as any;
   });
@@ -76,7 +78,8 @@ export function mergeReferralsWithCommissions(referrals: ReferralItem[], commiss
 export function filterReferrals(items: any[], filters: Filters) {
   return items.filter((i) => {
     if (filters.packageType && filters.packageType !== 'all') {
-      if ((i.package_name || '').toLowerCase() !== filters.packageType.toLowerCase()) return false;
+      const name = (i.plan_name || i.package_name || '').toLowerCase();
+      if (name !== filters.packageType.toLowerCase()) return false;
     }
     const dd = i.conversion_date || i.referral_date || i.last_purchase_date;
     if (filters.dateFrom && dd && new Date(dd).getTime() < new Date(filters.dateFrom).getTime()) return false;
@@ -84,4 +87,3 @@ export function filterReferrals(items: any[], filters: Filters) {
     return true;
   });
 }
-

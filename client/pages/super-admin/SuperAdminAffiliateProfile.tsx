@@ -93,6 +93,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
   const [filters, setFilters] = useState<Filters>({ packageType: 'all' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [currentMonthEarnings, setCurrentMonthEarnings] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
@@ -107,6 +108,9 @@ const SuperAdminAffiliateProfile: React.FC = () => {
         const refs = await api.get(`/api/affiliate-management/${id}/referrals`);
         const refData: ReferralItem[] = refs.data?.data || refs.data || [];
         setReferrals(refData);
+        const earnResp = await api.get(`/api/affiliate-management/${id}/earnings/monthly`);
+        const cur = earnResp.data?.data?.monthly_earnings ?? earnResp.data?.monthly_earnings ?? 0;
+        setCurrentMonthEarnings(Number(cur) || 0);
         const commResp = await superAdminApi.getCommissionHistory({ affiliate_id: String(id) });
         const commData: CommissionItem[] = commResp.data?.data || commResp.data || commResp.data || [];
         setCommissions(Array.isArray(commData) ? commData : []);
@@ -133,13 +137,17 @@ const SuperAdminAffiliateProfile: React.FC = () => {
 
   const monthly = useMemo(() => aggregateMonthlyEarnings(commissions, filters.dateFrom, filters.dateTo), [commissions, filters]);
   const currentMonthTotal = useMemo(() => {
+    if (currentMonthEarnings && currentMonthEarnings > 0) return currentMonthEarnings;
     const ym = new Date().toISOString().slice(0, 7);
     return monthly.find((m) => m.month === ym)?.amount || 0;
-  }, [monthly]);
+  }, [monthly, currentMonthEarnings]);
 
   const packageOptions = useMemo(() => {
     const set = new Set<string>();
-    mergedReferrals.forEach((r: any) => { if (r.package_name) set.add(r.package_name); });
+    mergedReferrals.forEach((r: any) => { 
+      const name = r.plan_name || r.package_name;
+      if (name) set.add(name);
+    });
     return Array.from(set);
   }, [mergedReferrals]);
 
@@ -293,7 +301,9 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                     <TableRow>
                       <TableHead>User</TableHead>
                       <TableHead>Contact</TableHead>
-                      <TableHead>Package</TableHead>
+                      <TableHead>Plan Name</TableHead>
+                      <TableHead>Plan Type</TableHead>
+                      <TableHead>Purchase Type</TableHead>
                       <TableHead>Price</TableHead>
                       <TableHead>Commission Earned</TableHead>
                       <TableHead>Referral Date</TableHead>
@@ -311,7 +321,17 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline">{r.package_name || 'N/A'}</Badge>
+                            <Badge variant="outline">{r.plan_name || r.package_name || 'N/A'}</Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{r.plan_type || 'N/A'}</Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{r.purchase_type || 'Subscription'}</Badge>
                           </div>
                         </TableCell>
                         <TableCell>${Number(r.package_price || 0).toFixed(2)}</TableCell>

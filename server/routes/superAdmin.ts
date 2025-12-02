@@ -2863,7 +2863,8 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
         const expScore = getAny(row, ['experian_score','experian score']);
         const eqScore = getAny(row, ['equifax_score','equifax score']);
         const tuScore = getAny(row, ['transunion_score','transunion score','trans union score']);
-        const platform = getAny(row, ['platform']);
+        let platform = (getAny(row, ['platform']) || 'myfreescorenow').toLowerCase().trim();
+        if (!Object.values(PLATFORMS).includes(platform)) platform = 'myfreescorenow';
         const platformEmail = getAny(row, ['platform_email','platform email']);
         const platformPassword = getAny(row, ['platform_password','platform password']);
         if (!email) {
@@ -2888,7 +2889,7 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
           experian_score: expScore || undefined,
           equifax_score: eqScore || undefined,
           transunion_score: tuScore || undefined,
-          platform: platform || undefined,
+          platform: platform,
           platform_email: platformEmail || undefined,
           platform_password: platformPassword || undefined
         });
@@ -2917,8 +2918,8 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
           `INSERT INTO clients (
             user_id, first_name, last_name, email, phone, date_of_birth,
             employment_status, annual_income, ssn_last_four, address, city, state, zip_code, status,
-            experian_score, equifax_score, transunion_score, credit_score, platform, platform_email, platform_password, created_by, updated_by
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            experian_score, equifax_score, transunion_score, credit_score, platform, platform_email, platform_password, fundable_status, created_by, updated_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             adminId,
             validated.first_name,
@@ -2941,6 +2942,7 @@ router.post('/clients/import-csv', authenticateToken, requireSuperAdmin, upload.
             validated.platform || null,
             validated.platform_email || null,
             validated.platform_password || null,
+            null,
             currentUserId,
             currentUserId
           ]
