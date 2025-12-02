@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -152,6 +153,7 @@ interface BankDetails {
 }
 
 const AffiliateManagement: React.FC = () => {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [affiliates, setAffiliates] = useState<Affiliate[]>([]);
   const [stats, setStats] = useState<AffiliateStats>({
@@ -860,6 +862,14 @@ const AffiliateManagement: React.FC = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => navigate(`/super-admin/affiliates/${affiliate.id}`)}
+                            >
+                              <Eye className="h-4 w-4 mr-1" />
+                              View Profile
+                            </Button>
                             <Button
                               variant="ghost"
                               size="sm"

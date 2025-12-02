@@ -198,9 +198,15 @@ export default function Index() {
                     <div className="absolute inset-0 bg-gradient-to-r from-ocean-blue to-sea-green rounded-3xl blur-2xl opacity-20 group-hover:opacity-30 transition-opacity duration-500"></div>
                     <div className="relative rounded-3xl overflow-hidden shadow-2xl transform group-hover:scale-105 transition-transform duration-500">
                       <img
-                        src="https://images.pexels.com/photos/5816286/pexels-photo-5816286.jpeg"
+                        src="https://images.pexels.com/photos/5816286/pexels-photo-5816286.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=975&h=650"
+                        srcSet="https://images.pexels.com/photos/5816286/pexels-photo-5816286.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=480&h=320 480w, https://images.pexels.com/photos/5816286/pexels-photo-5816286.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=768&h=512 768w, https://images.pexels.com/photos/5816286/pexels-photo-5816286.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=975&h=650 975w, https://images.pexels.com/photos/5816286/pexels-photo-5816286.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=1200&h=800 1200w"
+                        sizes="(max-width: 1024px) 100vw, 975px"
                         alt="Professional financial team collaborating on funding"
                         className="w-full h-[650px] object-cover"
+                        width={975}
+                        height={650}
+                        decoding="async"
+                        fetchpriority="high"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent"></div>
                       <div className="absolute bottom-6 left-6 right-6">
@@ -555,9 +561,15 @@ export default function Index() {
             <div className="relative">
               <div className="rounded-2xl overflow-hidden shadow-2xl">
                 <img
-                  src="https://images.pexels.com/photos/7821529/pexels-photo-7821529.jpeg"
+                  src="https://images.pexels.com/photos/7821529/pexels-photo-7821529.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=750&h=500"
+                  srcSet="https://images.pexels.com/photos/7821529/pexels-photo-7821529.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=480&h=320 480w, https://images.pexels.com/photos/7821529/pexels-photo-7821529.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=750&h=500 750w, https://images.pexels.com/photos/7821529/pexels-photo-7821529.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=1024&h=683 1024w"
+                  sizes="(max-width: 1024px) 100vw, 750px"
                   alt="Professional analyzing credit reports"
                   className="w-full h-[500px] object-cover"
+                  width={750}
+                  height={500}
+                  decoding="async"
+                  loading="lazy"
                 />
               </div>
             </div>
@@ -663,9 +675,15 @@ export default function Index() {
       <section className="py-32 bg-gradient-to-r from-ocean-blue to-sea-green text-white relative overflow-hidden">
         <div className="absolute inset-0">
           <img
-            src="https://images.pexels.com/photos/5716037/pexels-photo-5716037.jpeg"
+            src="https://images.pexels.com/photos/5716037/pexels-photo-5716037.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=1400&h=804"
+            srcSet="https://images.pexels.com/photos/5716037/pexels-photo-5716037.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=768&h=442 768w, https://images.pexels.com/photos/5716037/pexels-photo-5716037.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=1024&h=588 1024w, https://images.pexels.com/photos/5716037/pexels-photo-5716037.jpeg?auto=compress&cs=tinysrgb&fit=crop&w=1400&h=804 1400w"
+            sizes="100vw"
             alt="Team celebrating success"
             className="w-full h-full object-cover opacity-15"
+            width={1400}
+            height={804}
+            decoding="async"
+            loading="lazy"
           />
           <div className="absolute inset-0 bg-gradient-to-r from-ocean-blue/80 via-blue-600/70 to-sea-green/80"></div>
         </div>

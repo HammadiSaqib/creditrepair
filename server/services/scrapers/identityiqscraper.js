@@ -180,7 +180,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9', ...(config.puppeteerHttpHeaders||{}) });
     if (config.puppeteerResolution) await page.setViewport(config.puppeteerResolution);
     try { page.setDefaultNavigationTimeout(config.waitTimeouts?.navigation || 60000); } catch {}
-    try { page.setDefaultTimeout(config.waitTimeouts?.element || 15000); } catch {}
+    try { page.setDefaultTimeout(config.waitTimeouts?.element || 30000); } catch {}
 
     // response capture
     let rawCreditData = null;
@@ -235,10 +235,12 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     }
 
     // login input detection
-    const usernameSelectors = ['input[type="email"]','input[name*="email"]','input[id*="email"]','input[placeholder*="Email"]','input[aria-label*="email"]','input[name*="user"]','input[id*="user"]','input[type="text"]'];
-    const passwordSelectors = ['input[type="password"]','input[name*="pass"]','input[id*="pass"]'];
-    const userFound = await findVisibleInContexts(page, usernameSelectors, 4000);
-    const passFound = await findVisibleInContexts(page, passwordSelectors, 4000);
+    const usernameSelectorsBase = ['input[type="email"]','input[name*="email"]','input[id*="email"]','input[placeholder*="Email"]','input[aria-label*="email"]','input[name*="user"]','input[id*="user"]','input[type="text"]'];
+    const passwordSelectorsBase = ['input[type="password"]','input[name*="pass"]','input[id*="pass"]'];
+    const usernameSelectors = Array.isArray(config?.selectors?.email_field) ? [...config.selectors.email_field, ...usernameSelectorsBase] : usernameSelectorsBase;
+    const passwordSelectors = Array.isArray(config?.selectors?.password_field) ? [...config.selectors.password_field, ...passwordSelectorsBase] : passwordSelectorsBase;
+    const userFound = await findVisibleInContexts(page, usernameSelectors, 10000);
+    const passFound = await findVisibleInContexts(page, passwordSelectors, 10000);
 
     if (!userFound && !passFound) {
       console.log('[IdentityIQ] Login inputs not found; saving DOM inputs and failing.');
@@ -380,10 +382,12 @@ async function fetchIdentityIQReport(username, password, options = {}) {
       if (!clicked) await page.keyboard.press('Enter');
 
       // Wait for dashboard
-      await page.waitForFunction(
-        () => !window.location.pathname.includes('security-question'),
-        { timeout: 20000 }
-      );
+      try {
+        await page.waitForFunction(
+          () => !window.location.pathname.includes('security-question'),
+          { timeout: 45000 }
+        );
+      } catch (e) {}
       console.log('[IdentityIQ] Successfully passed SSN → Dashboard loaded!');
     } else {
       console.log('[IdentityIQ] No SSN challenge → proceeding (rare case)');

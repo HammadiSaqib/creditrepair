@@ -1,5 +1,6 @@
 import "./global.css";
 
+import React, { Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,118 +9,119 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SuperAdminProtectedRoute from "./components/SuperAdminProtectedRoute";
-import Index from "./pages/Index";
-import Dashboard from "./pages/Dashboard";
-import Clients from "./pages/Clients";
-import Employees from "./pages/Employees";
-import ClientProfile from "./pages/ClientProfile";
-import FundingRequests from "./pages/funding-manager/FundingRequests";
-import Reports from "./pages/Reports";
-import CreditReport from "./pages/CreditReport";
-import CreditReportScraperPage from "./pages/credit-reports/scraper";
-import ScraperLogs from "./components/ScraperLogs";
-import Disputes from "./pages/Disputes";
-import AICoach from "./pages/AICoach";
-
-import School from "./pages/School";
-import CourseLearning from "./pages/CourseLearning";
-import Analytics from "./pages/Analytics";
-import Affiliate from "./pages/Affiliate";
-import Compliance from "./pages/Compliance";
-import Automation from "./pages/Automation";
-import Settings from "./pages/Settings";
-import AffiliateSettings from "./pages/AffiliateSettings";
-import Support from "./pages/Support";
-import Pricing from "./pages/Pricing";
-import Features from "./pages/Features";
-import Subscription from "./pages/Subscription";
-import BillingSuccess from "./pages/BillingSuccess";
-import BillingCancel from "./pages/BillingCancel";
-import SuperAdmin from "./pages/SuperAdmin";
-import SuperAdminOverview from "./pages/super-admin/SuperAdminOverview";
-import SuperAdminPlans from "./pages/super-admin/SuperAdminPlans";
-import SuperAdminAdmins from "./pages/super-admin/SuperAdminAdmins";
-import AdminDetails from "./pages/super-admin/AdminDetails";
-import SuperAdminUsers from "./pages/super-admin/SuperAdminUsers";
-import SuperAdminSubscriptions from "./pages/super-admin/SuperAdminSubscriptions";
-import SuperAdminSettings from "./pages/super-admin/SuperAdminSettings";
-import SuperAdminAffiliates from "./pages/super-admin/SuperAdminAffiliates";
-import SuperAdminReports from "./pages/super-admin/SuperAdminReports";
-import SuperAdminContracts from "./pages/super-admin/SuperAdminContracts";
-import SuperAdminSupportUsers from "./pages/super-admin/SuperAdminSupportUsers";
-import SuperAdminSchoolManagement from "./pages/super-admin/SuperAdminSchoolManagement";
-import SuperAdminAdminImport from "./pages/super-admin/SuperAdminAdminImport";
-import SuperAdminAffiliateImport from "./pages/super-admin/SuperAdminAffiliateImport";
-import SuperAdminClientImport from "./pages/super-admin/SuperAdminClientImport";
-import SuperAdminCreditReportUpload from "./pages/super-admin/SuperAdminCreditReportUpload";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import SuperAdminLogin from "./pages/SuperAdminLogin";
-import SupportLogin from "./pages/SupportLogin";
-import SupportDashboard from "./pages/SupportDashboard";
-import SupportAffiliateCsvImport from "./pages/SupportAffiliateCsvImport";
-import SupportTickets from "./pages/SupportTickets";
-import SupportLiveChat from "./pages/SupportLiveChat";
-import SupportUsers from "./pages/SupportUsers";
-import SupportKnowledgeBase from "./pages/SupportKnowledgeBase";
-import SupportReports from "./pages/SupportReports";
-import SupportEscalations from "./pages/SupportEscalations";
-import SupportSettings from "./pages/SupportSettings";
-import SupportAdminManagement from "./pages/SupportAdminManagement";
 import SupportProtectedRoute from "./components/SupportProtectedRoute";
-import AffiliateLogin from "./pages/AffiliateLogin";
-import AffiliateDashboard from "./pages/AffiliateDashboard";
-import AffiliateReferrals from "./pages/AffiliateReferrals";
-import AffiliateEarnings from "./pages/AffiliateEarnings";
-import AffiliateAnalytics from "./pages/AffiliateAnalytics";
-import AffiliateMarketing from "./pages/AffiliateMarketing";
-import AffiliateLinks from "./pages/AffiliateLinks";
-import AffiliateCommissions from "./pages/AffiliateCommissions";
 import AffiliateProtectedRoute from "./components/AffiliateProtectedRoute";
-import AffiliateManagement from "./pages/AffiliateManagement";
-import AffiliateSubscription from "./pages/AffiliateSubscription";
-import JoinAffiliate from "./pages/JoinAffiliate";
-import Contact from "./pages/Contact";
-import HowItWorks from "./pages/HowItWorks";
-import FundingManagerLogin from "./pages/FundingManagerLogin";
-import FundingManagerDashboard from "./pages/funding-manager/FundingManagerDashboard";
-import BankManagement from "./pages/funding-manager/BankManagement";
-import BankDetails from "./pages/funding-manager/BankDetails";
-import CardManagement from "./pages/funding-manager/CardManagement";
-import FundingManagerClients from "./pages/funding-manager/FundingManagerClients";
-import FundingManagerSettings from "./pages/funding-manager/FundingManagerSettings";
-import FundingManagerOverview from "./pages/funding-manager/FundingManagerOverview";
-import FundingManagerAnalytics from "./pages/funding-manager/FundingManagerAnalytics";
-import FundingManagerCommissions from "./pages/funding-manager/FundingManagerCommissions";
-import FundingManagerRevenue from "./pages/funding-manager/FundingManagerRevenue";
-import FundingRequestDetails from "./pages/funding-manager/FundingRequestDetails";
-import FundingManagerCreditReport from "./pages/funding-manager/CreditReport";
- import Invoices from "./pages/Invoices";
 import FundingManagerProtectedRoute from "./components/FundingManagerProtectedRoute";
 import ClientProtectedRoute from "./components/ClientProtectedRoute";
-import ClientLogin from "./pages/client/ClientLogin";
-import ClientDashboard from "./pages/client/ClientDashboard";
-import ClientAccounts from "./pages/client/Accounts";
-import ClientPayments from "./pages/client/Payments";
-import ClientCollections from "./pages/client/Collections";
-import ClientInquiries from "./pages/client/Inquiries";
-import ClientPersonal from "./pages/client/Personal";
-import ClientUnderwriting from "./pages/client/Underwriting";
-import ClientProgressReport from "./pages/client/ProgressReport";
-import ClientAnalysis from "./pages/client/Analysis";
-import ClientFunding from "./pages/client/Funding";
-import ClientPublicRecords from "./pages/client/PublicRecords";
-import ClientMonitoring from "./pages/client/Monitoring";
-import ClientScoreHistory from "./pages/client/ScoreHistory";
-import ClientSettings from "./pages/client/Settings";
-import ClientSupport from "./pages/client/Support";
-import NotFound from "./pages/NotFound";
 import ErrorBoundary from "./components/ErrorBoundary";
-import ReferralLandingPage from "../src/components/ReferralLandingPage";
-import PermissionDebug from "./pages/PermissionDebug";
-import FundingDIY from "./pages/FundingDIY";
-import FundingApplication from "./pages/FundingApplication";
-import InvoiceView from "./pages/InvoiceView";
+import Index from "./pages/Index";
+const ReferralLandingPage = React.lazy(() => import("../src/components/ReferralLandingPage"));
+
+const Dashboard = React.lazy(() => import("./pages/Dashboard"));
+const Clients = React.lazy(() => import("./pages/Clients"));
+const Employees = React.lazy(() => import("./pages/Employees"));
+const ClientProfile = React.lazy(() => import("./pages/ClientProfile"));
+const FundingRequests = React.lazy(() => import("./pages/funding-manager/FundingRequests"));
+const Reports = React.lazy(() => import("./pages/Reports"));
+const CreditReport = React.lazy(() => import("./pages/CreditReport"));
+const CreditReportScraperPage = React.lazy(() => import("./pages/credit-reports/scraper"));
+const ScraperLogs = React.lazy(() => import("./components/ScraperLogs"));
+const Disputes = React.lazy(() => import("./pages/Disputes"));
+const AICoach = React.lazy(() => import("./pages/AICoach"));
+const School = React.lazy(() => import("./pages/School"));
+const CourseLearning = React.lazy(() => import("./pages/CourseLearning"));
+const Analytics = React.lazy(() => import("./pages/Analytics"));
+const Affiliate = React.lazy(() => import("./pages/Affiliate"));
+const Compliance = React.lazy(() => import("./pages/Compliance"));
+const Automation = React.lazy(() => import("./pages/Automation"));
+const Settings = React.lazy(() => import("./pages/Settings"));
+const AffiliateSettings = React.lazy(() => import("./pages/AffiliateSettings"));
+const Support = React.lazy(() => import("./pages/Support"));
+const Pricing = React.lazy(() => import("./pages/Pricing"));
+const Features = React.lazy(() => import("./pages/Features"));
+const Subscription = React.lazy(() => import("./pages/Subscription"));
+const BillingSuccess = React.lazy(() => import("./pages/BillingSuccess"));
+const BillingCancel = React.lazy(() => import("./pages/BillingCancel"));
+const SuperAdmin = React.lazy(() => import("./pages/SuperAdmin"));
+const SuperAdminOverview = React.lazy(() => import("./pages/super-admin/SuperAdminOverview"));
+const SuperAdminPlans = React.lazy(() => import("./pages/super-admin/SuperAdminPlans"));
+const SuperAdminAdmins = React.lazy(() => import("./pages/super-admin/SuperAdminAdmins"));
+const AdminDetails = React.lazy(() => import("./pages/super-admin/AdminDetails"));
+const SuperAdminUsers = React.lazy(() => import("./pages/super-admin/SuperAdminUsers"));
+const SuperAdminSubscriptions = React.lazy(() => import("./pages/super-admin/SuperAdminSubscriptions"));
+const SuperAdminSettings = React.lazy(() => import("./pages/super-admin/SuperAdminSettings"));
+const SuperAdminAffiliates = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliates"));
+const SuperAdminAffiliateProfile = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliateProfile"));
+const SuperAdminReports = React.lazy(() => import("./pages/super-admin/SuperAdminReports"));
+const SuperAdminContracts = React.lazy(() => import("./pages/super-admin/SuperAdminContracts"));
+const SuperAdminSupportUsers = React.lazy(() => import("./pages/super-admin/SuperAdminSupportUsers"));
+const SuperAdminSchoolManagement = React.lazy(() => import("./pages/super-admin/SuperAdminSchoolManagement"));
+const SuperAdminAdminImport = React.lazy(() => import("./pages/super-admin/SuperAdminAdminImport"));
+const SuperAdminAffiliateImport = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliateImport"));
+const SuperAdminClientImport = React.lazy(() => import("./pages/super-admin/SuperAdminClientImport"));
+const SuperAdminCreditReportUpload = React.lazy(() => import("./pages/super-admin/SuperAdminCreditReportUpload"));
+const Login = React.lazy(() => import("./pages/Login"));
+const Register = React.lazy(() => import("./pages/Register"));
+const SuperAdminLogin = React.lazy(() => import("./pages/SuperAdminLogin"));
+const SupportLogin = React.lazy(() => import("./pages/SupportLogin"));
+const SupportDashboard = React.lazy(() => import("./pages/SupportDashboard"));
+const SupportAffiliateCsvImport = React.lazy(() => import("./pages/SupportAffiliateCsvImport"));
+const SupportTickets = React.lazy(() => import("./pages/SupportTickets"));
+const SupportLiveChat = React.lazy(() => import("./pages/SupportLiveChat"));
+const SupportUsers = React.lazy(() => import("./pages/SupportUsers"));
+const SupportKnowledgeBase = React.lazy(() => import("./pages/SupportKnowledgeBase"));
+const SupportReports = React.lazy(() => import("./pages/SupportReports"));
+const SupportEscalations = React.lazy(() => import("./pages/SupportEscalations"));
+const SupportSettings = React.lazy(() => import("./pages/SupportSettings"));
+const SupportAdminManagement = React.lazy(() => import("./pages/SupportAdminManagement"));
+const AffiliateLogin = React.lazy(() => import("./pages/AffiliateLogin"));
+const AffiliateDashboard = React.lazy(() => import("./pages/AffiliateDashboard"));
+const AffiliateReferrals = React.lazy(() => import("./pages/AffiliateReferrals"));
+const AffiliateEarnings = React.lazy(() => import("./pages/AffiliateEarnings"));
+const AffiliateAnalytics = React.lazy(() => import("./pages/AffiliateAnalytics"));
+const AffiliateMarketing = React.lazy(() => import("./pages/AffiliateMarketing"));
+const AffiliateLinks = React.lazy(() => import("./pages/AffiliateLinks"));
+const AffiliateCommissions = React.lazy(() => import("./pages/AffiliateCommissions"));
+const AffiliateManagement = React.lazy(() => import("./pages/AffiliateManagement"));
+const AffiliateSubscription = React.lazy(() => import("./pages/AffiliateSubscription"));
+const JoinAffiliate = React.lazy(() => import("./pages/JoinAffiliate"));
+const Contact = React.lazy(() => import("./pages/Contact"));
+const HowItWorks = React.lazy(() => import("./pages/HowItWorks"));
+const FundingManagerLogin = React.lazy(() => import("./pages/FundingManagerLogin"));
+const FundingManagerDashboard = React.lazy(() => import("./pages/funding-manager/FundingManagerDashboard"));
+const BankManagement = React.lazy(() => import("./pages/funding-manager/BankManagement"));
+const BankDetails = React.lazy(() => import("./pages/funding-manager/BankDetails"));
+const CardManagement = React.lazy(() => import("./pages/funding-manager/CardManagement"));
+const FundingManagerClients = React.lazy(() => import("./pages/funding-manager/FundingManagerClients"));
+const FundingManagerSettings = React.lazy(() => import("./pages/funding-manager/FundingManagerSettings"));
+const FundingManagerOverview = React.lazy(() => import("./pages/funding-manager/FundingManagerOverview"));
+const FundingManagerAnalytics = React.lazy(() => import("./pages/funding-manager/FundingManagerAnalytics"));
+const FundingManagerCommissions = React.lazy(() => import("./pages/funding-manager/FundingManagerCommissions"));
+const FundingManagerRevenue = React.lazy(() => import("./pages/funding-manager/FundingManagerRevenue"));
+const FundingRequestDetails = React.lazy(() => import("./pages/funding-manager/FundingRequestDetails"));
+const FundingManagerCreditReport = React.lazy(() => import("./pages/funding-manager/CreditReport"));
+const Invoices = React.lazy(() => import("./pages/Invoices"));
+const ClientLogin = React.lazy(() => import("./pages/client/ClientLogin"));
+const ClientDashboard = React.lazy(() => import("./pages/client/ClientDashboard"));
+const ClientAccounts = React.lazy(() => import("./pages/client/Accounts"));
+const ClientPayments = React.lazy(() => import("./pages/client/Payments"));
+const ClientCollections = React.lazy(() => import("./pages/client/Collections"));
+const ClientInquiries = React.lazy(() => import("./pages/client/Inquiries"));
+const ClientPersonal = React.lazy(() => import("./pages/client/Personal"));
+const ClientUnderwriting = React.lazy(() => import("./pages/client/Underwriting"));
+const ClientProgressReport = React.lazy(() => import("./pages/client/ProgressReport"));
+const ClientAnalysis = React.lazy(() => import("./pages/client/Analysis"));
+const ClientFunding = React.lazy(() => import("./pages/client/Funding"));
+const ClientPublicRecords = React.lazy(() => import("./pages/client/PublicRecords"));
+const ClientMonitoring = React.lazy(() => import("./pages/client/Monitoring"));
+const ClientScoreHistory = React.lazy(() => import("./pages/client/ScoreHistory"));
+const ClientSettings = React.lazy(() => import("./pages/client/Settings"));
+const ClientSupport = React.lazy(() => import("./pages/client/Support"));
+const NotFound = React.lazy(() => import("./pages/NotFound"));
+const PermissionDebug = React.lazy(() => import("./pages/PermissionDebug"));
+const FundingDIY = React.lazy(() => import("./pages/FundingDIY"));
+const FundingApplication = React.lazy(() => import("./pages/FundingApplication"));
+const InvoiceView = React.lazy(() => import("./pages/InvoiceView"));
 
 const queryClient = new QueryClient();
 
@@ -136,6 +138,7 @@ const App = () => (
               v7_relativeSplatPath: true,
             }}
           >
+        <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/pricing" element={<Pricing />} />
@@ -435,6 +438,14 @@ const App = () => (
             element={
               <SuperAdminProtectedRoute>
                 <SuperAdminAffiliates />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/affiliates/:id"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminAffiliateProfile />
               </SuperAdminProtectedRoute>
             }
           />
@@ -903,6 +914,7 @@ const App = () => (
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
   </AuthProvider>

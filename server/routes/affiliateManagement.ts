@@ -570,13 +570,17 @@ router.post('/:id/toggle-status', authenticateToken, requireSuperAdminRole, asyn
 router.get('/:id/referrals', authenticateToken, requireSuperAdminRole, async (req, res) => {
   try {
     const adminId = req.user.id;
+    const userRole = req.user.role;
     const affiliateId = req.params.id.replace('AFF-', ''); // Remove prefix
     
-    // Verify affiliate belongs to this admin
-    const affiliate = await executeQuery(
-      'SELECT id FROM affiliates WHERE id = ? AND admin_id = ?',
-      [affiliateId, adminId]
-    );
+    // Verify affiliate exists; super_admin can view any affiliate
+    let verifyQuery = 'SELECT id FROM affiliates WHERE id = ?';
+    const verifyParams: any[] = [affiliateId];
+    if (userRole !== 'super_admin') {
+      verifyQuery += ' AND admin_id = ?';
+      verifyParams.push(adminId);
+    }
+    const affiliate = await executeQuery(verifyQuery, verifyParams);
     
     if (affiliate.length === 0) {
       return res.status(404).json({ error: 'Affiliate not found or access denied' });
@@ -588,7 +592,7 @@ router.get('/:id/referrals', authenticateToken, requireSuperAdminRole, async (re
         ar.id,
         ar.referred_user_id,
         ar.commission_amount,
-        ar.commission_status,
+        ar.status as commission_status,
         ar.referral_date,
         ar.conversion_date,
         ar.notes,

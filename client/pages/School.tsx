@@ -540,16 +540,13 @@ export default function School() {
     fetchUserProfile();
   }, [toast]);
 
-  // Initialize Stripe
   useEffect(() => {
     const initializeStripe = async () => {
       try {
         const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-        if (stripePublishableKey) {
+        if (stripePublishableKey && showPaymentForm && !stripe) {
           const stripeInstance = await loadStripe(stripePublishableKey);
           setStripe(stripeInstance);
-        } else {
-          console.warn('Stripe publishable key not found in environment variables');
         }
       } catch (error) {
         console.error('Failed to initialize Stripe:', error);
@@ -557,7 +554,7 @@ export default function School() {
     };
 
     initializeStripe();
-  }, []);
+  }, [showPaymentForm, stripe]);
 
   // Fetch user subscription and enrollment data
   useEffect(() => {

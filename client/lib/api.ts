@@ -587,8 +587,14 @@ export const superAdminApi = {
   createAffiliate: (data: any) => api.post('/api/affiliate-management', data),
   updateAffiliate: (id: string, data: any) => api.put(`/api/affiliate-management/${id}`, data),
   deleteAffiliate: (id: string) => api.delete(`/api/affiliate-management/${id}`),
-  getCommissionHistory: (params?: { page?: number; limit?: number; affiliate_id?: string }) =>
-    api.get('/api/commissions/history', { params }),
+  getCommissionHistory: (params?: { page?: number; limit?: number; affiliate_id?: string; affiliateId?: string }) => {
+    const mapped: any = { ...params };
+    if (params?.affiliate_id && !params?.affiliateId) {
+      mapped.affiliateId = params.affiliate_id;
+      delete mapped.affiliate_id;
+    }
+    return api.get('/api/commissions/history', { params: mapped });
+  },
   
   // Stripe Configuration Management
   getStripeConfig: () => api.get('/api/super-admin/stripe-config'),
