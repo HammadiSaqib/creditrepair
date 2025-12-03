@@ -52,6 +52,7 @@ import {
   Filter,
   Download,
   Eye,
+  EyeOff,
   Edit,
   Trash2,
   Star,
@@ -199,6 +200,7 @@ export default function Dashboard() {
     password: "",
     ssnLast4: "",
   });
+  const [showDashboardPassword, setShowDashboardPassword] = useState(false);
   const creditReportRegisterUrl = "https://myfreescorenow.com/enroll/?AID=adrwealthadvisorsllc&PID=78140";
 
   useEffect(() => {
@@ -1679,14 +1681,31 @@ export default function Dashboard() {
 
               <div className="space-y-2">
                 <Label htmlFor="password">Password *</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={newClient.password}
-                  onChange={(e) => handleInputChange("password", e.target.value)}
-                  placeholder="••••••••"
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showDashboardPassword ? "text" : "password"}
+                    value={newClient.password}
+                    onChange={(e) => handleInputChange("password", e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowDashboardPassword(!showDashboardPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label={showDashboardPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showDashboardPassword}
+                    title={showDashboardPassword ? "Hide password" : "Show password"}
+                  >
+                    {showDashboardPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               {(newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && (

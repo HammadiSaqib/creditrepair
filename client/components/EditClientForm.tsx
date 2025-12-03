@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { X, Save, Loader2 } from 'lucide-react';
+import { X, Save, Loader2, Eye, EyeOff } from 'lucide-react';
 import { clientsApi } from '../lib/api';
 
 interface ClientData {
@@ -54,6 +54,7 @@ export default function EditClientForm({ client, onClose, onSuccess }: EditClien
     platform_email: client.platform_email || '',
     platform_password: client.platform_password || '',
   });
+  const [showPlatformPassword, setShowPlatformPassword] = useState(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -343,13 +344,30 @@ export default function EditClientForm({ client, onClose, onSuccess }: EditClien
                 </div>
                 <div>
                   <Label htmlFor="platform_password">Platform Password</Label>
-                  <Input
-                    id="platform_password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={formData.platform_password || ''}
-                    onChange={(e) => handleInputChange('platform_password', e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="platform_password"
+                      type={showPlatformPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      value={formData.platform_password || ''}
+                      onChange={(e) => handleInputChange('platform_password', e.target.value)}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPlatformPassword(!showPlatformPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={showPlatformPassword ? 'Hide password' : 'Show password'}
+                      aria-pressed={showPlatformPassword}
+                      title={showPlatformPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPlatformPassword ? (
+                        <EyeOff className="h-5 w-5" />
+                      ) : (
+                        <Eye className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

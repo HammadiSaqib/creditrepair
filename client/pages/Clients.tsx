@@ -50,6 +50,7 @@ import {
   Filter,
   Download,
   Eye,
+  EyeOff,
   Edit,
   Trash2,
   Star,
@@ -173,6 +174,7 @@ const getScoreChange = (current: number, previous: number) => {
   const [addSsnLast4, setAddSsnLast4] = useState<string>("");
   const [isAddingClient, setIsAddingClient] = useState<boolean>(false);
   const [platforms, setPlatforms] = useState<string[]>([]);
+  const [showInlinePassword, setShowInlinePassword] = useState(false);
 
   // Fetch clients from backend
   const fetchClients = async () => {
@@ -748,13 +750,29 @@ const getScoreChange = (current: number, previous: number) => {
                   value={addEmail}
                   onChange={(e) => setAddEmail(e.target.value)}
                 />
-                <Input
-                  className="w-full sm:w-44"
-                  type="password"
-                  placeholder="Platform Password"
-                  value={addPassword}
-                  onChange={(e) => setAddPassword(e.target.value)}
-                />
+                <div className="relative w-full sm:w-44">
+                  <Input
+                    className="w-full pr-10"
+                    type={showInlinePassword ? "text" : "password"}
+                    placeholder="Platform Password"
+                    value={addPassword}
+                    onChange={(e) => setAddPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowInlinePassword(!showInlinePassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label={showInlinePassword ? "Hide password" : "Show password"}
+                    aria-pressed={showInlinePassword}
+                    title={showInlinePassword ? "Hide password" : "Show password"}
+                  >
+                    {showInlinePassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
                 {(addPlatform === "identityiq" || addPlatform === "myscoreiq") && (
                   <Input
                     className="w-full sm:w-28"
@@ -993,6 +1011,13 @@ const getScoreChange = (current: number, previous: number) => {
           </div>
         </CardContent>
       </Card>
+      <AddClientDialog
+        isOpen={showAddClient}
+        onClose={() => setShowAddClient(false)}
+        onSuccess={() => {
+          fetchClients();
+        }}
+      />
     </DashboardLayout>
   );
 }

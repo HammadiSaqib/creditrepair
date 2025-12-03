@@ -130,10 +130,10 @@
     ]
   },
   "waitTimeouts": {
-    "navigation": 30000,
+    "navigation": 120000,
     "element": 10000,
-    "security_question": 15000,
-    "report_load": 20000
+    "security_question": 45000,
+    "report_load": 30000
   },
   "retryAttempts": {
     "login": 3,
