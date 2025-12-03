@@ -38,7 +38,7 @@ const CreditReportUpload: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await superAdminApi.getAdminProfiles({ is_active: 'true', access_level: 'admin', limit: 200 });
+        const res = await superAdminApi.getAdminProfiles({ is_active: 'true', access_level: 'admin', limit: 'all' as any });
         const data = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
         setAdmins(data);
       } catch {
@@ -58,9 +58,8 @@ const CreditReportUpload: React.FC = () => {
     (async () => {
       if (!selectedAdminId) { setClients([]); return; }
       const admin = adminMap[selectedAdminId];
-      const fullName = `${admin?.first_name || ''} ${admin?.last_name || ''}`.trim();
       try {
-        const res = await superAdminApi.getClients({ page: 1, limit: 500, admin: fullName });
+        const res = await superAdminApi.getClients({ limit: 'all' as any, user_id: admin?.id });
         const data = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
         setClients(data);
       } catch {

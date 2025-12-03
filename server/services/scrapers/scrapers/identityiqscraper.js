@@ -179,7 +179,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
 
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9', ...(config.puppeteerHttpHeaders||{}) });
     if (config.puppeteerResolution) await page.setViewport(config.puppeteerResolution);
-    try { page.setDefaultNavigationTimeout(config.waitTimeouts?.navigation || 60000); } catch {}
+    try { page.setDefaultNavigationTimeout(config.waitTimeouts?.navigation || 120000); } catch {}
     try { page.setDefaultTimeout(config.waitTimeouts?.element || 15000); } catch {}
 
     // response capture
@@ -211,7 +211,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
 
     const loginUrl = config.loginUrl || 'https://member.identityiq.com/';
     console.log('[IdentityIQ] Navigating to login URL:', loginUrl);
-    await page.goto(loginUrl, { waitUntil: 'networkidle2', timeout: config.waitTimeouts?.navigation || 60000 });
+    await page.goto(loginUrl, { waitUntil: 'networkidle2', timeout: config.waitTimeouts?.navigation || 120000 });
     await sleep(700); // let SPA hydrate
 
     // optional ready screenshot
@@ -466,7 +466,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
         if (clicked2) reportClicked = { success: true };
       } catch {}
     }
-    try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: Math.max(30000, config.waitTimeouts?.navigation || 30000) }); } catch {}
+    try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: Math.max(120000, config.waitTimeouts?.navigation || 120000) }); } catch {}
     await sleep(8000);
     if (saveHtml) {
       try {

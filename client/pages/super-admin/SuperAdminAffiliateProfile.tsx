@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import SuperAdminLayout from '@/components/SuperAdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -85,6 +85,7 @@ function toCsv(filename: string, rows: any[]) {
 
 const SuperAdminAffiliateProfile: React.FC = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null);
   const [referrals, setReferrals] = useState<ReferralItem[]>([]);
   const [commissions, setCommissions] = useState<CommissionItem[]>([]);
@@ -312,7 +313,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                   </TableHeader>
                   <TableBody>
                     {pagedReferrals.map((r: any) => (
-                      <TableRow key={r.id}>
+                      <TableRow key={r.id} className={r.referred_user_id ? 'cursor-pointer hover:bg-muted/50' : ''} onClick={() => { if (r.referred_user_id) navigate(`/super-admin/clients/${r.referred_user_id}/transactions`); }}>
                         <TableCell>
                           <div className="font-medium">{r.referred_user_first_name} {r.referred_user_last_name}</div>
                         </TableCell>

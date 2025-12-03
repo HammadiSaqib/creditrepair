@@ -20,7 +20,7 @@ const ClientCSVImport: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const res = await superAdminApi.getAdminProfiles({ is_active: 'true', access_level: 'admin', limit: 100 });
+        const res = await superAdminApi.getAdminProfiles({ is_active: 'true', access_level: 'admin', limit: 'all' as any });
         const data = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
         setAdmins(data);
       } catch (e: any) {

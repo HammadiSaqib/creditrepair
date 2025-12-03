@@ -52,6 +52,7 @@ const SuperAdminSubscriptions = React.lazy(() => import("./pages/super-admin/Sup
 const SuperAdminSettings = React.lazy(() => import("./pages/super-admin/SuperAdminSettings"));
 const SuperAdminAffiliates = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliates"));
 const SuperAdminAffiliateProfile = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliateProfile"));
+const SuperAdminClientTransactions = React.lazy(() => import("./pages/super-admin/SuperAdminClientTransactions"));
 const SuperAdminReports = React.lazy(() => import("./pages/super-admin/SuperAdminReports"));
 const SuperAdminContracts = React.lazy(() => import("./pages/super-admin/SuperAdminContracts"));
 const SuperAdminSupportUsers = React.lazy(() => import("./pages/super-admin/SuperAdminSupportUsers"));
@@ -446,6 +447,14 @@ const App = () => (
             element={
               <SuperAdminProtectedRoute>
                 <SuperAdminAffiliateProfile />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/clients/:userId/transactions"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminClientTransactions />
               </SuperAdminProtectedRoute>
             }
           />

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import Stripe from 'stripe';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
@@ -1054,8 +1055,11 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
       }
     } catch {}
     
-    const safeLimitAdmins = Math.max(1, Math.min(100, Number(limit)));
-    const safeOffsetAdmins = Math.max(0, offset);
+    const isAll = String(limit).toLowerCase() === 'all' || (Number(limit) <= 0);
+    const totalAdmins = Number(countResult?.total || 0);
+    const safeLimitAdmins = isAll ? (totalAdmins || 10000) : Math.max(1, Math.min(100, Number(limit)));
+    const safeOffsetAdmins = isAll ? 0 : Math.max(0, offset);
+    const limitClause = isAll ? '' : `LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`;
     let admins: any[] = [];
     try {
       const extras: string[] = [];
@@ -1077,7 +1081,7 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
          FROM users u
          ${whereClause}
          ORDER BY u.created_at DESC
-         LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`;
+         ${limitClause}`;
       admins = await db.allQuery(query, params);
       console.log('📋 Admins list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
     } catch (listErr: any) {
@@ -1119,7 +1123,7 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
              FROM users u
              ${whereClause}
              ORDER BY u.created_at DESC
-             LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`;
+             ${limitClause}`;
           admins = await diagDb.allQuery(q, Array.isArray(params) ? params : []);
           console.log('📋 Admins diagnostic fallback list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
           // Continue without throwing
@@ -1147,7 +1151,7 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
            FROM users u
            ${whereClause}
            ORDER BY u.created_at DESC
-           LIMIT ${safeLimitAdmins} OFFSET ${safeOffsetAdmins}`;
+           ${limitClause}`;
         admins = await db.allQuery(qq, params);
         console.log('📋 Admins fallback list fetched', { count: Array.isArray(admins) ? admins.length : 0 });
       } else {
@@ -1166,9 +1170,9 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
       data: adminsWithPermissions,
       pagination: {
         page: Number(page),
-        limit: Number(limit),
+        limit: isAll ? (countResult?.total || 0) : Number(limit),
         total: countResult?.total || 0,
-        pages: Math.ceil((countResult?.total || 0) / Number(limit))
+        pages: isAll ? 1 : Math.ceil((countResult?.total || 0) / Number(limit))
       }
     });
   } catch (error) {
@@ -1727,6 +1731,25 @@ router.get('/users', authenticateToken, requireAdmin, async (req: Request, res: 
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch users' });
+  }
+});
+
+router.get('/users/:id', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = parseInt(String(req.params.id), 10);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid user id' });
+    }
+    const db = getDatabaseAdapter();
+    const user = await db.getQuery('SELECT * FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    const { password_hash, ...sanitized } = user;
+    res.json({ success: true, data: sanitized });
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch user' });
   }
 });
 
@@ -3278,7 +3301,7 @@ router.get('/billing-transactions', authenticateToken, requireSuperAdmin, async 
 // Alternative route path for frontend compatibility - billing transactions
 router.get('/billing/transactions', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { page = 1, limit = 50, user_id, status } = req.query;
+    const { page = 1, limit = 50, user_id, status, include_stripe } = req.query;
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
     const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 50));
     const safeOffset = (pageNum - 1) * limitNum;
@@ -3305,7 +3328,64 @@ router.get('/billing/transactions', authenticateToken, requireSuperAdmin, async 
     
     query += ` ORDER BY bt.created_at DESC LIMIT ${limitNum} OFFSET ${safeOffset}`;
     
-    const transactions = await db.allQuery(query, params);
+    let transactions = await db.allQuery(query, params);
+
+    const includeStripe = String(include_stripe || '').toLowerCase() === '1' || String(include_stripe || '').toLowerCase() === 'true';
+    if (includeStripe) {
+      let stripe: Stripe | null = null;
+      try {
+        const cfg = await db.getQuery('SELECT stripe_secret_key FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1');
+        const secret = (cfg && cfg.stripe_secret_key) ? String(cfg.stripe_secret_key) : process.env.STRIPE_SECRET_KEY || '';
+        if (secret) {
+          stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+        }
+      } catch {}
+      if (stripe) {
+        const enriched: any[] = [];
+        for (const t of Array.isArray(transactions) ? transactions : []) {
+          let stripe_invoice_id: string | null = null;
+          let stripe_payment_method_type: string | null = null;
+          let stripe_payment_method_brand: string | null = null;
+          let stripe_payment_method_last4: string | null = null;
+          let stripe_fee_amount: number | null = null;
+          const piId = t.stripe_payment_intent_id;
+          try {
+            if (piId) {
+              const pi = await stripe.paymentIntents.retrieve(String(piId), { expand: ['payment_method'] });
+              const pm = pi.payment_method as Stripe.PaymentMethod | null;
+              if (pm) {
+                stripe_payment_method_type = pm.type || null;
+                if (pm.type === 'card' && pm.card) {
+                  stripe_payment_method_brand = pm.card.brand || null;
+                  stripe_payment_method_last4 = pm.card.last4 || null;
+                }
+              }
+              const chId = typeof pi.latest_charge === 'string' ? pi.latest_charge : null;
+              if (chId) {
+                const ch = await stripe.charges.retrieve(chId);
+                const inv = ch.invoice;
+                stripe_invoice_id = typeof inv === 'string' ? inv : null;
+                const btId = typeof ch.balance_transaction === 'string' ? ch.balance_transaction : null;
+                if (btId) {
+                  const bt = await stripe.balanceTransactions.retrieve(btId);
+                  const fee = typeof bt.fee === 'number' ? bt.fee : null;
+                  stripe_fee_amount = fee != null ? Number(fee) / 100 : null;
+                }
+              }
+            }
+          } catch {}
+          enriched.push({
+            ...t,
+            stripe_invoice_id,
+            stripe_payment_method_type,
+            stripe_payment_method_brand,
+            stripe_payment_method_last4,
+            stripe_fee_amount
+          });
+        }
+        transactions = enriched;
+      }
+    }
     
     // Get total count
     let countQuery = 'SELECT COUNT(*) as total FROM billing_transactions WHERE 1=1';
@@ -3337,6 +3417,144 @@ router.get('/billing/transactions', authenticateToken, requireSuperAdmin, async 
   } catch (error) {
     console.error('Error fetching billing transactions:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch billing transactions' });
+  }
+});
+
+// Live Stripe transactions for a specific user/customer (no DB transactions)
+router.get('/billing/stripe/transactions', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const { user_id, stripe_customer_id, limit = 50 } = req.query as any;
+    const limitNum = Math.max(1, Math.min(100, parseInt(String(limit), 10) || 50));
+
+    const db = getDatabaseAdapter();
+    let customerId = String(stripe_customer_id || '');
+    let user: any = null;
+    if (!customerId) {
+      if (!user_id) {
+        return res.status(400).json({ success: false, error: 'user_id or stripe_customer_id is required' });
+      }
+      user = await db.getQuery('SELECT id, email, first_name, last_name, stripe_customer_id FROM users WHERE id = ? LIMIT 1', [user_id]);
+      if (!user || !user.stripe_customer_id) {
+        // Try affiliates fallback
+        const aff = await db.getQuery('SELECT id, email, first_name, last_name, stripe_customer_id FROM affiliates WHERE id = ? LIMIT 1', [user_id]);
+        if (aff && aff.stripe_customer_id) {
+          user = aff;
+          customerId = String(aff.stripe_customer_id);
+        }
+      } else {
+        customerId = String(user.stripe_customer_id);
+      }
+    }
+
+    if (!customerId) {
+      return res.status(404).json({ success: false, error: 'Stripe customer not found for user' });
+    }
+
+    // Initialize Stripe from DB config or environment
+    let stripe: Stripe | null = null;
+    try {
+      const cfg = await db.getQuery('SELECT stripe_secret_key FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1');
+      const secret = (cfg && cfg.stripe_secret_key) ? String(cfg.stripe_secret_key) : process.env.STRIPE_SECRET_KEY || '';
+      if (secret) {
+        stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+      }
+    } catch {}
+    if (!stripe) {
+      return res.status(500).json({ success: false, error: 'Stripe not configured' });
+    }
+
+    // Fetch live data from Stripe
+    const transactions: any[] = [];
+    const piList = await stripe.paymentIntents.list({ customer: customerId, limit: limitNum });
+    for (const pi of piList.data) {
+      let pmType: string | null = null;
+      let pmBrand: string | null = null;
+      let pmLast4: string | null = null;
+      let invoiceId: string | null = null;
+      let feeAmount: number | null = null;
+
+      try {
+        const piFull = await stripe.paymentIntents.retrieve(pi.id, { expand: ['payment_method'] });
+        const pm = piFull.payment_method as Stripe.PaymentMethod | null;
+        if (pm) {
+          pmType = pm.type || null;
+          if (pm.type === 'card' && pm.card) {
+            pmBrand = pm.card.brand || null;
+            pmLast4 = pm.card.last4 || null;
+          }
+        }
+        const chId = typeof piFull.latest_charge === 'string' ? piFull.latest_charge : null;
+        if (chId) {
+          const ch = await stripe.charges.retrieve(chId);
+          const inv = ch.invoice;
+          invoiceId = typeof inv === 'string' ? inv : null;
+          const btId = typeof ch.balance_transaction === 'string' ? ch.balance_transaction : null;
+          if (btId) {
+            const bt = await stripe.balanceTransactions.retrieve(btId);
+            const fee = typeof bt.fee === 'number' ? bt.fee : null;
+            feeAmount = fee != null ? Number(fee) / 100 : null;
+          }
+        }
+      } catch {}
+
+      transactions.push({
+        source: 'payment_intent',
+        stripe_payment_intent_id: pi.id,
+        stripe_invoice_id: invoiceId,
+        amount: typeof pi.amount === 'number' ? Number(pi.amount) / 100 : null,
+        currency: (pi.currency || 'usd').toUpperCase(),
+        status: pi.status || 'unknown',
+        stripe_payment_method_type: pmType,
+        stripe_payment_method_brand: pmBrand,
+        stripe_payment_method_last4: pmLast4,
+        stripe_fee_amount: feeAmount,
+        created_at: new Date(pi.created * 1000).toISOString(),
+        description: pi.description || null,
+        email: user?.email || null,
+        first_name: user?.first_name || null,
+        last_name: user?.last_name || null
+      });
+    }
+
+    const invList = await stripe.invoices.list({ customer: customerId, limit: limitNum });
+    const piIndex = new Map<string, number>();
+    transactions.forEach((t, idx) => {
+      if (t.stripe_payment_intent_id) piIndex.set(String(t.stripe_payment_intent_id), idx);
+    });
+    for (const inv of invList.data) {
+      const piId = typeof inv.payment_intent === 'string' ? inv.payment_intent : null;
+      const createdIso = new Date((inv.created || Math.floor(Date.now() / 1000)) * 1000).toISOString();
+      if (piId && piIndex.has(piId)) {
+        const idx = piIndex.get(piId)!;
+        transactions[idx].stripe_invoice_id = inv.id;
+      } else {
+        transactions.push({
+          source: 'invoice',
+          stripe_invoice_id: inv.id,
+          stripe_payment_intent_id: piId,
+          amount: typeof inv.total === 'number' ? Number(inv.total) / 100 : null,
+          currency: (inv.currency || 'usd').toUpperCase(),
+          status: inv.status || 'unknown',
+          stripe_payment_method_type: null,
+          stripe_payment_method_brand: null,
+          stripe_payment_method_last4: null,
+          stripe_fee_amount: null,
+          created_at: createdIso,
+          description: inv.description || null,
+          email: user?.email || null,
+          first_name: user?.first_name || null,
+          last_name: user?.last_name || null
+        });
+      }
+    }
+
+    // Sort by created_at desc
+    transactions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return res.json({ success: true, transactions, pagination: { limit: limitNum, total: transactions.length } });
+  } catch (error) {
+    console.error('Error fetching Stripe live transactions:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch Stripe live transactions' });
   }
 });
 
@@ -3608,9 +3826,10 @@ router.get('/clients', authenticateToken, requireSuperAdmin, async (req: Request
     const db = getDatabaseAdapter();
     
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 15;
+    const rawLimit = String(req.query.limit || '');
+    const isAll = rawLimit.toLowerCase() === 'all' || (parseInt(rawLimit, 10) <= 0);
     const pageNum = Math.max(1, page || 1);
-    const limitNum = Math.max(1, Math.min(500, limit || 15));
+    const limitNum = Math.max(1, Math.min(500, parseInt(rawLimit, 10) || 15));
     const search = req.query.search as string || '';
     const status = req.query.status as string || '';
     const admin = req.query.admin as string || '';
@@ -3657,7 +3876,7 @@ router.get('/clients', authenticateToken, requireSuperAdmin, async (req: Request
     // Get paginated data
     const dataQuery = `
       SELECT 
-        c.*,
+        c.*, 
         CONCAT(u.first_name, ' ', u.last_name) as admin_name,
         u.email as admin_email,
         ap.title as admin_title,
@@ -3667,7 +3886,7 @@ router.get('/clients', authenticateToken, requireSuperAdmin, async (req: Request
       LEFT JOIN admin_profiles ap ON u.id = ap.user_id
       ${whereClause}
       ORDER BY c.created_at DESC
-      LIMIT ${limitNum} OFFSET ${offset}
+      ${isAll ? '' : `LIMIT ${limitNum} OFFSET ${offset}`}
     `;
     
     const clients = await db.executeQuery(dataQuery, params);
@@ -3677,9 +3896,9 @@ router.get('/clients', authenticateToken, requireSuperAdmin, async (req: Request
       data: clients,
       pagination: {
         page: pageNum,
-        limit: limitNum,
+        limit: isAll ? total : limitNum,
         total,
-        totalPages: Math.ceil(total / limitNum)
+        totalPages: isAll ? 1 : Math.ceil(total / limitNum)
       }
     });
   } catch (error) {

@@ -126,7 +126,7 @@ class IdentityIQScraper extends Scraper {
       console.log('📍 Navigating to IdentityIQ login page...');
       await this.page.goto(this.conf.loginUrl || this.conf.url, { 
         waitUntil: 'networkidle2',
-        timeout: this.conf.waitTimeouts?.navigation || 30000
+        timeout: this.conf.waitTimeouts?.navigation || 120000
       });
       
       if (debug) {
@@ -188,7 +188,7 @@ class IdentityIQScraper extends Scraper {
     // Wait for navigation or security question page
     await this.page.waitForNavigation({ 
       waitUntil: 'networkidle2',
-      timeout: this.conf.waitTimeouts?.navigation || 30000
+      timeout: this.conf.waitTimeouts?.navigation || 120000
     });
     
     if (debug) {
@@ -228,7 +228,7 @@ class IdentityIQScraper extends Scraper {
         // Wait for navigation to dashboard
         await this.page.waitForNavigation({ 
           waitUntil: 'networkidle2',
-          timeout: this.conf.waitTimeouts?.navigation || 30000
+          timeout: this.conf.waitTimeouts?.navigation || 120000
         });
         
         if (debug) {
@@ -257,7 +257,7 @@ class IdentityIQScraper extends Scraper {
       console.log('🔄 Navigating to dashboard first...');
       await this.page.goto(this.conf.dashboardUrl, { 
         waitUntil: 'networkidle2',
-        timeout: this.conf.waitTimeouts?.navigation || 30000
+        timeout: this.conf.waitTimeouts?.navigation || 120000
       });
     }
     
@@ -269,7 +269,7 @@ class IdentityIQScraper extends Scraper {
     console.log('🔄 Navigating to credit report page...');
     await this.page.goto(this.conf.creditReportUrl, { 
       waitUntil: 'networkidle2',
-      timeout: this.conf.waitTimeouts?.navigation || 30000
+      timeout: this.conf.waitTimeouts?.navigation || 120000
     });
     
     if (debug) {

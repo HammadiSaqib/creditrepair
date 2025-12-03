@@ -77,13 +77,16 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
               ? { ssnLast4: newClient.ssnLast4 }
               : {}),
           },
+          clientId: "unknown",
         }),
       });
-
-      if (!scraperResponse.ok) {
-        const errorData = await scraperResponse.json();
-        
-        // Handle authentication errors specifically
+      const contentType = scraperResponse.headers.get("content-type") || "";
+      let scraperData: any = null;
+      if (scraperResponse.ok) {
+        if (contentType.includes("application/json")) {
+          scraperData = await scraperResponse.json();
+        }
+      } else {
         if (scraperResponse.status === 401 || scraperResponse.status === 403) {
           toast({
             title: "Authentication Error",
@@ -94,11 +97,71 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
           navigate("/login");
           return;
         }
-        
-        throw new Error(errorData.message || "Failed to scrape credit report");
+        if (contentType.includes("application/json")) {
+          try {
+            const errorData = await scraperResponse.json();
+            const msg = errorData?.message || "Failed to scrape credit report";
+            if (scraperResponse.status >= 500 || scraperResponse.status === 504) {
+              scraperData = null;
+            } else {
+              throw new Error(msg);
+            }
+          } catch {
+            if (scraperResponse.status >= 500 || scraperResponse.status === 504) {
+              scraperData = null;
+            } else {
+              throw new Error("Failed to scrape credit report");
+            }
+          }
+        } else {
+          try { await scraperResponse.text(); } catch {}
+          if (scraperResponse.status >= 500 || scraperResponse.status === 504) {
+            scraperData = null;
+          } else {
+            throw new Error("Failed to scrape credit report");
+          }
+        }
       }
-
-      const scraperData = await scraperResponse.json();
+      if (!scraperData) {
+        const start = Date.now();
+        const timeoutMs = 120000;
+        const intervalMs = 3000;
+        let reportPath: string | null = null;
+        while (Date.now() - start < timeoutMs && !reportPath) {
+          const histResp = await fetch("/api/credit-reports/history", {
+            headers: { "Authorization": `Bearer ${token}` },
+          });
+          if (histResp.ok) {
+            const histJson = await histResp.json();
+            const list = (histJson?.data ?? histJson) as any[];
+            if (Array.isArray(list) && list.length > 0) {
+              const match = list.find((item: any) =>
+                String(item?.platform || '').toLowerCase() === String(newClient.platform || '').toLowerCase() &&
+                String(item?.status || '').toLowerCase() === 'completed' &&
+                item?.report_path
+              );
+              if (match) {
+                reportPath = String(match.report_path);
+              }
+            }
+          }
+          if (!reportPath) {
+            await new Promise((r) => setTimeout(r, intervalMs));
+          }
+        }
+        if (reportPath) {
+          const fileResp = await fetch(`/api/credit-reports/json-file?path=${encodeURIComponent(reportPath)}`, {
+            headers: { "Authorization": `Bearer ${token}` },
+          });
+          if (fileResp.ok) {
+            const fileJson = await fileResp.json();
+            scraperData = { data: fileJson?.data ?? fileJson };
+          }
+        }
+      }
+      if (!scraperData) {
+        throw new Error("Scrape is taking longer than expected. Please try again shortly.");
+      }
       console.log("Scraper response:", scraperData);
       console.log("Scraper response keys:", Object.keys(scraperData));
       console.log("Report data structure:", scraperData.data ? Object.keys(scraperData.data) : "No data");
@@ -334,31 +397,47 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
         transunionScore
       });
 
-      // If we couldn't extract the name, show an error
       if (!firstName && !lastName) {
-        throw new Error("Could not extract personal information from credit report. Please verify the credentials and try again.");
+        const emailLocal = (newClient.email || '').split('@')[0] || '';
+        const parts = emailLocal.replace(/[^a-zA-Z._\-\s]/g, ' ').split(/[._\-\s]+/).filter(Boolean);
+        if (parts.length >= 2) {
+          const cap = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+          firstName = cap(parts[0]);
+          lastName = cap(parts[1]);
+        } else if (parts.length === 1) {
+          const cap = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+          firstName = cap(parts[0]);
+          lastName = "Unknown";
+        } else {
+          firstName = "Unknown";
+          lastName = "Client";
+        }
       }
 
-      // Create client with extracted information
-       const clientData = {
-         first_name: firstName,
-         last_name: lastName,
-         email: newClient.email,
-         date_of_birth: dateOfBirth || undefined,
-         address: address || undefined,
-         city: city || undefined,
-         state: state || undefined,
-         zip_code: zipCode || undefined,
-         credit_score: creditScore > 0 ? creditScore : undefined,
-         experian_score: experianScore > 0 ? experianScore : undefined,
-         equifax_score: equifaxScore > 0 ? equifaxScore : undefined,
-         transunion_score: transunionScore > 0 ? transunionScore : undefined,
-         status: "active" as const,
-         platform: newClient.platform,
-         platform_email: newClient.email,
-         platform_password: newClient.password,
-         notes: `Client created via credit report scraping from ${newClient.platform}. Bureau Scores - Experian: ${experianScore || 'N/A'}, Equifax: ${equifaxScore || 'N/A'}, TransUnion: ${transunionScore || 'N/A'}`,
-       };
+      const hadReportInfo = Boolean(firstName || dateOfBirth || address || creditScore || experianScore || equifaxScore || transunionScore);
+      const notesMessage = hadReportInfo
+        ? `Client created via credit report scraping from ${newClient.platform}. Bureau Scores - Experian: ${experianScore || 'N/A'}, Equifax: ${equifaxScore || 'N/A'}, TransUnion: ${transunionScore || 'N/A'}`
+        : `Client created without attached report due to temporary scraper error on ${newClient.platform}. You can retry scraping from the client profile.`;
+
+      const clientData = {
+        first_name: firstName,
+        last_name: lastName,
+        email: newClient.email,
+        date_of_birth: dateOfBirth || undefined,
+        address: address || undefined,
+        city: city || undefined,
+        state: state || undefined,
+        zip_code: zipCode || undefined,
+        credit_score: creditScore > 0 ? creditScore : undefined,
+        experian_score: experianScore > 0 ? experianScore : undefined,
+        equifax_score: equifaxScore > 0 ? equifaxScore : undefined,
+        transunion_score: transunionScore > 0 ? transunionScore : undefined,
+        status: "active" as const,
+        platform: newClient.platform,
+        platform_email: newClient.email,
+        platform_password: newClient.password,
+        notes: notesMessage,
+      };
 
       console.log("Creating client with extracted data:", clientData);
       const response = await clientsApi.createClient(clientData);
@@ -384,7 +463,9 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
 
       toast({
         title: "Success!",
-        description: `Client ${firstName} ${lastName} has been added successfully with their credit report information including address, bureau scores, and date of birth.`,
+        description: hadReportInfo
+          ? `Client ${firstName} ${lastName} has been added with credit report details.`
+          : `Client ${firstName} ${lastName} has been added without report; you can retry scraping from the client profile.`,
       });
 
       // Redirect to the client's credit report page
