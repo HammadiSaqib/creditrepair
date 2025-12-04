@@ -61,7 +61,7 @@ export default function FundingDIY() {
   const [selectedFundingType, setSelectedFundingType] = useState<string>("all");
   const [adminData, setAdminData] = useState<Record<number, AdminInputs>>({});
   const [lockedMap, setLockedMap] = useState<Record<number, { status: string; amount_approved: number; admin_percent: number; description?: string }>>({});
-  const [globalAdminPercent, setGlobalAdminPercent] = useState<number>(0);
+  const [globalAdminPercent, setGlobalAdminPercent] = useState<number>(10);
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const { userProfile } = useAuthContext();
@@ -299,15 +299,25 @@ export default function FundingDIY() {
   };
 
   const sortedBanks = useMemo(() => {
-    return [...allBanks].sort((a, b) => {
-      const eligA = bankEligibility(a.id);
-      const eligB = bankEligibility(b.id);
-      const scoreA = Number(eligA.stateRank || (eligA.stateEligible ? 1 : 0));
-      const scoreB = Number(eligB.stateRank || (eligB.stateEligible ? 1 : 0));
-      if (scoreB !== scoreA) return scoreB - scoreA;
-      return a.name.localeCompare(b.name);
-    });
-  }, [allBanks, selectedState, allCards]);
+    return [...allBanks]
+      .filter((bank) => {
+        const elig = bankEligibility(bank.id);
+        const hasAnyEligibleBureau = (
+          (elig.bureauEligible.Experian && clientFundableFlags.Experian) ||
+          (elig.bureauEligible.Equifax && clientFundableFlags.Equifax) ||
+          (elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion)
+        );
+        return hasAnyEligibleBureau;
+      })
+      .sort((a, b) => {
+        const eligA = bankEligibility(a.id);
+        const eligB = bankEligibility(b.id);
+        const scoreA = Number(eligA.stateRank || (eligA.stateEligible ? 1 : 0));
+        const scoreB = Number(eligB.stateRank || (eligB.stateEligible ? 1 : 0));
+        if (scoreB !== scoreA) return scoreB - scoreA;
+        return a.name.localeCompare(b.name);
+      });
+  }, [allBanks, selectedState, allCards, clientFundableFlags]);
 
   useEffect(() => {
     const fetchCards = async () => {
@@ -636,8 +646,13 @@ export default function FundingDIY() {
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {clientIdDetected > 0 ? (
                 <div className="space-y-2">
-                  <Label>Client ID</Label>
-                  <p className="text-sm text-muted-foreground">Using Client ID {clientIdDetected} (auto-detected).</p>
+                  <Label>Client</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {(clientDetails?.first_name || clientDetails?.last_name)
+                      ? <>Using Client {clientDetails?.first_name} {clientDetails?.last_name} (ID: {clientIdDetected}) (auto-detected).</>
+                      : <>Using Client ID {clientIdDetected} (auto-detected).</>
+                    }
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-2">

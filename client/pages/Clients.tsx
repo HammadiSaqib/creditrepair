@@ -444,9 +444,13 @@ const getScoreChange = (current: number, previous: number) => {
           },
         }),
       });
-
-      if (!scrapeResponse.ok) {
-        const errorData = await scrapeResponse.json().catch(() => ({}));
+      const contentType = scrapeResponse.headers.get("content-type") || "";
+      let scraperData: any = null;
+      if (scrapeResponse.ok) {
+        if (contentType.includes("application/json")) {
+          scraperData = await scrapeResponse.json();
+        }
+      } else {
         if (scrapeResponse.status === 401 || scrapeResponse.status === 403) {
           toast({
             title: "Authentication Error",
@@ -457,10 +461,71 @@ const getScoreChange = (current: number, previous: number) => {
           navigate("/login");
           return;
         }
-        throw new Error(errorData.message || "Failed to scrape credit report");
+        if (contentType.includes("application/json")) {
+          try {
+            const errorData = await scrapeResponse.json();
+            const msg = errorData?.message || "Failed to scrape credit report";
+            if (scrapeResponse.status >= 500 || scrapeResponse.status === 504) {
+              scraperData = null;
+            } else {
+              throw new Error(msg);
+            }
+          } catch {
+            if (scrapeResponse.status >= 500 || scrapeResponse.status === 504) {
+              scraperData = null;
+            } else {
+              throw new Error("Failed to scrape credit report");
+            }
+          }
+        } else {
+          try { await scrapeResponse.text(); } catch {}
+          if (scrapeResponse.status >= 500 || scrapeResponse.status === 504) {
+            scraperData = null;
+          } else {
+            throw new Error("Failed to scrape credit report");
+          }
+        }
       }
-
-      const scraperData = await scrapeResponse.json();
+      if (!scraperData) {
+        const start = Date.now();
+        const timeoutMs = 120000;
+        const intervalMs = 3000;
+        let reportPath: string | null = null;
+        while (Date.now() - start < timeoutMs && !reportPath) {
+          const histResp = await fetch("/api/credit-reports/history", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (histResp.ok) {
+            const histJson = await histResp.json();
+            const list = (histJson?.data ?? histJson) as any[];
+            if (Array.isArray(list) && list.length > 0) {
+              const match = list.find((item: any) =>
+                String(item?.platform || '').toLowerCase() === String(addPlatform || '').toLowerCase() &&
+                String(item?.status || '').toLowerCase() === 'completed' &&
+                item?.report_path
+              );
+              if (match) {
+                reportPath = String(match.report_path);
+              }
+            }
+          }
+          if (!reportPath) {
+            await new Promise((r) => setTimeout(r, intervalMs));
+          }
+        }
+        if (reportPath) {
+          const fileResp = await fetch(`/api/credit-reports/json-file?path=${encodeURIComponent(reportPath)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (fileResp.ok && (fileResp.headers.get("content-type") || "").includes("application/json")) {
+            const fileJson = await fileResp.json();
+            scraperData = { data: fileJson?.data ?? fileJson };
+          }
+        }
+      }
+      if (!scraperData) {
+        throw new Error("Scrape is taking longer than expected. Please try again shortly.");
+      }
 
       // Extract personal information with robust fallbacks
       let firstName = "";

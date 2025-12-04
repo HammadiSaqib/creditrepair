@@ -667,11 +667,13 @@ export default function Dashboard() {
           },
         }),
       });
-
-      if (!scraperResponse.ok) {
-        const errorData = await scraperResponse.json();
-        
-        // Handle authentication errors specifically
+      const contentType = scraperResponse.headers.get("content-type") || "";
+      let scraperData: any = null;
+      if (scraperResponse.ok) {
+        if (contentType.includes("application/json")) {
+          scraperData = await scraperResponse.json();
+        }
+      } else {
         if (scraperResponse.status === 401 || scraperResponse.status === 403) {
           toast({
             title: "Authentication Error",
@@ -682,11 +684,71 @@ export default function Dashboard() {
           navigate("/login");
           return;
         }
-        
-        throw new Error(errorData.message || "Failed to scrape credit report");
+        if (contentType.includes("application/json")) {
+          try {
+            const errorData = await scraperResponse.json();
+            const msg = errorData?.message || "Failed to scrape credit report";
+            if (scraperResponse.status >= 500 || scraperResponse.status === 504) {
+              scraperData = null;
+            } else {
+              throw new Error(msg);
+            }
+          } catch {
+            if (scraperResponse.status >= 500 || scraperResponse.status === 504) {
+              scraperData = null;
+            } else {
+              throw new Error("Failed to scrape credit report");
+            }
+          }
+        } else {
+          try { await scraperResponse.text(); } catch {}
+          if (scraperResponse.status >= 500 || scraperResponse.status === 504) {
+            scraperData = null;
+          } else {
+            throw new Error("Failed to scrape credit report");
+          }
+        }
       }
-
-      const scraperData = await scraperResponse.json();
+      if (!scraperData) {
+        const start = Date.now();
+        const timeoutMs = 120000;
+        const intervalMs = 3000;
+        let reportPath: string | null = null;
+        while (Date.now() - start < timeoutMs && !reportPath) {
+          const histResp = await fetch("/api/credit-reports/history", {
+            headers: { "Authorization": `Bearer ${token}` },
+          });
+          if (histResp.ok) {
+            const histJson = await histResp.json();
+            const list = (histJson?.data ?? histJson) as any[];
+            if (Array.isArray(list) && list.length > 0) {
+              const match = list.find((item: any) =>
+                String(item?.platform || '').toLowerCase() === String(newClient.platform || '').toLowerCase() &&
+                String(item?.status || '').toLowerCase() === 'completed' &&
+                item?.report_path
+              );
+              if (match) {
+                reportPath = String(match.report_path);
+              }
+            }
+          }
+          if (!reportPath) {
+            await new Promise((r) => setTimeout(r, intervalMs));
+          }
+        }
+        if (reportPath) {
+          const fileResp = await fetch(`/api/credit-reports/json-file?path=${encodeURIComponent(reportPath)}`, {
+            headers: { "Authorization": `Bearer ${token}` },
+          });
+          if (fileResp.ok && (fileResp.headers.get("content-type") || "").includes("application/json")) {
+            const fileJson = await fileResp.json();
+            scraperData = { data: fileJson?.data ?? fileJson };
+          }
+        }
+      }
+      if (!scraperData) {
+        throw new Error("Scrape is taking longer than expected. Please try again shortly.");
+      }
       console.log("Scraper response:", scraperData);
       console.log("Scraper response keys:", Object.keys(scraperData));
       console.log("Report data structure:", scraperData.data ? Object.keys(scraperData.data) : "No data");
