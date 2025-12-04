@@ -339,7 +339,18 @@ export async function updateClient(req: AuthRequest, res: Response) {
       normalizedUpdates.fundable_in_eq = Number(Boolean(normalizedUpdates.fundable_in_eq));
     }
     if (typeof updates.date_of_birth !== 'undefined') {
-      updates.date_of_birth = normalizeDateInput(updates.date_of_birth) || null as any;
+      const raw = updates.date_of_birth as any;
+      const isEmpty = raw === null || (typeof raw === 'string' && raw.trim() === '');
+      if (isEmpty) {
+        delete normalizedUpdates.date_of_birth;
+      } else {
+        const normalized = normalizeDateInput(String(raw));
+        if (normalized === null) {
+          delete normalizedUpdates.date_of_birth;
+        } else {
+          normalizedUpdates.date_of_birth = normalized;
+        }
+      }
     }
     
     if (Object.keys(normalizedUpdates).length === 0) {
