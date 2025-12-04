@@ -1235,6 +1235,46 @@ router.get('/client/:clientId', authenticateToken, async (req, res) => {
     console.log('🔍 DEBUG: Successfully loaded JSON file');
     console.log('🔍 DEBUG: reportData keys:', Object.keys(reportData));
     
+    // Log activity: report viewed
+    try {
+      const { getDatabaseAdapter } = await import('../database/databaseAdapter.js');
+      const db = getDatabaseAdapter();
+      const desc = `Credit report viewed for client ${clientId} (platform: ${report.platform}) (IP: ${req.ip})`;
+      try {
+        await db.executeQuery(
+          `INSERT INTO activities (user_id, client_id, type, description, metadata) VALUES (?, ?, ?, ?, ?)`,
+          [
+            user.id,
+            Number(clientId),
+            'note_added',
+            desc,
+            JSON.stringify({ event: 'report_viewed', platform: report.platform, ip_address: req.ip, user_agent: req.get('User-Agent') || null })
+          ]
+        );
+      } catch (e) {
+        console.warn('Activities log insert failed (non-blocking):', e?.message || e);
+      }
+      try {
+        await db.executeQuery(
+          `INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description, ip_address, user_agent, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            user.id,
+            'view',
+            'credit_report',
+            Number(clientId),
+            desc,
+            req.ip,
+            req.get('User-Agent') || null,
+            null
+          ]
+        );
+      } catch (e2) {
+        console.warn('User activities log insert failed (non-blocking):', e2?.message || e2);
+      }
+    } catch (logErr) {
+      console.warn('Logging error (non-blocking):', logErr?.message || logErr);
+    }
+
     res.json({
       success: true,
       data: {
@@ -1495,6 +1535,79 @@ router.get('/fetch', authenticateToken, async (req, res) => {
           console.error('Error saving to database:', dbError);
           // Don't fail the request if database save fails
         }
+      }
+
+      // Log activity for report fetching
+      try {
+        const { getDatabaseAdapter } = await import('../database/databaseAdapter.js');
+        const db = getDatabaseAdapter();
+        const desc = `Credit report fetched for client ${clientId || 'unknown'} on ${String(platform).toLowerCase()} (IP: ${req.ip})`;
+        // Activities (MySQL schema)
+        try {
+          await db.executeQuery(
+            `INSERT INTO activities (user_id, client_id, type, description, metadata) VALUES (?, ?, ?, ?, ?)`,
+            [
+              req.user.id,
+              clientId ? Number(clientId) : null,
+              'note_added',
+              desc,
+              JSON.stringify({ event: 'report_fetched', platform: String(platform).toLowerCase(), ip_address: req.ip, user_agent: req.get('User-Agent') || null })
+            ]
+          );
+        } catch (e) {
+          console.warn('Activities log insert failed (non-blocking):', e?.message || e);
+        }
+        // User activities (cross-db, includes IP)
+        try {
+          await db.executeQuery(
+            `INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description, ip_address, user_agent, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              req.user.id,
+              'import',
+              'credit_report',
+              clientId ? Number(clientId) : null,
+              desc,
+              req.ip,
+              req.get('User-Agent') || null,
+              null
+            ]
+          );
+        } catch (e2) {
+          console.warn('User activities log insert failed (non-blocking):', e2?.message || e2);
+        }
+      } catch (logErr) {
+        console.warn('Logging error (non-blocking):', logErr?.message || logErr);
+      }
+      // Notify admins about report fetch
+      try {
+        const db = getDatabaseAdapter();
+        const admins = await db.allQuery(
+          `SELECT id, email FROM users WHERE role = 'admin' AND (is_active = 1 OR status = 'active')`
+        );
+        const title = 'Credit Report Fetched';
+        const actorEmail = (req.user && req.user.email) ? req.user.email : 'unknown';
+        const msg = `Credit report fetched for client ${clientId || 'unknown'} on ${String(platform).toLowerCase()} by ${actorEmail} (IP: ${req.ip})`;
+        for (const admin of admins || []) {
+          await db.executeQuery(
+            `INSERT INTO admin_notifications (
+               recipient_id, sender_id, title, message, type, priority,
+               action_url, action_text, expires_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              admin.id,
+              req.user ? req.user.id : null,
+              title,
+              msg,
+              'info',
+              'low',
+              '/admin/reports',
+              'View Reports',
+              null
+            ]
+          );
+        }
+      } catch (notifyErr) {
+        console.warn('Admin notification for report fetch failed (non-blocking):', notifyErr?.message || notifyErr);
       }
       
       res.json({

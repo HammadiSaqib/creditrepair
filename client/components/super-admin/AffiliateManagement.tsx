@@ -185,6 +185,7 @@ const AffiliateManagement: React.FC = () => {
   const [commissionPayments, setCommissionPayments] = useState<CommissionPayment[]>([]);
   const [isPaymentHistoryDialogOpen, setIsPaymentHistoryDialogOpen] = useState(false);
   const [selectedAffiliatePayments, setSelectedAffiliatePayments] = useState<CommissionPayment[]>([]);
+  const [lastPayoutStatus, setLastPayoutStatus] = useState<Record<number, { isPaid: boolean; amount: number; commission_month: string; payout_month: string; invoice_url?: string }>>({});
 
   // Form state for creating/editing affiliates
   const [affiliateForm, setAffiliateForm] = useState({
@@ -219,6 +220,7 @@ const AffiliateManagement: React.FC = () => {
   useEffect(() => {
     if (affiliates.length > 0) {
       fetchStats();
+      fetchLastMonthStatuses();
     }
   }, [affiliates]);
 
@@ -278,6 +280,54 @@ const AffiliateManagement: React.FC = () => {
       console.error('Error fetching commissions:', error);
       setCommissions([]);
     }
+  };
+
+  const fetchLastMonthStatuses = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const entries: Record<number, { isPaid: boolean; amount: number; commission_month: string; payout_month: string; invoice_url?: string }> = {};
+      const ids = Array.isArray(affiliates) ? affiliates.map(a => a.id) : [];
+      await Promise.all(ids.map(async (id) => {
+        try {
+          const resp = await fetch(`/api/commissions/payout-status/${id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const json = await resp.json();
+          const d = json?.data || json || null;
+          if (d) {
+            entries[id] = {
+              isPaid: !!d.isPaid,
+              amount: Number(d.amount || 0),
+              commission_month: String(d.commission_month || ''),
+              payout_month: String(d.payout_month || ''),
+              invoice_url: d.invoice_url || undefined
+            };
+          }
+        } catch {}
+      }));
+      setLastPayoutStatus(entries);
+    } catch {}
+  };
+
+  const renderLastMonthPaymentBadge = (affiliateId: number) => {
+    const s = lastPayoutStatus[affiliateId];
+    const paid = !!s?.isPaid;
+    return (
+      <Badge className={paid ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+        {paid ? 'Paid' : 'Unpaid'}
+      </Badge>
+    );
+  };
+
+  const renderLastMonthPaymentCell = (affiliateId: number) => {
+    const s = lastPayoutStatus[affiliateId];
+    const amountStr = `$${Number(s?.amount || 0).toFixed(2)}`;
+    return (
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">{amountStr}</span>
+        {renderLastMonthPaymentBadge(affiliateId)}
+      </div>
+    );
   };
 
   const handleCreateAffiliate = async () => {
@@ -369,7 +419,7 @@ const AffiliateManagement: React.FC = () => {
     setSelectedAffiliateForPayment(affiliate);
     setPaymentForm({
       affiliate_id: affiliate.id,
-      amount: affiliate.total_earnings || 0,
+      amount: Number(affiliate.total_earnings || 0),
       transaction_id: '',
       payment_method: 'bank_transfer',
       notes: '',
@@ -415,6 +465,7 @@ const AffiliateManagement: React.FC = () => {
         });
         setIsPaymentDialogOpen(false);
         fetchAffiliates(); // Refresh the data
+        fetchLastMonthStatuses();
         
         // Refresh payment history if dialog is open
         if (isPaymentHistoryDialogOpen && selectedAffiliateForPayment) {
@@ -643,7 +694,7 @@ const AffiliateManagement: React.FC = () => {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-medium">${Number(affiliate.total_earnings || 0).toFixed(2)}</p>
+                          <p className="text-sm font-medium">${Number(affiliate.total_earnings || 0).toFixed(2)}</p>
                         <p className="text-xs text-muted-foreground">{affiliate.commission_rate}% rate</p>
                       </div>
                     </div>
@@ -784,20 +835,21 @@ const AffiliateManagement: React.FC = () => {
                     <TableHead>Commission</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Joined</TableHead>
+                    <TableHead>Last Month Payment</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
+                      <TableCell colSpan={8} className="text-center py-8">
                         <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
                         Loading affiliates...
                       </TableCell>
                     </TableRow>
                   ) : filteredAffiliates.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                         No affiliates found
                       </TableCell>
                     </TableRow>
@@ -859,6 +911,9 @@ const AffiliateManagement: React.FC = () => {
                             <Calendar className="h-3 w-3 mr-1" />
                             {format(new Date(affiliate.created_at), 'MMM dd, yyyy')}
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {renderLastMonthPaymentCell(affiliate.id)}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end space-x-2">
@@ -1003,7 +1058,7 @@ const AffiliateManagement: React.FC = () => {
                     <TableHead>Total Earnings</TableHead>
                     <TableHead>Pending Amount</TableHead>
                     <TableHead>Bank Details</TableHead>
-                    <TableHead>Last Payment</TableHead>
+                    <TableHead>Last Month Payment</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1074,7 +1129,7 @@ const AffiliateManagement: React.FC = () => {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <p className="text-sm text-muted-foreground">Never</p>
+                        {renderLastMonthPaymentCell(affiliate.id)}
                       </TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
@@ -1098,7 +1153,7 @@ const AffiliateManagement: React.FC = () => {
                     </TableRow>
                   )) : (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
+                      <TableCell colSpan={7} className="text-center py-8">
                         <p className="text-muted-foreground">No affiliates found</p>
                       </TableCell>
                     </TableRow>

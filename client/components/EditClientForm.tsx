@@ -59,30 +59,14 @@ export default function EditClientForm({ client, onClose, onSuccess }: EditClien
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Phone formatting function
   const formatPhoneNumber = (value: string) => {
-    // Remove all non-digits
-    const phoneNumber = value.replace(/\D/g, '');
-    
-    // Don't format if empty
-    if (!phoneNumber) return '';
-    
-    // Format as +1 xxx xxx xxxx
-    if (phoneNumber.length <= 10) {
-      const match = phoneNumber.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
-      if (match) {
-        const formatted = [match[1], match[2], match[3]].filter(Boolean).join(' ');
-        return formatted ? `+1 ${formatted}` : '';
-      }
-    } else if (phoneNumber.length === 11 && phoneNumber.startsWith('1')) {
-      // Handle numbers that already include country code
-      const match = phoneNumber.match(/^1(\d{3})(\d{3})(\d{4})$/);
-      if (match) {
-        return `+1 ${match[1]} ${match[2]} ${match[3]}`;
-      }
-    }
-    
-    return value; // Return original if doesn't match expected patterns
+    const digits = value.replace(/\D/g, '');
+    if (!digits) return '';
+    const national = digits.startsWith('1') ? digits.slice(1) : digits;
+    const m = national.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
+    if (!m) return value;
+    const formatted = [m[1], m[2], m[3]].filter(Boolean).join(' ');
+    return formatted ? `+1 ${formatted}` : '+1 ';
   };
 
   const handlePhoneChange = (value: string) => {
@@ -107,8 +91,12 @@ export default function EditClientForm({ client, onClose, onSuccess }: EditClien
     }
     if (!formData.phone?.trim()) {
       newErrors.phone = 'Phone number is required';
-    } else if (!/^\+1 \d{3} \d{3} \d{4}$/.test(formData.phone)) {
-      newErrors.phone = 'Phone number must be in format +1 xxx xxx xxxx';
+    } else {
+      const digits = String(formData.phone).replace(/\D/g, '');
+      const valid = digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
+      if (!valid) {
+        newErrors.phone = 'Phone number must be in format +1 xxx xxx xxxx';
+      }
     }
 
     // SSN validation (if provided)
@@ -163,11 +151,12 @@ export default function EditClientForm({ client, onClose, onSuccess }: EditClien
 
     setIsLoading(true);
     try {
+      const canonicalPhone = formatPhoneNumber(formData.phone || '');
       const updateData = {
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
-        phone: formData.phone || undefined,
+        phone: canonicalPhone || undefined,
         address: formData.address || undefined,
         ssn_last_four: formData.ssn_last_four || undefined,
         date_of_birth: formData.date_of_birth || undefined,

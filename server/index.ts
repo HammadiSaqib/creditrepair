@@ -42,6 +42,7 @@ import pricingRoutes from "./routes/pricing.js";
 import billingRoutes from "./routes/billing.js";
 import { initializeStripe } from "./routes/billing.js";
 import invoicesRoutes from "./routes/invoices.js";
+import payslipsRoutes from "./routes/payslips.js";
 import { initializeWebSocketService } from "./services/websocketService.js";
 import creditReportScraperRoutes from "./routes/creditreportscraper.js";
 import scraperLogsRoutes from "./routes/scraperLogs.js";
@@ -365,6 +366,8 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.use("/api/billing", billingRoutes);
   // Invoices routes
   app.use("/api/invoices", invoicesRoutes);
+  // Payslips routes
+  app.use("/api/payslips", payslipsRoutes);
 
   // =============================================================================
   // AI ROUTES

@@ -366,6 +366,27 @@ const getScoreChange = (current: number, previous: number) => {
     }
   };
 
+  const handleDeleteClient = async (clientId: number) => {
+    try {
+      const confirmed = window.confirm('Delete this client?');
+      if (!confirmed) return;
+      await clientsApi.deleteClient(clientId.toString());
+      setClients((prev) => prev.filter((c) => c.id !== clientId));
+      toast({
+        title: 'Success',
+        description: 'Client deleted successfully',
+      });
+      fetchClients();
+    } catch (error) {
+      console.error('Error deleting client:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete client',
+        variant: 'destructive',
+      });
+    }
+  };
+
   useEffect(() => {
     fetchClients();
   }, [pagination.page, searchTerm, statusFilter]);
@@ -1060,7 +1081,10 @@ const getScoreChange = (current: number, previous: number) => {
                                  </>
                                )}
                              </DropdownMenuItem>
-                             <DropdownMenuItem className="text-destructive">
+                             <DropdownMenuItem 
+                               className="text-destructive"
+                               onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.id); }}
+                             >
                                <Trash2 className="h-4 w-4 mr-2" />
                                Delete Client
                              </DropdownMenuItem>

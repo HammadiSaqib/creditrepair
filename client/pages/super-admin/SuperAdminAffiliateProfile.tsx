@@ -95,6 +95,8 @@ const SuperAdminAffiliateProfile: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [currentMonthEarnings, setCurrentMonthEarnings] = useState<number>(0);
+  const [lastPayout, setLastPayout] = useState<{ isPaid: boolean; amount: number; commission_month: string; payout_month: string; invoice_url?: string; payslip_url?: string } | null>(null);
+  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -115,6 +117,67 @@ const SuperAdminAffiliateProfile: React.FC = () => {
         const commResp = await superAdminApi.getCommissionHistory({ affiliate_id: String(id) });
         const commData: CommissionItem[] = commResp.data?.data || commResp.data || commResp.data || [];
         setCommissions(Array.isArray(commData) ? commData : []);
+        const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+        const now = new Date();
+        const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const nextPrev = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startPrevMonthStr = `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}-01`;
+        const startThisMonthStr = `${nextPrev.getFullYear()}-${pad(nextPrev.getMonth() + 1)}-01`;
+
+        const isInLastMonth = (d: string | undefined | null) => {
+          if (!d) return false;
+          const t = new Date(d);
+          return t >= new Date(`${startPrevMonthStr}T00:00:00`) && t < new Date(`${startThisMonthStr}T00:00:00`);
+        };
+
+        const statusOk = (s: string | undefined | null, list: string[]) => {
+          const v = String(s || '').toLowerCase();
+          return list.includes(v);
+        };
+
+        const grossFromCommissions = (Array.isArray(commData) ? commData : []).reduce((sum, c) => {
+          const ok = statusOk(c.status, ['pending', 'approved', 'paid']);
+          const inRange = isInLastMonth(c.order_date) || isInLastMonth((c as any).created_at) || isInLastMonth(c.payment_date || undefined);
+          return ok && inRange ? sum + Number(c.commission_amount || 0) : sum;
+        }, 0);
+
+        const grossFromReferrals = (Array.isArray(refData) ? refData : []).reduce((sum, r) => {
+          const ok = statusOk(r.commission_status, ['pending', 'approved', 'paid', 'converted']);
+          const inRange = isInLastMonth(r.referral_date || undefined) || isInLastMonth(r.conversion_date || undefined);
+          return ok && inRange ? sum + Number(r.commission_amount || 0) : sum;
+        }, 0);
+
+        const gross = grossFromCommissions > 0 ? grossFromCommissions : grossFromReferrals;
+        const uiAmount = gross;
+
+        try {
+          const payoutResp = await api.get(`/api/commissions/payout-status/${id}`, { params: { strict: true } });
+          const d = payoutResp.data?.data || payoutResp.data || null;
+          if (d) {
+            setLastPayout({
+              isPaid: !!d.isPaid,
+              amount: uiAmount,
+              commission_month: String(d.commission_month || ''),
+              payout_month: String(d.payout_month || ''),
+              invoice_url: d.invoice_url || undefined,
+              payslip_url: d.payslip_url || undefined
+            });
+          } else {
+            setLastPayout({
+              isPaid: false,
+              amount: uiAmount,
+              commission_month: `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`,
+              payout_month: `${now.getFullYear()}-${pad(now.getMonth() + 1)}`
+            } as any);
+          }
+        } catch {
+          setLastPayout({
+            isPaid: false,
+            amount: uiAmount,
+            commission_month: `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`,
+            payout_month: `${now.getFullYear()}-${pad(now.getMonth() + 1)}`
+          } as any);
+        }
       } catch (e: any) {
         setError(e?.message || 'Failed to load affiliate profile');
       } finally {
@@ -142,6 +205,8 @@ const SuperAdminAffiliateProfile: React.FC = () => {
     const ym = new Date().toISOString().slice(0, 7);
     return monthly.find((m) => m.month === ym)?.amount || 0;
   }, [monthly, currentMonthEarnings]);
+
+  
 
   const packageOptions = useMemo(() => {
     const set = new Set<string>();
@@ -273,6 +338,47 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                     <Input type="date" value={filters.dateTo || ''} onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} />
                     <Button variant="outline" onClick={() => setFilters({ packageType: 'all' })}><RefreshCw className="h-4 w-4 mr-1" />Reset</Button>
                     <Button onClick={exportEarnings}><Download className="h-4 w-4 mr-1" />Export Earnings</Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Last Month Payment</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-muted-foreground">{lastPayout?.commission_month || ''} → {lastPayout?.payout_month || ''}</div>
+                      <div className="text-xl font-semibold">${Number(lastPayout?.amount || 0).toFixed(2)}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {lastPayout?.isPaid ? (
+                        <Badge className="bg-green-100 text-green-800">Already Paid</Badge>
+                      ) : (
+                        <Button disabled={paying} onClick={async () => {
+                          try {
+                            setPaying(true);
+                            const txn = `AFF-${id}-${Date.now()}`;
+                            const fd = new FormData();
+                            fd.append('affiliate_id', String(id));
+                            fd.append('amount', String(Number(lastPayout?.amount || 0)));
+                            fd.append('transaction_id', txn);
+                            fd.append('payment_method', 'manual');
+                            fd.append('notes', `Payout for ${lastPayout?.commission_month || ''}`);
+                            await api.post('/api/commission-payments', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+                            const payoutResp = await api.get(`/api/commissions/payout-status/${id}`, { params: { strict: true } });
+                            const d = payoutResp.data?.data || payoutResp.data || null;
+                            if (d) setLastPayout({ isPaid: !!d.isPaid, amount: Number(d.amount || 0), commission_month: String(d.commission_month || ''), payout_month: String(d.payout_month || ''), invoice_url: d.invoice_url || undefined, payslip_url: d.payslip_url || undefined });
+                          } finally {
+                            setPaying(false);
+                          }
+                        }}>Mark as Paid</Button>
+                      )}
+                      {lastPayout?.payslip_url ? (
+                        <Button variant="link" className="p-0 h-auto text-xs" onClick={() => window.open(lastPayout?.payslip_url as string, '_blank')}>Payslip</Button>
+                      ) : null}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

@@ -10,6 +10,7 @@ import { getWebSocketService } from '../services/websocketService.js';
 import multer from 'multer';
 import { validateClientQuota, checkUserPlanLimits } from '../utils/planValidation.js';
 import { PLATFORMS } from '../services/scrapers/index.js';
+import { AdminNotificationService } from '../services/adminNotificationService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -144,6 +145,19 @@ router.post('/support-users', authenticateToken, requireSuperAdmin, async (req: 
 
     const result = await db.executeQuery(insertQuery, insertParams);
     
+    try {
+      const titleMsg = 'Support User Added';
+      const msg = `Support user ${email} added by ${(req as any)?.user?.email || 'system'} (IP: ${req.ip})`;
+      await AdminNotificationService.broadcastToAllAdmins(
+        titleMsg,
+        msg,
+        'success',
+        'medium',
+        '/admin/users',
+        'View Users'
+      );
+    } catch (notifyErr) {
+    }
     res.json({
       success: true,
       message: 'Support user created successfully',
@@ -274,7 +288,7 @@ router.delete('/support-users/:id', authenticateToken, requireSuperAdmin, async 
     const db = getDatabaseAdapter();
     
     // Check if user exists and is a support user
-    const existingUser = await db.getQuery('SELECT id, role FROM users WHERE id = ?', [userId]);
+    const existingUser = await db.getQuery('SELECT id, role, email, first_name, last_name FROM users WHERE id = ?', [userId]);
     if (!existingUser) {
       return res.status(404).json({ success: false, error: 'Support user not found' });
     }
@@ -286,6 +300,20 @@ router.delete('/support-users/:id', authenticateToken, requireSuperAdmin, async 
     // Delete user
     await db.executeQuery('DELETE FROM users WHERE id = ?', [userId]);
     
+    try {
+      const titleMsg = 'Support User Deleted';
+      const nameOrEmail = existingUser.email || `${existingUser.first_name || ''} ${existingUser.last_name || ''}`.trim() || `ID ${userId}`;
+      const msg = `Support user ${nameOrEmail} deleted by ${(req as any)?.user?.email || 'system'} (IP: ${req.ip})`;
+      await AdminNotificationService.broadcastToAllAdmins(
+        titleMsg,
+        msg,
+        'warning',
+        'medium',
+        '/admin/users',
+        'View Users'
+      );
+    } catch (notifyErr) {
+    }
     res.json({
       success: true,
       message: 'Support user deleted successfully'
@@ -1379,6 +1407,19 @@ router.post('/admins', authenticateToken, requireSuperAdmin, async (req: Request
     // Remove sensitive data
     const { password_hash, ...sanitizedAdmin } = createdAdmin;
 
+    try {
+      const titleMsg = 'Admin User Added';
+      const msg = `Admin ${adminData.email} added by ${(req as any)?.user?.email || 'system'} (IP: ${req.ip})`;
+      await AdminNotificationService.broadcastToAllAdmins(
+        titleMsg,
+        msg,
+        'success',
+        'high',
+        '/admin/users',
+        'View Admins'
+      );
+    } catch (notifyErr) {
+    }
     console.log('🟢 POST /admins - Admin created successfully with ID:', newUserId);
     res.status(201).json({
       success: true,
@@ -1643,6 +1684,20 @@ router.delete('/admins/:id', authenticateToken, requireSuperAdmin, async (req: R
     // Change user role from admin to user instead of deleting
     await db.executeQuery("UPDATE users SET role = 'user', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [currentUserId, adminId]);
 
+    try {
+      const titleMsg = 'Admin User Deleted';
+      const nameOrEmail = existingAdmin.email || `${existingAdmin.first_name || ''} ${existingAdmin.last_name || ''}`.trim() || `ID ${adminId}`;
+      const msg = `Admin ${nameOrEmail} deleted by ${(req as any)?.user?.email || 'system'} (IP: ${req.ip})`;
+      await AdminNotificationService.broadcastToAllAdmins(
+        titleMsg,
+        msg,
+        'warning',
+        'high',
+        '/admin/users',
+        'View Admins'
+      );
+    } catch (notifyErr) {
+    }
     res.json({ success: true, message: 'Admin profile deleted successfully' });
   } catch (error) {
     console.error('Error deleting admin profile:', error);

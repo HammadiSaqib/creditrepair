@@ -123,6 +123,7 @@ const PermissionDebug = React.lazy(() => import("./pages/PermissionDebug"));
 const FundingDIY = React.lazy(() => import("./pages/FundingDIY"));
 const FundingApplication = React.lazy(() => import("./pages/FundingApplication"));
 const InvoiceView = React.lazy(() => import("./pages/InvoiceView"));
+const PayslipPublic = React.lazy(() => import("./pages/PayslipPublic"));
 
 const queryClient = new QueryClient();
 
@@ -203,6 +204,10 @@ const App = () => (
                 <Invoices />
               </ProtectedRoute>
             }
+          />
+          <Route
+            path="/payslip/:token"
+            element={<PayslipPublic />}
           />
           <Route
             path="/credit-report"

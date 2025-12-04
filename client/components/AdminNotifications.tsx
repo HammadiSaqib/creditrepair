@@ -25,6 +25,7 @@ interface AdminNotification {
   created_at: string;
   action_url?: string;
   action_text?: string;
+  sender_id?: number;
   sender_first_name?: string;
   sender_last_name?: string;
 }
@@ -46,11 +47,17 @@ const AdminNotifications: React.FC = () => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await adminNotificationApi.getNotifications({ limit: 20, scope: 'personal' });
+      const response = await adminNotificationApi.getNotifications({ limit: 20 });
       const data: NotificationData = response.data.data;
-      
-      setNotifications(data.notifications);
-      setUnreadCount(data.unreadCount);
+      const currentUserId = userProfile?.id;
+      const currentUserEmail = (userProfile?.email || '').toLowerCase();
+      const filtered = (data.notifications || []).filter(n => {
+        const sentByMe = typeof n.sender_id === 'number' && currentUserId ? n.sender_id === currentUserId : false;
+        const isMyLogin = !!currentUserEmail && (n.title === 'User Login Activity') && n.message?.toLowerCase().includes(currentUserEmail);
+        return sentByMe || isMyLogin;
+      });
+      setNotifications(filtered);
+      setUnreadCount(filtered.filter(n => !n.is_read).length);
     } catch (error) {
       console.error('Error fetching notifications:', error);
       toast.error('Failed to load notifications');

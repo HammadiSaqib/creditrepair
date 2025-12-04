@@ -40,6 +40,12 @@ router.get('/performance',
   commissionController.getAffiliatePerformance
 );
 
+router.get('/payout-status/:affiliateId',
+  authenticateToken,
+  requireRole('super_admin'),
+  commissionController.getMonthlyPayoutStatus
+);
+
 // Public validation route
 router.get('/validate/:affiliateId', 
   commissionController.validateReferralLink

@@ -1,4 +1,6 @@
 import express from 'express';
+import crypto from 'crypto';
+import { ENV_CONFIG } from '../config/environment.js';
 import multer from 'multer';
 import path from 'path';
 import { authenticateToken, requireRole } from '../middleware/authMiddleware.js';
@@ -131,24 +133,71 @@ router.post('/',
         });
       }
       
-      // Insert payment record
-      const paymentId = await insertRecord(
-        `INSERT INTO commission_payments 
-         (affiliate_id, amount, transaction_id, payment_method, status, payment_date, notes, proof_of_payment_url) 
-         VALUES (?, ?, ?, ?, 'completed', NOW(), ?, ?)`,
-        [affiliate_id, amount, transaction_id, payment_method, notes || null, proof_of_payment_url]
-      );
-      
-      // Update affiliate's total earnings (mark as paid)
+      // Record payout directly in affiliate_payouts instead of commission_payments
+      // Optional: continue to adjust outstanding totals
       await updateRecord(
         'UPDATE affiliates SET total_earnings = total_earnings - ? WHERE id = ?',
         [amount, affiliate_id]
       );
-      
+
+      const now = new Date();
+      const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      const commissionMonth = `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`;
+      const payoutMonth = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+      const postedAmount = Number(amount);
+
+      await executeQuery(
+        `CREATE TABLE IF NOT EXISTS affiliate_payouts (
+           id INT AUTO_INCREMENT PRIMARY KEY,
+           affiliate_id INT NOT NULL,
+           admin_user_id INT NULL,
+           commission_month CHAR(7) NOT NULL,
+           payout_month CHAR(7) NOT NULL,
+           amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+           invoice_id INT NULL,
+           invoice_number VARCHAR(64) NULL,
+           invoice_public_token VARCHAR(64) NULL,
+           invoice_url VARCHAR(255) NULL,
+           status ENUM('generated','emailed','paid','cancelled') DEFAULT 'generated',
+           paid_at DATETIME NULL,
+           notes VARCHAR(255) NULL,
+           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+           UNIQUE KEY uniq_affiliate_commission_month (affiliate_id, commission_month)
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+      );
+
+      const adminUserId = (req as any)?.user?.id || null;
+
+      try {
+        await executeQuery(
+          `ALTER TABLE affiliate_payouts
+             ADD COLUMN IF NOT EXISTS payslip_number VARCHAR(64) NULL,
+             ADD COLUMN IF NOT EXISTS payslip_token VARCHAR(64) NULL,
+             ADD COLUMN IF NOT EXISTS payslip_url VARCHAR(255) NULL`
+        );
+      } catch (alterErr: any) {
+        try { await executeQuery(`ALTER TABLE affiliate_payouts ADD COLUMN payslip_number VARCHAR(64) NULL`); } catch (e: any) {}
+        try { await executeQuery(`ALTER TABLE affiliate_payouts ADD COLUMN payslip_token VARCHAR(64) NULL`); } catch (e: any) {}
+        try { await executeQuery(`ALTER TABLE affiliate_payouts ADD COLUMN payslip_url VARCHAR(255) NULL`); } catch (e: any) {}
+      }
+
+      const payslipToken = crypto.randomBytes(24).toString('hex');
+      const frontendBase = String(ENV_CONFIG.FRONTEND_URL || '').replace(/\/$/, '');
+      const payslipUrl = frontendBase ? `${frontendBase}/payslip/${payslipToken}` : null;
+      const payslipNumber = `PS-${commissionMonth.replace('-', '')}-${parseInt(String(affiliate_id), 10)}`;
+      await executeQuery(
+        `INSERT INTO affiliate_payouts (
+           affiliate_id, admin_user_id, commission_month, payout_month, amount, status, paid_at, notes, payslip_number, payslip_token, payslip_url, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, 'paid', NOW(), ?, ?, ?, ?, NOW(), NOW())
+         ON DUPLICATE KEY UPDATE amount = VALUES(amount), status = 'paid', paid_at = NOW(), notes = VALUES(notes), payslip_number = VALUES(payslip_number), payslip_token = VALUES(payslip_token), payslip_url = VALUES(payslip_url), updated_at = NOW()`,
+        [parseInt(String(affiliate_id), 10), adminUserId, commissionMonth, payoutMonth, postedAmount, notes || null, payslipNumber, payslipToken, payslipUrl]
+      );
+
       res.json({ 
         success: true, 
-        message: 'Commission payment recorded successfully',
-        payment_id: paymentId
+        message: 'Affiliate payout recorded successfully'
       });
     } catch (error) {
       console.error('Error recording commission payment:', error);

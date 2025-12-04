@@ -413,6 +413,35 @@ export async function deleteClient(req: AuthRequest, res: Response) {
       [id, req.user!.id]
     );
     
+    const desc = `Client deleted: ${existingClient.first_name || ''} ${existingClient.last_name || ''}${existingClient.email ? ` (${existingClient.email})` : ''} (IP: ${req.ip})`;
+    try {
+      await runQuery(
+        `INSERT INTO activities (user_id, client_id, type, description, metadata)
+         VALUES (?, ?, ?, ?, ?)`,
+        [
+          req.user!.id,
+          Number(id),
+          'note_added',
+          desc,
+          JSON.stringify({ event: 'client_deleted', ip_address: req.ip, user_agent: req.get('User-Agent') || null })
+        ]
+      );
+    } catch {}
+    try {
+      await runQuery(
+        `INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description, ip_address, user_agent, session_id)
+         VALUES (?, 'delete', 'client', ?, ?, ?, ?, ?)`,
+        [
+          req.user!.id,
+          Number(id),
+          desc,
+          req.ip,
+          req.get('User-Agent') || null,
+          null
+        ]
+      );
+    } catch {}
+
     res.json({ message: 'Client deleted successfully' });
   } catch (error) {
     console.error('Error deleting client:', error);
