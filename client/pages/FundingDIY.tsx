@@ -61,6 +61,7 @@ export default function FundingDIY() {
   const [selectedFundingType, setSelectedFundingType] = useState<string>("all");
   const [adminData, setAdminData] = useState<Record<number, AdminInputs>>({});
   const [lockedMap, setLockedMap] = useState<Record<number, { status: string; amount_approved: number; admin_percent: number; description?: string }>>({});
+  const [hydratedLockedSlots, setHydratedLockedSlots] = useState<boolean>(false);
   const [globalAdminPercent, setGlobalAdminPercent] = useState<number>(10);
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -468,6 +469,30 @@ export default function FundingDIY() {
     };
     fetchSubmissions();
   }, [resolvedType, clientIdDetected, clientIdInput]);
+
+  // Pre-populate slots with approved & locked cards so they are visible on the page
+  useEffect(() => {
+    if (!resolvedType) return;
+    if (hydratedLockedSlots) return;
+    const lockedIds = Object.keys(lockedMap).map((k) => parseInt(k, 10)).filter((n) => Number.isFinite(n));
+    if (lockedIds.length === 0) return;
+    const sourceCards: FundingCard[] = (cards && cards.length > 0) ? cards : allCards;
+    if (!sourceCards || sourceCards.length === 0) return;
+    const lockedCards = lockedIds
+      .map((id) => sourceCards.find((c) => c.id === id && c.card_type === resolvedType))
+      .filter(Boolean) as FundingCard[];
+    if (lockedCards.length === 0) return;
+    setSlotForms((prev) => {
+      const existing = new Set(prev.map((p) => p.cardId).filter(Boolean) as number[]);
+      const newSlots = lockedCards
+        .filter((c) => !existing.has(c.id))
+        .map((c) => ({ bankId: c.bank_id, cardId: c.id, fundingType: c.funding_type }));
+      if (newSlots.length === 0) return prev;
+      const merged = [...newSlots, ...prev];
+      return merged;
+    });
+    setHydratedLockedSlots(true);
+  }, [resolvedType, lockedMap, cards, allCards, hydratedLockedSlots]);
 
   const filteredCards = useMemo(() => {
     const byType = selectedFundingType === "all"
@@ -923,16 +948,18 @@ export default function FundingDIY() {
                         </SelectTrigger>
                         <SelectContent>
                           {(cards.length > 0 ? cards : allCards)
-                            .filter(c => c.bank_id === slot.bankId && c.card_type === resolvedType)
+                            .filter(c => (c.bank_id === slot.bankId && c.card_type === resolvedType) || c.id === slot.cardId)
                             .filter(c => {
                               const effective = selectedFundingType === 'all' ? (slot.fundingType || 'all') : selectedFundingType;
                               if (effective === 'all') return true;
+                              if (c.id === slot.cardId) return true;
                               return (c.funding_type || '').toLowerCase() === String(effective).toLowerCase();
                             })
                             .filter(c => {
                               if (selectedBureau === 'all') return true;
                               const canon = canonBureau(selectedBureau);
                               if (!canon) return true;
+                              if (c.id === slot.cardId) return true;
                               return cardHasBureau(c, canon);
                             })
                             .sort((a, b) => {
