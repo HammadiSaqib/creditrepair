@@ -22,6 +22,7 @@ import {
   UserPlus,
   HelpCircle,
   UserCog,
+  Newspaper,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -70,6 +71,12 @@ export default function SupportSidebar({ className }: SupportSidebarProps) {
       name: "Knowledge Base",
       href: "/support/knowledge-base",
       icon: BookOpen,
+      badge: null,
+    },
+    {
+      name: "Blog Management",
+      href: "/support/blog",
+      icon: Newspaper,
       badge: null,
     },
     {

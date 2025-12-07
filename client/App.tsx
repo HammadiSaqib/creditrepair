@@ -48,6 +48,8 @@ const SuperAdminOverview = React.lazy(() => import("./pages/super-admin/SuperAdm
 const SuperAdminPlans = React.lazy(() => import("./pages/super-admin/SuperAdminPlans"));
 const SuperAdminAdmins = React.lazy(() => import("./pages/super-admin/SuperAdminAdmins"));
 const AdminDetails = React.lazy(() => import("./pages/super-admin/AdminDetails"));
+const BlogIndex = React.lazy(() => import("./pages/Blog/BlogIndex"));
+const BlogPost = React.lazy(() => import("./pages/Blog/BlogPost"));
 const SuperAdminUsers = React.lazy(() => import("./pages/super-admin/SuperAdminUsers"));
 const SuperAdminSubscriptions = React.lazy(() => import("./pages/super-admin/SuperAdminSubscriptions"));
 const SuperAdminSettings = React.lazy(() => import("./pages/super-admin/SuperAdminSettings"));
@@ -75,6 +77,10 @@ const SupportKnowledgeBase = React.lazy(() => import("./pages/SupportKnowledgeBa
 const SupportReports = React.lazy(() => import("./pages/SupportReports"));
 const SupportEscalations = React.lazy(() => import("./pages/SupportEscalations"));
 const SupportSettings = React.lazy(() => import("./pages/SupportSettings"));
+const BlogManagement = React.lazy(() => import("./pages/Support/Blog/BlogManagement"));
+const BlogEditor = React.lazy(() => import("./pages/Support/Blog/BlogEditor"));
+const BlogCategories = React.lazy(() => import("./pages/Support/Blog/BlogCategories"));
+const BlogTags = React.lazy(() => import("./pages/Support/Blog/BlogTags"));
 const SupportAdminManagement = React.lazy(() => import("./pages/SupportAdminManagement"));
 const AffiliateLogin = React.lazy(() => import("./pages/AffiliateLogin"));
 const AffiliateDashboard = React.lazy(() => import("./pages/AffiliateDashboard"));
@@ -141,17 +147,14 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <BrowserRouter
-            future={{
-              v7_startTransition: true,
-              v7_relativeSplatPath: true,
-            }}
-          >
+          <BrowserRouter>
         <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/features" element={<Features />} />
+          <Route path="/blog" element={<BlogIndex />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/how-it-works" element={<HowItWorks />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
@@ -624,6 +627,46 @@ const App = () => (
             element={
               <SupportProtectedRoute>
                 <SupportSettings />
+              </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/support/blog"
+            element={
+              <SupportProtectedRoute>
+                <BlogManagement />
+              </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/support/blog/new"
+            element={
+              <SupportProtectedRoute>
+                <BlogEditor />
+              </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/support/blog/edit/:id"
+            element={
+              <SupportProtectedRoute>
+                <BlogEditor />
+              </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/support/blog/categories"
+            element={
+              <SupportProtectedRoute>
+                <BlogCategories />
+              </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/support/blog/tags"
+            element={
+              <SupportProtectedRoute>
+                <BlogTags />
               </SupportProtectedRoute>
             }
           />

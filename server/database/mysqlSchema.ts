@@ -1635,6 +1635,71 @@ async function createMySQLTables(): Promise<void> {
       FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Blog Categories table
+    `CREATE TABLE IF NOT EXISTS blog_categories (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) NOT NULL UNIQUE,
+      description TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Blog Posts table
+    `CREATE TABLE IF NOT EXISTS blog_posts (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) NOT NULL UNIQUE,
+      content LONGTEXT NOT NULL,
+      excerpt TEXT,
+      featured_image VARCHAR(500),
+      youtube_url VARCHAR(500),
+      author_id INT NOT NULL,
+      category_id INT,
+      status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+      published_at DATETIME,
+      seo_title VARCHAR(255),
+      seo_description TEXT,
+      seo_keywords TEXT,
+      views INT NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_slug (slug),
+      INDEX idx_category_id (category_id),
+      INDEX idx_author_id (author_id),
+      INDEX idx_status (status),
+      INDEX idx_published_at (published_at),
+      FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES blog_categories(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Blog Tags table
+    `CREATE TABLE IF NOT EXISTS blog_tags (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) NOT NULL UNIQUE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Blog Post Tags relation table
+    `CREATE TABLE IF NOT EXISTS blog_post_tags (
+      post_id INT NOT NULL,
+      tag_id INT NOT NULL,
+      PRIMARY KEY (post_id, tag_id),
+      FOREIGN KEY (post_id) REFERENCES blog_posts(id) ON DELETE CASCADE,
+      FOREIGN KEY (tag_id) REFERENCES blog_tags(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Newsletter subscribers table
+    `CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      subscribed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      status ENUM('active', 'unsubscribed') NOT NULL DEFAULT 'active',
+      INDEX idx_email (email),
+      INDEX idx_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
   ];
   

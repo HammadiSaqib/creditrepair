@@ -73,6 +73,17 @@ export default function SiteHeader() {
             Earn with Us
           </NavLink>
           <NavLink
+            to="/blog"
+            className={({ isActive }) =>
+              cn(
+                "text-muted-foreground hover:text-ocean-blue transition-colors font-medium",
+                isActive && "text-ocean-blue font-semibold"
+              )
+            }
+          >
+            Blog
+          </NavLink>
+          <NavLink
             to="/contact"
             className={({ isActive }) =>
               cn(
@@ -164,6 +175,17 @@ export default function SiteHeader() {
                     }
                   >
                     Pricing
+                  </NavLink>
+                  <NavLink
+                    to="/blog"
+                    className={({ isActive }) =>
+                      cn(
+                        "block px-3 py-2 rounded-md hover:bg-slate-100",
+                        isActive && "bg-slate-100 font-semibold"
+                      )
+                    }
+                  >
+                    Blog
                   </NavLink>
                   <NavLink
                     to="/contact"

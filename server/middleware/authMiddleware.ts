@@ -41,6 +41,7 @@ export function authenticateToken(req: AuthRequest, res: Response, next: NextFun
       const refreshBody = (req.body && (req.body as any).refresh_token) as string | undefined;
       const refreshToken = refreshHeader || refreshBody;
       if (!refreshToken) {
+        console.log('[AuthMiddleware] Token expired and no refresh token provided');
         return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
       }
       try {
@@ -49,10 +50,12 @@ export function authenticateToken(req: AuthRequest, res: Response, next: NextFun
         res.setHeader('x-access-token', newAccess);
         req.user = { id: r.id || r.userId, email: r.email, role: r.role };
         return next();
-      } catch {
+      } catch (refreshError) {
+        console.log('[AuthMiddleware] Refresh token verification failed:', refreshError);
         return res.status(401).json({ error: 'Invalid refresh token', code: 'REFRESH_FAILED' });
       }
     }
+    console.log('[AuthMiddleware] Token verification failed:', error.message);
     return res.status(403).json({ error: 'Invalid or expired token' });
   }
 }
@@ -68,6 +71,7 @@ export function requireRole(...roles: string[]) {
       return next();
     }
 
+    console.log(`[AuthMiddleware] Access denied for user ${req.user.email} with role ${req.user.role}. Required roles: ${roles.join(', ')}`);
     return res.status(403).json({ error: 'Insufficient permissions' });
   };
 }

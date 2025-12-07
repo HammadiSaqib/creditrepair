@@ -567,13 +567,13 @@ export default function Login() {
   const features = [
     {
       icon: Brain,
-      title: "AI-Powered Underwriting & Funding ",
-      description: "Intelligent Underwriting & Funding with high success rate",
+      title: "AI-Powered Credit File Insights & Readiness Indicators",
+      description: "Informational underwriting-style review tools",
     },
     {
       icon: Shield,
-      title: "FCRA/CROA Compliant",
-      description: "Automatically ensures legal compliance",
+      title: "FCRA/CROA Friendly",
+      description: "Designed with FCRA/CROA-friendly workflows",
     },
     {
       icon: Users,
@@ -591,19 +591,19 @@ export default function Login() {
     {
       name: "Sarah Rodriguez",
       company: "Credit Solutions Inc.",
-      text: "Score Machine transformed our agency. We're processing 3x more clients with better results.",
+      text: "Score Machine improved our workflow efficiency significantly.",
       rating: 5,
     },
     {
       name: "Michael Chen",
       company: "Elite Funding",
-      text: "The AI dispute generator increased our success rate from 65% to 94% in just 3 months.",
+      text: "The AI tools helped us structure our disputes more effectively.",
       rating: 5,
     },
     {
       name: "David Johnson",
       company: "Financial Freedom LLC",
-      text: "White label solution allowed us to scale. Revenue increased 400% this year.",
+      text: "White label solution allowed us to scale our operations effectively.",
       rating: 5,
     },
   ];
@@ -693,14 +693,14 @@ export default function Login() {
               <div className="space-y-10">
                 <div>
                   <h1 className="text-4xl xl:text-5xl font-bold mb-6 leading-tight">
-                    Transform Your
+                    Analyze and manage your
                     <span className="block bg-gradient-to-r from-white to-cyan-200 bg-clip-text text-transparent">
-                      Credit Score To Get Funding
+                      credit data with AI-powered insights.
                     </span>
                   </h1>
                   <p className="text-lg xl:text-xl text-white/90 leading-relaxed max-w-lg">
-                    Join thousands of professionals using AI-powered automation
-                    to deliver exceptional results and scale their operations.
+                    Used by many credit professionals for analysis and workflow automation
+                    to streamline their operations.
                   </p>
 
                   {/* Success metrics highlight */}
@@ -708,13 +708,13 @@ export default function Login() {
                     <div className="flex items-center space-x-2">
                       <div className="w-3 h-3 bg-emerald-400 rounded-full animate-pulse"></div>
                       <span className="text-sm font-medium">
-                        High Success Rate
+                        AI-Assisted Credit Insights
                       </span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse delay-300"></div>
                       <span className="text-sm font-medium">
-                        Thousands of Reports Processed
+                        Informational underwriting-style review tools
                       </span>
                     </div>
                   </div>
@@ -1313,19 +1313,21 @@ export default function Login() {
                           className="text-sm leading-relaxed"
                         >
                           I agree to the{" "}
-                          <Button
-                            variant="link"
-                            className="p-0 h-auto text-sm text-ocean-blue hover:text-sea-green"
+                          <Link
+                            to="/terms"
+                            className="text-sm text-ocean-blue hover:text-sea-green hover:underline"
+                            target="_blank"
                           >
                             Terms of Service
-                          </Button>{" "}
+                          </Link>{" "}
                           and{" "}
-                          <Button
-                            variant="link"
-                            className="p-0 h-auto text-sm text-ocean-blue hover:text-sea-green"
+                          <Link
+                            to="/privacy"
+                            className="text-sm text-ocean-blue hover:text-sea-green hover:underline"
+                            target="_blank"
                           >
                             Privacy Policy
-                          </Button>
+                          </Link>
                         </Label>
                       </div>
 
@@ -1438,9 +1440,14 @@ export default function Login() {
                     <div className="flex items-center space-x-2">
                       <Award className="h-4 w-4 text-green-600" />
                       <span className="text-muted-foreground">
-                        SOC 2 Certified
+                        Security Focused
                       </span>
                     </div>
+                  </div>
+                  <div className="mt-2 text-center">
+                    <p className="text-[10px] text-muted-foreground">
+                      Security certifications apply to our infrastructure and internal processes.
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -1472,6 +1479,9 @@ export default function Login() {
                           ?.company
                       }
                     </div>
+                    <div className="mt-2 text-[10px] text-muted-foreground italic">
+                      Results may vary. Testimonial reflects one user’s experience.
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1481,32 +1491,32 @@ export default function Login() {
             <div className="mt-4 text-center text-xs text-muted-foreground">
               <p>
                 Need help?{" "}
-                <Button
-                  variant="link"
-                  className="p-0 h-auto text-sm text-ocean-blue hover:text-sea-green"
+                <Link
+                  to="/contact"
+                  className="text-sm text-ocean-blue hover:text-sea-green hover:underline"
                 >
                   Contact Support
-                </Button>
+                </Link>
               </p>
               <div className="mt-2 flex justify-center space-x-6">
-                <Button
-                  variant="link"
-                  className="p-0 h-auto text-xs text-muted-foreground hover:text-ocean-blue"
+                <Link
+                  to="/privacy"
+                  className="text-xs text-muted-foreground hover:text-ocean-blue hover:underline"
                 >
                   Privacy Policy
-                </Button>
-                <Button
-                  variant="link"
-                  className="p-0 h-auto text-xs text-muted-foreground hover:text-ocean-blue"
+                </Link>
+                <Link
+                  to="/terms"
+                  className="text-xs text-muted-foreground hover:text-ocean-blue hover:underline"
                 >
                   Terms of Service
-                </Button>
-                <Button
-                  variant="link"
-                  className="p-0 h-auto text-xs text-muted-foreground hover:text-ocean-blue"
+                </Link>
+                <Link
+                  to="/refund-policy"
+                  className="text-xs text-muted-foreground hover:text-ocean-blue hover:underline"
                 >
-                  Cookie Policy
-                </Button>
+                  Refund Policy
+                </Link>
               </div>
             </div>
           </div>

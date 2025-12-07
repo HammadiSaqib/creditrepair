@@ -395,7 +395,7 @@ export default function Index() {
     <div ref={containerRef} className="min-h-screen bg-white overflow-x-hidden font-sans selection:bg-teal-400/20 text-slate-600">
       <Helmet>
         <title>Score Machine – AI-Powered Credit Analysis Platform</title>
-        <meta name="description" content="Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind." />
+        <meta name="description" content="Score Machine is the AI-powered credit analysis platform for professionals. Automate workflows, get structured insights, and manage clients securely." />
         <meta name="keywords" content="AI credit analysis tools, credit reporting software, credit file organization, credit industry platform, professional credit analytics, credit workflow automation, secure credit software, free credit score, AI-driven credit intelligence for lenders, credit card recommendations, Professional funding CRM software, how to fix credit report, FCRA compliant credit dispute system, VantageScore vs FICO, Underwriting Blueprint analysis for business funding, personal loan comparison, Automated fundability score check" />
         <link rel="canonical" href="https://scoremachine.com/" />
         
@@ -403,14 +403,14 @@ export default function Index() {
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://scoremachine.com/" />
         <meta property="og:title" content="Score Machine – AI-Powered Credit Analysis Platform" />
-        <meta property="og:description" content="Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind." />
+        <meta property="og:description" content="Score Machine is the AI-powered credit analysis platform for professionals. Automate workflows, get structured insights, and manage clients securely." />
         <meta property="og:image" content="https://scoremachine.com/site-image.png" />
 
         {/* Twitter */}
         <meta property="twitter:card" content="summary_large_image" />
         <meta property="twitter:url" content="https://scoremachine.com/" />
         <meta property="twitter:title" content="Score Machine – AI-Powered Credit Analysis Platform" />
-        <meta property="twitter:description" content="Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind." />
+        <meta property="twitter:description" content="Score Machine is the AI-powered credit analysis platform for professionals. Automate workflows, get structured insights, and manage clients securely." />
         <meta property="twitter:image" content="https://scoremachine.com/site-image.png" />
 
         <script type="application/ld+json">
@@ -425,7 +425,7 @@ export default function Index() {
               "price": "0",
               "priceCurrency": "USD"
             },
-            "description": "Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind.",
+            "description": "Score Machine is the AI-powered credit analysis platform for professionals. Automate workflows, get structured insights, and manage clients securely.",
             "featureList": "AI-assisted credit file organization, Structured report summaries, Progress tracking and score timelines, Automated dispute letter generation, Professional client dashboard, Multi-client management tools, Secure data encryption (SOC 2 standards), White-label and branding options, Automated workflows for credit professionals, Real-time analytics and report insights, PDF export and summary tools, Compliance-focused credit data handling, Team and employee management, API access"
           })}
         </script>
@@ -637,7 +637,7 @@ export default function Index() {
             ))}
           </div>
           
-          <p className="text-center text-xs text-slate-400 mt-12 italic">
+          <p className="text-center text-xs text-slate-500 mt-12 italic">
             (All metrics represent platform capacity and usage trends, not guaranteed performance or results.)
           </p>
         </div>
@@ -722,7 +722,7 @@ export default function Index() {
             ))}
           </div>
 
-          <p className="text-center text-xs text-slate-400 mb-8 -mt-8 italic">
+          <p className="text-center text-xs text-slate-500 mb-8 -mt-8 italic">
             Comparable values are internal estimates based on similar professional tools and do not indicate retail pricing or discounts.
           </p>
 
@@ -825,7 +825,7 @@ export default function Index() {
               {/* Ambient Glow - Light Theme */}
               <div className="absolute -z-10 bottom-[-40px] left-1/2 -translate-x-1/2 w-[120%] h-[60px] bg-teal-500/10 blur-[50px] rounded-[100%] animate-pulse"></div>
               
-              <p className="text-center text-xs text-slate-400 mt-16 italic relative z-10">
+              <p className="text-center text-xs text-slate-500 mt-16 italic relative z-10">
                 Demo video presented for illustrative purposes only.
               </p>
             </div>
@@ -866,7 +866,7 @@ export default function Index() {
             ))}
           </div>
           
-          <p className="text-center text-xs text-slate-400 mt-12 italic">
+          <p className="text-center text-xs text-slate-500 mt-12 italic">
             Disclosure: Individual experiences vary. These testimonials reflect personal opinions and workflow benefits, not guaranteed results.
           </p>
         </div>
@@ -889,7 +889,7 @@ export default function Index() {
            </div>
            
            <div className="about-item">
-              <h3 className="text-2xl font-bold text-teal-600 mb-8">Get the clarity you need to make informed decisions — without guessing.</h3>
+              <p className="text-2xl font-bold text-teal-600 mb-8">Get the clarity you need to make informed decisions — without guessing.</p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                  <Button asChild size="lg" className="bg-teal-600 hover:bg-teal-700 text-white rounded-full px-8">
                     <Link to="/signup">Create Free Account</Link>

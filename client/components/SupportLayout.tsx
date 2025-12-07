@@ -25,6 +25,7 @@ import {
   UserCog,
   FileText,
   AlertTriangle,
+  Newspaper,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useState, useEffect } from "react";
@@ -65,6 +66,7 @@ export default function SupportLayout({
     { label: "Users", href: "/support/users", Icon: Users },
     { label: "Admins", href: "/support/admin-management", Icon: UserCog },
     { label: "Knowledge", href: "/support/knowledge-base", Icon: BookOpen },
+    { label: "Blog", href: "/support/blog", Icon: Newspaper },
     { label: "Reports", href: "/support/reports", Icon: FileText },
     { label: "Escalations", href: "/support/escalations", Icon: AlertTriangle },
     { label: "Settings", href: "/support/settings", Icon: Settings },

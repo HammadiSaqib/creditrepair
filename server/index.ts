@@ -17,10 +17,13 @@ import { authenticateToken, requireRole } from "./middleware/authMiddleware.js";
 import { requireSignedAdminContract } from "./middleware/contractGuard.js";
 import { jsonErrorHandler, generalErrorHandler } from "./middleware/errorHandlingMiddleware.js";
 import authRoutes from "./routes/authRoutes.js";
+import blogRoutes from "./routes/blog.js";
+import newsletterRoutes from "./routes/newsletter.js";
 import profileUploadRoutes from "./routes/profileUpload.js";
 import communityRoutes from "./routes/community.js";
 import groupRoutes from "./routes/groups.js";
 import superAdminRoutes from "./routes/superAdmin.js";
+import supportBlogRoutes from "./routes/supportBlog.js";
 import schoolManagementRoutes from "./routes/schoolManagement.js";
 import adminManagementRoutes from "./routes/adminManagement.js";
 import affiliateManagementRoutes from "./routes/affiliateManagement.js";
@@ -274,6 +277,8 @@ export async function createServer() {
   // AUTHENTICATION ROUTES
   // =============================================================================
   app.use("/api/auth", authRoutes);
+  app.use("/api/blog", blogRoutes);
+  app.use("/api/newsletter", newsletterRoutes);
   app.use("/api/profile", profileUploadRoutes);
 
   // =============================================================================
@@ -291,6 +296,7 @@ export async function createServer() {
   // =============================================================================
   console.log('🔍 Registering super admin routes at /api/super-admin');
   app.use("/api/super-admin", superAdminRoutes);
+  app.use("/api/support/blog", supportBlogRoutes);
 
   // =============================================================================
   // SCHOOL MANAGEMENT ROUTES

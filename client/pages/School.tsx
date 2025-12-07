@@ -298,6 +298,31 @@ export default function School() {
   const subscriptionStatus = useSubscriptionStatus();
   const [activeTab, setActiveTab] = useState("community");
   const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
+
+  const safeNavigate = (
+    to: string,
+    opts?: { replace?: boolean; state?: any; preserveSearch?: boolean }
+  ) => {
+    try {
+      const search = opts?.preserveSearch ? window.location.search : '';
+      const finalTo = `${to}${search}`;
+      console.log('[Nav] navigating to', finalTo, { replace: opts?.replace, state: opts?.state });
+      navigate(finalTo, { replace: opts?.replace, state: opts?.state });
+    } catch (err) {
+      console.error('[Nav] navigate error', err);
+      toast({
+        title: 'Navigation Failed',
+        description: 'We could not navigate to the requested page. Retrying with full reload...',
+        variant: 'destructive',
+      });
+      try {
+        const search = opts?.preserveSearch ? window.location.search : '';
+        window.location.assign(`${to}${search}`);
+      } catch (assignErr) {
+        console.error('[Nav] window.location.assign error', assignErr);
+      }
+    }
+  };
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -3112,27 +3137,4 @@ export default function School() {
     </DashboardLayout>
   );
 }
-  const safeNavigate = (
-    to: string,
-    opts?: { replace?: boolean; state?: any; preserveSearch?: boolean }
-  ) => {
-    try {
-      const search = opts?.preserveSearch ? window.location.search : '';
-      const finalTo = `${to}${search}`;
-      console.log('[Nav] navigating to', finalTo, { replace: opts?.replace, state: opts?.state });
-      navigate(finalTo, { replace: opts?.replace, state: opts?.state });
-    } catch (err) {
-      console.error('[Nav] navigate error', err);
-      toast({
-        title: 'Navigation Failed',
-        description: 'We could not navigate to the requested page. Retrying with full reload...',
-        variant: 'destructive',
-      });
-      try {
-        const search = opts?.preserveSearch ? window.location.search : '';
-        window.location.assign(`${to}${search}`);
-      } catch (assignErr) {
-        console.error('[Nav] window.location.assign error', assignErr);
-      }
-    }
-  };
+
