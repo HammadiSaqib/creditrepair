@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -257,6 +258,11 @@ const JoinAffiliate: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-white">
+      <Helmet>
+        <title>Affiliate Program - Score Machine | Partner & Earn</title>
+        <meta name="description" content="Join Score Machine’s Affiliate and Partner Programs. Earn recurring commissions by promoting a professional, AI-based credit analysis platform. Access training, analytics, tracking tools, and compliance-ready marketing resources." />
+        <link rel="canonical" href="https://scoremachine.com/affiliate" />
+      </Helmet>
       <SiteHeader />
       {/* Enhanced Hero Section */}
       <section className="relative overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50/30 to-emerald-50/30">

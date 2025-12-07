@@ -36,6 +36,7 @@ import {
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import { Helmet } from "react-helmet-async";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -59,6 +60,21 @@ export default function Index() {
     const t = setTimeout(() => setLoading(false), 1000);
     return () => clearTimeout(t);
   }, []);
+
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "ScoreMachine",
+    "applicationCategory": "FinanceApplication",
+    "operatingSystem": "Web",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "description": "Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind.",
+    "featureList": "AI-assisted credit file organization, Structured report summaries, Progress tracking and score timelines, Automated dispute letter generation, Professional client dashboard, Multi-client management tools, Secure data encryption (SOC 2 standards), White-label and branding options, Automated workflows for credit professionals, Real-time analytics and report insights, PDF export and summary tools, Compliance-focused credit data handling, Team and employee management, API access"
+  };
 
   useGSAP(
     () => {
@@ -377,6 +393,43 @@ export default function Index() {
 
   return (
     <div ref={containerRef} className="min-h-screen bg-white overflow-x-hidden font-sans selection:bg-teal-400/20 text-slate-600">
+      <Helmet>
+        <title>Score Machine – AI-Powered Credit Analysis Platform</title>
+        <meta name="description" content="Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind." />
+        <meta name="keywords" content="AI credit analysis tools, credit reporting software, credit file organization, credit industry platform, professional credit analytics, credit workflow automation, secure credit software, free credit score, AI-driven credit intelligence for lenders, credit card recommendations, Professional funding CRM software, how to fix credit report, FCRA compliant credit dispute system, VantageScore vs FICO, Underwriting Blueprint analysis for business funding, personal loan comparison, Automated fundability score check" />
+        <link rel="canonical" href="https://scoremachine.com/" />
+        
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://scoremachine.com/" />
+        <meta property="og:title" content="Score Machine – AI-Powered Credit Analysis Platform" />
+        <meta property="og:description" content="Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind." />
+        <meta property="og:image" content="https://scoremachine.com/site-image.png" />
+
+        {/* Twitter */}
+        <meta property="twitter:card" content="summary_large_image" />
+        <meta property="twitter:url" content="https://scoremachine.com/" />
+        <meta property="twitter:title" content="Score Machine – AI-Powered Credit Analysis Platform" />
+        <meta property="twitter:description" content="Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind." />
+        <meta property="twitter:image" content="https://scoremachine.com/site-image.png" />
+
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "ScoreMachine",
+            "applicationCategory": "FinanceApplication",
+            "operatingSystem": "Web",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "description": "Score Machine is an AI-powered credit analysis and reporting platform designed for professionals and businesses. Access structured insights, automated workflows, client management tools, and secure credit file organization—all built with compliance, accuracy, and clarity in mind.",
+            "featureList": "AI-assisted credit file organization, Structured report summaries, Progress tracking and score timelines, Automated dispute letter generation, Professional client dashboard, Multi-client management tools, Secure data encryption (SOC 2 standards), White-label and branding options, Automated workflows for credit professionals, Real-time analytics and report insights, PDF export and summary tools, Compliance-focused credit data handling, Team and employee management, API access"
+          })}
+        </script>
+      </Helmet>
       {/* --- GLOBAL BACKGROUND PATTERN --- */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         {/* Light Base */}
@@ -559,7 +612,7 @@ export default function Index() {
       <section ref={trustedRef} className="trusted-section py-16 border-y border-slate-100 relative z-10 bg-slate-50/50 backdrop-blur-sm">
         <div className="container mx-auto px-4">
           <div className="text-center mb-10">
-            <h3 className="text-2xl font-bold text-slate-800 mb-2">Trusted by Credit & Funding Professionals Nationwide</h3>
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">Trusted by Credit & Funding Professionals Nationwide</h2>
             <p className="text-slate-500 max-w-2xl mx-auto">Used by thousands of industry practitioners seeking reliable, structured, and efficient credit analysis tools.</p>
           </div>
           

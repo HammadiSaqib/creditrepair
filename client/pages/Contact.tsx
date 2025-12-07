@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Mail, Phone, MapPin, Send, MessageSquare, Clock, HelpCircle, Building2, Globe, ArrowRight, Users, Shield, Zap, Star } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+import { Helmet } from 'react-helmet-async';
 import Footer from '@/components/Footer';
 
 export default function Contact() {
@@ -49,6 +50,11 @@ export default function Contact() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20">
+      <Helmet>
+        <title>Contact Us - Score Machine | Support & Inquiries</title>
+        <meta name="description" content="Contact Score Machine for support, account assistance, or platform guidance. Our team provides help with onboarding, technical questions, and feature navigation. Typical responses within business hours." />
+        <link rel="canonical" href="https://scoremachine.com/contact" />
+      </Helmet>
       <SiteHeader />
       
       {/* Enhanced Hero Section */}

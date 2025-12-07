@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -190,6 +191,11 @@ export default function Pricing() {
 
   return (
     <div className="min-h-screen bg-white">
+      <Helmet>
+        <title>Pricing Plans - Score Machine | Professional Credit Analysis Tools</title>
+        <meta name="description" content="Explore transparent pricing for Score Machine’s AI-powered credit analysis tools. Access automated workflows, progress tracking, client dashboards, report summaries, and secure credit data organization. No credit improvement or funding outcomes are implied or guaranteed." />
+        <link rel="canonical" href="https://scoremachine.com/pricing" />
+      </Helmet>
       <SiteHeader />
 
       {/* Hero Section */}
