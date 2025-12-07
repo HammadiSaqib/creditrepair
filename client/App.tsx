@@ -86,6 +86,11 @@ const AffiliateCommissions = React.lazy(() => import("./pages/AffiliateCommissio
 const AffiliateManagement = React.lazy(() => import("./pages/AffiliateManagement"));
 const AffiliateSubscription = React.lazy(() => import("./pages/AffiliateSubscription"));
 const JoinAffiliate = React.lazy(() => import("./pages/JoinAffiliate"));
+const Terms = React.lazy(() => import("./pages/Terms"));
+const Privacy = React.lazy(() => import("./pages/Privacy"));
+const Refund = React.lazy(() => import("./pages/Refund"));
+const Docs = React.lazy(() => import("./pages/Docs"));
+const Sitemap = React.lazy(() => import("./pages/Sitemap"));
 const Contact = React.lazy(() => import("./pages/Contact"));
 const HowItWorks = React.lazy(() => import("./pages/HowItWorks"));
 const FundingManagerLogin = React.lazy(() => import("./pages/FundingManagerLogin"));
@@ -146,6 +151,11 @@ const App = () => (
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/features" element={<Features />} />
           <Route path="/how-it-works" element={<HowItWorks />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/refund-policy" element={<Refund />} />
+          <Route path="/docs" element={<Docs />} />
+          <Route path="/sitemap" element={<Sitemap />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/super-admin/login" element={<SuperAdminLogin />} />

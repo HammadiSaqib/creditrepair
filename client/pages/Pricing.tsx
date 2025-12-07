@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Link, useNavigate } from 'react-router-dom';
 import SiteHeader from '@/components/SiteHeader';
 import { pricingApi } from '@/lib/api';
+import Footer from '@/components/Footer';
 
 interface PricingPlan {
   id: number;
@@ -250,8 +251,7 @@ export default function Pricing() {
               </div>
               <div className="flex items-center gap-2">
                 <Check className="h-5 w-5 text-emerald-600" />
-                <span className="text-sm font-medium">Accurate, fundability-ready analysis
-                </span>
+                <span className="text-sm font-medium">Structured, informative analysis to help you review credit data</span>
               </div>
             </div>
           </div>
@@ -419,6 +419,7 @@ export default function Pricing() {
                           'Get Started'
                         )}
                       </Button>
+                      <p className="text-xs text-center text-gray-500 mt-2">Charges apply per report pull. Unlimited access is optional.</p>
                     </CardContent>
                   </Card>
                 );
@@ -555,7 +556,7 @@ export default function Pricing() {
                  </div>
                </div>
                <blockquote className="text-gray-700 mb-4">
-                 "Score Machine has transformed our business. We've increased our client capacity by 300% and our dispute success rate has improved dramatically."
+                 "Score Machine helps streamline credit review workflows and client management, according to our users."
                </blockquote>
                <div className="flex items-center">
                  <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold">
@@ -579,7 +580,7 @@ export default function Pricing() {
                  </div>
                </div>
                <blockquote className="text-gray-700 mb-4">
-                 "The automation features save us hours every day. Our team can focus on what matters most - helping our clients achieve their credit goals."
+                 "The automation features help us stay organized. Our team can focus on what matters most - supporting our clients."
                </blockquote>
                <div className="flex items-center">
                  <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold">
@@ -603,7 +604,7 @@ export default function Pricing() {
                  </div>
                </div>
                <blockquote className="text-gray-700 mb-4">
-                 "Professional, reliable, and incredibly user-friendly. Score Machine has everything we need to run our funding business efficiently."
+                 "Professional, reliable, and incredibly user-friendly. Score Machine has the tools we need to manage our business efficiently."
                </blockquote>
                <div className="flex items-center">
                  <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold">
@@ -616,6 +617,7 @@ export default function Pricing() {
                </div>
              </Card>
            </div>
+           <p className="text-xs text-gray-400 mt-6 text-center italic">Results may vary. Testimonials reflect individual experiences and are not guarantees of similar outcomes.</p>
          </div>
        </section>
 
@@ -640,7 +642,7 @@ export default function Pricing() {
              <Card className="p-6">
                <h3 className="text-lg font-semibold mb-2">Is there a free trial available?</h3>
                <p className="text-gray-600">
-                 Absolutely! We offer a 30-day free trial with full access to all features. No credit card required to start.
+                 Create a free account to explore the platform for 30 days. Limited access included. Full report access requires a paid plan.
                </p>
              </Card>
 
@@ -654,7 +656,7 @@ export default function Pricing() {
              <Card className="p-6">
                <h3 className="text-lg font-semibold mb-2">Do you offer refunds?</h3>
                <p className="text-gray-600">
-                 Yes, we offer a 30-day money-back guarantee. If you're not satisfied with our service, we'll provide a full refund within the first 30 days.
+                 If you are not satisfied within the first 30 days, we will provide a full refund. Certain conditions may apply; see our Terms of Service for details.
                </p>
              </Card>
 
@@ -702,6 +704,7 @@ export default function Pricing() {
                  <span className="font-semibold">99.9% Uptime</span>
                </div>
              </div>
+             <p className="text-xs text-gray-400 mt-4 italic">Metrics reflect current platform usage and system performance trends and may change over time.</p>
            </div>
          </div>
        </section>
@@ -733,6 +736,13 @@ export default function Pricing() {
            </Card>
          </div>
        </section>
+       
+       <div className="py-8 bg-gray-50 text-center px-4">
+         <p className="text-xs text-gray-500 max-w-4xl mx-auto leading-relaxed">
+           Score Machine provides tools for organizing and reviewing credit report information. It does not guarantee credit improvement, funding approval, or specific financial outcomes. All insights are for informational purposes only. Comparable values represent internal estimates, not retail pricing.
+         </p>
+       </div>
+       <Footer />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/badge';
 import { Loader2, Users, DollarSign, TrendingUp, CheckCircle, ArrowRight, Sparkles, CreditCard, Shield, Award, Star, Building2, Handshake, Layers, Info, HelpCircle, BarChart3 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import SiteHeader from '@/components/SiteHeader';
+import Footer from '../components/Footer';
 
 interface FormData {
   email: string;
@@ -22,6 +23,8 @@ interface VerificationData {
   email: string;
   code: string;
 }
+
+import Footer from '@/components/Footer';
 
 const JoinAffiliate: React.FC = () => {
   const navigate = useNavigate();
@@ -298,36 +301,40 @@ const JoinAffiliate: React.FC = () => {
             </p>
 
             {/* Trust Indicators */}
-            <div className="flex flex-wrap justify-center items-center gap-8 mb-12 text-sm text-gray-500">
+            <div className="flex flex-wrap justify-center items-center gap-8 mb-8 text-sm text-gray-500">
               <div className="flex items-center gap-2">
                 <div className="flex">
                   {[...Array(5)].map((_, i) => (
                     <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                   ))}
                 </div>
-                <span>4.9/5 Partner Rating</span>
+                <span>4.9/5 Partner Rating*</span>
               </div>
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-ocean-blue" />
-                <span>500+ Active Partners</span>
+                <span>500+ Active Partners*</span>
               </div>
               <div className="flex items-center gap-2">
                 <DollarSign className="w-4 h-4 text-sea-green" />
-                <span>$2M+ Paid in Commissions</span>
+                <span>$2M+ Paid in Commissions*</span>
               </div>
             </div>
+            
+            <p className="text-xs text-gray-400 text-center max-w-2xl mx-auto mb-12 italic">
+              *Metrics reflect current usage and historical payouts and may change over time.
+            </p>
 
             {/* Enhanced CTAs */}
             <div className="flex flex-col sm:flex-row gap-6 justify-center mb-16">
               <Button asChild size="lg" className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-semibold px-10 py-6 text-lg shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105 rounded-xl">
                 <Link to="#apply" className="flex items-center">
-                  Apply Now
+                  Apply to Join
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline" className="border-2 border-ocean-blue text-ocean-blue hover:bg-ocean-blue hover:text-white font-semibold px-10 py-6 text-lg rounded-xl transition-all duration-300 backdrop-blur-sm bg-white/50">
                 <Link to="#programs" className="flex items-center">
-                  Explore Programs
+                  View Program Details
                   <Building2 className="ml-2 h-5 w-5" />
                 </Link>
               </Button>
@@ -342,7 +349,7 @@ const JoinAffiliate: React.FC = () => {
                   <DollarSign className="w-8 h-8 text-white" />
                 </div>
                 <h3 className="text-xl font-bold mb-3 text-gray-900">Up to 25% Commissions</h3>
-                <p className="text-gray-600 leading-relaxed">Maximize earnings with our tiered partner program and recurring revenue model.</p>
+                <p className="text-gray-600 leading-relaxed">Earn competitive commissions through our tiered partner program and recurring revenue model.</p>
                 <div className="mt-4 inline-flex items-center text-ocean-blue font-semibold">
                   <span>Learn More</span>
                   <ArrowRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
@@ -398,7 +405,7 @@ const JoinAffiliate: React.FC = () => {
               Choose Your Success Path
             </h2>
             <p className="text-xl text-gray-600 max-w-4xl mx-auto leading-relaxed">
-              Start free as an Affiliate, grow with Partner tiers, or build your own brand with <span className="font-semibold text-orange-600">White Label (Coming Soon)</span>—powered by Score Machine's industry-leading funding platform.
+              Start free as an Affiliate, grow with Partner tiers, or build your own brand with <span className="font-semibold text-orange-600">White Label (Coming Soon)</span>—powered by Score Machine's comprehensive funding platform.
             </p>
           </div>
 
@@ -519,7 +526,7 @@ const JoinAffiliate: React.FC = () => {
                   </div>
                   <div className="flex items-start gap-3">
                     <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span className="text-gray-700">Tiered profit splits with full brand control</span>
+                    <span className="text-gray-700">Flexible profit structures with brand control options</span>
                   </div>
                   <div className="flex items-start gap-3">
                     <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
@@ -530,7 +537,7 @@ const JoinAffiliate: React.FC = () => {
                 <div className="pt-4 border-t border-gray-100">
                   <Button asChild className="w-full bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 group/btn cursor-not-allowed" disabled>
                     <span className="flex items-center justify-center gap-2">
-                      Request White Label Details (Coming Soon)
+                      Join Waitlist for White Label
                       <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
                     </span>
                   </Button>
@@ -559,7 +566,7 @@ const JoinAffiliate: React.FC = () => {
               White Label Pricing Tiers <span className="text-lg bg-orange-100 text-orange-700 px-3 py-1 rounded-full">(Coming Soon)</span>
             </h2>
             <p className="text-xl text-gray-600 max-w-4xl mx-auto leading-relaxed">
-              Choose a tier that matches your brand ambitions and margin goals—while reselling the most accurate, fundability-ready credit platform.
+              Choose a tier that matches your brand ambitions and margin goals—while reselling a robust, fundability-ready credit platform.
             </p>
           </div>
           
@@ -706,7 +713,7 @@ const JoinAffiliate: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                    <span className="text-sm text-gray-700">Highest profit split</span>
+                    <span className="text-sm text-gray-700">Maximum profit potential</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
@@ -750,7 +757,7 @@ const JoinAffiliate: React.FC = () => {
               How It Works
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
-              Four simple steps to start earning with Score Machine's industry-leading funding platform.
+              Four simple steps to start earning with Score Machine's comprehensive funding platform.
             </p>
           </div>
           
@@ -833,10 +840,17 @@ const JoinAffiliate: React.FC = () => {
                     <div className="absolute -inset-3 bg-gradient-to-r from-blue-600/20 to-blue-700/20 rounded-2xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   </div>
                   <h3 className="text-xl font-bold mb-3 text-gray-900">Earn</h3>
-                  <p className="text-gray-600 leading-relaxed">Receive guaranteed weekly payouts with transparent reporting and no hidden fees.</p>
+                  <p className="text-gray-600 leading-relaxed">Receive verified conversion payouts with transparent reporting.</p>
                 </CardContent>
               </Card>
             </div>
+          </div>
+          
+          {/* Affiliate Guidelines Note */}
+          <div className="mt-12 max-w-3xl mx-auto text-center bg-amber-50 border border-amber-100 rounded-xl p-6">
+            <p className="text-amber-800 font-bold text-sm">
+              Note: Affiliates must comply with all FTC guidelines. Claims of guaranteed income or credit improvement are strictly prohibited.
+            </p>
           </div>
           
           {/* Call to Action */}
@@ -890,7 +904,7 @@ const JoinAffiliate: React.FC = () => {
                   Affiliate & Partner Registration
                 </CardTitle>
                 <CardDescription className="text-center text-lg text-gray-600 max-w-2xl mx-auto leading-relaxed">
-                  Join thousands earning with Score Machine by promoting the industry's most precise credit analysis platform with proven results.
+                  Join thousands earning with Score Machine by promoting a comprehensive credit analysis platform with verified results.
                 </CardDescription>
               </CardHeader>
               
@@ -1284,55 +1298,15 @@ const JoinAffiliate: React.FC = () => {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="bg-gray-900 text-white py-16">
-        <div className="container mx-auto px-4">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div>
-              <div className="flex items-center space-x-2 mb-6">
-                <div className="w-10 h-10 bg-gradient-to-r from-ocean-blue to-sea-green rounded-xl flex items-center justify-center">
-                  <CreditCard className="h-6 w-6 text-white" />
-                </div>
-                <span className="text-2xl font-bold">Score Machine</span>
-              </div>
-              <p className="text-gray-400 leading-relaxed">
-                The most precise credit analysis and strategy platform for partners worldwide.
-              </p>
-            </div>
-            
-            <div>
-              <h3 className="font-bold mb-4">Product</h3>
-              <ul className="space-y-2 text-gray-400">
-                <li><Link to="/features" className="hover:text-white transition-colors">Features</Link></li>
-                <li><Link to="/how-it-works" className="hover:text-white transition-colors">How It Works</Link></li>
-                <li><Link to="/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h3 className="font-bold mb-4">Company</h3>
-              <ul className="space-y-2 text-gray-400">
-                <li><Link to="/" className="hover:text-white transition-colors">About Us</Link></li>
-                <li><Link to="/join-affiliate" className="hover:text-white transition-colors">Partner Programs</Link></li>
-                <li><Link to="/" className="hover:text-white transition-colors">Careers</Link></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h3 className="font-bold mb-4">Support</h3>
-              <ul className="space-y-2 text-gray-400">
-                <li><Link to="/support" className="hover:text-white transition-colors">Help Center</Link></li>
-                <li><Link to="/contact" className="hover:text-white transition-colors">Contact Us</Link></li>
-                <li><Link to="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
-              </ul>
-            </div>
-          </div>
-          
-          <div className="border-t border-gray-800 mt-12 pt-8 text-center text-gray-400">
-            <p>&copy; 2024 Score Machine. All rights reserved.</p>
-          </div>
+      <div className="bg-white py-8 px-4 border-t border-gray-100">
+        <div className="container mx-auto max-w-4xl text-center">
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Disclaimer: Results vary. Past performance does not guarantee future earnings. All affiliates must adhere to FTC and truthful advertising standards.
+          </p>
         </div>
-      </footer>
+      </div>
+
+      <Footer />
     </div>
   );
 };

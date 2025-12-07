@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Mail, Phone, MapPin, Send, MessageSquare, Clock, HelpCircle, Building2, Globe, ArrowRight, Users, Shield, Zap, Star } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+import Footer from '@/components/Footer';
 
 export default function Contact() {
   const [name, setName] = useState("");
@@ -67,21 +68,21 @@ export default function Contact() {
             
             {/* Main Heading */}
             <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
-              Let's Build Your
+              Questions about our
               <span className="block bg-gradient-to-r from-yellow-300 via-orange-300 to-pink-300 bg-clip-text text-transparent">
-                Success Story
+                platform or services?
               </span>
             </h1>
             
             <p className="text-xl md:text-2xl mb-8 text-white/90 leading-relaxed max-w-3xl mx-auto">
-              Ready to transform your funding business? Our team of experts is here to guide you every step of the way.
+              Our team is here to assist.
             </p>
             
             {/* Trust Indicators */}
             <div className="flex flex-wrap justify-center items-center gap-8 mb-8 text-white/80">
               <div className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                <span className="text-sm">10,000+ Happy Clients</span>
+                <span className="text-sm">10,000+ clients served*</span>
               </div>
               <div className="flex items-center gap-2">
                 <Shield className="h-5 w-5" />
@@ -89,14 +90,17 @@ export default function Contact() {
               </div>
               <div className="flex items-center gap-2">
                 <Zap className="h-5 w-5" />
-                <span className="text-sm">4-Hour Response</span>
+                <span className="text-sm">Fast Response Times*</span>
               </div>
+            </div>
+            <div className="text-center mb-8 text-white/60 text-xs max-w-2xl mx-auto">
+              <p>*Client count reflects cumulative users since inception. Response times may vary based on inquiry volume.</p>
             </div>
             
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" className="bg-white text-ocean-blue hover:bg-white/90 font-semibold px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
-                Start Today
+                Contact Us
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
               <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 font-semibold px-8 py-3 rounded-xl backdrop-blur-sm">
@@ -133,7 +137,7 @@ export default function Contact() {
                     <div>
                       <p className="font-semibold text-gray-900">Email Support</p>
                       <p className="text-sm text-gray-600">thescoremachineofficial@gmail.com</p>
-                      <p className="text-xs text-green-600 font-medium">Usually responds in 2 hours</p>
+                      <p className="text-xs text-green-600 font-medium">Fast response times</p>
                     </div>
                   </div>
                   
@@ -180,7 +184,7 @@ export default function Contact() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
                     <Star className="h-4 w-4 text-yellow-500" />
-                    <span className="text-sm text-gray-600">4.9/5 Customer Rating</span>
+                    <span className="text-sm text-gray-600">High Customer Satisfaction*</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <Shield className="h-4 w-4 text-green-500" />
@@ -188,9 +192,10 @@ export default function Contact() {
                   </div>
                   <div className="flex items-center gap-3">
                     <Zap className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm text-gray-600">99.9% Uptime</span>
+                    <span className="text-sm text-gray-600">Reliable Platform</span>
                   </div>
                 </div>
+                <p className="text-xs text-gray-400 mt-4">*Based on internal post-support surveys.</p>
               </div>
             </div>
 
@@ -203,7 +208,7 @@ export default function Contact() {
                       <MessageSquare className="h-5 w-5 text-ocean-blue" />
                     </div>
                     <CardTitle className="text-2xl bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-                      Tell us how we can help
+                      Send Us a Message
                     </CardTitle>
                   </div>
                   <CardDescription className="text-base text-gray-600">
@@ -417,15 +422,15 @@ export default function Contact() {
                     <ul className="text-sm text-gray-600 space-y-2">
                       <li className="flex justify-between">
                         <span>Support:</span> 
-                        <span className="font-semibold text-ocean-blue">4 hours</span>
+                        <span className="font-semibold text-ocean-blue">Fast response*</span>
                       </li>
                       <li className="flex justify-between">
                         <span>Sales:</span> 
-                        <span className="font-semibold text-ocean-blue">Same day</span>
+                        <span className="font-semibold text-ocean-blue">Priority*</span>
                       </li>
                       <li className="flex justify-between">
                         <span>Partnerships:</span> 
-                        <span className="font-semibold text-ocean-blue">1-2 days</span>
+                        <span className="font-semibold text-ocean-blue">Promptly*</span>
                       </li>
                     </ul>
                   </CardContent>
@@ -495,7 +500,7 @@ export default function Contact() {
                     How fast do you respond?
                   </AccordionTrigger>
                   <AccordionContent className="text-gray-600 pb-6 leading-relaxed">
-                    We respond within 4 business hours during office hours, and next business day otherwise. For urgent issues, our premium support provides 1-hour response times.
+                    We aim for fast response times during office hours. For urgent issues, our premium support offers prioritized assistance.
                   </AccordionContent>
                 </AccordionItem>
                 
@@ -556,8 +561,8 @@ export default function Contact() {
                           <Users className="h-4 w-4 text-green-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-gray-800">Expert Support Team</p>
-                          <p className="text-sm text-gray-600">Credit industry specialists</p>
+                          <p className="font-medium text-gray-800">Customer Support Team</p>
+                          <p className="text-sm text-gray-600">Dedicated specialists</p>
                         </div>
                       </div>
                       
@@ -567,7 +572,7 @@ export default function Contact() {
                         </div>
                         <div>
                           <p className="font-medium text-gray-800">Fast Response</p>
-                          <p className="text-sm text-gray-600">Within 4 business hours</p>
+                          <p className="text-sm text-gray-600">Prompt assistance</p>
                         </div>
                       </div>
                       
@@ -592,6 +597,13 @@ export default function Contact() {
           </div>
         </div>
       </section>
+      
+      <div className="bg-gray-900 text-gray-400 py-8 border-t border-gray-800">
+        <div className="container mx-auto px-4 text-center">
+           <p className="text-xs">Score Machine is a software platform. We do not provide financial advice or guarantee credit score improvements.</p>
+        </div>
+      </div>
+      <Footer />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sparkles, Shield, Brain, FileText, TrendingUp, Zap, Users, BarChart3, CheckCircle, ArrowRight, Star, Award, Target, Lock, Globe, DollarSign } from "lucide-react";
 import { Link } from "react-router-dom";
+import Footer from "@/components/Footer";
 
 export default function Features() {
   return (
@@ -23,18 +24,17 @@ export default function Features() {
             </div>
             
             <h1 className="text-5xl lg:text-6xl font-bold tracking-tight bg-gradient-to-r from-gray-900 via-ocean-blue to-sea-green bg-clip-text text-transparent mb-6">
-              Unlock Your Credit Mastery
+              Advanced Tools for Smarter Credit Understanding
             </h1>
             
             <p className="text-xl text-gray-600 leading-relaxed max-w-4xl mx-auto mb-8">
-              Whether you're in professional funding, business funding, or building your personal score, 
-              Score Machine delivers everything you need to dominate the funding landscape with AI-powered precision.
+              Designed for credit professionals, consultants, and individuals who want clearer insights using structured analytics and AI-enhanced tools.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
               <Button size="lg" className="bg-gradient-to-r from-ocean-blue to-sea-green hover:shadow-lg transition-all duration-300 transform hover:scale-105" asChild>
                 <Link to="/register" className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4" /> Start Free Today
+                  <Sparkles className="h-4 w-4" /> Create a Free Account
                 </Link>
               </Button>
               <Button size="lg" variant="outline" className="border-ocean-blue text-ocean-blue hover:bg-ocean-blue/5" asChild>
@@ -48,8 +48,8 @@ export default function Features() {
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100">
               <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                 <div className="text-center md:text-left">
-                  <div className="text-3xl font-bold text-gray-900 mb-2">$572+ Value</div>
-                  <div className="text-gray-600">Complete toolkit included FREE</div>
+                  <div className="text-3xl font-bold text-gray-900 mb-2">Included Toolkit (Comparable value: $572 — internal estimate only)</div>
+                  <div className="text-gray-600 text-sm">Comparable values are internal estimates based on similar tools. They do not represent retail pricing or discounts.</div>
                 </div>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-sea-green mb-2">Starting at $147</div>
@@ -69,10 +69,9 @@ export default function Features() {
       <section className="py-20 bg-white">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">Your Complete Credit Arsenal</h2>
+            <h2 className="text-4xl font-bold text-gray-900 mb-4">Your Complete Credit Toolkit</h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Professional-grade tools and insights that typically cost hundreds of dollars, 
-              now included with your subscription.
+              Professional-grade tools designed to help organize, evaluate, and better understand credit information.
             </p>
           </div>
 
@@ -81,34 +80,34 @@ export default function Features() {
               {
                 icon: TrendingUp,
                 title: "Progress Report with Score Timeline",
-                description: "Track positive and negative changes month-to-month to measure growth and catch issues early.",
+                description: "Visualize month-to-month changes in reported credit data for clearer understanding.",
                 value: "$97",
                 color: "from-blue-500 to-blue-600",
-                features: ["Monthly score tracking", "Trend analysis", "Issue detection", "Growth metrics"]
+                features: ["Timeline visualization", "Display of data changes", "Structured view of report variations"]
               },
               {
                 icon: FileText,
                 title: "Client Summary Export & PDF Download",
-                description: "Share or save a professional-grade credit analysis and action plan in one sleek, printable document.",
+                description: "Generate a clean, organized summary of credit data in a downloadable PDF.",
                 value: "$127",
                 color: "from-emerald-500 to-emerald-600",
-                features: ["Professional reports", "PDF export", "Client sharing", "Action plans"]
+                features: ["Professional formatting", "Summary export", "Client-ready reporting"]
               },
               {
                 icon: Brain,
                 title: "Full AI Credit File Analysis",
-                description: "AI scans every section of your credit report to highlight errors, risks, and strengths—so you know what lenders see before you apply.",
+                description: "Organize report data into categories commonly reviewed by lenders. AI-assisted features organize information but do not guarantee accuracy, outcomes, or lender perception.",
                 value: "$147",
                 color: "from-purple-500 to-purple-600",
-                features: ["AI-powered analysis", "Error detection", "Risk assessment", "Strength identification"]
+                features: ["Structured breakdown of report sections", "Pattern detection", "General insight identification"]
               },
               {
                 icon: Shield,
-                title: "Underwriting Blueprint — Are You Fundable?",
-                description: "Go beyond scores with an underwriting-style review to reveal approval readiness and exactly what must change if it's not.",
+                title: "Underwriting Overview",
+                description: "General overview of factors commonly referenced by lenders. Not a guarantee of credit approval, funding approval, or any specific financial outcome.",
                 value: "$207",
                 color: "from-orange-500 to-orange-600",
-                features: ["Underwriting analysis", "Approval readiness", "Funding potential", "Improvement roadmap"]
+                features: ["General indicator overview", "High-level criteria review", "Not a prediction or guarantee"]
               }
             ].map((feature, index) => (
               <Card key={index} className="group hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-3 border-0 shadow-lg overflow-hidden relative">
@@ -153,7 +152,7 @@ export default function Features() {
           <div className="text-center mb-16">
             <h2 className="text-4xl font-bold text-gray-900 mb-4">Plus These Powerful Features</h2>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Everything you need to succeed in credit enhancement and business growth
+              Tools designed to support clearer review and better organization of credit information.
             </p>
           </div>
 
@@ -164,7 +163,7 @@ export default function Features() {
               { icon: Users, title: "Multi-Client Management", desc: "Handle unlimited clients with ease" },
               { icon: Globe, title: "White Label Ready", desc: "Brand the platform as your own" },
               { icon: BarChart3, title: "Advanced Analytics", desc: "Deep insights and performance metrics" },
-              { icon: Target, title: "Goal Tracking", desc: "Set and monitor credit improvement targets" }
+              { icon: Target, title: "Goal Tracking", desc: "Personal tracking features within the platform for general organizational use" }
             ].map((feature, index) => (
               <Card key={index} className="group hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 border-0 shadow-md bg-white/80 backdrop-blur-sm">
                 <CardHeader className="text-center pb-4">
@@ -196,11 +195,10 @@ export default function Features() {
                   </div>
                   
                   <h3 className="text-3xl lg:text-4xl font-bold mb-4">
-                    Over $572 in Value — Yours FREE!
+                    Included Toolkit (Comparable value: $572 — internal estimate only)
                   </h3>
                   <p className="text-xl text-white/90 leading-relaxed max-w-3xl mx-auto mb-6">
-                    All toolkit items are included when you become an active paying subscriber. 
-                    Plans start at only $147/month and toolkit items are delivered in your welcome email.
+                    Comparable values are internal estimates based on similar tools. They do not represent retail pricing or discounts.
                   </p>
                 </div>
                 
@@ -215,25 +213,25 @@ export default function Features() {
                   </Button>
                 </div>
                 
-                <div className="flex items-center justify-center gap-8 text-sm text-white/80">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    <span>No Credit Card Required</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Cancel Anytime</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Instant Access</span>
-                  </div>
+                <div className="flex flex-col items-center justify-center gap-2 text-sm text-white/80 mt-6">
+                  <p>Create a free account—no credit card required. Limited access included.</p>
+                  <p>Full report pulls and complete report visibility are billed individually.</p>
+                  <p>Cancel anytime.</p>
                 </div>
               </CardContent>
             </Card>
           </div>
         </div>
       </section>
+      
+      <div className="bg-white py-8 px-4 border-t border-gray-100">
+        <div className="container mx-auto max-w-4xl text-center">
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Score Machine provides tools for organizing and reviewing credit report information. It does not provide credit repair, legal advice, or guarantee credit improvement or funding approval.
+          </p>
+        </div>
+      </div>
+      <Footer />
     </div>
   );
 }

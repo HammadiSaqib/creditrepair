@@ -1,6 +1,7 @@
 import SiteHeader from '@/components/SiteHeader';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import Footer from '@/components/Footer';
 import { CheckCircle, Play, Sparkles, ArrowRight, Shield, Brain, FileText, TrendingUp, Users, Zap, Target, BarChart3 } from 'lucide-react';
 
 export default function HowItWorks() {
@@ -24,7 +25,7 @@ export default function HowItWorks() {
             </h1>
             <p className="text-xl text-gray-600 leading-relaxed max-w-3xl mx-auto mb-8">
               Experience the most advanced AI-driven credit enhancement platform. From analysis to action, 
-              we guide you through every step with precision, compliance, and results.
+              we guide you through every step with precision, compliance, and clear insights.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" className="bg-gradient-to-r from-ocean-blue to-sea-green hover:shadow-lg transition-all duration-300 transform hover:scale-105" asChild>
@@ -42,7 +43,7 @@ export default function HowItWorks() {
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
             {[
               { icon: Users, title: "Smart Onboarding", desc: "Streamlined client setup with intelligent goal configuration" },
-              { icon: Brain, title: "AI Guidance", desc: "Machine learning prioritizes the most impactful actions" },
+              { icon: Brain, title: "AI Guidance", desc: "Machine learning organizes and highlights key areas of focus for your review" },
               { icon: FileText, title: "Automated Disputes", desc: "Generate compliant letters with one-click automation" },
               { icon: BarChart3, title: "Real-time Analytics", desc: "Track progress with detailed insights and reporting" }
             ].map((feature, index) => (
@@ -105,8 +106,9 @@ export default function HowItWorks() {
                   icon: TrendingUp,
                   title: "Get Results",
                   subtitle: "Instant insights & action",
-                  description: "Receive comprehensive report breakdowns, score progress tracking, and funding readiness analysis immediately.",
-                  color: "from-orange-500 to-orange-600"
+                  description: "Receive comprehensive report breakdowns, score progress tracking, and informational credit readiness insights immediately.",
+                  color: "from-orange-500 to-orange-600",
+                  disclaimer: "Insights are informational only and do not guarantee credit approval, funding, or specific financial outcomes."
                 }
               ].map((step, index) => (
                 <div key={index} className="relative group">
@@ -130,6 +132,11 @@ export default function HowItWorks() {
                     
                     <CardContent className="pt-0">
                       <p className="text-gray-600 leading-relaxed text-center">{step.description}</p>
+                      {(step as any).disclaimer && (
+                        <p className="text-xs text-gray-500 mt-4 text-center italic border-t pt-2 border-gray-100">
+                          {(step as any).disclaimer}
+                        </p>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
@@ -153,7 +160,7 @@ export default function HowItWorks() {
                     Ready to Transform Your Credit?
                   </h3>
                   <p className="text-xl text-white/90 leading-relaxed max-w-2xl mx-auto">
-                    Join thousands who've already discovered the power of AI-driven credit enhancement. 
+                    Join many professionals who use AI-driven tools for credit analysis and review. 
                     Start your journey today with complete confidence.
                   </p>
                 </div>
@@ -188,6 +195,7 @@ export default function HowItWorks() {
           </div>
         </div>
       </section>
+      <Footer />
     </div>
   );
 }

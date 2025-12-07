@@ -98,6 +98,20 @@ export interface CreditReport {
   updated_by: number;
 }
 
+export interface DebtPayoffPlan {
+  id: number;
+  client_id: number;
+  account_id: string;
+  account_name: string;
+  target_utilization: number;
+  payoff_timeline_months: number;
+  payment_date: number;
+  reminder_enabled: boolean;
+  track_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Dispute {
   id: number;
   client_id: number;
@@ -752,6 +766,24 @@ async function createMySQLTables(): Promise<void> {
       INDEX idx_type (type),
       INDEX idx_created_at (created_at),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Debt Payoff Plans table
+    `CREATE TABLE IF NOT EXISTS debt_payoff_plans (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      account_id VARCHAR(255) NOT NULL,
+      account_name VARCHAR(255) NOT NULL,
+      target_utilization DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+      payoff_timeline_months INT NOT NULL DEFAULT 12,
+      payment_date INT NOT NULL DEFAULT 1,
+      reminder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      track_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_client_id (client_id),
+      INDEX idx_account_id (account_id),
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     

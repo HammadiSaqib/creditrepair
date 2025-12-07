@@ -50,6 +50,9 @@ import aiRoutes from "./routes/ai.js";
 import contractsRoutes from "./routes/contracts.js";
 import contractsAdminRoutes from "./routes/contractsAdmin.js";
 import employeesRoutes from "./routes/employees.js";
+import debtPayoffRoutes from "./routes/debtPayoff.js";
+
+import { reminderService } from "./services/reminderService.js";
 
 // Course routes
 import {
@@ -431,6 +434,9 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.put("/api/clients/:id", authenticateToken, updateClient);
   app.delete("/api/clients/:id", authenticateToken, deleteClient);
 
+  // Debt Payoff Plans
+  app.use("/api/debt-payoff", debtPayoffRoutes);
+
   // Funding DIY submissions
   app.use('/api/funding/diy-submissions', fundingDIYSubmissionsRoutes);
 
@@ -639,6 +645,10 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // Initialize Stripe
   console.log('🔄 Initializing Stripe...');
   await initializeStripe();
+
+  // Initialize Reminder Service
+  console.log('📅 Initializing Reminder Service...');
+  reminderService.start();
   
   // Initialize WebSocket service
   const websocketService = initializeWebSocketService(httpServer);

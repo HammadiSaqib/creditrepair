@@ -1,4 +1,7 @@
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { clientsApi } from "@/lib/api";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -114,14 +117,483 @@ import {
   Lock,
   Gauge,
   BadgeCheck,
+  Settings,
 } from "lucide-react";
 import FundingProjectionsCalculator from '../utils/fundingProjections.js';
 import GapAnalyzer from '../utils/gapAnalyzer.js';
 import PersonalCardsDisplay from '../components/PersonalCardsDisplay';
 import BusinessCardsDisplay from '../components/BusinessCardsDisplay';
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
-import { clientsApi } from "@/lib/api";
 import { useAuthContext } from "@/contexts/AuthContext";
+
+interface DebtConsolidationViewProps {
+  accounts: any[];
+  payoffPlans?: any[];
+  onSavePlan?: (plan: any) => Promise<void>;
+  clientId?: string | number;
+}
+
+const getOrdinalSuffix = (day: number) => {
+    if (day > 3 && day < 21) return 'th';
+    switch (day % 10) {
+      case 1:  return "st";
+      case 2:  return "nd";
+      case 3:  return "rd";
+      default: return "th";
+    }
+};
+
+
+
+const getNextReminderDate = (day: number) => {
+    const today = new Date();
+    let nextDate = new Date(today.getFullYear(), today.getMonth(), day);
+    
+    // If the date for this month has passed, move to next month
+    if (nextDate < today) {
+        nextDate = new Date(today.getFullYear(), today.getMonth() + 1, day);
+    }
+    return nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientId }: DebtConsolidationViewProps) => {
+  const [targetUtilization, setTargetUtilization] = useState(0);
+  const [payoffMonths, setPayoffMonths] = useState(12);
+  const [remindersSet, setRemindersSet] = useState(false);
+  
+  // Gamification
+  const [points, setPoints] = useState(1250);
+  
+  // Edit State
+  const [editingAccount, setEditingAccount] = useState<any>(null);
+  const [editForm, setEditForm] = useState({
+    targetUtilization: 0,
+    payoffTimelineMonths: 12,
+    paymentDate: 1,
+    reminderEnabled: false,
+    trackEnabled: false
+  });
+
+  const handleEditClick = (account: any) => {
+    const existingPlan = payoffPlans.find(p => p.account_id === String(account.id));
+    setEditingAccount(account);
+    setEditForm({
+      targetUtilization: existingPlan?.target_utilization ?? 0,
+      payoffTimelineMonths: existingPlan?.payoff_timeline_months ?? 12,
+      paymentDate: existingPlan?.payment_date ?? 1,
+      reminderEnabled: existingPlan?.reminder_enabled ?? false,
+      trackEnabled: existingPlan?.track_enabled ?? false
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAccount(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!onSavePlan || !clientId || !editingAccount) return;
+    
+    try {
+      await onSavePlan({
+        client_id: Number(clientId),
+        account_id: String(editingAccount.id),
+        account_name: editingAccount.name,
+        target_utilization: Number(editForm.targetUtilization),
+        payoff_timeline_months: Number(editForm.payoffTimelineMonths),
+        payment_date: Number(editForm.paymentDate),
+        reminder_enabled: editForm.reminderEnabled,
+        track_enabled: editForm.trackEnabled
+      });
+      setEditingAccount(null);
+      toast.success("Payoff plan updated successfully");
+    } catch (error) {
+      toast.error("Failed to update payoff plan");
+    }
+  };
+  
+  const calculateAge = (dateString: string) => {
+    if (!dateString) return "N/A";
+    const openDate = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - openDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const years = Math.floor(diffDays / 365);
+    const months = Math.floor((diffDays % 365) / 30);
+    return `${years}y ${months}m`;
+  };
+
+  const revolvingAccounts = useMemo(() => {
+    if (!accounts) return [];
+    return accounts.filter(acc => 
+      (acc.type?.toLowerCase().includes('credit') || 
+       acc.type?.toLowerCase().includes('revolving') || 
+       acc.AccountType?.toLowerCase().includes('revolving') ||
+       acc.type === 'Credit Card') &&
+      (Number(acc.balance || acc.Balance || 0) > 0)
+    ).map((acc, index) => {
+      const balance = Number(acc.balance || acc.Balance || 0);
+      const limit = Number(acc.limit || acc.CreditLimit || 0);
+      
+      // Merge with payoff plan
+      const plan = payoffPlans.find(p => p.account_id === String(acc.id || index));
+      
+      return {
+        id: acc.id || index,
+        name: acc.creditor || acc.CreditorName || acc.name || 'Unknown Creditor',
+        balance,
+        limit,
+        utilization: limit > 0 ? (balance / limit) * 100 : 0,
+        age: calculateAge(acc.opened || acc.DateOpened),
+        apr: 0.24, // Mock APR
+        minPayment: Math.max(25, balance * 0.02),
+        plan
+      };
+    }).sort((a, b) => a.balance - b.balance);
+  }, [accounts, payoffPlans]);
+
+  const totalDebt = revolvingAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+
+  const monthlyBudget = useMemo(() => {
+    if (totalDebt === 0) return 0;
+    const r = 0.24 / 12;
+    const n = payoffMonths;
+    // PMT formula: P * (r(1+r)^n) / ((1+r)^n - 1)
+    const pmt = totalDebt * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+    return pmt;
+  }, [totalDebt, payoffMonths]);
+
+  const schedule = useMemo(() => {
+    if (revolvingAccounts.length === 0) return [];
+    let plan = [];
+    let currentBalances = revolvingAccounts.map(a => ({...a}));
+    
+    // Simulate one month to get current payment distribution
+    let budgetRemaining = monthlyBudget;
+    let monthDetails = { month: 1, payments: [] as any[] };
+    
+    currentBalances.forEach(acc => {
+        let payment = Math.min(acc.balance, acc.minPayment);
+        budgetRemaining -= payment;
+        monthDetails.payments.push({ id: acc.id, payment, balance: acc.balance });
+    });
+    
+    if (budgetRemaining > 0) {
+        for (let acc of currentBalances) {
+            let p = monthDetails.payments.find(pmt => pmt.id === acc.id);
+            if (p) {
+                let extra = budgetRemaining; // Dump all extra on first (smallest) account
+                p.payment += extra;
+                budgetRemaining = 0;
+                break; // Only apply to first one
+            }
+        }
+    }
+    plan.push(monthDetails);
+    
+    return plan;
+  }, [revolvingAccounts, monthlyBudget]);
+
+  const handlePayoffVerify = () => {
+    setPoints(prev => prev + 100);
+    // In a real app, this would show a toast or confetti
+  };
+
+  const calculatePayoffToTarget = (balance: number, limit: number, targetPercent: number) => {
+    const targetBalance = limit * (targetPercent / 100);
+    const amountToPay = balance - targetBalance;
+    return Math.max(0, amountToPay);
+  };
+
+  return (
+    <div className="space-y-6">
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <Card className="bg-gradient-to-br from-rose-500 to-pink-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">${totalDebt.toLocaleString()}</div>
+             <div className="text-rose-100 font-medium">Total Revolving Debt</div>
+           </CardContent>
+         </Card>
+         <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">${Math.ceil(monthlyBudget).toLocaleString()}/mo</div>
+             <div className="text-indigo-100 font-medium">Target Monthly Payment</div>
+           </CardContent>
+         </Card>
+         <Card className="bg-gradient-to-br from-yellow-50 to-orange-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">{points.toLocaleString()}</div>
+             <div className="text-yellow-100 font-medium">Reward Points</div>
+           </CardContent>
+         </Card>
+       </div>
+
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+         <Card className="lg:col-span-1 shadow-md border-slate-200 dark:border-slate-800">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-rose-500" />
+                {editingAccount ? `Configure: ${editingAccount.name}` : "Plan Configuration"}
+             </CardTitle>
+             <CardDescription>
+                {editingAccount ? "Update payoff settings for this account" : "Customize your payoff strategy"}
+             </CardDescription>
+           </CardHeader>
+           <CardContent className="space-y-8">
+             {editingAccount ? (
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label>Target Utilization (%)</Label>
+                        <div className="flex items-center gap-4">
+                            <input 
+                                type="range" 
+                                min="0" 
+                                max="100" 
+                                step="1"
+                                value={editForm.targetUtilization} 
+                                onChange={(e) => setEditForm({...editForm, targetUtilization: Number(e.target.value)})}
+                                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                            <span className="w-12 text-right font-bold">{editForm.targetUtilization}%</span>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <Label>Payoff Timeline (Months)</Label>
+                        <div className="flex items-center gap-4">
+                            <input 
+                                type="range" 
+                                min="1" 
+                                max="36" 
+                                step="1"
+                                value={editForm.payoffTimelineMonths} 
+                                onChange={(e) => setEditForm({...editForm, payoffTimelineMonths: Number(e.target.value)})}
+                                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                            <span className="w-12 text-right font-bold">{editForm.payoffTimelineMonths}</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Payment Date (Day of Month)</Label>
+                        <Input 
+                            type="number" 
+                            min="1" 
+                            max="31" 
+                            value={editForm.paymentDate}
+                            onChange={(e) => setEditForm({...editForm, paymentDate: Number(e.target.value)})}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between space-x-2 pt-4 border-t">
+                        <Label htmlFor="reminder-mode" className="flex flex-col space-y-1">
+                            <span>Enable Payment Reminders</span>
+                            <span className="font-normal text-xs text-muted-foreground">
+                                Send monthly email reminders
+                            </span>
+                        </Label>
+                        {editForm.reminderEnabled ? (
+                            <div className="flex gap-2">
+                                <Button 
+                                    size="sm" 
+                                    variant="destructive" 
+                                    onClick={() => setEditForm({
+                                        ...editForm,
+                                        reminderEnabled: false,
+                                        trackEnabled: false
+                                    })}
+                                >
+                                    Stop Reminder
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                    onClick={() => setEditForm({
+                                        ...editForm,
+                                        reminderEnabled: false,
+                                        trackEnabled: false
+                                    })}
+                                >
+                                    Payment Clear
+                                </Button>
+                            </div>
+                        ) : (
+                            <Switch
+                                id="reminder-mode"
+                                checked={editForm.reminderEnabled}
+                                onCheckedChange={(checked) => setEditForm({
+                                    ...editForm, 
+                                    reminderEnabled: checked,
+                                    trackEnabled: checked 
+                                })}
+                            />
+                        )}
+                    </div>
+                    {editForm.reminderEnabled && (
+                        <div className="flex flex-col gap-2">
+                            <div className="text-xs text-muted-foreground bg-green-50 p-2 rounded border border-green-100 flex items-center gap-2">
+                                <CheckCircle2 className="h-3 w-3 text-green-600" />
+                                <span className="text-green-700">Reminders active for the {editForm.paymentDate}{getOrdinalSuffix(editForm.paymentDate)} of each month</span>
+                            </div>
+                            <div className="text-xs font-medium text-indigo-600 pl-7">
+                                Next upcoming reminder: {getNextReminderDate(editForm.paymentDate)}
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex gap-2 pt-4">
+                        <Button className="flex-1" onClick={handleSaveEdit}>
+                            {editForm.reminderEnabled && payoffPlans.some(p => p.account_id === String(editingAccount.id) && p.reminder_enabled) 
+                                ? "Update Reminder" 
+                                : "Save"}
+                        </Button>
+                        <Button variant="outline" className="flex-1" onClick={handleCancelEdit}>Cancel</Button>
+                    </div>
+                </div>
+             ) : (
+               <div className="space-y-4">
+                 <div className="flex items-center justify-between mb-4">
+                    <Label className="text-base font-semibold">Active Reminders</Label>
+                    <Badge variant="outline" className="text-muted-foreground">{payoffPlans.filter(p => p.reminder_enabled).length} Active</Badge>
+                 </div>
+                 
+                 {payoffPlans.filter(p => p.reminder_enabled).length > 0 ? (
+                    <div className="space-y-3">
+                        {payoffPlans.filter(p => p.reminder_enabled).map((plan, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                                <div>
+                                    <div className="font-medium text-sm">{plan.account_name}</div>
+                                    <div className="text-xs text-muted-foreground">Payment Date: {plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xs font-medium text-indigo-600">Next: {getNextReminderDate(plan.payment_date)}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                 ) : (
+                    <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg bg-slate-50/50">
+                        <div className="flex justify-center mb-2">
+                            <Clock className="h-8 w-8 text-slate-300" />
+                        </div>
+                        No active reminders.<br/>Select an account to configure.
+                    </div>
+                 )}
+               </div>
+             )}
+           </CardContent>
+         </Card>
+
+         <Card className="lg:col-span-2 shadow-md border-slate-200 dark:border-slate-800">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <LineChart className="w-5 h-5 text-indigo-500" />
+                Snowball Payoff Schedule
+             </CardTitle>
+             <CardDescription>Focus extra payments on the smallest balance first</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="rounded-md border overflow-x-auto">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead className="min-w-[150px]">Account</TableHead>
+                     <TableHead>Limit</TableHead>
+                     <TableHead>Balance</TableHead>
+                     <TableHead>Utilization</TableHead>
+                     <TableHead>Account Age</TableHead>
+                     <TableHead>To 30%</TableHead>
+                     <TableHead>To 25%</TableHead>
+                     <TableHead>To 20%</TableHead>
+                     <TableHead>To 15%</TableHead>
+                     <TableHead>To 10%</TableHead>
+                     <TableHead>To 5%</TableHead>
+                     <TableHead>To 0%</TableHead>
+                     <TableHead className="min-w-[120px]">Suggested Pay</TableHead>
+                     <TableHead>Actions</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {revolvingAccounts.length > 0 ? revolvingAccounts.map((acc, idx) => {
+                     const firstMonth = schedule[0];
+                     const payment = firstMonth?.payments.find(p => p.id === acc.id)?.payment || acc.minPayment;
+                     
+                     return (
+                       <TableRow key={idx} className={acc.plan?.track_enabled ? "bg-green-50/50" : ""}>
+                         <TableCell className="font-medium">
+                           <div className="flex items-center gap-2">
+                             <div className="p-1.5 bg-rose-100 rounded-full text-rose-600">
+                                <CreditCard className="h-4 w-4" />
+                             </div>
+                             <div>
+                               <div>{acc.name}</div>
+                               {acc.plan?.track_enabled && (
+                                 <div className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                   <CheckCircle2 className="h-3 w-3" />
+                                   Track Enabled
+                                 </div>
+                               )}
+                             </div>
+                           </div>
+                         </TableCell>
+                         <TableCell>${acc.limit.toLocaleString()}</TableCell>
+                         <TableCell>${acc.balance.toLocaleString()}</TableCell>
+                         <TableCell>
+                           <span className={acc.utilization > 30 ? "text-red-500 font-medium" : "text-green-600 font-medium"}>
+                             {acc.utilization.toFixed(0)}%
+                           </span>
+                         </TableCell>
+                         <TableCell>{acc.age}</TableCell>
+                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 30).toLocaleString()}</TableCell>
+                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 25).toLocaleString()}</TableCell>
+                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 20).toLocaleString()}</TableCell>
+                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 15).toLocaleString()}</TableCell>
+                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 10).toLocaleString()}</TableCell>
+                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 5).toLocaleString()}</TableCell>
+                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 0).toLocaleString()}</TableCell>
+                         <TableCell className="font-bold text-green-600">${Math.ceil(payment).toLocaleString()}</TableCell>
+                         <TableCell>
+                           <div className="flex items-center gap-2">
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleEditClick(acc)}>
+                                <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={handlePayoffVerify}>
+                                <CheckCircle2 className="h-5 w-5 text-slate-300 hover:text-green-500 transition-colors" />
+                            </Button>
+                           </div>
+                         </TableCell>
+                       </TableRow>
+                     );
+                   }) : (
+                     <TableRow>
+                        <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
+                            No revolving accounts found.
+                        </TableCell>
+                     </TableRow>
+                   )}
+                 </TableBody>
+               </Table>
+             </div>
+             
+             <div className="mt-6 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/10 dark:to-orange-900/10 p-4 rounded-xl border border-yellow-200 dark:border-yellow-800/50 flex flex-col sm:flex-row items-center justify-between gap-4">
+               <div className="flex items-center gap-4">
+                 <div className="p-3 bg-white dark:bg-slate-800 rounded-full shadow-sm">
+                    <Award className="h-8 w-8 text-yellow-500" />
+                 </div>
+                 <div>
+                   <div className="font-bold text-yellow-800 dark:text-yellow-500 text-lg">Prize Pool Leaderboard</div>
+                   <div className="text-sm text-yellow-700 dark:text-yellow-400">Current Rank: #4 • Next Reward: $10,000</div>
+                 </div>
+               </div>
+               <Button className="bg-yellow-500 hover:bg-yellow-600 text-white border-0 shadow-md">
+                 View Leaderboard
+               </Button>
+             </div>
+           </CardContent>
+         </Card>
+       </div>
+       
+    </div>
+  );
+};
 
 const PERSONAL_INFO_MODE_OPTIONS = { normal: 'normal', credit_repair: 'credit_repair' } as const;
 
@@ -682,6 +1154,33 @@ export default function CreditReport() {
   const analysisRef = useRef<HTMLDivElement>(null);
   const [personalInfoMode, setPersonalInfoMode] = useState<'normal' | 'credit_repair'>('normal');
   
+  const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
+  const { clientId: urlClientId } = useParams<{ clientId: string }>();
+  const clientId = urlClientId || searchParams.get("clientId");
+
+  const fetchPayoffPlans = async () => {
+    if (!clientId) return;
+    try {
+      const response = await clientsApi.getDebtPayoffPlans(Number(clientId));
+      setPayoffPlans(response.data);
+    } catch (error) {
+      console.error("Failed to fetch payoff plans:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayoffPlans();
+  }, [clientId]);
+
+  const handleSavePayoffPlan = async (plan: any) => {
+    try {
+      await clientsApi.saveDebtPayoffPlan(plan);
+      fetchPayoffPlans();
+    } catch (error) {
+      throw error;
+    }
+  };
+
   // Subscription status for tab access control
   const subscriptionStatus = useSubscriptionStatus();
 
@@ -1983,8 +2482,6 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     fundingProjection: calculateFundingProjections()
   };
 
-  const { clientId: urlClientId } = useParams<{ clientId: string }>();
-  const clientId = urlClientId || searchParams.get("clientId");
   const clientName = searchParams.get("clientName") || "Client";
 
   // Transform API account data to match frontend structure
@@ -2899,6 +3396,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 <Shield className="h-4 w-4" />
                 <span>Underwriting</span>
               </TabsTrigger>
+              <TabsTrigger value="debtConsolidation" className="min-w-0 flex items-center gap-2">
+                <PieChart className="h-4 w-4" />
+                <span>Debt Consolidation</span>
+              </TabsTrigger>
               <TabsTrigger value="funding" className="min-w-0 flex items-center gap-2">
                 <DollarSign className="h-4 w-4" />
                 <span>Funding Audit</span>
@@ -2997,7 +3498,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               {/* Connector */}
               <div className="flex-1 h-0.5 bg-border mx-4">
                 <div className={`h-full bg-primary transition-all duration-500 ${
-                  ['underwriting', 'funding','fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
+                  ['underwriting', 'debtConsolidation', 'funding','fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
 
@@ -3008,7 +3509,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'underwriting'
                       ? 'bg-indigo-500 border-indigo-500 text-white shadow-lg scale-110'
-                      : ['funding'].includes(activeTab)
+                      : ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab)
                       ? 'bg-indigo-500 border-indigo-500 text-white'
                       : 'bg-card border-border text-muted-foreground hover:border-indigo-300 hover:text-indigo-500'
                   }`}
@@ -3020,6 +3521,35 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     Underwriting
                   </div>
                   <div className="text-xs text-muted-foreground">Assessment</div>
+                </div>
+              </div>
+
+              {/* Connector */}
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
+                  ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
+                }`}></div>
+              </div>
+
+              {/* Debt Consolidation */}
+              <div className="flex items-center">
+                <button
+                  onClick={() => setActiveTab('debtConsolidation')}
+                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                    activeTab === 'debtConsolidation'
+                      ? 'bg-rose-500 border-rose-500 text-white shadow-lg scale-110'
+                      : ['funding', 'fundingApplications'].includes(activeTab)
+                      ? 'bg-rose-500 border-rose-500 text-white'
+                      : 'bg-card border-border text-muted-foreground hover:border-rose-300 hover:text-rose-500'
+                  }`}
+                >
+                  <PieChart className="w-5 h-5" />
+                </button>
+                <div className="ml-3 hidden lg:block">
+                  <div className={`text-sm font-semibold ${activeTab === 'debtConsolidation' ? 'text-rose-600' : 'text-muted-foreground'}`}>
+                    Debt Consolidation
+                  </div>
+                  <div className="text-xs text-muted-foreground">Solutions</div>
                 </div>
               </div>
 
@@ -8090,6 +8620,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           
+        </TabsContent>
+
+        {/* Debt Consolidation Section */}
+        <TabsContent value="debtConsolidation" className="space-y-6 mt-6">
+          <Card className="border-0 shadow-xl bg-card">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold text-foreground">Debt Consolidation</CardTitle>
+              <CardDescription>
+                Manage and consolidate your debts efficiently.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DebtConsolidationView 
+                accounts={reportData?.accounts || detailedReport.accounts} 
+                payoffPlans={payoffPlans}
+                onSavePlan={handleSavePayoffPlan}
+                clientId={clientId}
+              />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Detailed Accounts Section */}

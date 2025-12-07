@@ -239,6 +239,11 @@ export const clientsApi = {
     api.put(`/api/clients/${id}`, clientData),
   
   deleteClient: (id: string) => api.delete(`/api/clients/${id}`),
+
+  // Debt Payoff Plans
+  getDebtPayoffPlans: (clientId: number) => api.get(`/api/debt-payoff/${clientId}`),
+  saveDebtPayoffPlan: (plan: any) => api.post('/api/debt-payoff', plan),
+  deleteDebtPayoffPlan: (id: number) => api.delete(`/api/debt-payoff/${id}`),
 };
 
 // Disputes API
