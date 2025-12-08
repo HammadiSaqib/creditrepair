@@ -4980,7 +4980,7 @@ export default function CreditReport() {
           {/* Credit Analysis Dashboard */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Analysis of Negative Entries */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-green-50 to-emerald-50">
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 dark:bg-slate-900 dark:border dark:border-green-900/50">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-green-800">
                   <CheckCircle className="h-6 w-6 text-green-600" />
@@ -10701,38 +10701,38 @@ export default function CreditReport() {
 
           <div className="grid md:grid-cols-2 gap-6">
             {/* Personal Funding Card */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-green-50 to-emerald-50">
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 dark:bg-slate-900 dark:border dark:border-green-900/50">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <Wallet className="h-6 w-6 text-green-600" />
+                  <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded-lg">
+                    <Wallet className="h-6 w-6 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-green-800">Personal Funding</h3>
-                    <p className="text-sm text-green-600 font-medium">Individual Credit Solutions</p>
+                    <h3 className="text-xl font-bold text-green-800 dark:text-green-300">Personal Funding</h3>
+                    <p className="text-sm text-green-600 dark:text-green-400 font-medium">Individual Credit Solutions</p>
                   </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Process Points */}
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-green-800 mb-3">Process Steps:</h4>
+                  <h4 className="font-semibold text-green-800 dark:text-green-300 mb-3">Process Steps:</h4>
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                      <span className="text-sm text-green-700">Credit Analysis & Pre-Qualification</span>
+                      <div className="w-8 h-8 bg-green-600 dark:bg-green-700 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
+                      <span className="text-sm text-green-700 dark:text-green-200">Credit Analysis & Pre-Qualification</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                      <span className="text-sm text-green-700">Document Verification & Income Review</span>
+                      <div className="w-8 h-8 bg-green-600 dark:bg-green-700 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
+                      <span className="text-sm text-green-700 dark:text-green-200">Document Verification & Income Review</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                      <span className="text-sm text-green-700">Funding Approval & Terms Agreement</span>
+                      <div className="w-8 h-8 bg-green-600 dark:bg-green-700 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
+                      <span className="text-sm text-green-700 dark:text-green-200">Funding Approval & Terms Agreement</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
-                      <span className="text-sm text-green-700">Fund Disbursement & Account Setup</span>
+                      <div className="w-8 h-8 bg-green-600 dark:bg-green-700 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
+                      <span className="text-sm text-green-700 dark:text-green-200">Fund Disbursement & Account Setup</span>
                     </div>
                   </div>
                 </div>
@@ -10741,7 +10741,7 @@ export default function CreditReport() {
 
                 {/* Apply Button */}
                 <Button 
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 dark:bg-green-700 dark:hover:bg-green-800"
                   size="lg"
                   onClick={() => {
                     setShowFundingModal(true);
@@ -10756,38 +10756,38 @@ export default function CreditReport() {
             </Card>
 
             {/* Business Funding Card */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50">
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 dark:bg-slate-900 dark:border dark:border-blue-900/50">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Building2 className="h-6 w-6 text-blue-600" />
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                    <Building2 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-blue-800">Business Funding</h3>
-                    <p className="text-sm text-blue-600 font-medium">Commercial Credit Solutions</p>
+                    <h3 className="text-xl font-bold text-blue-800 dark:text-blue-300">Business Funding</h3>
+                    <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Commercial Credit Solutions</p>
                   </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Process Points */}
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-blue-800 mb-3">Process Steps:</h4>
+                  <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-3">Process Steps:</h4>
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                      <span className="text-sm text-blue-700">Business Credit Assessment & EIN Verification</span>
+                      <div className="w-8 h-8 bg-blue-600 dark:bg-blue-700 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
+                      <span className="text-sm text-blue-700 dark:text-blue-200">Business Credit Assessment & EIN Verification</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                      <span className="text-sm text-blue-700">Financial Statements & Cash Flow Analysis</span>
+                      <div className="w-8 h-8 bg-blue-600 dark:bg-blue-700 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
+                      <span className="text-sm text-blue-700 dark:text-blue-200">Financial Statements & Cash Flow Analysis</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                      <span className="text-sm text-blue-700">Underwriting Review & Risk Assessment</span>
+                      <div className="w-8 h-8 bg-blue-600 dark:bg-blue-700 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
+                      <span className="text-sm text-blue-700 dark:text-blue-200">Underwriting Review & Risk Assessment</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
-                      <span className="text-sm text-blue-700">Funding Approval & Capital Deployment</span>
+                      <div className="w-8 h-8 bg-blue-600 dark:bg-blue-700 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
+                      <span className="text-sm text-blue-700 dark:text-blue-200">Funding Approval & Capital Deployment</span>
                     </div>
                   </div>
                 </div>
@@ -10796,7 +10796,7 @@ export default function CreditReport() {
 
                 {/* Apply Button */}
                 <Button 
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 dark:bg-blue-700 dark:hover:bg-blue-800"
                   size="lg"
                   onClick={() => {
                     setShowFundingModal(true);
@@ -10861,8 +10861,8 @@ export default function CreditReport() {
           {/* Audit-Ready Result Section */}
           <div className="mb-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">AUDIT-READY FUNDING ANALYSIS</h2>
-              <p className="text-gray-600">Comprehensive credit assessment with detailed calculations and bureau routing strategy</p>
+              <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">AUDIT-READY FUNDING ANALYSIS</h2>
+              <p className="text-gray-600 dark:text-gray-300">Comprehensive credit assessment with detailed calculations and bureau routing strategy</p>
             </div>
 
             {(() => {
@@ -10987,10 +10987,10 @@ export default function CreditReport() {
                   </Card>
 
                   {/* Table B: Key Signals & Rationale */}
-                  <Card className="border-0 shadow-lg">
+                  <Card className="border-0 shadow-lg dark:bg-slate-900 dark:border dark:border-slate-800">
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5 text-green-600" />
+                      <CardTitle className="flex items-center gap-2 dark:text-white">
+                        <BarChart3 className="h-5 w-5 text-green-600 dark:text-green-400" />
                         Key Signals & Rationale
                       </CardTitle>
                     </CardHeader>
@@ -10998,30 +10998,30 @@ export default function CreditReport() {
                       <div className="overflow-x-auto">
                         <table className="w-full border-collapse">
                           <thead>
-                            <tr className="border-b-2 border-gray-200">
-                              <th className="text-left p-3 font-semibold text-gray-800">Signal</th>
-                              <th className="text-center p-3 font-semibold text-gray-800">Value</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">How Computed</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">Why It Matters</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">Effect</th>
+                            <tr className="border-b-2 border-gray-200 dark:border-gray-700">
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Signal</th>
+                              <th className="text-center p-3 font-semibold text-gray-800 dark:text-white">Value</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">How Computed</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Why It Matters</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Effect</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            <tr className="hover:bg-gray-50">
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800 dark:text-gray-300">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Total Aggregate Credit Limit</td>
                               <td className="p-3 text-center font-bold">${auditAnalysis.signals.totalAggregateLimit.toLocaleString()}</td>
                               <td className="p-3 text-sm">Sum of all open revolving credit limits</td>
                               <td className="p-3 text-sm">Shows existing credit capacity and lender confidence</td>
-                              <td className="p-3 text-sm text-green-600">Higher limits increase anchor exposure</td>
+                              <td className="p-3 text-sm text-green-600 dark:text-green-400">Higher limits increase anchor exposure</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Highest Single Revolving Limit</td>
                               <td className="p-3 text-center font-bold">${auditAnalysis.signals.highestSingleLimit.toLocaleString()}</td>
                               <td className="p-3 text-sm">Maximum individual credit line amount</td>
                               <td className="p-3 text-sm">Indicates premium lender relationships and creditworthiness</td>
-                              <td className="p-3 text-sm text-green-600">Boosts anchor calculation significantly</td>
+                              <td className="p-3 text-sm text-green-600 dark:text-green-400">Boosts anchor calculation significantly</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">High-Limit Tradelines</td>
                               <td className="p-3 text-center font-bold">
                                 <div>≥$10k: {auditAnalysis.signals.highLimitTradelines.over10k}</div>
@@ -11029,30 +11029,30 @@ export default function CreditReport() {
                               </td>
                               <td className="p-3 text-sm">Count of accounts with limits above thresholds</td>
                               <td className="p-3 text-sm">Premium accounts signal strong credit profile</td>
-                              <td className="p-3 text-sm text-green-600">Increases supply score component</td>
+                              <td className="p-3 text-sm text-green-600 dark:text-green-400">Increases supply score component</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Average Revolving Utilization</td>
                               <td className="p-3 text-center font-bold">{auditAnalysis.signals.averageUtilization.toFixed(1)}%</td>
                               <td className="p-3 text-sm">Mean balance-to-limit ratio across all revolving accounts</td>
                               <td className="p-3 text-sm">Primary factor in credit scoring and risk assessment</td>
-                              <td className="p-3 text-sm text-blue-600">Lower utilization improves behavior score</td>
+                              <td className="p-3 text-sm text-blue-600 dark:text-blue-400">Lower utilization improves behavior score</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Open Revolving Accounts</td>
                               <td className="p-3 text-center font-bold">{auditAnalysis.signals.openRevolvingCount}</td>
                               <td className="p-3 text-sm">Count of active revolving credit accounts</td>
                               <td className="p-3 text-sm">Shows credit mix and management capability</td>
-                              <td className="p-3 text-sm text-green-600">More accounts increase supply diversity</td>
+                              <td className="p-3 text-sm text-green-600 dark:text-green-400">More accounts increase supply diversity</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Average Account Age</td>
                               <td className="p-3 text-center font-bold">{Math.floor(auditAnalysis.signals.averageAccountAge / 12)} years {Math.floor(auditAnalysis.signals.averageAccountAge % 12)} months</td>
                               <td className="p-3 text-sm">Mean age of all open revolving accounts</td>
                               <td className="p-3 text-sm">Demonstrates credit history depth and stability</td>
-                              <td className="p-3 text-sm text-green-600">Longer history improves seasoning score</td>
+                              <td className="p-3 text-sm text-green-600 dark:text-green-400">Longer history improves seasoning score</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Inquiries by Bureau</td>
                               <td className="p-3 text-center font-bold">
                                 <div>EQ: {auditAnalysis.signals.inquiriesByBureau.equifax}</div>
@@ -11061,16 +11061,16 @@ export default function CreditReport() {
                               </td>
                               <td className="p-3 text-sm">Hard inquiries in last 6 months per bureau</td>
                               <td className="p-3 text-sm">Determines available inquiry headroom for new applications</td>
-                              <td className="p-3 text-sm text-orange-600">Limits maximum card strategy</td>
+                              <td className="p-3 text-sm text-orange-600 dark:text-orange-400">Limits maximum card strategy</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Installment Load</td>
                               <td className="p-3 text-center font-bold">{(auditAnalysis.signals.installmentLoad * 100).toFixed(1)}%</td>
                               <td className="p-3 text-sm">Average balance to original amount ratio on installment loans</td>
                               <td className="p-3 text-sm">Shows debt management and payment behavior</td>
-                              <td className="p-3 text-sm text-blue-600">Lower load improves behavior score</td>
+                              <td className="p-3 text-sm text-blue-600 dark:text-blue-400">Lower load improves behavior score</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Late Payment Counts</td>
                               <td className="p-3 text-center font-bold">
                                 <div>30-day: {auditAnalysis.signals.latePaymentCounts.late30}</div>
@@ -11079,75 +11079,76 @@ export default function CreditReport() {
                               </td>
                               <td className="p-3 text-sm">Total count of late payments by severity</td>
                               <td className="p-3 text-sm">Direct indicator of payment reliability and risk</td>
-                              <td className="p-3 text-sm text-red-600">Late payments reduce behavior score</td>
+                              <td className="p-3 text-sm text-red-600 dark:text-red-400">Late payments reduce behavior score</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Derogatory Records</td>
                               <td className="p-3 text-center font-bold">{auditAnalysis.signals.hasDerogatory ? 'Yes' : 'No'}</td>
                               <td className="p-3 text-sm">Presence of charge-offs, collections, or public records</td>
                               <td className="p-3 text-sm">Major negative factors affecting creditworthiness</td>
-                              <td className="p-3 text-sm text-red-600">Significantly reduces all scores</td>
+                              <td className="p-3 text-sm text-red-600 dark:text-red-400">Significantly reduces all scores</td>
                             </tr>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-gray-50 dark:hover:bg-slate-800/50">
                               <td className="p-3 font-medium">Mortgage Present</td>
                               <td className="p-3 text-center font-bold">{auditAnalysis.signals.hasMortgage ? 'Yes' : 'No'}</td>
                               <td className="p-3 text-sm">Active mortgage account on credit report</td>
                               <td className="p-3 text-sm">Shows major credit responsibility and stability</td>
-                              <td className="p-3 text-sm text-green-600">Boosts seasoning and relationship score</td>
+                              <td className="p-3 text-sm text-green-600 dark:text-green-400">Boosts seasoning and relationship score</td>
                             </tr>
-                            <tr className="hover:bg-purple-50 border-t-2 border-purple-200">
-                              <td className="p-3 font-bold text-purple-800">Implied Capacity Index (ICI)</td>
-                              <td className="p-3 text-center font-bold text-purple-600">{auditAnalysis.ici.toFixed(3)}</td>
+                            <tr className="hover:bg-purple-50 dark:hover:bg-purple-900/20 border-t-2 border-purple-200 dark:border-purple-800">
+                              <td className="p-3 font-bold text-purple-800 dark:text-purple-300">Implied Capacity Index (ICI)</td>
+                              <td className="p-3 text-center font-bold text-purple-600 dark:text-purple-400">{auditAnalysis.ici.toFixed(3)}</td>
                               <td className="p-3 text-sm">Weighted combination of Supply (40%), Behavior (40%), and Seasoning (20%)</td>
                               <td className="p-3 text-sm">Comprehensive creditworthiness metric for funding capacity</td>
-                              <td className="p-3 text-sm text-purple-600">Primary multiplier for anchor exposure</td>
+                              <td className="p-3 text-sm text-purple-600 dark:text-purple-400">Primary multiplier for anchor exposure</td>
                             </tr>
-                            <tr className="hover:bg-purple-50">
-                              <td className="p-3 font-bold text-purple-800">Anchor Exposure</td>
-                              <td className="p-3 text-center font-bold text-purple-600">${auditAnalysis.anchorExposure.toLocaleString()}</td>
+                            <tr className="hover:bg-purple-50 dark:hover:bg-purple-900/20">
+                              <td className="p-3 font-bold text-purple-800 dark:text-purple-300">Anchor Exposure</td>
+                              <td className="p-3 text-center font-bold text-purple-600 dark:text-purple-400">${auditAnalysis.anchorExposure.toLocaleString()}</td>
                               <td className="p-3 text-sm">ICI × (Total Aggregate Limits + Highest Single Limit)</td>
                               <td className="p-3 text-sm">Base calculation for all product mapping and funding projections</td>
-                              <td className="p-3 text-sm text-purple-600">Foundation for personal and business card amounts</td>
+                              <td className="p-3 text-sm text-purple-600 dark:text-purple-400">Foundation for personal and business card amounts</td>
                             </tr>
                             {/* Credit Decay Analysis Section */}
-                            <tr className="hover:bg-red-50 border-t-2 border-red-200">
-                              <td className="p-3 font-bold text-red-800">Credit Decay Analysis</td>
-                              <td className="p-3 text-center font-bold text-red-600">
+                            <tr className="hover:bg-red-50 dark:hover:bg-red-900/20 border-t-2 border-red-200 dark:border-red-800">
+                              <td className="p-3 font-bold text-red-800 dark:text-red-300">Credit Decay Analysis</td>
+                              <td className="p-3 text-center font-bold text-red-600 dark:text-red-400">
                                 <div>Total Potential: ${auditAnalysis.creditDecay.totalPotentialLimit.toLocaleString()}</div>
                               </td>
                               <td className="p-3 text-sm">Inquiry-based limit reduction per bureau</td>
                               <td className="p-3 text-sm">Shows impact of credit fatigue on future approvals</td>
-                              <td className="p-3 text-sm text-red-600">Reduces effective credit capacity</td>
+                              <td className="p-3 text-sm text-red-600 dark:text-red-400">Reduces effective credit capacity</td>
                             </tr>
-                            <tr className="hover:bg-red-50">
-                              <td className="p-3 font-medium text-red-700">Equifax Decay</td>
+                            <tr className="hover:bg-red-50 dark:hover:bg-red-900/20">
+                              <td className="p-3 font-medium text-red-700 dark:text-red-300">Equifax Decay</td>
                               <td className="p-3 text-center font-bold">
                                 <div>${auditAnalysis.creditDecay.bureauLimits.equifax.finalLimit.toLocaleString()}</div>
-                                <div className="text-sm text-red-600">(-{auditAnalysis.creditDecay.decayAnalysis.equifax.decayPercentage.toFixed(0)}%)</div>
+                                <div className="text-sm text-red-600 dark:text-red-400">(-{auditAnalysis.creditDecay.decayAnalysis.equifax.decayPercentage.toFixed(0)}%)</div>
                               </td>
                               <td className="p-3 text-sm">Base ${auditAnalysis.creditDecay.bureauLimits.equifax.baseLimit.toLocaleString()} × (1 - {auditAnalysis.creditDecay.decayAnalysis.equifax.decayPercentage.toFixed(0)}%)</td>
                               <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.equifax.inquiries} inquiries reduce approval odds</td>
-                              <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.equifax.limitReduction.toLocaleString()}</td>
+                              <td className="p-3 text-sm text-red-600 dark:text-red-400">-${auditAnalysis.creditDecay.decayAnalysis.equifax.limitReduction.toLocaleString()}</td>
                             </tr>
-                            <tr className="hover:bg-red-50">
-                              <td className="p-3 font-medium text-red-700">Experian Decay</td>
+                            <tr className="hover:bg-red-50 dark:hover:bg-red-900/20">
+                              <td className="p-3 font-medium text-red-700 dark:text-red-300">Experian Decay</td>
                               <td className="p-3 text-center font-bold">
                                 <div>${auditAnalysis.creditDecay.bureauLimits.experian.finalLimit.toLocaleString()}</div>
-                                <div className="text-sm text-red-600">(-{auditAnalysis.creditDecay.decayAnalysis.experian.decayPercentage.toFixed(0)}%)</div>
+                                <div className="text-sm text-red-600 dark:text-red-400">(-{auditAnalysis.creditDecay.decayAnalysis.experian.decayPercentage.toFixed(0)}%)</div>
                               </td>
                               <td className="p-3 text-sm">Base ${auditAnalysis.creditDecay.bureauLimits.experian.baseLimit.toLocaleString()} × (1 - {auditAnalysis.creditDecay.decayAnalysis.experian.decayPercentage.toFixed(0)}%)</td>
                               <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.experian.inquiries} inquiries reduce approval odds</td>
-                              <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.experian.limitReduction.toLocaleString()}</td>
+                              <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.experian.inquiries} inquiries reduce approval odds</td>
+                              <td className="p-3 text-sm text-red-600 dark:text-red-400">-${auditAnalysis.creditDecay.decayAnalysis.experian.limitReduction.toLocaleString()}</td>
                             </tr>
-                            <tr className="hover:bg-red-50">
-                              <td className="p-3 font-medium text-red-700">TransUnion Decay</td>
+                            <tr className="hover:bg-red-50 dark:hover:bg-red-900/20">
+                              <td className="p-3 font-medium text-red-700 dark:text-red-300">TransUnion Decay</td>
                               <td className="p-3 text-center font-bold">
                                 <div>${auditAnalysis.creditDecay.bureauLimits.transunion.finalLimit.toLocaleString()}</div>
-                                <div className="text-sm text-red-600">(-{auditAnalysis.creditDecay.decayAnalysis.transunion.decayPercentage.toFixed(0)}%)</div>
+                                <div className="text-sm text-red-600 dark:text-red-400">(-{auditAnalysis.creditDecay.decayAnalysis.transunion.decayPercentage.toFixed(0)}%)</div>
                               </td>
                               <td className="p-3 text-sm">Base ${auditAnalysis.creditDecay.bureauLimits.transunion.baseLimit.toLocaleString()} × (1 - {auditAnalysis.creditDecay.decayAnalysis.transunion.decayPercentage.toFixed(0)}%)</td>
                               <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.transunion.inquiries} inquiries reduce approval odds</td>
-                              <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.transunion.limitReduction.toLocaleString()}</td>
+                              <td className="p-3 text-sm text-red-600 dark:text-red-400">-${auditAnalysis.creditDecay.decayAnalysis.transunion.limitReduction.toLocaleString()}</td>
                             </tr>
                           </tbody>
                         </table>

@@ -3120,8 +3120,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           {/* Audit-Ready Result Section */}
           <div className="mb-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">AUDIT-READY FUNDING ANALYSIS</h2>
-              <p className="text-gray-600">Comprehensive credit assessment with detailed calculations and bureau routing strategy</p>
+              <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">AUDIT-READY FUNDING ANALYSIS</h2>
+              <p className="text-gray-600 dark:text-gray-300">Comprehensive credit assessment with detailed calculations and bureau routing strategy</p>
             </div>
 
             {(() => {
@@ -3299,10 +3299,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </Card> */}
 
                   {/* Table B: Key Signals & Rationale */}
-                  <Card className="border-0 shadow-lg">
+                  <Card className="border-0 shadow-lg dark:bg-slate-900 dark:border dark:border-slate-800">
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5 text-green-600" />
+                      <CardTitle className="flex items-center gap-2 dark:text-white">
+                        <BarChart3 className="h-5 w-5 text-green-600 dark:text-green-400" />
                         Key Signals & Rationale
                       </CardTitle>
                     </CardHeader>
@@ -3310,15 +3310,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       <div className="overflow-x-auto">
                         <table className="w-full border-collapse">
                           <thead>
-                            <tr className="border-b-2 border-gray-200">
-                              <th className="text-left p-3 font-semibold text-gray-800">Signal</th>
-                              <th className="text-center p-3 font-semibold text-gray-800">Value</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">How Computed</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">Why It Matters</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">Effect</th>
+                            <tr className="border-b-2 border-gray-200 dark:border-gray-700">
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Signal</th>
+                              <th className="text-center p-3 font-semibold text-gray-800 dark:text-white">Value</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">How Computed</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Why It Matters</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Effect</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100">
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800 dark:text-gray-300">
                             <tr className="hover:bg-gray-50">
                               <td className="p-3 font-medium">Total Aggregate Credit Limit</td>
                               <td className="p-3 text-center font-bold">${auditAnalysis.signals.totalAggregateLimit.toLocaleString()}</td>

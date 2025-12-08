@@ -4553,8 +4553,8 @@ export default function SuperAdminReports() {
                   return (
                     <>
                       {/* Experian Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-blue-950 dark:to-cyan-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30 dark:from-blue-900/30 dark:to-cyan-900/30 dark:border-blue-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
                               <img 
@@ -4627,8 +4627,8 @@ export default function SuperAdminReports() {
                       </Card>
 
                       {/* TransUnion Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-purple-950 dark:to-violet-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30 dark:from-purple-900/30 dark:to-violet-900/30 dark:border-purple-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
                               <img 
@@ -4701,8 +4701,8 @@ export default function SuperAdminReports() {
                       </Card>
 
                       {/* Equifax Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-red-950 dark:to-rose-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30 dark:from-red-900/30 dark:to-rose-900/30 dark:border-red-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
                               <img 
@@ -4781,8 +4781,8 @@ export default function SuperAdminReports() {
           </Card>
 
           {/* Employer Details Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm mt-8">
-            <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm mt-8">
+            <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 dark:from-slate-800/50 dark:via-gray-800/50 dark:to-slate-900/50 dark:border-slate-700/30 backdrop-blur-sm">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
                   <Building className="h-5 w-5 text-white" />
@@ -4798,8 +4798,8 @@ export default function SuperAdminReports() {
             <CardContent>
               <div className="grid md:grid-cols-3 gap-6">
                 {/* Experian Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-blue-950 dark:to-cyan-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30 dark:from-blue-900/30 dark:to-cyan-900/30 dark:border-blue-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
                         <img
@@ -4842,7 +4842,7 @@ export default function SuperAdminReports() {
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 bg-gradient-to-br from-blue-50/30 to-cyan-50/30 rounded-lg border border-blue-100/50">
+                      <div className="text-center py-6 bg-gradient-to-br from-blue-50/30 to-cyan-50/30 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg border border-blue-100/50 dark:border-blue-800/30">
                         <div className="p-3 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-full w-fit mx-auto mb-3">
                           <FileText className="h-6 w-6 text-blue-600" />
                         </div>
@@ -4858,8 +4858,8 @@ export default function SuperAdminReports() {
                 </Card>
 
                 {/* TransUnion Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-purple-950 dark:to-violet-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30 dark:from-purple-900/30 dark:to-violet-900/30 dark:border-purple-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
                         <img
@@ -4902,15 +4902,15 @@ export default function SuperAdminReports() {
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 bg-gradient-to-br from-red-50/30 to-rose-50/30 rounded-lg border border-red-100/50">
-                        <div className="p-3 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-full w-fit mx-auto mb-3">
-                          <FileText className="h-6 w-6 text-red-600" />
+                      <div className="text-center py-6 bg-gradient-to-br from-purple-50/30 to-violet-50/30 dark:from-purple-900/20 dark:to-violet-900/20 rounded-lg border border-purple-100/50 dark:border-purple-800/30">
+                        <div className="p-3 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-full w-fit mx-auto mb-3">
+                          <FileText className="h-6 w-6 text-purple-600" />
                         </div>
-                        <p className="text-sm text-red-700 font-medium mb-1">
+                        <p className="text-sm text-purple-700 font-medium mb-1">
                           No employer data available
                         </p>
-                        <p className="text-xs text-red-600/70">
-                          Equifax has not reported any employment information
+                        <p className="text-xs text-purple-600/70">
+                          TransUnion has not reported any employment information
                         </p>
                       </div>
                     )}
@@ -4918,8 +4918,8 @@ export default function SuperAdminReports() {
                 </Card>
 
                 {/* Equifax Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-red-950 dark:to-rose-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30 dark:from-red-900/30 dark:to-rose-900/30 dark:border-red-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
                         <img
@@ -7160,8 +7160,8 @@ export default function SuperAdminReports() {
                   return (
                     <>
                       {/* Experian Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-blue-950 dark:to-cyan-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30 dark:from-blue-900/30 dark:to-cyan-900/30 dark:border-blue-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
                               <img 
@@ -7234,8 +7234,8 @@ export default function SuperAdminReports() {
                       </Card>
 
                       {/* TransUnion Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-purple-950 dark:to-violet-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30 dark:from-purple-900/30 dark:to-violet-900/30 dark:border-purple-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
                               <img 
@@ -7308,8 +7308,8 @@ export default function SuperAdminReports() {
                       </Card>
 
                       {/* Equifax Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-red-950 dark:to-rose-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30 dark:from-red-900/30 dark:to-rose-900/30 dark:border-red-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
                               <img 
@@ -7386,8 +7386,8 @@ export default function SuperAdminReports() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm">
-            <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm">
+            <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 dark:from-slate-800/50 dark:via-gray-800/50 dark:to-slate-900/50 dark:border-slate-700/30 backdrop-blur-sm">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
                   <Building className="h-5 w-5 text-white" />
@@ -7403,8 +7403,8 @@ export default function SuperAdminReports() {
             <CardContent>
               <div className="grid md:grid-cols-3 gap-6">
                 {/* Experian Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-blue-950 dark:to-cyan-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30 dark:from-blue-900/30 dark:to-cyan-900/30 dark:border-blue-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
                         <img
@@ -7447,7 +7447,7 @@ export default function SuperAdminReports() {
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 bg-gradient-to-br from-blue-50/30 to-cyan-50/30 rounded-lg border border-blue-100/50">
+                      <div className="text-center py-6 bg-gradient-to-br from-blue-50/30 to-cyan-50/30 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg border border-blue-100/50 dark:border-blue-800/30">
                         <div className="p-3 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-full w-fit mx-auto mb-3">
                           <FileText className="h-6 w-6 text-blue-600" />
                         </div>
@@ -7463,8 +7463,8 @@ export default function SuperAdminReports() {
                 </Card>
 
                 {/* TransUnion Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-purple-950 dark:to-violet-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30 dark:from-purple-900/30 dark:to-violet-900/30 dark:border-purple-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
                         <img
@@ -7507,15 +7507,15 @@ export default function SuperAdminReports() {
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 bg-gradient-to-br from-red-50/30 to-rose-50/30 rounded-lg border border-red-100/50">
-                        <div className="p-3 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-full w-fit mx-auto mb-3">
-                          <FileText className="h-6 w-6 text-red-600" />
+                      <div className="text-center py-6 bg-gradient-to-br from-purple-50/30 to-violet-50/30 dark:from-purple-900/20 dark:to-violet-900/20 rounded-lg border border-purple-100/50 dark:border-purple-800/30">
+                        <div className="p-3 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-full w-fit mx-auto mb-3">
+                          <FileText className="h-6 w-6 text-purple-600" />
                         </div>
-                        <p className="text-sm text-red-700 font-medium mb-1">
+                        <p className="text-sm text-purple-700 font-medium mb-1">
                           No employer data available
                         </p>
-                        <p className="text-xs text-red-600/70">
-                          Equifax has not reported any employment information
+                        <p className="text-xs text-purple-600/70">
+                          TransUnion has not reported any employment information
                         </p>
                       </div>
                     )}
@@ -7523,8 +7523,8 @@ export default function SuperAdminReports() {
                 </Card>
 
                 {/* Equifax Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-red-950 dark:to-rose-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30 dark:from-red-900/30 dark:to-rose-900/30 dark:border-red-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
                         <img

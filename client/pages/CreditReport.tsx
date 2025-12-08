@@ -181,8 +181,8 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
       targetUtilization: existingPlan?.target_utilization ?? 0,
       payoffTimelineMonths: existingPlan?.payoff_timeline_months ?? 12,
       paymentDate: existingPlan?.payment_date ?? 1,
-      reminderEnabled: existingPlan?.reminder_enabled ?? false,
-      trackEnabled: existingPlan?.track_enabled ?? false
+      reminderEnabled: !!existingPlan?.reminder_enabled,
+      trackEnabled: !!existingPlan?.track_enabled
     });
   };
 
@@ -201,8 +201,8 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
         target_utilization: Number(editForm.targetUtilization),
         payoff_timeline_months: Number(editForm.payoffTimelineMonths),
         payment_date: Number(editForm.paymentDate),
-        reminder_enabled: editForm.reminderEnabled,
-        track_enabled: editForm.trackEnabled
+        reminder_enabled: Boolean(editForm.reminderEnabled),
+        track_enabled: Boolean(editForm.trackEnabled)
       });
       setEditingAccount(null);
       toast.success("Payoff plan updated successfully");
@@ -474,7 +474,22 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
                         <div className="flex justify-center mb-2">
                             <Clock className="h-8 w-8 text-slate-300" />
                         </div>
-                        No active reminders.<br/>Select an account to configure.
+                        <div className="mb-4">No active reminders.</div>
+                        <Select onValueChange={(value) => {
+                            const account = revolvingAccounts.find(a => String(a.id) === value);
+                            if (account) handleEditClick(account);
+                        }}>
+                            <SelectTrigger className="w-[200px] mx-auto bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                                <SelectValue placeholder="Select account to configure" />
+                            </SelectTrigger>
+                            <SelectContent className="dark:bg-slate-900 dark:border-slate-700">
+                                {revolvingAccounts.map((acc) => (
+                                    <SelectItem key={acc.id} value={String(acc.id)}>
+                                        {acc.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
                  )}
                </div>
@@ -482,7 +497,7 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
            </CardContent>
          </Card>
 
-         <Card className="lg:col-span-2 shadow-md border-slate-200 dark:border-slate-800">
+         <Card className="lg:col-span-2 shadow-md border-slate-200 dark:border-slate-800 dark:bg-card">
            <CardHeader>
              <CardTitle className="flex items-center gap-2">
                 <LineChart className="w-5 h-5 text-indigo-500" />
@@ -590,6 +605,75 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
            </CardContent>
          </Card>
        </div>
+       
+       <Card className="shadow-md border-slate-200 dark:border-slate-800 dark:bg-card">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-green-600" />
+                Saved Payoff Plans
+             </CardTitle>
+             <CardDescription>View all your saved debt payoff strategies and reminders</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="rounded-md border overflow-x-auto">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead>Account Name</TableHead>
+                     <TableHead>Target Utilization</TableHead>
+                     <TableHead>Payoff Timeline</TableHead>
+                     <TableHead>Payment Date</TableHead>
+                     <TableHead>Reminders</TableHead>
+                     <TableHead>Tracking</TableHead>
+                     <TableHead>Actions</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {payoffPlans.length > 0 ? payoffPlans.map((plan, idx) => (
+                     <TableRow key={idx}>
+                       <TableCell className="font-medium">{plan.account_name}</TableCell>
+                       <TableCell>{plan.target_utilization}%</TableCell>
+                       <TableCell>{plan.payoff_timeline_months} months</TableCell>
+                       <TableCell>{plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</TableCell>
+                       <TableCell>
+                         {plan.reminder_enabled ? (
+                           <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-green-200">Active</Badge>
+                         ) : (
+                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         {plan.track_enabled ? (
+                           <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200">Enabled</Badge>
+                         ) : (
+                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         <Button 
+                           size="sm" 
+                           variant="ghost" 
+                           onClick={() => {
+                             const account = revolvingAccounts.find(a => String(a.id) === plan.account_id) || { id: plan.account_id, name: plan.account_name };
+                             handleEditClick(account);
+                           }}
+                         >
+                           <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                         </Button>
+                       </TableCell>
+                     </TableRow>
+                   )) : (
+                     <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No saved payoff plans found.
+                        </TableCell>
+                     </TableRow>
+                   )}
+                 </TableBody>
+               </Table>
+             </div>
+           </CardContent>
+         </Card>
        
     </div>
   );
@@ -1142,6 +1226,7 @@ const detailedReport = {
 };
 
 export default function CreditReport() {
+  const { userProfile } = useAuthContext();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
@@ -1156,7 +1241,7 @@ export default function CreditReport() {
   
   const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
   const { clientId: urlClientId } = useParams<{ clientId: string }>();
-  const clientId = urlClientId || searchParams.get("clientId");
+  const clientId = urlClientId || searchParams.get("clientId") || userProfile?.id;
 
   const fetchPayoffPlans = async () => {
     if (!clientId) return;
@@ -1320,10 +1405,9 @@ export default function CreditReport() {
     return Boolean(isFundingEligible) || localEligible;
   }, [reportData, apiData, isFundingEligible]);
 
-const { userProfile } = useAuthContext();
-const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
-  || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
-  || 'https://www.m2ficoforge.com/';
+  const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
+    || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
+    || 'https://www.m2ficoforge.com/';
   
   // Bureau card tabs state - each account group has its own tab state
   const [bureauTabs, setBureauTabs] = useState<Record<string, string>>({});
@@ -2592,13 +2676,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     const passCount = [tuCriteria, expCriteria, eqCriteria].filter(Boolean).length;
     
     if (passCount === 3) {
-      return 'bg-green-50 border-green-200'; // All pass - light green
+      return 'bg-green-50 border-green-200 dark:bg-green-900/50 dark:border-green-800 dark:text-white'; // All pass - light green
     } else if (passCount === 2) {
-      return 'bg-yellow-50 border-yellow-200'; // 2 pass - light yellow
+      return 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/50 dark:border-yellow-800 dark:text-white'; // 2 pass - light yellow
     } else if (passCount === 1) {
-      return 'bg-orange-50 border-orange-200'; // 1 pass - light orange
+      return 'bg-orange-50 border-orange-200 dark:bg-orange-900/50 dark:border-orange-800 dark:text-white'; // 1 pass - light orange
     } else {
-      return 'bg-red-50 border-red-200'; // None pass - light red
+      return 'bg-red-50 border-red-200 dark:bg-red-900/50 dark:border-red-800 dark:text-white'; // None pass - light red
     }
   };
 
@@ -4471,13 +4555,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </span>
               </div>
               <div className="flex items-center flex-wrap gap-2 mt-2">
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800">
                   <CheckCircle className="h-3 w-3" /> Good to go
                 </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800">
                   <AlertTriangle className="h-3 w-3" /> Proceed with caution
                 </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800">
                   <XCircle className="h-3 w-3" /> Not eligible
                 </span>
               </div>
@@ -4545,9 +4629,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     status === "yellow" ? "Proceed with caution" : "Not eligible";
                   const Icon = status === "green" ? CheckCircle : status === "yellow" ? AlertTriangle : XCircle;
                   const colorClasses =
-                    status === "green" ? "bg-green-100 text-green-700 border-green-200" :
-                    status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200" :
-                    "bg-red-100 text-red-700 border-red-200";
+                    status === "green" ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800" :
+                    status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800" :
+                    "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800";
 
                   return (
                     <div className="flex items-center gap-2">
@@ -4570,9 +4654,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
                 
                 {/* Credit Score Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Credit Score
                       <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
@@ -4602,15 +4686,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.score700Plus || false,
                       reportData?.qualificationCriteria?.[3]?.score700Plus || false,
                       reportData?.qualificationCriteria?.[2]?.score700Plus || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -4618,13 +4702,20 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const scales = [800, 790, 780, 770, 760, 750, 740, 730, 720, 710, 700];
                             
                             // Updated color logic: below 700 (red), 710-750 (yellow), 760-800 (green)
-                            const getColorForScale = (scale) => {
-                              if (scale >= 760) return 'green';  // 760-800: green
-                              if (scale >= 710) return 'yellow'; // 710-750: yellow
-                              return 'red';                      // below 700: red
+                            const getBgColorClass = (scale) => {
+                              if (scale >= 760) return 'bg-green-50 dark:bg-green-900/50';
+                              if (scale >= 710) return 'bg-yellow-50 dark:bg-yellow-900/50';
+                              return 'bg-red-50 dark:bg-red-900/50';
+                            };
+
+                            const getTextColorClass = (scale) => {
+                              if (scale >= 760) return 'text-green-600 dark:text-white';
+                              if (scale >= 710) return 'text-yellow-600 dark:text-white';
+                              return 'text-red-600 dark:text-white';
                             };
                             
-                            const colors = scales.map(scale => getColorForScale(scale));
+                            const bgColors = scales.map(scale => getBgColorClass(scale));
+                            const textColors = scales.map(scale => getTextColorClass(scale));
                             
                             // Function to map score to nearest scale
                             const mapScoreToScale = (score) => {
@@ -4648,15 +4739,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqScale = mapScoreToScale(eqScore);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`border-b bg-${colors[index]}-50`}>
-                                <td className={`py-1 px-1 text-${colors[index]}-600`}>{scale}</td>
-                                <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                              <tr key={scale} className={`border-b ${bgColors[index]} dark:text-white`}>
+                                <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
+                                <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                   {tuScale === scale ? tuScore : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                   {exScale === scale ? exScore : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                   {eqScale === scale ? eqScore : ''}
                                 </td>
                               </tr>
@@ -4669,15 +4760,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowScores) {
                               rows.push(
-                                <tr key="below-scale" className="border-b bg-red-50">
-                                  <td className="py-1 px-1 text-red-600">Below {scales[scales.length - 1]}</td>
-                                  <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                                <tr key="below-scale" className="border-b bg-red-50 dark:bg-red-900/50 dark:text-white">
+                                  <td className="py-1 px-1 text-red-600 dark:text-white">Below {scales[scales.length - 1]}</td>
+                                  <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                     {tuScore && parseInt(tuScore) < scales[scales.length - 1] ? tuScore : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                     {exScore && parseInt(exScore) < scales[scales.length - 1] ? exScore : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                     {eqScore && parseInt(eqScore) < scales[scales.length - 1] ? eqScore : ''}
                                   </td>
                                 </tr>
@@ -4693,9 +4784,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Credit Usage Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Credit Usage
                       <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
@@ -4726,15 +4817,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -4743,13 +4834,20 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const scales = [0, 5, 10, 15, 20, 25, 30];
                             
                             // Updated color logic: 30-20 yellow, 15-0 green
-                            const getColorForUtilization = (scale) => {
-                              if (scale >= 20) return 'yellow';  // 30-20: yellow
-                              if (scale >= 0) return 'green';    // 15-0: green
-                              return 'green';                    // default green
+                            const getBgColorClass = (scale) => {
+                              if (scale >= 20) return 'bg-yellow-50 dark:bg-yellow-900/50'; // 30-20: yellow
+                              if (scale >= 0) return 'bg-green-50 dark:bg-green-900/50';   // 15-0: green
+                              return 'bg-green-50 dark:bg-green-900/50';                   // default green
+                            };
+
+                            const getTextColorClass = (scale) => {
+                              if (scale >= 20) return 'text-yellow-600 dark:text-white';
+                              if (scale >= 0) return 'text-green-600 dark:text-white';
+                              return 'text-green-600 dark:text-white';
                             };
                             
-                            const colors = scales.map(scale => getColorForUtilization(scale));
+                            const bgColors = scales.map(scale => getBgColorClass(scale));
+                            const textColors = scales.map(scale => getTextColorClass(scale));
                             
                             // Function to map utilization to nearest scale
                             const mapUtilizationToScale = (utilization) => {
@@ -4784,15 +4882,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqScale = mapUtilizationToScale(eqUtilization);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`border-b bg-${colors[index]}-50`}>
-                                <td className={`py-1 px-1 text-${colors[index]}-600`}>{scale}%</td>
-                                <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                              <tr key={scale} className={`border-b ${bgColors[index]} dark:text-white`}>
+                                <td className={`py-1 px-1 ${textColors[index]}`}>{scale}%</td>
+                                <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                   {tuScale === scale && tuUtilization !== null && tuUtilization !== undefined && tuUtilization <= 30 ? `${tuUtilization.toFixed(1)}%` : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                   {exScale === scale && exUtilization !== null && exUtilization !== undefined && exUtilization <= 30 ? `${exUtilization.toFixed(1)}%` : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                   {eqScale === scale && eqUtilization !== null && eqUtilization !== undefined && eqUtilization <= 30 ? `${eqUtilization.toFixed(1)}%` : ''}
                                 </td>
                               </tr>
@@ -4807,15 +4905,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowValues) {
                               rows.unshift(
-                                <tr key="below-scale" className="border-b bg-muted">
-                                  <td className="py-1 px-1 text-muted-foreground">Below {scales[0]}%</td>
-                                  <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                                <tr key="below-scale" className="border-b bg-muted dark:bg-slate-700/50 dark:text-white">
+                                  <td className="py-1 px-1 text-muted-foreground dark:text-white">Below {scales[0]}%</td>
+                                  <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                     {(tuUtilization !== null && tuUtilization !== undefined && tuUtilization < scales[0]) ? `${tuUtilization?.toFixed(1)}%` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                     {(exUtilization !== null && exUtilization !== undefined && exUtilization < scales[0]) ? `${exUtilization?.toFixed(1)}%` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                     {(eqUtilization !== null && eqUtilization !== undefined && eqUtilization < scales[0]) ? `${eqUtilization?.toFixed(1)}%` : ''}
                                   </td>
                                 </tr>
@@ -4829,15 +4927,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
                             if (hasHighValues) {
                               rows.push(
-                                <tr key="above-scale" className="border-b bg-red-50">
-                                  <td className="py-1 px-1 text-red-600">Above {scales[scales.length - 1]}%</td>
-                                  <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                                <tr key="above-scale" className="border-b bg-red-50 dark:bg-red-900/50 dark:text-white">
+                                  <td className="py-1 px-1 text-red-600 dark:text-white">Above {scales[scales.length - 1]}%</td>
+                                  <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                     {(tuUtilization !== null && tuUtilization !== undefined && tuUtilization > scales[scales.length - 1]) ? `${tuUtilization.toFixed(1)}%` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                     {(exUtilization !== null && exUtilization !== undefined && exUtilization > scales[scales.length - 1]) ? `${exUtilization.toFixed(1)}%` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                     {(eqUtilization !== null && eqUtilization !== undefined && eqUtilization > scales[scales.length - 1]) ? `${eqUtilization.toFixed(1)}%` : ''}
                                   </td>
                                 </tr>
@@ -4853,9 +4951,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Open Accounts Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Open Accounts
                       <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
@@ -4893,23 +4991,23 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5];
                             // Updated color scheme: 15-10 green, 9-5 yellow
-                            const colors = ['bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50'];
-                            const textColors = ['text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white'];
                             
                             // Function to map account count to scale
                             const mapAccountCountToScale = (count) => {
@@ -4945,15 +5043,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqScale = mapAccountCountToScale(eqOpenAccounts);
 
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index < scales.length - 1 ? 'border-b' : ''} ${colors[index]}`}>
+                              <tr key={scale} className={`${index < scales.length - 1 ? 'border-b dark:border-slate-700' : ''} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {tuScale === scale ? tuOpenAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {exScale === scale ? exOpenAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {eqScale === scale ? eqOpenAccounts : ''}
                                 </td>
                               </tr>
@@ -4966,15 +5064,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowCounts) {
                               rows.push(
-                                <tr key="below-scale" className="border-b bg-muted">
-                                  <td className="py-1 px-1 text-muted-foreground">Below {scales[scales.length - 1]}</td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                <tr key="below-scale" className="border-b dark:border-slate-700 bg-muted dark:bg-slate-700/50">
+                                  <td className="py-1 px-1 text-muted-foreground dark:text-white">Below {scales[scales.length - 1]}</td>
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {tuOpenAccounts < scales[scales.length - 1] ? tuOpenAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {exOpenAccounts < scales[scales.length - 1] ? exOpenAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {eqOpenAccounts < scales[scales.length - 1] ? eqOpenAccounts : ''}
                                   </td>
                                 </tr>
@@ -4990,9 +5088,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* High-Limit Accounts Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground dark:text-white flex justify-between items-center">
                       High-Limit Accounts
                       <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
@@ -5030,23 +5128,23 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
                             // Updated color scheme: above 10-5 green, 0-5 yellow
-                            const colors = ['bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50'];
-                            const textColors = ['text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white'];
                             
                             // Function to map high-limit account count to scale (10-scale format)
                             const mapHighLimitCountToScale = (count) => {
@@ -5094,15 +5192,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqScale = mapHighLimitCountToScale(eqHighLimitAccounts);
 
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index < scales.length - 1 ? 'border-b' : ''} ${colors[index]}`}>
+                              <tr key={scale} className={`${index < scales.length - 1 ? 'border-b dark:border-slate-700' : ''} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {tuScale === scale ? tuHighLimitAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {exScale === scale ? exHighLimitAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {eqScale === scale ? eqHighLimitAccounts : ''}
                                 </td>
                               </tr>
@@ -5113,15 +5211,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowCounts) {
                               rows.push(
-                                <tr key="below-5" className="border-t bg-muted">
-                                  <td className="py-1 px-1 text-muted-foreground">Below 5</td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                <tr key="below-5" className="border-t dark:border-slate-700 bg-muted dark:bg-slate-700/50">
+                                  <td className="py-1 px-1 text-muted-foreground dark:text-white">Below 5</td>
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {tuScale === null ? tuHighLimitAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {exScale === null ? exHighLimitAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {eqScale === null ? eqHighLimitAccounts : ''}
                                   </td>
                                 </tr>
@@ -5135,15 +5233,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.unshift(
-                                <tr key="above-scale" className="border-b bg-emerald-50">
-                                  <td className="py-1 px-1 text-emerald-600">Above {scales[0]}</td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-emerald-50 dark:bg-emerald-900/50">
+                                  <td className="py-1 px-1 text-emerald-600 dark:text-white">Above {scales[0]}</td>
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {tuHighLimitAccounts > scales[0] ? tuHighLimitAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {exHighLimitAccounts > scales[0] ? exHighLimitAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {eqHighLimitAccounts > scales[0] ? eqHighLimitAccounts : ''}
                                   </td>
                                 </tr>
@@ -5159,9 +5257,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* New Accounts Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground dark:text-white flex justify-between items-center">
                       New Accounts
                       <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
@@ -5201,15 +5299,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5218,13 +5316,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             // Function to get color based on inquiry count
                             const getColorForInquiry = (scale) => {
-                              if (scale === 0) return 'bg-green-50'; // 0 inquiries green
-                              return 'bg-yellow-50'; // Rest yellow
+                              if (scale === 0) return 'bg-green-50 dark:bg-green-900/50'; // 0 inquiries green
+                              return 'bg-yellow-50 dark:bg-yellow-900/50'; // Rest yellow
                             };
                             
                             const getTextColorForInquiry = (scale) => {
-                              if (scale === 0) return 'text-green-600'; // 0 inquiries green
-                              return 'text-yellow-600'; // Rest yellow
+                              if (scale === 0) return 'text-green-600 dark:text-white'; // 0 inquiries green
+                              return 'text-yellow-600 dark:text-white'; // Rest yellow
                             };
                             
                             const colors = scales.map(scale => getColorForInquiry(scale));
@@ -5253,15 +5351,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqNewAccounts = getNewAccountCount(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`border-b ${colors[index]}`}>
+                              <tr key={scale} className={`border-b dark:border-slate-700 ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapNewAccountCountToScale(tuNewAccounts) === scale ? tuNewAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapNewAccountCountToScale(exNewAccounts) === scale ? exNewAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapNewAccountCountToScale(eqNewAccounts) === scale ? eqNewAccounts : ''}
                                 </td>
                               </tr>
@@ -5274,15 +5372,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.push(
-                                <tr key="above-scale" className="border-b bg-red-100">
-                                  <td className="py-1 px-1 text-red-700">Above {scales[scales.length - 1]}</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-red-100 dark:bg-red-900/50">
+                                  <td className="py-1 px-1 text-red-700 dark:text-white">Above {scales[scales.length - 1]}</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuNewAccounts > scales[scales.length - 1] ? tuNewAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exNewAccounts > scales[scales.length - 1] ? exNewAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqNewAccounts > scales[scales.length - 1] ? eqNewAccounts : ''}
                                   </td>
                                 </tr>
@@ -5298,9 +5396,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Over 50% Usage Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground dark:text-white flex justify-between items-center">
                       Over 50% Usage
                       <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
@@ -5340,22 +5438,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-                            const colors = ['bg-green-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-red-50', 'bg-red-50', 'bg-red-50', 'bg-red-50', 'bg-red-50', 'bg-red-50', 'bg-red-50'];
-                            const textColors = ['text-green-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-red-600', 'text-red-600', 'text-red-600', 'text-red-600', 'text-red-600', 'text-red-600', 'text-red-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white'];
                             
                             const mapHighUsageCountToScale = (count) => {
                               return Math.min(count, 10);
@@ -5385,15 +5483,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqHighUsageAccounts = getHighUsageAccountCount(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapHighUsageCountToScale(tuHighUsageAccounts) === scale ? tuHighUsageAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapHighUsageCountToScale(exHighUsageAccounts) === scale ? exHighUsageAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapHighUsageCountToScale(eqHighUsageAccounts) === scale ? eqHighUsageAccounts : ''}
                                 </td>
                               </tr>
@@ -5406,15 +5504,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.unshift(
-                                <tr key="above-scale" className="border-b bg-red-100">
-                                  <td className="py-1 px-1 text-red-700">Above {scales[0]}</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-red-100 dark:bg-red-900/50">
+                                  <td className="py-1 px-1 text-red-700 dark:text-white">Above {scales[0]}</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuHighUsageAccounts > scales[0] ? tuHighUsageAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exHighUsageAccounts > scales[0] ? exHighUsageAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqHighUsageAccounts > scales[0] ? eqHighUsageAccounts : ''}
                                   </td>
                                 </tr>
@@ -5435,9 +5533,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 
                 {/* Installment Accounts Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground dark:text-white flex justify-between items-center">
                       Installment Accounts
                       <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
@@ -5472,22 +5570,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [2, 1, 0];
-                            const colors = ['bg-green-50', 'bg-green-50', 'bg-yellow-50'];
-                            const textColors = ['text-green-600', 'text-green-600', 'text-yellow-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-yellow-600 dark:text-white'];
                             
                             const mapInstallmentCountToScale = (count) => {
                               return Math.min(count, 2);
@@ -5515,15 +5613,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqInstallmentAccounts = getInstallmentAccountCount(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInstallmentCountToScale(tuInstallmentAccounts) === scale ? tuInstallmentAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInstallmentCountToScale(exInstallmentAccounts) === scale ? exInstallmentAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInstallmentCountToScale(eqInstallmentAccounts) === scale ? eqInstallmentAccounts : ''}
                                 </td>
                               </tr>
@@ -5536,15 +5634,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.unshift(
-                                <tr key="above-scale" className="border-b bg-green-100">
-                                  <td className="py-1 px-1 text-green-700">Above {scales[0]}</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-green-100 dark:bg-green-900/50">
+                                  <td className="py-1 px-1 text-green-700 dark:text-white">Above {scales[0]}</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuInstallmentAccounts > scales[0] ? tuInstallmentAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exInstallmentAccounts > scales[0] ? exInstallmentAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqInstallmentAccounts > scales[0] ? eqInstallmentAccounts : ''}
                                   </td>
                                 </tr>
@@ -5560,9 +5658,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Age Card */}
-                <Card className="border border-border shadow-sm">
+                <Card className="border border-border shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Age
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -5612,15 +5710,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.minFiveOpenRevolving || false,
                       reportData?.qualificationCriteria?.[3]?.minFiveOpenRevolving || false,
                       reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5630,16 +5728,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             // Function to get color based on age scale
                             const getColorForAge = (scale) => {
                               const ageValue = parseInt(scale);
-                              if (ageValue >= 7) return 'bg-green-50'; // 7-12 years green
-                              if (ageValue >= 2) return 'bg-yellow-50'; // 2-6 years yellow
-                              return 'bg-red-50'; // Below 2 years red
+                              if (ageValue >= 7) return 'bg-green-50 dark:bg-green-900/50'; // 7-12 years green
+                              if (ageValue >= 2) return 'bg-yellow-50 dark:bg-yellow-900/50'; // 2-6 years yellow
+                              return 'bg-red-50 dark:bg-red-900/50'; // Below 2 years red
                             };
                             
                             const getTextColorForAge = (scale) => {
                               const ageValue = parseInt(scale);
-                              if (ageValue >= 7) return 'text-green-600'; // 7-12 years green
-                              if (ageValue >= 2) return 'text-yellow-600'; // 2-6 years yellow
-                              return 'text-red-600'; // Below 2 years red
+                              if (ageValue >= 7) return 'text-green-600 dark:text-white'; // 7-12 years green
+                              if (ageValue >= 2) return 'text-yellow-600 dark:text-white'; // 2-6 years yellow
+                              return 'text-red-600 dark:text-white'; // Below 2 years red
                             };
                             
                             const colors = scales.map(scale => getColorForAge(scale));
@@ -5685,15 +5783,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqAverageAge = getAverageAccountAge(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapAgeToScale(tuAverageAge) === scale ? `${tuAverageAge} yrs` : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapAgeToScale(exAverageAge) === scale ? `${exAverageAge} yrs` : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapAgeToScale(eqAverageAge) === scale ? `${eqAverageAge} yrs` : ''}
                                 </td>
                               </tr>
@@ -5704,15 +5802,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighAges) {
                               rows.unshift(
-                                <tr key="above-scale" className="border-b bg-green-100">
-                                  <td className="py-1 px-1 text-green-700">Above 12 yrs</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-green-100 dark:bg-green-900/50">
+                                  <td className="py-1 px-1 text-green-700 dark:text-white">Above 12 yrs</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuAverageAge > 12 ? `${tuAverageAge} yrs` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exAverageAge > 12 ? `${exAverageAge} yrs` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqAverageAge > 12 ? `${eqAverageAge} yrs` : ''}
                                   </td>
                                 </tr>
@@ -5728,9 +5826,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Inquiries Card (All-Time) */}
-                <Card className="border border-border shadow-sm">
+                <Card className="border border-border shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Inquiries
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -5761,18 +5859,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                          <tr className="border-b dark:border-slate-700">
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [0, 1, 2, 3, 4];
-                            const colors = ['bg-green-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-orange-50', 'bg-red-50'];
-                            const textColors = ['text-green-600', 'text-yellow-600', 'text-yellow-600', 'text-orange-600', 'text-red-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-orange-50 dark:bg-orange-900/50', 'bg-red-50 dark:bg-red-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-orange-600 dark:text-white', 'text-red-600 dark:text-white'];
                             
                             const mapInquiryCountToScale = (count) => {
                               return Math.min(count, 4);
@@ -5792,15 +5890,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqInquiries = getTotalInquiryCount(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInquiryCountToScale(tuInquiries) === scale ? tuInquiries : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInquiryCountToScale(exInquiries) === scale ? exInquiries : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInquiryCountToScale(eqInquiries) === scale ? eqInquiries : ''}
                                 </td>
                               </tr>
@@ -5813,15 +5911,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.push(
-                                <tr key="above-scale" className="border-b bg-red-100">
-                                  <td className="py-1 px-1 text-red-700">Above {scales[scales.length - 1]}</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-red-100 dark:bg-red-900/50">
+                                  <td className="py-1 px-1 text-red-700 dark:text-white">Above {scales[scales.length - 1]}</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuInquiries > scales[scales.length - 1] ? tuInquiries : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exInquiries > scales[scales.length - 1] ? exInquiries : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqInquiries > scales[scales.length - 1] ? eqInquiries : ''}
                                   </td>
                                 </tr>
@@ -5837,9 +5935,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Bankruptcy Card */}
-                <Card className="border border-border shadow-sm">
+                <Card className="border border-border shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Bankruptcy
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -5865,18 +5963,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                          <tr className="border-b dark:border-slate-700">
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = ['Yes', 'No'];
-                            const colors = ['bg-red-50', 'bg-green-50'];
-                            const textColors = ['text-red-600', 'text-green-600'];
+                            const colors = ['bg-red-50 dark:bg-red-900/50', 'bg-green-50 dark:bg-green-900/50'];
+                            const textColors = ['text-red-600 dark:text-white', 'text-green-600 dark:text-white'];
                             
                             const getBankruptcyStatus = (bureauId) => {
                               if (!apiData?.PublicRecords) return 'No';
@@ -5896,15 +5994,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqBankruptcy = getBankruptcyStatus(2);
                             
                             return scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {tuBankruptcy === scale ? scale : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {exBankruptcy === scale ? scale : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {eqBankruptcy === scale ? scale : ''}
                                 </td>
                               </tr>
@@ -5917,9 +6015,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Negative Marks Card */}
-                <Card className="border border-border shadow-sm">
+                <Card className="border border-border shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Negative Marks
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -5956,11 +6054,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                          <tr className="border-b dark:border-slate-700">
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5989,10 +6087,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const ex = hasNegativeMarks(3) ? 'Yes' : 'No';
                             const eq = hasNegativeMarks(2) ? 'Yes' : 'No';
                             const scales = ['Yes', 'No'];
-                            const colors = ['bg-red-50', 'bg-green-50'];
-                            const textColors = ['text-red-600', 'text-green-600'];
+                            const colors = ['bg-red-50 dark:bg-red-900/50', 'bg-green-50 dark:bg-green-900/50'];
+                            const textColors = ['text-red-600 dark:text-white', 'text-green-600 dark:text-white'];
                             return scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
                                 <td className="text-center py-1 px-1">{tu === scale ? scale : ''}</td>
                                 <td className="text-center py-1 px-1">{ex === scale ? scale : ''}</td>
@@ -6013,7 +6111,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
 
           {/* Do You Qualify */}
-          <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800`}>
+          <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50 dark:bg-none dark:bg-slate-800 dark:border dark:border-slate-700`}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <CardTitle className="text-2xl font-bold text-foreground">Do You Qualify</CardTitle>
@@ -6022,13 +6120,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
                     Rerun Funding Audit
                   </Button>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800">
                     <CheckCircle className="h-3 w-3" /> Good to go
                   </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800">
                     <AlertTriangle className="h-3 w-3" /> Proceed with caution
                   </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800">
                     <XCircle className="h-3 w-3" /> Not eligible
                   </span>
                 </div>
@@ -6097,9 +6195,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     status === "yellow" ? "Proceed with caution" : "Not eligible";
                   const Icon = status === "green" ? CheckCircle : status === "yellow" ? AlertTriangle : XCircle;
                   const colorClasses =
-                    status === "green" ? "bg-green-100 text-green-700 border-green-200" :
-                    status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200" :
-                    "bg-red-100 text-red-700 border-red-200";
+                    status === "green" ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800" :
+                    status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800" :
+                    "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800";
 
                   return (
                     <div className="flex items-center gap-2">
@@ -6121,11 +6219,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="border-b">
-                      <th className="text-center py-2 px-4 font-semibold">TU</th>
-                      <th className="text-center py-2 px-4 font-semibold">EX</th>
-                      <th className="text-center py-2 px-4 font-semibold">EQ</th>
-                      <th className="text-left py-2 px-4 font-semibold">Criteria</th>
+                    <tr className="border-b dark:border-slate-700">
+                      <th className="text-center py-2 px-4 font-semibold dark:text-white">TU</th>
+                      <th className="text-center py-2 px-4 font-semibold dark:text-white">EX</th>
+                      <th className="text-center py-2 px-4 font-semibold dark:text-white">EQ</th>
+                      <th className="text-left py-2 px-4 font-semibold dark:text-white">Criteria</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm">
@@ -6133,10 +6231,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       // Function to get row background color based on qualification status
                       const getRowBgColor = (tuStatus: boolean, exStatus: boolean, eqStatus: boolean) => {
                         const passedCount = [tuStatus, exStatus, eqStatus].filter(Boolean).length;
-                        if (passedCount === 3) return 'bg-green-50 hover:bg-green-100';
-                        if (passedCount === 2) return 'bg-yellow-50 hover:bg-yellow-100';
-                        if (passedCount === 1) return 'bg-orange-50 hover:bg-orange-100';
-                        return 'bg-red-50 hover:bg-red-100';
+                        if (passedCount === 3) return 'bg-green-50 hover:bg-green-100 dark:bg-green-900/50 dark:hover:bg-green-800/50 dark:text-white';
+                        if (passedCount === 2) return 'bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/50 dark:hover:bg-yellow-800/50 dark:text-white';
+                        if (passedCount === 1) return 'bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/50 dark:hover:bg-orange-800/50 dark:text-white';
+                        return 'bg-red-50 hover:bg-red-100 dark:bg-red-900/50 dark:hover:bg-red-800/50 dark:text-white';
                       };
 
                       // Robustly fetch inquiries from either reportData or apiData (support multiple shapes)
@@ -6579,7 +6677,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             const criteriaTotal = Object.values(criteriaFlags).length;
 
             return (
-              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800">
+              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:bg-none dark:bg-slate-800 dark:border dark:border-slate-700">
                 <CardHeader>
                   <CardTitle className="text-2xl font-bold text-foreground">Next Steps</CardTitle>
                   <CardDescription>
@@ -6620,19 +6718,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           })()}
 
           {/* Debt Utilization Table */}
-          <Card id="uw-debt-utilization" className="border-0 shadow-xl bg-card scroll-mt-24">
+          <Card id="uw-debt-utilization" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-foreground">Debt Utilization</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Debt Utilization</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <Table className="w-full">
                   <TableHeader>
-                    <TableRow className="bg-gray-50">
-                      <TableHead className="text-left font-semibold text-gray-700 py-3 px-4"></TableHead>
-                      <TableHead className="text-center font-semibold text-blue-600 py-3 px-4">TU</TableHead>
-                      <TableHead className="text-center font-semibold text-green-600 py-3 px-4">EX</TableHead>
-                      <TableHead className="text-center font-semibold text-purple-600 py-3 px-4">EQ</TableHead>
+                    <TableRow className="bg-gray-50 dark:bg-slate-800">
+                      <TableHead className="text-left font-semibold text-gray-700 dark:text-white py-3 px-4"></TableHead>
+                      <TableHead className="text-center font-semibold text-blue-600 dark:text-blue-400 py-3 px-4">TU</TableHead>
+                      <TableHead className="text-center font-semibold text-green-600 dark:text-green-400 py-3 px-4">EX</TableHead>
+                      <TableHead className="text-center font-semibold text-purple-600 dark:text-purple-400 py-3 px-4">EQ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -6641,49 +6739,49 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       return (
                         <>
                           {/* Total Balance Utilization (Open Revolving) */}
-                          <TableRow className="border-b bg-purple-50/30">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Total Balance Utilization (Open Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b bg-purple-50/30 dark:bg-purple-900/50 dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Total Balance Utilization (Open Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.openRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.openRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.openRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Total Credit Limit (Open Revolving) */}
-                          <TableRow className="border-b">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Total Credit Limit (Open Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Total Credit Limit (Open Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.openRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.openRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.openRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Percent Utilization (Open Revolving) */}
-                          <TableRow className="border-b bg-blue-50/30">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Percent Utilization (Open Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b bg-blue-50/30 dark:bg-blue-900/50 dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Percent Utilization (Open Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               {debtData[1]?.openRevolvingLimit > 0 ? 
                                 `${((debtData[1]?.openRevolvingBalance / debtData[1]?.openRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
                               }
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               {debtData[3]?.openRevolvingLimit > 0 ? 
                                 `${((debtData[3]?.openRevolvingBalance / debtData[3]?.openRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
                               }
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               {debtData[2]?.openRevolvingLimit > 0 ? 
                                 `${((debtData[2]?.openRevolvingBalance / debtData[2]?.openRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
@@ -6692,49 +6790,49 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           </TableRow>
 
                           {/* Total Balance Utilization (All Revolving) */}
-                          <TableRow className="border-b">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Total Balance Utilization (All Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Total Balance Utilization (All Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.allRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.allRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.allRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Total Credit Limit (All Revolving) */}
-                          <TableRow className="border-b bg-green-50/30">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Total Credit Limit (All Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b bg-green-50/30 dark:bg-green-900/50 dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Total Credit Limit (All Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.allRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.allRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.allRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Percent Utilization (All Revolving) */}
-                          <TableRow className="border-b">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Percent Utilization (All Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Percent Utilization (All Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               {debtData[1]?.allRevolvingLimit > 0 ? 
                                 `${((debtData[1]?.allRevolvingBalance / debtData[1]?.allRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
                               }
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               {debtData[3]?.allRevolvingLimit > 0 ? 
                                 `${((debtData[3]?.allRevolvingBalance / debtData[3]?.allRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
                               }
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               {debtData[2]?.allRevolvingLimit > 0 ? 
                                 `${((debtData[2]?.allRevolvingBalance / debtData[2]?.allRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
@@ -6743,29 +6841,29 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           </TableRow>
 
                           {/* Real Estate Debt */}
-                          <TableRow className="border-b bg-yellow-50/30">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Real Estate Debt:</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b bg-yellow-50/30 dark:bg-yellow-900/50 dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Real Estate Debt:</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.realEstateDebt?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.realEstateDebt?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.realEstateDebt?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Installment Debt */}
-                          <TableRow className="border-b">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Installment Debt:</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Installment Debt:</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.installmentDebt?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.installmentDebt?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.installmentDebt?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
@@ -6779,9 +6877,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Accounts impeding your eligibility */}
-          <Card id="uw-accounts-impeding" className={`border-0 shadow-xl bg-card scroll-mt-24`}>
+          <Card id="uw-accounts-impeding" className={`border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700`}>
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-foreground">Negative Accounts Impacting Your Qualification</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Negative Accounts Impacting Your Qualification</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="mb-4 flex items-center justify-between">
@@ -6814,12 +6912,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               {eligibilityBureau !== 'all' && (
                 <div className="flex justify-center mb-4">
                   <div
-                    className={`p-3 bg-white rounded-xl shadow-md border ${
+                    className={`p-3 bg-white dark:bg-slate-800 rounded-xl shadow-md border dark:border-slate-700 ${
                       eligibilityBureau === 'tu'
-                        ? 'border-purple-100/50'
+                        ? 'border-purple-100/50 dark:border-purple-900/50'
                         : eligibilityBureau === 'ex'
-                        ? 'border-green-100/50'
-                        : 'border-red-100/50'
+                        ? 'border-green-100/50 dark:border-green-900/50'
+                        : 'border-red-100/50 dark:border-red-900/50'
                     }`}
                   >
                     {eligibilityBureau === 'tu' && (
@@ -6837,14 +6935,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Bureau</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Payment Status</TableHead>
-                      <TableHead>Worst Payment Status</TableHead>
+                    <TableRow className="dark:border-slate-700">
+                      <TableHead className="dark:text-white">#</TableHead>
+                      <TableHead className="dark:text-white">Bureau</TableHead>
+                      <TableHead className="dark:text-white">Type</TableHead>
+                      <TableHead className="dark:text-white">Company</TableHead>
+                      <TableHead className="dark:text-white">Account</TableHead>
+                      <TableHead className="dark:text-white">Payment Status</TableHead>
+                      <TableHead className="dark:text-white">Worst Payment Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -6883,7 +6981,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
                       return hasDerogKeyword || hasNumericLate || isChargeOff || isCollection || isPastDue;
                     }).map((account, index) => (
-                      <TableRow key={index}>
+                      <TableRow key={index} className="dark:border-slate-700 dark:text-white">
                         <TableCell>{index + 1}</TableCell>
                         <TableCell className="text-center">
                           {account.BureauId === 1 ? (
@@ -6934,8 +7032,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </TableCell>
                       </TableRow>
                     )) || (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                      <TableRow className="dark:border-slate-700">
+                        <TableCell colSpan={7} className="text-center py-8 text-gray-500 dark:text-gray-400">
                           No accounts impeding eligibility found
                         </TableCell>
                       </TableRow>
@@ -6947,9 +7045,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Inquiries impeding your eligibility */}
-          <Card id="uw-inquiries-impeding" className="border-0 shadow-xl bg-card scroll-mt-24">
+          <Card id="uw-inquiries-impeding" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-foreground">Inquiries lowering your chances of approval</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Inquiries lowering your chances of approval</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="mb-4">
@@ -6958,11 +7056,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Bureau</TableHead>
-                      <TableHead>Creditor</TableHead>
-                      <TableHead>Date of Inquiry</TableHead>
+                    <TableRow className="dark:border-slate-700">
+                      <TableHead className="dark:text-white">#</TableHead>
+                      <TableHead className="dark:text-white">Bureau</TableHead>
+                      <TableHead className="dark:text-white">Creditor</TableHead>
+                      <TableHead className="dark:text-white">Date of Inquiry</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -6997,8 +7095,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       const arr = (reportData?.inquiries || []);
                       if (arr.length === 0) {
                         return (
-                          <TableRow>
-                            <TableCell colSpan={4} className="text-center py-8 text-gray-500">
+                          <TableRow className="dark:border-slate-700">
+                            <TableCell colSpan={4} className="text-center py-8 text-gray-500 dark:text-gray-400">
                               No inquiries found
                             </TableCell>
                           </TableRow>
@@ -7006,8 +7104,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       }
                       const sorted = arr.slice().sort((a: any, b: any) => orderIndex(a) - orderIndex(b));
                       return sorted.map((inquiry: any, index: number) => (
-                        <TableRow key={index}>
-                          <TableCell>{index + 1}</TableCell>
+                        <TableRow key={index} className="dark:border-slate-700">
+                          <TableCell className="dark:text-white">{index + 1}</TableCell>
                           <TableCell>
                             {(() => {
                               const raw = inquiry?.bureau ?? inquiry?.Bureau ?? inquiry?.BureauName ?? inquiry?.bureauName ?? inquiry?.BureauId;
@@ -7034,12 +7132,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               return src ? (
                                 <img src={src} alt={alt || 'Bureau'} className="h-6 w-auto" />
                               ) : (
-                                <span className="text-gray-700">{inquiry?.bureau || 'Unknown'}</span>
+                                <span className="text-gray-700 dark:text-white">{inquiry?.bureau || 'Unknown'}</span>
                               );
                             })()}
                           </TableCell>
-                          <TableCell>{inquiry.creditorName}</TableCell>
-                          <TableCell>
+                          <TableCell className="dark:text-white">{inquiry.creditorName}</TableCell>
+                          <TableCell className="dark:text-white">
                             {(() => {
                               const d = inquiry?.dateOfInquiry || inquiry?.date || inquiry?.DateInquiry;
                               return d ? new Date(d).toLocaleDateString('en-US', {
@@ -7059,9 +7157,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Pay Down */}
-          <Card id="uw-paydown" className="border-0 shadow-xl bg-card scroll-mt-24">
+          <Card id="uw-paydown" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-foreground">Pay Down</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Pay Down</CardTitle>
               <CardDescription className="text-muted-foreground">Payments needed to reach target utilization levels</CardDescription>
             </CardHeader>
             <CardContent>
@@ -7133,7 +7231,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
                 if (!accounts.length) {
                   return (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                       No revolving accounts found to compute paydown.
                     </div>
                   );
@@ -7161,14 +7259,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead>Account</TableHead>
-                          <TableHead className="text-right">Limit</TableHead>
-                          <TableHead className="text-right">Balance</TableHead>
-                          <TableHead className="text-right">Utilization</TableHead>
-                          <TableHead className="text-right">Account Age</TableHead>
+                        <TableRow className="dark:border-slate-700">
+                          <TableHead className="dark:text-white">Account</TableHead>
+                          <TableHead className="text-right dark:text-white">Limit</TableHead>
+                          <TableHead className="text-right dark:text-white">Balance</TableHead>
+                          <TableHead className="text-right dark:text-white">Utilization</TableHead>
+                          <TableHead className="text-right dark:text-white">Account Age</TableHead>
                           {targets.map((t) => (
-                            <TableHead key={t} className="text-right">To {t}%</TableHead>
+                            <TableHead key={t} className="text-right dark:text-white">To {t}%</TableHead>
                           ))}
                         </TableRow>
                       </TableHeader>
@@ -7176,21 +7274,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         {sortedAccounts.map((acc, idx) => {
                           const util = acc.limit > 0 ? (acc.balance / acc.limit) * 100 : 0;
                           const rowAccent =
-                            util >= 80 ? 'hover:bg-red-50/40' :
-                            util >= 60 ? 'hover:bg-orange-50/40' :
-                            util >= 40 ? 'hover:bg-yellow-50/40' :
-                            util > 0  ? 'hover:bg-green-50/40' : 'hover:bg-gray-50/40';
+                            util >= 80 ? 'hover:bg-red-50/40 dark:hover:bg-red-900/40' :
+                            util >= 60 ? 'hover:bg-orange-50/40 dark:hover:bg-orange-900/40' :
+                            util >= 40 ? 'hover:bg-yellow-50/40 dark:hover:bg-yellow-900/40' :
+                            util > 0  ? 'hover:bg-green-50/40 dark:hover:bg-green-900/40' : 'hover:bg-gray-50/40 dark:hover:bg-gray-800/40';
 
                           const utilStyles =
-                            util >= 80 ? 'bg-red-50 text-red-700' :
-                            util >= 60 ? 'bg-orange-50 text-orange-700' :
-                            util >= 40 ? 'bg-yellow-50 text-yellow-700' :
-                            util > 0  ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600';
+                            util >= 80 ? 'bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-white' :
+                            util >= 60 ? 'bg-orange-50 text-orange-700 dark:bg-orange-900/50 dark:text-white' :
+                            util >= 40 ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-white' :
+                            util > 0  ? 'bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-white' : 'bg-gray-50 text-gray-600 dark:bg-slate-700 dark:text-gray-300';
 
                           return (
                             <TableRow
                               key={idx}
-                              className={`cursor-pointer transition-colors ${rowAccent}`}
+                              className={`cursor-pointer transition-colors dark:border-slate-700 ${rowAccent}`}
                               onClick={() => {
                                 setSelectedPaydownAccount(acc);
                                 // Pick an initial target based on current utilization (default to 30%)
@@ -7201,23 +7299,23 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               }}
                             >
                               <TableCell>
-                                <div className="font-medium text-gray-800">{acc.creditor}</div>
+                                <div className="font-medium text-gray-800 dark:text-white">{acc.creditor}</div>
                                 <div className="text-xs text-muted-foreground">{acc.accountNumber || ''}</div>
                               </TableCell>
-                              <TableCell className="text-right font-semibold text-blue-700">{formatCurrency(acc.limit)}</TableCell>
-                              <TableCell className="text-right font-semibold text-purple-700">{formatCurrency(acc.balance)}</TableCell>
+                              <TableCell className="text-right font-semibold text-blue-700 dark:text-blue-400">{formatCurrency(acc.limit)}</TableCell>
+                              <TableCell className="text-right font-semibold text-purple-700 dark:text-purple-400">{formatCurrency(acc.balance)}</TableCell>
                               <TableCell className={`text-right font-semibold rounded-md px-2 ${utilStyles}`}>{formatPercent(util)}</TableCell>
-                              <TableCell className="text-right text-slate-700">{formatAge(acc.opened)}</TableCell>
+                              <TableCell className="text-right text-slate-700 dark:text-slate-300">{formatAge(acc.opened)}</TableCell>
                               {targets.map((t) => {
                                 const targetBal = Math.round(acc.limit * (t / 100));
                                 const payment = Math.max(0, Math.round(acc.balance - targetBal));
                                 const paymentRatio = acc.balance > 0 ? payment / acc.balance : 0;
                                 const paymentStyles =
-                                  payment === 0 ? 'bg-green-50 text-green-700' :
-                                  paymentRatio <= 0.10 ? 'bg-lime-50 text-lime-700' :
-                                  paymentRatio <= 0.25 ? 'bg-yellow-50 text-yellow-700' :
-                                  paymentRatio <= 0.50 ? 'bg-orange-50 text-orange-700' :
-                                  'bg-red-50 text-red-700';
+                                  payment === 0 ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
+                                  paymentRatio <= 0.10 ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300' :
+                                  paymentRatio <= 0.25 ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
+                                  paymentRatio <= 0.50 ? 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
+                                  'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300';
                                 return (
                                   <TableCell key={t} className={`text-right rounded-md px-2 ${paymentStyles}`}>
                                     {formatCurrency(payment)}
@@ -7546,7 +7644,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         <circle cx="80" cy="25" r="3" fill="#94a3b8" />
                         <circle cx="140" cy="70" r="3" fill="#94a3b8" />
                         {/* Score number in center */}
-                        <text x="80" y="60" textAnchor="middle" className="fill-current text-foreground text-3xl font-bold">
+                        <text x="80" y="60" textAnchor="middle" className="fill-current text-foreground text-3xl font-bold dark:fill-white">
                           {reportData.scores.experian}
                         </text>
                         <text x="80" y="75" textAnchor="middle" className="fill-current text-muted-foreground text-xs font-medium">
@@ -7642,7 +7740,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         <circle cx="80" cy="25" r="3" fill="#94a3b8" />
                         <circle cx="140" cy="70" r="3" fill="#94a3b8" />
                         {/* Score number in center */}
-                        <text x="80" y="60" textAnchor="middle" className="fill-current text-foreground text-3xl font-bold">
+                        <text x="80" y="60" textAnchor="middle" className="fill-current text-foreground text-3xl font-bold dark:fill-white">
                           {reportData.scores.equifax}
                         </text>
                         <text x="80" y="75" textAnchor="middle" className="fill-current text-muted-foreground text-xs font-medium">
@@ -8825,15 +8923,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Experian_logo.svg.png" alt="Experian" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-blue-700"></div>
+                      <div className="text-sm font-semibold text-blue-700 dark:text-blue-400"></div>
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-purple-700"></div>
+                      <div className="text-sm font-semibold text-purple-700 dark:text-purple-400"></div>
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-green-700"></div>
+                      <div className="text-sm font-semibold text-green-700 dark:text-green-400"></div>
                     </div>
                   </div>
 
@@ -8843,9 +8941,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     const activeTab = getActiveTab(accountKey);
                     
                     return (
-                    <div key={index} className="bg-card border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 mb-6">
+                    <div key={index} className="bg-card border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 mb-6 dark:bg-slate-900 dark:border-slate-800">
                       {/* Tabs for filtering fields */}
-                      <div className="mb-4 border-b border-gray-200">
+                      <div className="mb-4 border-b border-gray-200 dark:border-slate-700">
                         <div className="flex space-x-1">
                           {tabConfig.map((tab) => (
                             <button
@@ -8853,8 +8951,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               onClick={() => setActiveTabForAccount(accountKey, tab.id)}
                               className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
                                 activeTab === tab.id
-                                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-700'
-                                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                  ? 'bg-blue-50 text-blue-700 dark:text-blue-400 border-b-2 border-blue-700'
+                                  : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-800'
                               }`}
                             >
                               {tab.label}
@@ -8866,72 +8964,72 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       <div className={`grid grid-cols-1 ${activeTab === 'credit-repair' ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-6`}>
                         {/* Account Info Column */}
                         {activeTab !== 'credit-repair' && (
-                        <div className="bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-xl p-5 border border-slate-200 shadow-md hover:shadow-lg transition-shadow">
+                        <div className="bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-xl p-5 border border-slate-200 shadow-md hover:shadow-lg transition-shadow dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 dark:border-slate-700">
                           <div className="space-y-4">
                             <div className="flex items-center gap-3 pb-3 border-b border-slate-300">
                               <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full shadow-sm"></div>
-                              <div className="font-bold text-lg text-gray-800">{accountGroup.creditor}</div>
+                              <div className="font-bold text-lg text-gray-800 dark:text-white">{accountGroup.creditor}</div>
                             </div>
                             
                             <div className="space-y-3 text-sm">
-                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                <span className="text-gray-600 font-medium flex items-center gap-2">
+                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                   <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                   </svg>
                                   Account #:
                                 </span>
-                                <span className="font-semibold text-gray-800 text-xs">{accountGroup.accountNumber}</span>
+                                <span className="font-semibold text-gray-800 dark:text-white text-xs">{accountGroup.accountNumber}</span>
                               </div>
-                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                <span className="text-gray-600 font-medium flex items-center gap-2">
+                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                   <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
                                   </svg>
                                   Type:
                                 </span>
-                                <span className="font-semibold text-gray-800">{accountGroup.type}</span>
+                                <span className="font-semibold text-gray-800 dark:text-white">{accountGroup.type}</span>
                               </div>
                               {/* Get additional details from first available bureau */}
                               {(() => {
                                 const firstBureau = Object.values(accountGroup.bureaus)[0];
                                 return firstBureau ? (
                                   <>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                         </svg>
                                         Designator:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.designator || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.designator || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
                                         Opened:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.opened ? new Date(firstBureau.opened).toLocaleDateString() : 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.opened ? new Date(firstBureau.opened).toLocaleDateString() : 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                                         </svg>
                                         Industry:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.industry || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.industry || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-1l-4 4z" />
                                         </svg>
                                         Remark:
                                       </span>
-                                      <span className="font-semibold text-gray-800 text-xs truncate max-w-[120px]" title={firstBureau.remark || 'N/A'}>{firstBureau.remark || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white text-xs truncate max-w-[120px]" title={firstBureau.remark || 'N/A'}>{firstBureau.remark || 'N/A'}</span>
                                     </div>
                                   </>
                                 ) : null;
@@ -8942,7 +9040,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         )}
 
                         {/* Experian Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.Experian ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -8951,21 +9049,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.Experian.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-700'
                                   }`}
                                 >
                                   {accountGroup.bureaus.Experian.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/Experian_logo.svg.png" alt="Experian" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100 dark:from-blue-950/40 dark:to-indigo-950/40 dark:border-blue-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
                                   {accountGroup.type && (
                                     accountGroup.type.toLowerCase().includes('installment') ||
                                     accountGroup.type.toLowerCase().includes('loan') ||
@@ -8999,19 +9097,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 
                                 <div className="space-y-2 text-xs">
                                   {shouldShowField('paymentHistory', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         Payment:
                                       </span>
-                                      <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.paymentHistory}</span>
+                                      <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.paymentHistory}</span>
                                     </div>
                                   )}
                                   {shouldShowField('reported', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -9034,16 +9132,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.reported);
                                           const v3 = normalize(b.Equifax?.reported);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.reported ? new Date(accountGroup.bureaus.Experian.reported).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.reported ? new Date(accountGroup.bureaus.Experian.reported).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('opened', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -9066,16 +9164,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.opened);
                                           const v3 = normalize(b.Equifax?.opened);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.opened ? new Date(accountGroup.bureaus.Experian.opened).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.opened ? new Date(accountGroup.bureaus.Experian.opened).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('dateAccountStatus', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10" />
                                         </svg>
@@ -9098,16 +9196,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.dateAccountStatus);
                                           const v3 = normalize(b.Equifax?.dateAccountStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.dateAccountStatus ? new Date(accountGroup.bureaus.Experian.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.dateAccountStatus ? new Date(accountGroup.bureaus.Experian.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditorName', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9125,16 +9223,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.creditorName || b.TransUnion?.CreditorName || b.TransUnion?.creditor);
                                           const v3 = normalize(b.Equifax?.creditorName || b.Equifax?.CreditorName || b.Equifax?.creditor);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.creditorName || accountGroup.bureaus.Experian.CreditorName || accountGroup.bureaus.Experian.creditor || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.creditorName || accountGroup.bureaus.Experian.CreditorName || accountGroup.bureaus.Experian.creditor || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountNumber', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                         </svg>
@@ -9157,16 +9255,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.accountNumber);
                                           const v3 = normalize(b.Equifax?.accountNumber);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.accountNumber || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.accountNumber || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('designator', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                         </svg>
@@ -9189,16 +9287,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.designator);
                                           const v3 = normalize(b.Equifax?.designator);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.designator}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.designator}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountTypeDescription', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9216,16 +9314,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.accountTypeDescription);
                                           const v3 = normalize(b.Equifax?.accountTypeDescription);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.accountTypeDescription || accountGroup.type}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.accountTypeDescription || accountGroup.type}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9243,16 +9341,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.accountType);
                                           const v3 = normalize(b.Equifax?.accountType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.accountType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.accountType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9270,16 +9368,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.creditType);
                                           const v3 = normalize(b.Equifax?.creditType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.creditType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.creditType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('paymentFrequency', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9297,16 +9395,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.paymentFrequency);
                                           const v3 = normalize(b.Equifax?.paymentFrequency);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.paymentFrequency || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.paymentFrequency || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountCondition', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9324,16 +9422,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.accountCondition);
                                           const v3 = normalize(b.Equifax?.accountCondition);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.accountCondition || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.accountCondition || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('disputeFlag', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9351,16 +9449,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.disputeFlag);
                                           const v3 = normalize(b.Equifax?.disputeFlag);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.disputeFlag || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.disputeFlag || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('industry', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9378,16 +9476,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.industry);
                                           const v3 = normalize(b.Equifax?.industry);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.industry || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.industry || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('termType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">Term Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">Term Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9405,16 +9503,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.termType);
                                           const v3 = normalize(b.Equifax?.termType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.termType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.termType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('pastDue', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                         </svg>
@@ -9437,7 +9535,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.pastDue);
                                           const v3 = normalize(b.Equifax?.pastDue);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
                                         <span className={`font-semibold ${parseInt(accountGroup.bureaus.Experian.pastDue || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -9447,8 +9545,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                     </div>
                                   )}
                                   {shouldShowField('highBalance', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
@@ -9471,16 +9569,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.highBalance);
                                           const v3 = normalize(b.Equifax?.highBalance);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.Experian.highBalance || 0).toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.Experian.highBalance || 0).toLocaleString()}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('worstStatus', activeTab) && (
                                     <div className="flex justify-between items-center py-1">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
@@ -9503,18 +9601,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.worstStatus);
                                           const v3 = normalize(b.Equifax?.worstStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.worstStatus}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.worstStatus}</span>
                                       </div>
                                     </div>
                                   )}
                                 </div>
                                 
                                 {shouldShowField('payStatusHistory', activeTab) && accountGroup.bureaus.Experian.payStatusHistory && accountGroup.bureaus.Experian.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2 flex items-center justify-between">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-700">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2 flex items-center justify-between">
                                       <span>Payment History:</span>
                                       {activeTab === 'credit-repair' && (() => {
                                         const b = accountGroup.bureaus;
@@ -9532,15 +9630,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                         const v2 = normalize(b.TransUnion?.payStatusHistory);
                                         const v3 = normalize(b.Equifax?.payStatusHistory);
                                         const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                         return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                       })()}
                                     </div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700 overflow-x-auto">
                                       {accountGroup.bureaus.Experian.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.Experian.payStatusHistoryStartDate && accountGroup.bureaus.Experian.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.Experian.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -9558,7 +9656,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* TransUnion Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.TransUnion ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -9567,21 +9665,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.TransUnion.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-700'
                                   }`}
                                 >
                                   {accountGroup.bureaus.TransUnion.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
+                                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100 dark:from-purple-950/40 dark:to-pink-950/40 dark:border-purple-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
                                   {accountGroup.type && (
                                     accountGroup.type.toLowerCase().includes('installment') ||
                                     accountGroup.type.toLowerCase().includes('loan') ||
@@ -9612,19 +9710,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 
                                 <div className="space-y-2 text-xs">
                                   {shouldShowField('paymentHistory', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         Payment:
                                       </span>
-                                      <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.paymentHistory}</span>
+                                      <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.paymentHistory}</span>
                                     </div>
                                   )}
                                   {shouldShowField('reported', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -9647,16 +9745,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.reported);
                                           const v3 = normalize(b.Equifax?.reported);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.reported ? new Date(accountGroup.bureaus.TransUnion.reported).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.reported ? new Date(accountGroup.bureaus.TransUnion.reported).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('opened', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -9679,16 +9777,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.opened);
                                           const v3 = normalize(b.Equifax?.opened);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.opened ? new Date(accountGroup.bureaus.TransUnion.opened).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.opened ? new Date(accountGroup.bureaus.TransUnion.opened).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('dateAccountStatus', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10" />
                                         </svg>
@@ -9711,16 +9809,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.dateAccountStatus);
                                           const v3 = normalize(b.Equifax?.dateAccountStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.dateAccountStatus ? new Date(accountGroup.bureaus.TransUnion.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.dateAccountStatus ? new Date(accountGroup.bureaus.TransUnion.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditorName', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9738,16 +9836,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.creditorName || b.Experian?.CreditorName || b.Experian?.creditor);
                                           const v3 = normalize(b.Equifax?.creditorName || b.Equifax?.CreditorName || b.Equifax?.creditor);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.creditorName || accountGroup.bureaus.TransUnion.CreditorName || accountGroup.bureaus.TransUnion.creditor || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.creditorName || accountGroup.bureaus.TransUnion.CreditorName || accountGroup.bureaus.TransUnion.creditor || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountNumber', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                         </svg>
@@ -9770,16 +9868,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountNumber);
                                           const v3 = normalize(b.Equifax?.accountNumber);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.accountNumber || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.accountNumber || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('designator', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                         </svg>
@@ -9802,16 +9900,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.designator);
                                           const v3 = normalize(b.Equifax?.designator);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.designator}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.designator}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountTypeDescription', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9829,16 +9927,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountTypeDescription);
                                           const v3 = normalize(b.Equifax?.accountTypeDescription);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.accountTypeDescription || accountGroup.type}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.accountTypeDescription || accountGroup.type}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9856,16 +9954,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountType);
                                           const v3 = normalize(b.Equifax?.accountType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.accountType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.accountType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9883,16 +9981,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.creditType);
                                           const v3 = normalize(b.Equifax?.creditType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.creditType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.creditType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('paymentFrequency', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9910,16 +10008,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.paymentFrequency);
                                           const v3 = normalize(b.Equifax?.paymentFrequency);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.paymentFrequency || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.paymentFrequency || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountCondition', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9937,16 +10035,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountCondition);
                                           const v3 = normalize(b.Equifax?.accountCondition);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.accountCondition || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.accountCondition || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('disputeFlag', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9964,16 +10062,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.disputeFlag);
                                           const v3 = normalize(b.Equifax?.disputeFlag);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.disputeFlag || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.disputeFlag || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('industry', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -9991,16 +10089,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.industry);
                                           const v3 = normalize(b.Equifax?.industry);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.industry || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.industry || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('termType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">Term Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">Term Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10018,16 +10116,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.termType);
                                           const v3 = normalize(b.Equifax?.termType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.termType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.termType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('pastDue', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                         </svg>
@@ -10050,7 +10148,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.pastDue);
                                           const v3 = normalize(b.Equifax?.pastDue);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
                                         <span className={`font-semibold ${parseInt(accountGroup.bureaus.TransUnion.pastDue || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -10060,8 +10158,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                     </div>
                                   )}
                                   {shouldShowField('highBalance', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
@@ -10084,16 +10182,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.highBalance);
                                           const v3 = normalize(b.Equifax?.highBalance);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.TransUnion.highBalance || 0).toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.TransUnion.highBalance || 0).toLocaleString()}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('worstStatus', activeTab) && (
                                     <div className="flex justify-between items-center py-1">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
@@ -10116,18 +10214,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.worstStatus);
                                           const v3 = normalize(b.Equifax?.worstStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.worstStatus}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.worstStatus}</span>
                                       </div>
                                     </div>
                                   )}
                                 </div>
                                 
                                 {shouldShowField('payStatusHistory', activeTab) && accountGroup.bureaus.TransUnion.payStatusHistory && accountGroup.bureaus.TransUnion.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2 flex items-center justify-between">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-700">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2 flex items-center justify-between">
                                       <span>Payment History:</span>
                                       {activeTab === 'credit-repair' && (() => {
                                         const b = accountGroup.bureaus;
@@ -10145,15 +10243,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                         const v2 = normalize(b.Experian?.payStatusHistory);
                                         const v3 = normalize(b.Equifax?.payStatusHistory);
                                         const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                         return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                       })()}
                                     </div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700 overflow-x-auto">
                                       {accountGroup.bureaus.TransUnion.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.TransUnion.payStatusHistoryStartDate && accountGroup.bureaus.TransUnion.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.TransUnion.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -10171,7 +10269,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* Equifax Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.Equifax ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -10180,21 +10278,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.Equifax.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-700'
                                   }`}
                                 >
                                   {accountGroup.bureaus.Equifax.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
+                                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100 dark:from-green-950/40 dark:to-emerald-950/40 dark:border-green-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
                                   {accountGroup.type && (
                                     accountGroup.type.toLowerCase().includes('installment') ||
                                     accountGroup.type.toLowerCase().includes('loan') ||
@@ -10225,19 +10323,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 
                                 <div className="space-y-2 text-xs">
                                   {shouldShowField('paymentHistory', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         Payment:
                                       </span>
-                                      <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.paymentHistory}</span>
+                                      <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.paymentHistory}</span>
                                     </div>
                                   )}
                                   {shouldShowField('reported', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -10260,16 +10358,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.reported);
                                           const v3 = normalize(b.TransUnion?.reported);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.reported ? new Date(accountGroup.bureaus.Equifax.reported).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.reported ? new Date(accountGroup.bureaus.Equifax.reported).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('opened', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -10292,16 +10390,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.opened);
                                           const v3 = normalize(b.TransUnion?.opened);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.opened ? new Date(accountGroup.bureaus.Equifax.opened).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.opened ? new Date(accountGroup.bureaus.Equifax.opened).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('dateAccountStatus', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10" />
                                         </svg>
@@ -10324,16 +10422,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.dateAccountStatus);
                                           const v3 = normalize(b.TransUnion?.dateAccountStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.dateAccountStatus ? new Date(accountGroup.bureaus.Equifax.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.dateAccountStatus ? new Date(accountGroup.bureaus.Equifax.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditorName', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10351,16 +10449,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.creditorName || b.Experian?.CreditorName || b.Experian?.creditor);
                                           const v3 = normalize(b.TransUnion?.creditorName || b.TransUnion?.CreditorName || b.TransUnion?.creditor);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.creditorName || accountGroup.bureaus.Equifax.CreditorName || accountGroup.bureaus.Equifax.creditor || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.creditorName || accountGroup.bureaus.Equifax.CreditorName || accountGroup.bureaus.Equifax.creditor || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountNumber', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                         </svg>
@@ -10383,16 +10481,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountNumber);
                                           const v3 = normalize(b.TransUnion?.accountNumber);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.accountNumber || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.accountNumber || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('designator', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                         </svg>
@@ -10415,16 +10513,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.designator);
                                           const v3 = normalize(b.TransUnion?.designator);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.designator}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.designator}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountTypeDescription', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10442,16 +10540,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountTypeDescription);
                                           const v3 = normalize(b.TransUnion?.accountTypeDescription);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.accountTypeDescription || accountGroup.type}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.accountTypeDescription || accountGroup.type}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10469,16 +10567,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountType);
                                           const v3 = normalize(b.TransUnion?.accountType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.accountType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.accountType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10496,16 +10594,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.creditType);
                                           const v3 = normalize(b.TransUnion?.creditType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.creditType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.creditType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('paymentFrequency', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10523,16 +10621,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.paymentFrequency);
                                           const v3 = normalize(b.TransUnion?.paymentFrequency);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.paymentFrequency || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.paymentFrequency || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountCondition', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10550,16 +10648,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountCondition);
                                           const v3 = normalize(b.TransUnion?.accountCondition);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.accountCondition || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.accountCondition || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('disputeFlag', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10577,16 +10675,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.disputeFlag);
                                           const v3 = normalize(b.TransUnion?.disputeFlag);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.disputeFlag || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.disputeFlag || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('industry', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10604,16 +10702,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.industry);
                                           const v3 = normalize(b.TransUnion?.industry);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.industry || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.industry || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('termType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">Term Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">Term Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -10631,16 +10729,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.termType);
                                           const v3 = normalize(b.TransUnion?.termType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.termType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.termType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('pastDue', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                         </svg>
@@ -10663,7 +10761,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.pastDue);
                                           const v3 = normalize(b.TransUnion?.pastDue);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
                                         <span className={`font-semibold ${parseInt(accountGroup.bureaus.Equifax.pastDue || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -10673,8 +10771,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                     </div>
                                   )}
                                   {shouldShowField('highBalance', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
@@ -10697,16 +10795,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.highBalance);
                                           const v3 = normalize(b.TransUnion?.highBalance);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.Equifax.highBalance || 0).toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.Equifax.highBalance || 0).toLocaleString()}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('worstStatus', activeTab) && (
                                     <div className="flex justify-between items-center py-1">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
@@ -10729,18 +10827,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.worstStatus);
                                           const v3 = normalize(b.TransUnion?.worstStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.worstStatus}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.worstStatus}</span>
                                       </div>
                                     </div>
                                   )}
                                 </div>
                                 
                                 {shouldShowField('payStatusHistory', activeTab) && accountGroup.bureaus.Equifax.payStatusHistory && accountGroup.bureaus.Equifax.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2 flex items-center justify-between">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-700">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2 flex items-center justify-between">
                                       <span>Payment History:</span>
                                       {activeTab === 'credit-repair' && (() => {
                                         const b = accountGroup.bureaus;
@@ -10758,15 +10856,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                         const v2 = normalize(b.Experian?.payStatusHistory);
                                         const v3 = normalize(b.TransUnion?.payStatusHistory);
                                         const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                         return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                       })()}
                                     </div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700 overflow-x-auto">
                                       {accountGroup.bureaus.Equifax.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.Equifax.payStatusHistoryStartDate && accountGroup.bureaus.Equifax.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.Equifax.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -10898,7 +10996,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       <circle cx="150" cy="40" r="6" fill="#94a3b8" />
                       <circle cx="260" cy="120" r="6" fill="#94a3b8" />
                       {/* Score number in center */}
-                      <text x="150" y="110" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                      <text x="150" y="110" textAnchor="middle" className="fill-slate-700 text-6xl font-bold dark:fill-white">
                         {reportData.scores.experian}
                       </text>
                     </svg>
@@ -11011,7 +11109,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       <circle cx="160" cy="50" r="6" fill="#94a3b8" />
                       <circle cx="280" cy="130" r="6" fill="#94a3b8" />
                       {/* Score number in center */}
-                      <text x="160" y="120" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                      <text x="160" y="120" textAnchor="middle" className="fill-slate-700 text-6xl font-bold dark:fill-white">
                         {reportData.scores.transunion}
                       </text>
                     </svg>
@@ -11124,7 +11222,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       <circle cx="160" cy="50" r="6" fill="#94a3b8" />
                       <circle cx="280" cy="130" r="6" fill="#94a3b8" />
                       {/* Score number in center */}
-                      <text x="160" y="120" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                      <text x="160" y="120" textAnchor="middle" className="fill-slate-700 text-6xl font-bold dark:fill-white">
                         {reportData.scores.equifax}
                       </text>
                     </svg>
@@ -11318,8 +11416,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   return (
                     <>
                       {/* Experian Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-blue-950 dark:to-cyan-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30 dark:from-blue-900/30 dark:to-cyan-900/30 dark:border-blue-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
                               <img 
@@ -11418,8 +11516,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* TransUnion Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-purple-950 dark:to-violet-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30 dark:from-purple-900/30 dark:to-violet-900/30 dark:border-purple-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
                               <img 
@@ -11518,8 +11616,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* Equifax Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-red-950 dark:to-rose-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30 dark:from-red-900/30 dark:to-rose-900/30 dark:border-red-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
                               <img 
@@ -11644,8 +11742,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             <CardContent>
               <div className="grid md:grid-cols-3 gap-6">
                 {/* Experian Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-blue-950 dark:to-cyan-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30 dark:from-blue-900/30 dark:to-cyan-900/30 dark:border-blue-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
                         <img
@@ -11688,8 +11786,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 bg-gradient-to-br from-blue-50/30 to-cyan-50/30 rounded-lg border border-blue-100/50">
-                        <div className="p-3 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-full w-fit mx-auto mb-3">
+                      <div className="text-center py-6 bg-gradient-to-br from-blue-50/30 to-cyan-50/30 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-lg border border-blue-100/50 dark:border-blue-800/30">
+                        <div className="p-3 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 dark:from-blue-900/40 dark:to-cyan-900/40 rounded-full w-fit mx-auto mb-3">
                           <FileText className="h-6 w-6 text-blue-600" />
                         </div>
                         <p className="text-sm text-blue-700 font-medium mb-1">
@@ -11704,8 +11802,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* TransUnion Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-purple-950 dark:to-violet-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30 dark:from-purple-900/30 dark:to-violet-900/30 dark:border-purple-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
                         <img
@@ -11748,8 +11846,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 bg-gradient-to-br from-red-50/30 to-rose-50/30 rounded-lg border border-red-100/50">
-                        <div className="p-3 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-full w-fit mx-auto mb-3">
+                      <div className="text-center py-6 bg-gradient-to-br from-red-50/30 to-rose-50/30 dark:from-red-900/20 dark:to-rose-900/20 rounded-lg border border-red-100/50 dark:border-red-800/30">
+                        <div className="p-3 bg-gradient-to-br from-red-500/20 to-rose-500/20 dark:from-red-900/40 dark:to-rose-900/40 rounded-full w-fit mx-auto mb-3">
                           <FileText className="h-6 w-6 text-red-600" />
                         </div>
                         <p className="text-sm text-red-700 font-medium mb-1">
@@ -11764,8 +11862,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Equifax Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 dark:from-red-950 dark:to-rose-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30 dark:from-red-900/30 dark:to-rose-900/30 dark:border-red-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
                       <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
                         <img
@@ -11821,8 +11919,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             </CardContent>
           </Card>
           {/* Inquiry Cards Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 backdrop-blur-sm">
-            <CardHeader className="bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-purple-600/10 rounded-t-lg border-b border-blue-100/50">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900 backdrop-blur-sm">
+            <CardHeader className="bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-purple-600/10 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 rounded-t-lg border-b border-blue-100/50 dark:border-blue-700/30">
               <CardTitle className="flex items-center gap-3 text-lg font-semibold">
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-md">
                   <Search className="h-5 w-5 text-white" />
@@ -11850,8 +11948,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   return (
                     <>
                       {/* Experian Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-green-50/30 to-emerald-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                        <CardHeader className="pb-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 rounded-t-lg border-b border-green-100/50">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-green-50/30 to-emerald-50/40 dark:from-green-950 dark:via-green-900 dark:to-emerald-950 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <CardHeader className="pb-4 bg-gradient-to-r from-green-500/10 to-emerald-500/10 dark:from-green-900/30 dark:to-emerald-900/30 rounded-t-lg border-b border-green-100/50 dark:border-green-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
                             <div className="p-3 bg-white rounded-xl shadow-md border border-green-100/50">
                               <img 
@@ -11874,21 +11972,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           {experianInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {experianInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-green-50/50 border border-green-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-green-300/50">
+                                <div key={idx} className="bg-gradient-to-r from-white to-green-50/50 dark:from-green-900/10 dark:to-emerald-900/10 border border-green-200/50 dark:border-green-700/30 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-green-300/50">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
                                       <div className="p-1.5 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800 dark:text-gray-200">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600 dark:text-gray-400">
                                       <FileText className="h-3 w-3 text-green-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500 dark:text-gray-400">
                                       <CalendarIcon className="h-3 w-3 text-green-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -11897,14 +11995,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               ))}
                             </div>
                           ) : (
-                            <div className="text-center py-6 bg-gradient-to-br from-green-50/30 to-emerald-50/30 rounded-xl border border-green-100/50">
+                            <div className="text-center py-6 bg-gradient-to-br from-green-50/30 to-emerald-50/30 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl border border-green-100/50 dark:border-green-800/30">
                               <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full w-fit mx-auto mb-3 shadow-md">
                                 <Search className="h-6 w-6 text-white" />
                               </div>
-                              <p className="text-sm text-gray-600 font-medium">
+                              <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">
                                 No inquiries found
                               </p>
-                              <p className="text-xs text-gray-500 mt-1">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                 This bureau has no recent inquiries
                               </p>
                             </div>
@@ -11913,10 +12011,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* TransUnion Inquiries */}
-                      <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                        <CardHeader className="pb-4 rounded-t-lg border-b border-border bg-card">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-purple-50/30 to-violet-50/40 dark:from-purple-950 dark:via-purple-900 dark:to-violet-950 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <CardHeader className="pb-4 bg-gradient-to-r from-purple-500/10 to-violet-500/10 dark:from-purple-900/30 dark:to-violet-900/30 rounded-t-lg border-b border-purple-100/50 dark:border-purple-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
+                            <div className="p-3 bg-white rounded-xl shadow-md border border-purple-100/50">
                               <img 
                                 src="/TransUnion_logo.svg.png" 
                                 alt="TransUnion" 
@@ -11927,31 +12025,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </CardHeader>
                         <CardContent className="space-y-4 p-4">
                           <div className="text-center mb-4">
-                            <div className="text-3xl font-bold text-foreground">
+                            <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent">
                               {transUnionInquiries.length}
                             </div>
-                            <div className="text-sm text-muted-foreground font-medium">
+                            <div className="text-sm text-gray-600 font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {transUnionInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {transUnionInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
+                                <div key={idx} className="bg-gradient-to-r from-white to-purple-50/50 dark:from-purple-900/10 dark:to-violet-900/10 border border-purple-200/50 dark:border-purple-700/30 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-purple-300/50">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                      <div className="p-1.5 bg-primary text-primary-foreground rounded-lg">
+                                      <div className="p-1.5 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-[1.2rem] font-semibold text-foreground">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800 dark:text-gray-200">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600 dark:text-gray-400">
                                       <FileText className="h-3 w-3 text-purple-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500 dark:text-gray-400">
                                       <CalendarIcon className="h-3 w-3 text-purple-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -11960,14 +12058,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               ))}
                             </div>
                           ) : (
-                            <div className="text-center py-6 bg-card rounded-xl border border-border">
-                              <div className="p-3 bg-primary text-primary-foreground rounded-full w-fit mx-auto mb-3 shadow-md">
+                            <div className="text-center py-6 bg-gradient-to-br from-purple-50/30 to-violet-50/30 dark:from-purple-900/20 dark:to-violet-900/20 rounded-xl border border-purple-100/50 dark:border-purple-800/30">
+                              <div className="p-3 bg-gradient-to-br from-purple-500 to-violet-600 rounded-full w-fit mx-auto mb-3 shadow-md">
                                 <Search className="h-6 w-6 text-white" />
                               </div>
-                              <p className="text-sm text-muted-foreground font-medium">
+                              <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">
                                 No inquiries found
                               </p>
-                              <p className="text-xs text-muted-foreground mt-1">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                 This bureau has no recent inquiries
                               </p>
                             </div>
@@ -11976,10 +12074,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* Equifax Inquiries */}
-                      <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                        <CardHeader className="pb-4 rounded-t-lg border-b border-border bg-card">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-red-50/30 to-rose-50/40 dark:from-red-950 dark:via-red-900 dark:to-rose-950 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <CardHeader className="pb-4 bg-gradient-to-r from-red-500/10 to-rose-500/10 dark:from-red-900/30 dark:to-rose-900/30 rounded-t-lg border-b border-red-100/50 dark:border-red-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
+                            <div className="p-3 bg-white rounded-xl shadow-md border border-red-100/50">
                               <img 
                                 src="/Equifax_Logo.svg.png" 
                                 alt="Equifax" 
@@ -11990,31 +12088,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </CardHeader>
                         <CardContent className="space-y-4 p-4">
                           <div className="text-center mb-4">
-                            <div className="text-3xl font-bold text-foreground">
+                            <div className="text-3xl font-bold bg-gradient-to-r from-red-600 to-rose-600 bg-clip-text text-transparent">
                               {equifaxInquiries.length}
                             </div>
-                            <div className="text-sm text-muted-foreground font-medium">
+                            <div className="text-sm text-gray-600 font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {equifaxInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {equifaxInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
+                                <div key={idx} className="bg-gradient-to-r from-white to-red-50/50 dark:from-red-900/10 dark:to-rose-900/10 border border-red-200/50 dark:border-red-700/30 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-red-300/50">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                      <div className="p-1.5 bg-primary text-primary-foreground rounded-lg">
+                                      <div className="p-1.5 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-[1.2rem] font-semibold text-foreground">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-gray-800 dark:text-gray-200">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600 dark:text-gray-400">
                                       <FileText className="h-3 w-3 text-red-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500 dark:text-gray-400">
                                       <CalendarIcon className="h-3 w-3 text-red-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -12023,14 +12121,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               ))}
                             </div>
                           ) : (
-                            <div className="text-center py-6 bg-card rounded-xl border border-border">
-                              <div className="p-3 bg-primary text-primary-foreground rounded-full w-fit mx-auto mb-3 shadow-md">
+                            <div className="text-center py-6 bg-gradient-to-br from-red-50/30 to-rose-50/30 dark:from-red-900/20 dark:to-rose-900/20 rounded-xl border border-red-100/50 dark:border-red-800/30">
+                              <div className="p-3 bg-gradient-to-br from-red-500 to-rose-600 rounded-full w-fit mx-auto mb-3 shadow-md">
                                 <Search className="h-6 w-6 text-white" />
                               </div>
-                              <p className="text-sm text-muted-foreground font-medium">
+                              <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">
                                 No inquiries found
                               </p>
-                              <p className="text-xs text-muted-foreground mt-1">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                                 This bureau has no recent inquiries
                               </p>
                             </div>
@@ -12429,89 +12527,89 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Experian_logo.svg.png" alt="Experian" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-blue-700"></div>
+                      <div className="text-sm font-semibold text-blue-700 dark:text-blue-400"></div>
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-purple-700"></div>
+                      <div className="text-sm font-semibold text-purple-700 dark:text-purple-400"></div>
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-green-700"></div>
+                      <div className="text-sm font-semibold text-green-700 dark:text-green-400"></div>
                     </div>
                   </div>
 
                   {/* Account comparison rows */}
                   {groupedAccounts.map((accountGroup, index) => (
-                    <div key={index} className="bg-gradient-to-r from-white via-gray-50/30 to-white border border-gray-200 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-gray-300 mb-6">
+                    <div key={index} className="bg-gradient-to-r from-white via-gray-50/30 to-white border border-gray-200 dark:border-slate-600 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 hover:border-gray-300 mb-6 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900 dark:border-slate-800">
                       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                         {/* Account Info Column */}
-                        <div className="bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-xl p-5 border border-slate-200 shadow-md hover:shadow-lg transition-shadow">
+                        <div className="bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-xl p-5 border border-slate-200 shadow-md hover:shadow-lg transition-shadow dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 dark:border-slate-700">
                           <div className="space-y-4">
                             <div className="flex items-center gap-3 pb-3 border-b border-slate-300">
                               <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full shadow-sm"></div>
-                              <div className="font-bold text-lg text-gray-800">{accountGroup.creditor}</div>
+                              <div className="font-bold text-lg text-gray-800 dark:text-white">{accountGroup.creditor}</div>
                             </div>
                             
                             <div className="space-y-3 text-sm">
-                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                <span className="text-gray-600 font-medium flex items-center gap-2">
+                              <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                   <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                   </svg>
                                   Account #:
                                 </span>
-                                <span className="font-semibold text-gray-800 text-xs">{accountGroup.accountNumber}</span>
+                                <span className="font-semibold text-gray-800 dark:text-white text-xs">{accountGroup.accountNumber}</span>
                               </div>
-                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                <span className="text-gray-600 font-medium flex items-center gap-2">
+                              <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                   <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
                                   </svg>
                                   Type:
                                 </span>
-                                <span className="font-semibold text-gray-800">{accountGroup.type}</span>
+                                <span className="font-semibold text-gray-800 dark:text-white">{accountGroup.type}</span>
                               </div>
                               {/* Get additional details from first available bureau */}
                               {(() => {
                                 const firstBureau = Object.values(accountGroup.bureaus)[0];
                                 return firstBureau ? (
                                   <>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                         </svg>
                                         Designator:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.designator || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.designator || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
                                         Opened:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.opened ? new Date(firstBureau.opened).toLocaleDateString() : 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.opened ? new Date(firstBureau.opened).toLocaleDateString() : 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                                         </svg>
                                         Industry:
                                       </span>
-                                      <span className="font-semibold text-gray-800">{firstBureau.industry || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.industry || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100">
-                                      <span className="text-gray-600 font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-1l-4 4z" />
                                         </svg>
                                         Remark:
                                       </span>
-                                      <span className="font-semibold text-gray-800 text-xs truncate max-w-[120px]" title={firstBureau.remark || 'N/A'}>{firstBureau.remark || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white text-xs truncate max-w-[120px]" title={firstBureau.remark || 'N/A'}>{firstBureau.remark || 'N/A'}</span>
                                     </div>
                                   </>
                                 ) : null;
@@ -12521,7 +12619,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* Experian Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:border-slate-700 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.Experian ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -12530,47 +12628,47 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.Experian.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-600'
                                   }`}
                                 >
                                   {accountGroup.bureaus.Experian.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/Experian_logo.svg.png" alt="Experian" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100 dark:from-blue-950/40 dark:to-indigo-950/40 dark:border-blue-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
                                   <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.Experian.utilization)}`}>
                                     {accountGroup.bureaus.Experian.utilization}% utilization
                                   </div>
                                 </div>
                                 
                                 <div className="space-y-2 text-xs">
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                       </svg>
                                       Payment:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.paymentHistory}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.paymentHistory}</span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                       </svg>
                                       Reported:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.reported ? new Date(accountGroup.bureaus.Experian.reported).toLocaleDateString() : 'N/A'}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.reported ? new Date(accountGroup.bureaus.Experian.reported).toLocaleDateString() : 'N/A'}</span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                       </svg>
@@ -12580,34 +12678,34 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       ${parseInt(accountGroup.bureaus.Experian.pastDue || 0).toLocaleString()}
                                     </span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                       </svg>
                                       High Balance:
                                     </span>
-                                    <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.Experian.highBalance || 0).toLocaleString()}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.Experian.highBalance || 0).toLocaleString()}</span>
                                   </div>
                                   <div className="flex justify-between items-center py-1">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                       </svg>
                                       Worst Status:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.worstStatus}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.worstStatus}</span>
                                   </div>
                                 </div>
                                 
                                 {accountGroup.bureaus.Experian.payStatusHistory && accountGroup.bureaus.Experian.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2">Payment History:</div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-600">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2">Payment History:</div>
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-600 overflow-x-auto">
                                       {accountGroup.bureaus.Experian.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.Experian.payStatusHistoryStartDate && accountGroup.bureaus.Experian.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.Experian.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -12625,7 +12723,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* TransUnion Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:border-slate-700 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.TransUnion ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -12634,21 +12732,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.TransUnion.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-600'
                                   }`}
                                 >
                                   {accountGroup.bureaus.TransUnion.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
+                                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100 dark:from-purple-950/40 dark:to-pink-950/40 dark:border-purple-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
                                   {accountGroup.type && (
                                     accountGroup.type.toLowerCase().includes('installment') ||
                                     accountGroup.type.toLowerCase().includes('loan') ||
@@ -12678,26 +12776,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 </div>
                                 
                                 <div className="space-y-2 text-xs">
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                       </svg>
                                       Payment:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.paymentHistory}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.paymentHistory}</span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                       </svg>
                                       Reported:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.reported ? new Date(accountGroup.bureaus.TransUnion.reported).toLocaleDateString() : 'N/A'}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.reported ? new Date(accountGroup.bureaus.TransUnion.reported).toLocaleDateString() : 'N/A'}</span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                       </svg>
@@ -12707,34 +12805,34 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       ${parseInt(accountGroup.bureaus.TransUnion.pastDue || 0).toLocaleString()}
                                     </span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                       </svg>
                                       High Balance:
                                     </span>
-                                    <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.TransUnion.highBalance || 0).toLocaleString()}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.TransUnion.highBalance || 0).toLocaleString()}</span>
                                   </div>
                                   <div className="flex justify-between items-center py-1">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                       </svg>
                                       Worst Status:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.worstStatus}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.worstStatus}</span>
                                   </div>
                                 </div>
                                 
                                 {accountGroup.bureaus.TransUnion.payStatusHistory && accountGroup.bureaus.TransUnion.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2">Payment History:</div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-600">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2">Payment History:</div>
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-600 overflow-x-auto">
                                       {accountGroup.bureaus.TransUnion.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.TransUnion.payStatusHistoryStartDate && accountGroup.bureaus.TransUnion.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.TransUnion.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -12752,7 +12850,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* Equifax Column */}
-                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:border-slate-700 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.Equifax ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -12761,21 +12859,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.Equifax.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-600'
                                   }`}
                                 >
                                   {accountGroup.bureaus.Equifax.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100">
-                                  <div className="font-bold text-xl text-gray-800">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
-                                  <div className="text-gray-600 text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
+                                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100 dark:from-green-950/40 dark:to-emerald-950/40 dark:border-green-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
                                   {accountGroup.type && (
                                     accountGroup.type.toLowerCase().includes('installment') ||
                                     accountGroup.type.toLowerCase().includes('loan') ||
@@ -12805,26 +12903,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 </div>
                                 
                                 <div className="space-y-2 text-xs">
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                       </svg>
                                       Payment:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.paymentHistory}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.paymentHistory}</span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                       </svg>
                                       Reported:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.reported ? new Date(accountGroup.bureaus.Equifax.reported).toLocaleDateString() : 'N/A'}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.reported ? new Date(accountGroup.bureaus.Equifax.reported).toLocaleDateString() : 'N/A'}</span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                       </svg>
@@ -12834,34 +12932,34 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                       ${parseInt(accountGroup.bureaus.Equifax.pastDue || 0).toLocaleString()}
                                     </span>
                                   </div>
-                                  <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                  <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-700">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                       </svg>
                                       High Balance:
                                     </span>
-                                    <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.Equifax.highBalance || 0).toLocaleString()}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.Equifax.highBalance || 0).toLocaleString()}</span>
                                   </div>
                                   <div className="flex justify-between items-center py-1">
-                                    <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                       </svg>
                                       Worst Status:
                                     </span>
-                                    <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.worstStatus}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.worstStatus}</span>
                                   </div>
                                 </div>
                                 
                                 {accountGroup.bureaus.Equifax.payStatusHistory && accountGroup.bureaus.Equifax.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2">Payment History:</div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-600">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2">Payment History:</div>
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-600 overflow-x-auto">
                                       {accountGroup.bureaus.Equifax.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.Equifax.payStatusHistoryStartDate && accountGroup.bureaus.Equifax.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.Equifax.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -13905,10 +14003,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* TransUnion Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-purple-50/30 to-violet-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                        <CardHeader className="pb-4 bg-gradient-to-r from-purple-500/10 to-violet-500/10 rounded-t-lg border-b border-purple-100/50">
+                      <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <CardHeader className="pb-4 rounded-t-lg border-b border-border bg-card">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-white rounded-xl shadow-md border border-purple-100/50">
+                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
                               <img 
                                 src="/TransUnion_logo.svg.png" 
                                 alt="TransUnion" 
@@ -13919,31 +14017,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </CardHeader>
                         <CardContent className="space-y-4 p-4">
                           <div className="text-center mb-4">
-                            <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent">
+                            <div className="text-3xl font-bold text-foreground">
                               {transUnionInquiries.length}
                             </div>
-                            <div className="text-sm text-gray-600 font-medium">
+                            <div className="text-sm text-muted-foreground font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {transUnionInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {transUnionInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-purple-50/50 border border-purple-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-purple-300/50">
+                                <div key={idx} className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                      <div className="p-1.5 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg">
+                                      <div className="p-1.5 bg-primary text-primary-foreground rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-foreground">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <FileText className="h-3 w-3 text-purple-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <CalendarIcon className="h-3 w-3 text-purple-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -13968,10 +14066,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       </Card>
 
                       {/* Equifax Inquiries */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-red-50/30 to-rose-50/40 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
-                        <CardHeader className="pb-4 bg-gradient-to-r from-red-500/10 to-rose-500/10 rounded-t-lg border-b border-red-100/50">
+                      <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <CardHeader className="pb-4 rounded-t-lg border-b border-border bg-card">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-3 bg-white rounded-xl shadow-md border border-red-100/50">
+                            <div className="p-3 bg-card rounded-xl shadow-md border border-border">
                               <img 
                                 src="/Equifax_Logo.svg.png" 
                                 alt="Equifax" 
@@ -13982,31 +14080,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </CardHeader>
                         <CardContent className="space-y-4 p-4">
                           <div className="text-center mb-4">
-                            <div className="text-3xl font-bold bg-gradient-to-r from-red-600 to-rose-600 bg-clip-text text-transparent">
+                            <div className="text-3xl font-bold text-foreground">
                               {equifaxInquiries.length}
                             </div>
-                            <div className="text-sm text-gray-600 font-medium">
+                            <div className="text-sm text-muted-foreground font-medium">
                               Total Inquiries
                             </div>
                           </div>
                           {equifaxInquiries.length > 0 ? (
                             <div className="space-y-3">
                               {equifaxInquiries.map((inquiry, idx) => (
-                                <div key={idx} className="bg-gradient-to-r from-white to-red-50/50 border border-red-200/50 rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 hover:border-red-300/50">
+                                <div key={idx} className="bg-card border border-border rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200">
                                   <div className="flex items-start justify-between mb-2">
                                     <div className="flex items-center gap-2">
-                                      <div className="p-1.5 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg">
+                                      <div className="p-1.5 bg-primary text-primary-foreground rounded-lg">
                                         <Building2 className="h-3 w-3 text-white" />
                                       </div>
-                                      <div className="text-[1.2rem] font-semibold text-gray-800">{inquiry.company}</div>
+                                      <div className="text-[1.2rem] font-semibold text-foreground">{inquiry.company}</div>
                                     </div>
                                   </div>
                                   <div className="space-y-1.5 ml-6">
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-600">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <FileText className="h-3 w-3 text-red-500" />
                                       {inquiry.purpose}
                                     </div>
-                                    <div className="flex items-center gap-2 text-[1.2rem] text-gray-500">
+                                    <div className="flex items-center gap-2 text-[1.2rem] text-muted-foreground">
                                       <CalendarIcon className="h-3 w-3 text-red-500" />
                                       {new Date(inquiry.date).toLocaleDateString()}
                                     </div>
@@ -16275,8 +16373,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           {/* Audit-Ready Result Section */}
           <div className="mb-8">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">AUDIT-READY FUNDING ANALYSIS</h2>
-              <p className="text-gray-600">Comprehensive credit assessment with detailed calculations and bureau routing strategy</p>
+              <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">AUDIT-READY FUNDING ANALYSIS</h2>
+              <p className="text-gray-600 dark:text-gray-300">Comprehensive credit assessment with detailed calculations and bureau routing strategy</p>
             </div>
 
             {(() => {
@@ -16454,10 +16552,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </Card> */}
 
                   {/* Table B: Key Signals & Rationale */}
-                  <Card className="border-0 shadow-lg">
+                  <Card className="border-0 shadow-lg dark:bg-slate-900 dark:border dark:border-slate-800">
                     <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5 text-green-600" />
+                      <CardTitle className="flex items-center gap-2 dark:text-white">
+                        <BarChart3 className="h-5 w-5 text-green-600 dark:text-green-400" />
                         Key Signals & Rationale
                       </CardTitle>
                     </CardHeader>
@@ -16465,15 +16563,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       <div className="overflow-x-auto">
                         <table className="w-full border-collapse">
                           <thead>
-                            <tr className="border-b-2 border-gray-200">
-                              <th className="text-left p-3 font-semibold text-gray-800">Signal</th>
-                              <th className="text-center p-3 font-semibold text-gray-800">Value</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">How Computed</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">Why It Matters</th>
-                              <th className="text-left p-3 font-semibold text-gray-800">Effect</th>
+                            <tr className="border-b-2 border-gray-200 dark:border-gray-700">
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Signal</th>
+                              <th className="text-center p-3 font-semibold text-gray-800 dark:text-white">Value</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">How Computed</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Why It Matters</th>
+                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Effect</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-gray-100">
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800 dark:text-gray-300">
                             <tr className="hover:bg-gray-50">
                               <td className="p-3 font-medium">Total Aggregate Credit Limit</td>
                               <td className="p-3 text-center font-bold">${auditAnalysis.signals.totalAggregateLimit.toLocaleString()}</td>
@@ -16747,45 +16845,45 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         <TabsContent value="fundingApplications" className="space-y-6 mt-6">
           <div className="grid md:grid-cols-2 gap-6">
             {/* Personal Funding Card */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-green-50 to-emerald-50">
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 dark:bg-slate-900 dark:border dark:border-green-900/50">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 rounded-lg">
-                    <Wallet className="h-6 w-6 text-green-600" />
+                  <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded-lg">
+                    <Wallet className="h-6 w-6 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-green-800">Personal Funding</h3>
-                    <p className="text-sm text-green-600 font-medium">Individual Credit Solutions</p>
+                    <h3 className="text-xl font-bold text-green-800 dark:text-green-300">Personal Funding</h3>
+                    <p className="text-sm text-green-600 dark:text-green-400 font-medium">Individual Credit Solutions</p>
                   </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Process Points */}
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-green-800 mb-3">Process Steps:</h4>
+                  <h4 className="font-semibold text-green-800 dark:text-green-300 mb-3">Process Steps:</h4>
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                      <span className="text-sm text-green-700">Credit Analysis & Pre-Qualification</span>
+                      <div className="w-8 h-8 bg-green-600 dark:bg-green-700 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
+                      <span className="text-sm text-green-700 dark:text-green-200">Credit Analysis & Pre-Qualification</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                      <span className="text-sm text-green-700">Document Verification & Income Review</span>
+                      <div className="w-8 h-8 bg-green-600 dark:bg-green-700 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
+                      <span className="text-sm text-green-700 dark:text-green-200">Document Verification & Income Review</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                      <span className="text-sm text-green-700">Funding Approval & Terms Agreement</span>
+                      <div className="w-8 h-8 bg-green-600 dark:bg-green-700 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
+                      <span className="text-sm text-green-700 dark:text-green-200">Funding Approval & Terms Agreement</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
-                      <span className="text-sm text-green-700">Fund Disbursement & Account Setup</span>
+                      <div className="w-8 h-8 bg-green-600 dark:bg-green-700 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
+                      <span className="text-sm text-green-700 dark:text-green-200">Fund Disbursement & Account Setup</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Apply Button */}
                 <Button 
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 dark:bg-green-700 dark:hover:bg-green-800"
                   size="lg"
                   onClick={() => {
                     setShowFundingModal(true);
@@ -16800,45 +16898,45 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             </Card>
 
             {/* Business Funding Card */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50">
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 dark:bg-slate-900 dark:border dark:border-blue-900/50">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Building2 className="h-6 w-6 text-blue-600" />
+                  <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                    <Building2 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-blue-800">Business Funding</h3>
-                    <p className="text-sm text-blue-600 font-medium">Commercial Credit Solutions</p>
+                    <h3 className="text-xl font-bold text-blue-800 dark:text-blue-300">Business Funding</h3>
+                    <p className="text-sm text-blue-600 dark:text-blue-400 font-medium">Commercial Credit Solutions</p>
                   </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Process Points */}
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-blue-800 mb-3">Process Steps:</h4>
+                  <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-3">Process Steps:</h4>
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
-                      <span className="text-sm text-blue-700">Business Credit Assessment & EIN Verification</span>
+                      <div className="w-8 h-8 bg-blue-600 dark:bg-blue-700 text-white rounded-full flex items-center justify-center text-sm font-bold">1</div>
+                      <span className="text-sm text-blue-700 dark:text-blue-200">Business Credit Assessment & EIN Verification</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
-                      <span className="text-sm text-blue-700">Financial Statements & Cash Flow Analysis</span>
+                      <div className="w-8 h-8 bg-blue-600 dark:bg-blue-700 text-white rounded-full flex items-center justify-center text-sm font-bold">2</div>
+                      <span className="text-sm text-blue-700 dark:text-blue-200">Financial Statements & Cash Flow Analysis</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
-                      <span className="text-sm text-blue-700">Underwriting Review & Risk Assessment</span>
+                      <div className="w-8 h-8 bg-blue-600 dark:bg-blue-700 text-white rounded-full flex items-center justify-center text-sm font-bold">3</div>
+                      <span className="text-sm text-blue-700 dark:text-blue-200">Underwriting Review & Risk Assessment</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
-                      <span className="text-sm text-blue-700">Funding Approval & Capital Deployment</span>
+                      <div className="w-8 h-8 bg-blue-600 dark:bg-blue-700 text-white rounded-full flex items-center justify-center text-sm font-bold">4</div>
+                      <span className="text-sm text-blue-700 dark:text-blue-200">Funding Approval & Capital Deployment</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Apply Button */}
                 <Button 
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 dark:bg-blue-700 dark:hover:bg-blue-800"
                   size="lg"
                   onClick={() => {
                     setShowFundingModal(true);
