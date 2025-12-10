@@ -380,7 +380,7 @@ const AffiliateLanding: React.FC = () => {
               <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl w-20 h-20 flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-300">
                 <Shield className="w-10 h-10 text-white" />
               </div>
-              <h3 className="text-2xl font-bold mb-4 text-center">Bank-Level Security</h3>
+              <h3 className="text-2xl font-bold mb-4 text-center">Enterprise-Grade Security</h3>
               <p className="text-gray-600 text-center leading-relaxed mb-6">
                 Your sensitive financial data is protected with 256-bit SSL encryption and multi-factor authentication
               </p>

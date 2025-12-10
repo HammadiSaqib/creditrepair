@@ -27,8 +27,9 @@ const FallingMoney: React.FC = () => {
     if (!ctx) return;
 
     const initDollars = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
       canvas.width = width;
       canvas.height = height;
 

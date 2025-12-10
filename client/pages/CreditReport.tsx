@@ -11361,11 +11361,11 @@ export default function CreditReport() {
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
                   <CreditCard className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-bold text-xl">
+                <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent font-bold text-xl dark:text-white dark:bg-none">
                   Personal Information
                 </span>
               </CardTitle>
-              <CardDescription className="text-muted-foreground font-medium ml-11">
+              <CardDescription className="text-muted-foreground font-medium ml-11 dark:text-white">
                 Identity verification across all credit bureaus
               </CardDescription>
               <div className="ml-auto mt-2">
@@ -11731,11 +11731,11 @@ export default function CreditReport() {
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
                   <Building className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold">
+                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold dark:text-white dark:bg-none">
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>
-              <CardDescription className="text-slate-600 font-medium">
+              <CardDescription className="text-slate-600 font-medium dark:text-white">
                 Employment information reported by Experian, TransUnion, and Equifax
               </CardDescription>
             </CardHeader>
@@ -11906,9 +11906,9 @@ export default function CreditReport() {
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center py-4">
-                        <FileText className="mx-auto h-8 w-8 text-muted-foreground/50 mb-2" />
-                        <p className="text-xs text-muted-foreground">
+                      <div className="text-center py-4 dark:bg-neutral-900">
+                        <FileText className="mx-auto h-8 w-8 text-muted-foreground/50 mb-2 dark:text-white" />
+                        <p className="text-xs text-muted-foreground dark:text-white">
                           No employer data available
                         </p>
                       </div>
@@ -11925,11 +11925,11 @@ export default function CreditReport() {
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-md">
                   <Search className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-blue-700 to-indigo-700 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-blue-700 to-indigo-700 bg-clip-text text-transparent dark:text-white dark:bg-none">
                   Credit Inquiries by Bureau
                 </span>
               </CardTitle>
-              <CardDescription className="text-gray-600 font-medium">
+              <CardDescription className="text-gray-600 font-medium dark:text-white">
                 Recent credit inquiries from each credit bureau
               </CardDescription>
             </CardHeader>
@@ -13917,11 +13917,11 @@ export default function CreditReport() {
                 <div className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md">
                   <Search className="h-5 w-5 text-white" />
                 </div>
-                <span className="text-foreground">
+                <span className="text-foreground dark:text-white">
                   Credit Inquiries by Bureau
                 </span>
               </CardTitle>
-              <CardDescription className="text-muted-foreground font-medium">
+              <CardDescription className="text-muted-foreground font-medium dark:text-white">
                 Recent credit inquiries from each credit bureau
               </CardDescription>
             </CardHeader>
@@ -14140,10 +14140,10 @@ export default function CreditReport() {
         {/* Personal Tab */}
         <TabsContent value="personal" className="space-y-6 mt-6">
           <TrialCreditReportWrapper featureName="Personal Information">
-          <Card className="border-0 shadow-xl bg-card backdrop-blur-sm">
-            <CardHeader className="border-b border-border backdrop-blur-sm bg-card">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900 backdrop-blur-sm">
+            <CardHeader className="border-b border-blue-100/50 dark:border-blue-700/30 bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-purple-600/10 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 backdrop-blur-sm">
               <CardTitle className="flex items-center gap-3">
-                <div className="p-2 bg-primary text-primary-foreground rounded-xl shadow-lg">
+                <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
                   <CreditCard className="h-5 w-5 text-white" />
                 </div>
                 <span className="text-foreground font-bold text-xl">
@@ -14201,10 +14201,10 @@ export default function CreditReport() {
                   return (
                     <>
                       {/* Experian Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] dark:from-blue-950 dark:via-blue-900 dark:to-cyan-950">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30 dark:from-blue-900/30 dark:to-cyan-900/30 dark:border-blue-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
+                            <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">
                               <img 
                                 src="/Experian_logo.svg.png" 
                                 alt="Experian" 
@@ -14214,12 +14214,12 @@ export default function CreditReport() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                          <div className="text-xs  pt-4">
+                          <div className="text-xs  pt-4 dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md">
-                                <User className="h-3 w-3 text-blue-600" />
+                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <User className="h-3 w-3 text-blue-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Name:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Name:</span>
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {experianInfo.name}
@@ -14231,12 +14231,12 @@ export default function CreditReport() {
                             </div>
                           </div>
                           {/* AKA / Aliases */}
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md">
-                                <UserCheck className="h-3 w-3 text-blue-600" />
+                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <UserCheck className="h-3 w-3 text-blue-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Also Known As (AKA):</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Also Known As (AKA):</span>
                             </div>
                             <div className="space-y-1 ml-6">
                               {experianInfo.aliases && experianInfo.aliases.length > 0 ? (
@@ -14248,12 +14248,12 @@ export default function CreditReport() {
                               )}
                             </div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md">
-                                <CalendarIcon className="h-3 w-3 text-blue-600" />
+                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <CalendarIcon className="h-3 w-3 text-blue-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">DOB:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">DOB:</span>
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {experianInfo.dob}
@@ -14264,21 +14264,21 @@ export default function CreditReport() {
                               )}
                             </div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md">
-                                <Shield className="h-3 w-3 text-blue-600" />
+                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <Shield className="h-3 w-3 text-blue-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">SSN:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">SSN:</span>
                             </div>
 <div className="font-medium ml-6">{reportData?.personalInfo?.ssn || 'Missing'}</div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md">
-                                <Home className="h-3 w-3 text-blue-600" />
+                              <div className="p-1 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <Home className="h-3 w-3 text-blue-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Addresses:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Addresses:</span>
                             </div>
                             <div className="space-y-2 ml-6">
                               {experianInfo.addresses.length > 0 ? (
@@ -14301,10 +14301,10 @@ export default function CreditReport() {
                       </Card>
 
                       {/* TransUnion Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] dark:from-purple-950 dark:via-violet-900 dark:to-violet-950">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30 dark:from-purple-900/30 dark:to-violet-900/30 dark:border-purple-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
+                            <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">
                               <img 
                                 src="/TransUnion_logo.svg.png" 
                                 alt="TransUnion" 
@@ -14314,12 +14314,12 @@ export default function CreditReport() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                          <div className="text-xs  pt-4">
+                          <div className="text-xs  pt-4 dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md">
-                                <User className="h-3 w-3 text-purple-600" />
+                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <User className="h-3 w-3 text-purple-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Name:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Name:</span>
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {transUnionInfo.name}
@@ -14331,12 +14331,12 @@ export default function CreditReport() {
                             </div>
                           </div>
                           {/* AKA / Aliases */}
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md">
-                                <UserCheck className="h-3 w-3 text-purple-600" />
+                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <UserCheck className="h-3 w-3 text-purple-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Also Known As (AKA):</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Also Known As (AKA):</span>
                             </div>
                             <div className="space-y-1 ml-6">
                               {transUnionInfo.aliases && transUnionInfo.aliases.length > 0 ? (
@@ -14348,12 +14348,12 @@ export default function CreditReport() {
                               )}
                             </div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md">
-                                <CalendarIcon className="h-3 w-3 text-purple-600" />
+                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <CalendarIcon className="h-3 w-3 text-purple-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">DOB:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">DOB:</span>
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {transUnionInfo.dob}
@@ -14364,21 +14364,21 @@ export default function CreditReport() {
                               )}
                             </div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md">
-                                <Shield className="h-3 w-3 text-purple-600" />
+                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <Shield className="h-3 w-3 text-purple-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">SSN:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">SSN:</span>
                             </div>
 <div className="font-medium ml-6">{reportData?.personalInfo?.ssn || 'Missing'}</div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md">
-                                <Home className="h-3 w-3 text-purple-600" />
+                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <Home className="h-3 w-3 text-purple-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Addresses:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Addresses:</span>
                             </div>
                             <div className="space-y-2 ml-6">
                               {transUnionInfo.addresses.length > 0 ? (
@@ -14401,10 +14401,10 @@ export default function CreditReport() {
                       </Card>
 
                       {/* Equifax Personal Info */}
-                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                        <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+                      <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] dark:from-red-950 dark:via-red-900 dark:to-rose-950">
+                        <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30 dark:from-red-900/30 dark:to-rose-900/30 dark:border-red-700/30">
                           <CardTitle className="flex justify-center items-center text-sm">
-                            <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
+                            <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">
                               <img 
                                 src="/Equifax_Logo.svg.png" 
                                 alt="Equifax" 
@@ -14414,12 +14414,12 @@ export default function CreditReport() {
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3">
-                          <div className="text-xs  pt-4">
+                          <div className="text-xs  pt-4 dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md">
-                                <User className="h-3 w-3 text-red-600" />
+                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <User className="h-3 w-3 text-red-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Name:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Name:</span>
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {equifaxInfo.name}
@@ -14431,12 +14431,12 @@ export default function CreditReport() {
                             </div>
                           </div>
                           {/* AKA / Aliases */}
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md">
-                                <UserCheck className="h-3 w-3 text-red-600" />
+                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <UserCheck className="h-3 w-3 text-red-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Also Known As (AKA):</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Also Known As (AKA):</span>
                             </div>
                             <div className="space-y-1 ml-6">
                               {equifaxInfo.aliases && equifaxInfo.aliases.length > 0 ? (
@@ -14448,12 +14448,12 @@ export default function CreditReport() {
                               )}
                             </div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md">
-                                <CalendarIcon className="h-3 w-3 text-red-600" />
+                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <CalendarIcon className="h-3 w-3 text-red-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">DOB:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">DOB:</span>
                             </div>
                             <div className="font-medium flex items-center gap-2 ml-6">
                               {equifaxInfo.dob}
@@ -14464,21 +14464,21 @@ export default function CreditReport() {
                               )}
                             </div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md">
-                                <Shield className="h-3 w-3 text-red-600" />
+                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <Shield className="h-3 w-3 text-red-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">SSN:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">SSN:</span>
                             </div>
 <div className="font-medium ml-6">{reportData?.personalInfo?.ssn || 'Missing'}</div>
                           </div>
-                          <div className="text-xs">
+                          <div className="text-xs dark:text-white">
                             <div className="flex items-center gap-2 mb-1">
-                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md">
-                                <Home className="h-3 w-3 text-red-600" />
+                              <div className="p-1 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-md dark:bg-none dark:bg-neutral-800">
+                                <Home className="h-3 w-3 text-red-600 dark:text-white" />
                               </div>
-                              <span className="text-muted-foreground font-medium">Addresses:</span>
+                              <span className="text-muted-foreground font-medium dark:text-white">Addresses:</span>
                             </div>
                             <div className="space-y-2 ml-6">
                               {equifaxInfo.addresses.length > 0 ? (
@@ -14505,27 +14505,27 @@ export default function CreditReport() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm">
-            <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900">
+            <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 dark:border-blue-700/30">
               <CardTitle className="flex items-center gap-3">
-                <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
+                <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">
                   <Building className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold">
+                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold dark:text-white dark:bg-none">
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>
-              <CardDescription className="text-slate-600 font-medium">
+            <CardDescription className="text-slate-600 font-medium dark:text-white">
                 Employment information reported by Experian, TransUnion, and Equifax
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-3 gap-6">
                 {/* Experian Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] dark:from-blue-950 dark:to-cyan-950">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-blue-500/10 to-cyan-500/10 border-b border-blue-200/30 dark:from-blue-900/30 dark:to-cyan-900/30 dark:border-blue-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
-                      <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md">
+                      <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">
                         <img
                           src="/Experian_logo.svg.png"
                           alt="Experian"
@@ -14582,10 +14582,10 @@ export default function CreditReport() {
                 </Card>
 
                 {/* TransUnion Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] dark:from-purple-950 dark:to-violet-950">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-purple-500/10 to-violet-500/10 border-b border-purple-200/30 dark:from-purple-900/30 dark:to-violet-900/30 dark:border-purple-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
-                      <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
+                      <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">
                         <img
                           src="/TransUnion_logo.svg.png"
                           alt="TransUnion"
@@ -14626,14 +14626,14 @@ export default function CreditReport() {
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 bg-gradient-to-br from-red-50/30 to-rose-50/30 rounded-lg border border-red-100/50">
-                        <div className="p-3 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-full w-fit mx-auto mb-3">
-                          <FileText className="h-6 w-6 text-red-600" />
+                      <div className="text-center py-6 bg-gradient-to-br from-red-50/30 to-rose-50/30 rounded-lg border border-red-100/50 dark:bg-none dark:bg-neutral-900 dark:border-neutral-800">
+                        <div className="p-3 bg-gradient-to-br from-red-500/20 to-rose-500/20 rounded-full w-fit mx-auto mb-3 dark:bg-none dark:bg-neutral-800">
+                          <FileText className="h-6 w-6 text-red-600 dark:text-white" />
                         </div>
-                        <p className="text-sm text-red-700 font-medium mb-1">
+                        <p className="text-sm text-red-700 font-medium mb-1 dark:text-white">
                           No employer data available
                         </p>
-                        <p className="text-xs text-red-600/70">
+                        <p className="text-xs text-red-600/70 dark:text-white">
                           TransUnion has not reported any employment information
                         </p>
                       </div>
@@ -14642,10 +14642,10 @@ export default function CreditReport() {
                 </Card>
 
                 {/* Equifax Employers */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                  <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30">
+                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-red-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] dark:from-red-950 dark:to-rose-950">
+                  <CardHeader className="pb-3 bg-gradient-to-r from-red-500/10 to-rose-500/10 border-b border-red-200/30 dark:from-red-900/30 dark:to-rose-900/30 dark:border-red-700/30">
                     <CardTitle className="flex justify-center items-center text-sm">
-                      <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md">
+                      <div className="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">
                         <img
                           src="/Equifax_Logo.svg.png"
                           alt="Equifax"

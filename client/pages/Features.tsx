@@ -159,7 +159,7 @@ export default function Features() {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
             {[
               { icon: Zap, title: "Lightning Fast Processing", desc: "Get results in seconds, not hours" },
-              { icon: Lock, title: "Bank-Level Security", desc: "Your data is protected with enterprise encryption" },
+              { icon: Lock, title: "Enterprise-Grade Security", desc: "Your data is protected with enterprise encryption" },
               { icon: Users, title: "Multi-Client Management", desc: "Handle unlimited clients with ease" },
               { icon: Globe, title: "White Label Ready", desc: "Brand the platform as your own" },
               { icon: BarChart3, title: "Advanced Analytics", desc: "Deep insights and performance metrics" },

@@ -644,21 +644,7 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
       }
     }
 
-    // If still no rawCreditData, we already saved reportSectionsPath -> use sections as fallback for payload
-    let reportStructured = {};
-    if (rawCreditData) {
-      try {
-        const scraper = new Scraper(config);
-        reportStructured = await scraper.Parse(rawCreditData);
-        console.log('[MyScoreIQ] Scraper.Parse complete, keys=', Object.keys(reportStructured || {}).length);
-      } catch (e) {
-        console.log('[MyScoreIQ] Scraper.Parse error:', e?.message || e);
-        // keep rawCreditData as fallback
-        reportStructured = {};
-      }
-    }
-
-    // Build unified payload that will ALWAYS be written
+    // Load sections JSON if available
     const sectionsJson = (() => {
       try {
         if (reportSectionsPath && fs.existsSync(reportSectionsPath)) {
@@ -667,6 +653,21 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
       } catch (e) {}
       return {};
     })();
+
+    // If still no rawCreditData, we already saved reportSectionsPath -> use sections as fallback for payload
+    let reportStructured = {};
+    if (rawCreditData) {
+      try {
+        const scraper = new Scraper(config);
+        // Pass both rawCreditData and sections to Parse
+        reportStructured = await scraper.Parse({ rawCreditData, sections: sectionsJson });
+        console.log('[MyScoreIQ] Scraper.Parse complete, keys=', Object.keys(reportStructured || {}).length);
+      } catch (e) {
+        console.log('[MyScoreIQ] Scraper.Parse error:', e?.message || e);
+        // keep rawCreditData as fallback
+        reportStructured = {};
+      }
+    }
 
     // scores & reportDate extraction: prefer rawCreditData -> parsed -> sections text
     let experian = null, equifax = null, transunion = null, reportDate = null;

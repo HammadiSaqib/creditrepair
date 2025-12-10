@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { CheckCircle, Star, Users, Award, ArrowRight, Shield, Clock, TrendingUp, CreditCard, FileText, BarChart3, Phone, Mail, Globe, Zap, Target, DollarSign, Sparkles, Menu } from 'lucide-react';
-import { toast } from 'sonner';
+import { CheckCircle, Star, Users, ArrowRight, Shield, BarChart3, Menu, Play, Zap, FileText, TrendingUp, Mail, DollarSign, Sparkles, Globe, Target } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
-// (Keep local header; only add logo image to it)
+import FallingMoney from '@/components/ui/FallingMoney'; // Assuming this is available as in Index.tsx
+import { Helmet } from "react-helmet-async";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
+
+gsap.registerPlugin(ScrollTrigger);
 
 interface AffiliateData {
   id: string;
@@ -35,6 +39,63 @@ interface PricingPlan {
   sort_order?: number;
 }
 
+const ReferralFooter: React.FC<{ affiliate: AffiliateData }> = ({ affiliate }) => {
+  return (
+    <footer className="relative z-10 bg-black !bg-black border-t border-slate-800 pt-16 pb-8 px-4 text-slate-300" style={{ backgroundColor: 'black' }}>
+      <div className="container mx-auto">
+        <div className="flex flex-col md:flex-row justify-between gap-12 mb-12">
+          {/* Brand Column */}
+          <div className="max-w-sm space-y-4">
+            <div className="flex items-center space-x-2">
+              <img src="/image.png" alt="Score Machine" className="w-20 h-14" />
+              <span className="text-xl font-bold text-white">Score Machine</span>
+            </div>
+            <p className="text-slate-400 text-sm leading-relaxed">
+              Empowering financial futures through AI-driven credit intelligence and professional management tools.
+            </p>
+            <div className="flex items-center gap-4 pt-2">
+              <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 border border-slate-800">
+                <Globe className="w-4 h-4" />
+              </div>
+              <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 border border-slate-800">
+                <Mail className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+
+          {/* Referral Badge Column */}
+          <div>
+            <h4 className="font-semibold text-white mb-4">Referred By</h4>
+            <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-800 backdrop-blur-sm">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-teal-500/10 rounded-full flex items-center justify-center border border-teal-500/20">
+                  <Users className="w-5 h-5 text-teal-400" />
+                </div>
+                <div>
+                  <p className="font-medium text-white">{affiliate.firstName} {affiliate.lastName}</p>
+                  <p className="text-xs text-slate-400">Official Partner</p>
+                </div>
+              </div>
+              {affiliate.companyName && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 mt-2 pt-2 border-t border-slate-800">
+                  <Shield className="w-3 h-3" />
+                  <span>{affiliate.companyName}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-800 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+          <p className="text-slate-500 text-sm">
+            © {new Date().getFullYear()} Score Machine. All rights reserved.
+          </p>
+        </div>
+      </div>
+    </footer>
+  );
+};
+
 const ReferralLandingPage: React.FC = () => {
   const { affiliateId } = useParams<{ affiliateId: string }>();
   const navigate = useNavigate();
@@ -44,6 +105,31 @@ const ReferralLandingPage: React.FC = () => {
   const [plansLoading, setPlansLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [billingFilter, setBillingFilter] = useState<'monthly' | 'yearly'>('monthly');
+  const ctaRef = React.useRef<HTMLDivElement>(null);
+
+  useGSAP(() => {
+    const el = ctaRef.current;
+    if (!el) return;
+
+    const tl = gsap.timeline({
+      scrollTrigger: {
+        trigger: el,
+        start: "top 80%",
+        toggleActions: "play none none reverse"
+      }
+    });
+
+    tl.fromTo(".cta-content", 
+      { y: 50, opacity: 0 },
+      { y: 0, opacity: 1, duration: 1, ease: "power3.out", stagger: 0.2 }
+    )
+    .fromTo(".cta-glow",
+      { opacity: 0, scale: 0.8 },
+      { opacity: 1, scale: 1, duration: 1.5, ease: "power2.out" },
+      "-=0.8"
+    );
+
+  }, { scope: ctaRef });
 
   useEffect(() => {
     const fetchAffiliateData = async () => {
@@ -92,14 +178,12 @@ const ReferralLandingPage: React.FC = () => {
   }, [affiliateId]);
 
   const handleGetStarted = (planId?: number) => {
-    // Store affiliate ID in localStorage for commission tracking
     if (affiliate) {
       localStorage.setItem('referralAffiliateId', affiliate.id);
       localStorage.setItem('referralAffiliateName', affiliate.name);
       localStorage.setItem('referralCommissionRate', affiliate.commissionRate.toString());
     }
     
-    // Navigate to pricing page or register with affiliate reference and selected plan
     if (planId) {
       navigate(`/register?ref=${affiliate?.id}&plan=${planId}`);
     } else {
@@ -108,7 +192,6 @@ const ReferralLandingPage: React.FC = () => {
   };
 
   const handleLearnMore = () => {
-    // Store affiliate reference and navigate to main page
     if (affiliate) {
       localStorage.setItem('referralAffiliateId', affiliate.id);
       localStorage.setItem('referralAffiliateName', affiliate.name);
@@ -116,12 +199,19 @@ const ReferralLandingPage: React.FC = () => {
     navigate('/');
   };
 
+  const scrollToPricing = () => {
+    const pricingSection = document.getElementById('pricing');
+    if (pricingSection) {
+      pricingSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading referral information...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading referral information...</p>
         </div>
       </div>
     );
@@ -129,8 +219,8 @@ const ReferralLandingPage: React.FC = () => {
 
   if (error || !affiliate) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center">
-        <Card className="w-full max-w-md">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <Card className="w-full max-w-md border-slate-200 shadow-xl">
           <CardHeader className="text-center">
             <CardTitle className="text-red-600">Invalid Referral Link</CardTitle>
             <CardDescription>{error || 'This referral link is not valid or has expired.'}</CardDescription>
@@ -146,33 +236,52 @@ const ReferralLandingPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white overflow-x-hidden font-sans selection:bg-teal-400/20 text-slate-600">
+      <Helmet>
+        <title>Score Machine - Referred by {affiliate.firstName}</title>
+        <meta name="description" content={`Special offer from ${affiliate.name} to join Score Machine.`} />
+      </Helmet>
+
+      {/* --- GLOBAL BACKGROUND PATTERN --- */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute inset-0 bg-slate-50"></div>
+        <div 
+          className="absolute inset-0 opacity-40"
+          style={{
+            backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px), 
+                             linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px)`,
+            backgroundSize: '40px 40px'
+          }}
+        ></div>
+        <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] bg-teal-200/20 rounded-full blur-[120px] animate-pulse"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] bg-emerald-200/20 rounded-full blur-[120px] animate-pulse delay-1000"></div>
+        <div className="absolute top-[40%] left-[20%] w-[30vw] h-[30vw] bg-indigo-200/20 rounded-full blur-[100px]"></div>
+      </div>
+
       {/* Header */}
-      <header className="relative z-50 border-b bg-white/95 backdrop-blur-sm sticky top-0">
+      <header className="fixed w-full z-50 top-0 start-0 border-b border-white/20 bg-white/80 backdrop-blur-md transition-all duration-300">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center space-x-2">
-            <img
-              src="/image.png"
-              alt="Score Machine"
-              className="w-10 h-10 rounded-xl shadow-lg object-contain"
-            />
-            <span className="text-2xl font-bold bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-              ScoreMachine
+          <div className="flex items-center space-x-2 cursor-pointer" onClick={() => navigate('/')}>
+             {/* Logo */}
+             <img src="/image.png" alt="Score Machine" className="w-20 h-14" />
+            <span className="text-xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+              Score Machine
             </span>
           </div>
+
           {/* Desktop actions */}
-          <div className="hidden md:flex items-center space-x-3">
-            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-              Referred by {affiliate.firstName}
-            </Badge>
-            <Button variant="ghost" className="hover:text-ocean-blue" onClick={handleLearnMore}>
-              Learn More
-            </Button>
-            <Button
-              className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 shadow-lg"
-              onClick={() => handleGetStarted()}
+          <div className="hidden md:flex items-center space-x-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50/80 rounded-full border border-blue-100">
+                <Users className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-700">
+                    Referred by {affiliate.firstName}
+                </span>
+            </div>
+            <Button 
+                onClick={scrollToPricing}
+                className="rounded-full bg-gradient-to-r from-teal-600 to-emerald-600 text-white hover:from-teal-500 hover:to-emerald-500 shadow-lg hover:shadow-emerald-500/25 transition-all duration-300"
             >
-              Get Started Free
+              Get Started
             </Button>
           </div>
 
@@ -180,21 +289,25 @@ const ReferralLandingPage: React.FC = () => {
           <div className="md:hidden ml-auto">
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="outline" size="icon" aria-label="Open menu">
+                <Button variant="ghost" size="icon" aria-label="Open menu">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
               <SheetContent side="right" className="w-80">
                 <SheetHeader>
-                  <SheetTitle>Referral Menu</SheetTitle>
+                  <SheetTitle>
+                     <div className="flex items-center space-x-2">
+                        <img src="/image.png" alt="Score Machine" className="w-16 h-10" />
+                        <span className="font-bold text-slate-900">Score Machine</span>
+                     </div>
+                  </SheetTitle>
                 </SheetHeader>
                 <div className="mt-6 space-y-4">
-                  <Badge variant="secondary" className="bg-blue-100 text-blue-800 w-fit">
-                    Referred by {affiliate.firstName}
-                  </Badge>
+                  <div className="px-3 py-2 bg-blue-50 rounded-lg border border-blue-100 text-center">
+                    <p className="text-sm text-blue-800 font-medium">Referred by {affiliate.firstName}</p>
+                  </div>
                   <div className="grid gap-3">
-                    <Button variant="ghost" onClick={handleLearnMore}>Learn More</Button>
-                    <Button className="bg-gradient-to-r from-ocean-blue to-sea-green" onClick={() => handleGetStarted()}>Get Started Free</Button>
+                    <Button className="bg-gradient-to-r from-teal-600 to-emerald-600 text-white" onClick={scrollToPricing}>Get Started</Button>
                   </div>
                 </div>
               </SheetContent>
@@ -203,554 +316,356 @@ const ReferralLandingPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-emerald-50"></div>
-
-        {/* Decorative elements */}
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
-          <div className="absolute top-20 left-10 w-72 h-72 bg-ocean-blue/10 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-20 right-10 w-96 h-96 bg-sea-green/10 rounded-full blur-3xl"></div>
+      {/* --- HERO SECTION --- */}
+      <section className="relative min-h-[100vh] flex items-center pt-20 lg:pt-0 overflow-hidden">
+        
+        {/* Animated Background Layer */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none select-none">
+          {/* Attempt to use FallingMoney if available, else fallback provided by parent div styles */}
+          <FallingMoney />
+          <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-slate-50 to-transparent z-20"></div>
         </div>
 
-        <div className="relative container mx-auto px-4 py-20 lg:py-32">
+        <div className="container mx-auto px-4 relative z-30">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-8">
-              <Badge
-                variant="secondary"
-                className="bg-gradient-to-r from-ocean-blue/10 to-sea-green/10 text-ocean-blue border-ocean-blue/20"
-              >
-                <Sparkles className="w-4 h-4 mr-2" />
-                Professional Dashboard Platform
-              </Badge>
-
-              <h1 className="text-5xl lg:text-7xl font-bold leading-tight">
-                Powerful
-                <span className="block bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-                  Admin Dashboard
+            {/* Text Content */}
+            <div className="space-y-8 text-center lg:text-left">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-slate-200 shadow-sm backdrop-blur-md">
+                <Sparkles className="h-4 w-4 text-emerald-500 fill-emerald-500 animate-pulse" />
+                <span className="text-sm font-medium text-slate-700">
+                    Recommended by {affiliate.firstName} {affiliate.lastName}
                 </span>
-                for Professionals
+              </div>
+
+              <h1 className="text-5xl lg:text-7xl font-bold leading-[1.1] tracking-tight text-slate-900">
+                <span className="block">Professional</span>
+                <span className="block bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 bg-clip-text text-transparent">
+                  Credit Intelligence
+                </span>
+                <span className="block text-4xl lg:text-5xl mt-2 text-slate-700">Platform</span>
               </h1>
 
-              {affiliate && (
-                <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 border border-ocean-blue/20 shadow-lg">
-                  <p className="text-lg font-semibold text-ocean-blue mb-2">
-                    Recommended by {affiliate.firstName} {affiliate.lastName}
+              <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-slate-200 shadow-sm max-w-xl mx-auto lg:mx-0">
+                  <p className="text-lg text-slate-700 mb-2">
+                    <span className="font-semibold text-teal-700">{affiliate.firstName}</span> has invited you to experience Score Machine.
+                  </p>
+                  <p className="text-slate-600 leading-relaxed">
+                     Access advanced credit insights, automated dispute tools, and professional-grade monitoring.
                   </p>
                   {affiliate.companyName && (
-                    <p className="text-sea-green font-medium">
-                      {affiliate.companyName}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <Users className="h-4 w-4" />
-                      {affiliate.totalReferrals} referrals
+                    <div className="mt-3 flex items-center justify-center lg:justify-start gap-2 text-sm text-slate-500">
+                        <Shield className="w-4 h-4" />
+                        <span>Partner: {affiliate.companyName}</span>
                     </div>
-                  </div>
-                </div>
-              )}
+                  )}
+              </div>
 
-              <p className="text-xl text-muted-foreground leading-relaxed max-w-xl">
-                Complete administrative platform with advanced client management, 
-                automated reporting, and intelligent workflow optimization. 
-                Built for professionals who manage funding operations.
-              </p>
-
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start pt-2">
                 <Button
                   size="lg"
-                  className="text-lg px-8 py-6 bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 shadow-xl"
-                  onClick={() => handleGetStarted()}
+                  className="h-14 px-8 text-lg rounded-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-lg shadow-teal-500/20 transition-all duration-300 border-0"
+                  onClick={scrollToPricing}
                 >
-                  Start Today <ArrowRight className="ml-2 h-5 w-5" />
+                  Start Free Trial <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
                 <Button
                   size="lg"
                   variant="outline"
-                  className="text-lg px-8 py-6 border-ocean-blue text-ocean-blue hover:bg-ocean-blue hover:text-white"
+                  className="h-14 px-8 text-lg rounded-full border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-400 transition-all duration-300 bg-white/50 backdrop-blur-sm"
                   onClick={handleLearnMore}
                 >
-                  <BarChart3 className="mr-2 h-5 w-5" />
-                  View Dashboard Demo
+                  <Play className="mr-2 h-5 w-5 fill-current" />
+                  View Demo
                 </Button>
               </div>
-
-              <div className="flex flex-wrap gap-6 pt-4">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5 text-sea-green" />
-                  <span className="text-sm font-medium">Multi-Client Management</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5 text-sea-green" />
-                  <span className="text-sm font-medium">Advanced Analytics</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-5 w-5 text-sea-green" />
-                  <span className="text-sm font-medium">Automated Workflows</span>
-                </div>
-              </div>
+              
+              <p className="text-xs text-slate-500 italic max-w-md mx-auto lg:mx-0 leading-relaxed">
+                Join other users who were referred by {affiliate.firstName} and chose to explore Score Machine. No credit card required for signup.
+              </p>
             </div>
 
-            <div className="relative">
-              <div className="relative rounded-2xl overflow-hidden shadow-2xl">
-                <img
-                  src="https://images.pexels.com/photos/7688336/pexels-photo-7688336.jpeg"
-                  alt="Professional dashboard interface for funding management"
-                  className="w-full h-[600px] object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-              </div>
+            {/* Visual Content - Keeping the image but styling like Index.tsx 3D element */}
+            <div className="relative perspective-1000">
+               <div className="relative rounded-[2.5rem] overflow-hidden shadow-2xl border-[8px] border-white bg-white transform transition-transform hover:scale-[1.02] duration-500">
+                  <img
+                    src="https://images.pexels.com/photos/7688336/pexels-photo-7688336.jpeg"
+                    alt="Dashboard Preview"
+                    className="w-full h-auto object-cover"
+                  />
+                  {/* Overlay Gradient */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 to-transparent"></div>
+                  
+                  {/* Floating Elements */}
+                  <div className="absolute bottom-8 left-8 right-8">
+                     <div className="bg-white/95 backdrop-blur-md rounded-2xl p-4 shadow-lg border border-white/50 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                           <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-6 h-6 text-emerald-600" />
+                           </div>
+                           <div>
+                              <p className="text-sm font-semibold text-slate-900">Verified Results</p>
+                              <p className="text-xs text-slate-500">Results reported by users. Your results may differ.</p>
+                           </div>
+                        </div>
+                        <div className="text-2xl font-bold text-slate-900">Verified</div>
+                     </div>
+                  </div>
+               </div>
 
-              {/* Floating cards */}
-              <div className="absolute -top-6 -left-6 bg-white rounded-xl shadow-xl p-4 border border-ocean-blue/10">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-r from-ocean-blue to-sea-green rounded-lg flex items-center justify-center">
-                    <Users className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium">Active Clients</div>
-                    <div className="text-2xl font-bold text-sea-green">
-                      247
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="absolute -bottom-6 -right-6 bg-white rounded-xl shadow-xl p-4 border border-sea-green/10">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-r from-sea-green to-ocean-blue rounded-lg flex items-center justify-center">
-                    <BarChart3 className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium">Success Rate</div>
-                    <div className="text-2xl font-bold text-ocean-blue">
-                      94.5%
-                    </div>
-                  </div>
-                </div>
-              </div>
+               {/* Decorative blobs behind */}
+               <div className="absolute -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[120%] h-[120%] bg-gradient-to-br from-teal-500/20 to-purple-500/20 rounded-full blur-3xl opacity-60"></div>
             </div>
           </div>
         </div>
       </section>
 
       {/* Features Section */}
-      <section className="py-24 bg-white">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-20">
-            <Badge
-              variant="outline"
-              className="mb-4 border-ocean-blue/20 text-ocean-blue"
-            >
-              Dashboard Features
+      <section className="py-32 bg-slate-50 relative z-10 overflow-hidden">
+        {/* Background Decorations */}
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+           <div className="absolute top-[10%] left-[5%] w-64 h-64 bg-teal-200/20 rounded-full blur-[80px] mix-blend-multiply"></div>
+           <div className="absolute bottom-[10%] right-[5%] w-80 h-80 bg-emerald-200/20 rounded-full blur-[80px] mix-blend-multiply"></div>
+        </div>
+
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="text-center mb-24 max-w-3xl mx-auto">
+            <Badge variant="outline" className="mb-6 border-teal-200 text-teal-700 bg-teal-50/50 px-4 py-1 text-sm font-medium rounded-full">
+              Why Choose Score Machine
             </Badge>
-            <h2 className="text-4xl lg:text-5xl font-bold mb-6">
-              Everything You Need for
-              <span className="block bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-                Professional Management
+            <h2 className="text-4xl md:text-5xl font-bold mb-8 text-slate-900 tracking-tight leading-tight">
+              Complete
+              <span className="bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent px-3">
+                Credit Management
               </span>
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-              Comprehensive administrative platform designed for funding professionals
-              with cutting-edge management and automation tools
+            <p className="text-xl text-slate-600 leading-relaxed font-light">
+              Professional tools powered by AI to help you understand, track, and improve your credit health with confidence.
             </p>
           </div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <Card className="group border-0 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 bg-gradient-to-br from-white to-blue-50/30">
-              <CardHeader className="pb-4">
-                <div className="w-14 h-14 bg-gradient-to-r from-ocean-blue to-sea-green rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Users className="h-7 w-7 text-white" />
+            {[
+              { icon: Users, title: "Expert Guidance", desc: "Professional tools frequently used by credit professionals and recommended by some industry users." },
+              { icon: BarChart3, title: "Advanced Analytics", desc: "Visualize your credit progress with detailed charts and score tracking." },
+              { icon: Zap, title: "AI Automation", desc: "AI-assisted dispute drafting and automated credit monitoring tools." },
+              { icon: Shield, title: "Enterprise-Grade Security", desc: "Enterprise-grade security features to protect your data." },
+              { icon: Target, title: "Goal Tracking", desc: "Set and track personalized credit score goals with milestones." },
+              { icon: Globe, title: "24/7 Monitoring", desc: "Real-time alerts for changes to your credit report across all bureaus." }
+            ].map((feature, i) => (
+              <div key={i} className="group relative bg-white rounded-[2rem] p-8 border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_20px_50px_rgba(20,184,166,0.15)] transition-all duration-500 hover:-translate-y-2 overflow-hidden">
+                {/* Gradient Border Effect on Hover */}
+                <div className="absolute inset-0 bg-gradient-to-br from-teal-500 to-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500 p-[1px] -z-10 rounded-[2rem]">
+                   <div className="w-full h-full bg-white rounded-[2rem]"></div>
                 </div>
-                <CardTitle className="text-xl">
-                  Multi-Client Management
-                </CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Advanced CRM with bulk operations, client segmentation, and 
-                  automated progress tracking across unlimited client accounts
-                </CardDescription>
-              </CardHeader>
-            </Card>
 
-            <Card className="group border-0 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 bg-gradient-to-br from-white to-emerald-50/30">
-              <CardHeader className="pb-4">
-                <div className="w-14 h-14 bg-gradient-to-r from-sea-green to-ocean-blue rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <BarChart3 className="h-7 w-7 text-white" />
+                {/* Subtle Background Decoration */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-teal-50/50 to-emerald-50/50 rounded-bl-[4rem] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                
+                <div className="relative z-10 flex flex-col h-full">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-50 group-hover:bg-gradient-to-br group-hover:from-teal-500 group-hover:to-emerald-600 flex items-center justify-center mb-6 transition-all duration-500 shadow-sm group-hover:shadow-lg group-hover:shadow-teal-500/30 group-hover:scale-110">
+                    <feature.icon className="h-8 w-8 text-teal-600 group-hover:text-white transition-colors duration-500" />
+                  </div>
+                  
+                  <h3 className="text-2xl font-bold text-slate-900 mb-4 group-hover:text-teal-900 transition-colors duration-300">
+                    {feature.title}
+                  </h3>
+                  
+                  <p className="text-slate-500 leading-relaxed group-hover:text-slate-600 transition-colors duration-300 flex-grow">
+                    {feature.desc}
+                  </p>
+
+                  <div className="mt-6 flex items-center text-teal-600 font-semibold text-sm opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300">
+                     <span>Learn more</span>
+                     <ArrowRight className="w-4 h-4 ml-2" />
+                  </div>
                 </div>
-                <CardTitle className="text-xl">Advanced Analytics</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Real-time dashboards with performance metrics, success rates,
-                  revenue tracking, and comprehensive business intelligence
-                </CardDescription>
-              </CardHeader>
-            </Card>
-
-            <Card className="group border-0 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 bg-gradient-to-br from-white to-blue-50/30">
-              <CardHeader className="pb-4">
-                <div className="w-14 h-14 bg-gradient-to-r from-ocean-blue to-sea-green rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Zap className="h-7 w-7 text-white" />
-                </div>
-                <CardTitle className="text-xl">Workflow Automation</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Smart automation for client onboarding, follow-ups, reminders,
-                  and task management with predictive scheduling
-                </CardDescription>
-              </CardHeader>
-            </Card>
-
-            <Card className="group border-0 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 bg-gradient-to-br from-white to-emerald-50/30">
-              <CardHeader className="pb-4">
-                <div className="w-14 h-14 bg-gradient-to-r from-sea-green to-ocean-blue rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Shield className="h-7 w-7 text-white" />
-                </div>
-                <CardTitle className="text-xl">Compliance Management</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Automated CROA/FCRA compliance monitoring with audit trails,
-                  document management, and regulatory reporting
-                </CardDescription>
-              </CardHeader>
-            </Card>
-
-            <Card className="group border-0 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 bg-gradient-to-br from-white to-blue-50/30">
-              <CardHeader className="pb-4">
-                <div className="w-14 h-14 bg-gradient-to-r from-ocean-blue to-sea-green rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Target className="h-7 w-7 text-white" />
-                </div>
-                <CardTitle className="text-xl">Performance Tracking</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Comprehensive performance monitoring with KPI dashboards,
-                  goal setting, and automated progress reporting
-                </CardDescription>
-              </CardHeader>
-            </Card>
-
-            <Card className="group border-0 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 bg-gradient-to-br from-white to-emerald-50/30">
-              <CardHeader className="pb-4">
-                <div className="w-14 h-14 bg-gradient-to-r from-sea-green to-ocean-blue rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <Globe className="h-7 w-7 text-white" />
-                </div>
-                <CardTitle className="text-xl">White Label Platform</CardTitle>
-                <CardDescription className="text-base leading-relaxed">
-                  Complete white label solution with custom branding,
-                  multi-tenant architecture, and integrated billing systems
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
-        </div>
-      </section>
-
-      {/* Dashboard Capabilities Section */}
-      <section className="py-24 bg-gradient-to-br from-blue-50 to-emerald-50">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-20">
-            <Badge
-              variant="outline"
-              className="mb-4 border-sea-green/20 text-sea-green"
-            >
-              Admin Capabilities
-            </Badge>
-            <h2 className="text-4xl lg:text-5xl font-bold mb-6">
-              Complete Administrative
-              <span className="block bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-                Control Center
-              </span>
-            </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-              Everything you need to manage your funding business operations
-              from a single, powerful dashboard interface
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            <div className="text-center group">
-              <div className="mx-auto w-20 h-20 bg-gradient-to-r from-ocean-blue to-sea-green rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg">
-                <FileText className="h-10 w-10 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Document Management</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Centralized document storage with automated organization,
-                version control, and secure client file management
-              </p>
-            </div>
-
-            <div className="text-center group">
-              <div className="mx-auto w-20 h-20 bg-gradient-to-r from-sea-green to-ocean-blue rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg">
-                <TrendingUp className="h-10 w-10 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Revenue Analytics</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Real-time revenue tracking, commission calculations,
-                and comprehensive financial reporting dashboards
-              </p>
-            </div>
-
-            <div className="text-center group">
-              <div className="mx-auto w-20 h-20 bg-gradient-to-r from-ocean-blue to-sea-green rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg">
-                <Users className="h-10 w-10 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Team Management</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                User role management, permission controls,
-                and team performance monitoring tools
-              </p>
-            </div>
-
-            <div className="text-center group">
-              <div className="mx-auto w-20 h-20 bg-gradient-to-r from-sea-green to-ocean-blue rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-lg">
-                <Mail className="h-10 w-10 text-white" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Communication Hub</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Integrated messaging system with automated notifications,
-                client communication tracking, and email templates
-              </p>
-            </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* Pricing Plans Section */}
-      <section className="py-24 bg-gradient-to-br from-blue-50 via-white to-emerald-50">
-        <div className="container mx-auto px-4">
-          <div className="text-center mb-20">
-            <Badge
-              variant="outline"
-              className="mb-4 border-ocean-blue/20 text-ocean-blue bg-ocean-blue/5"
-            >
-              <DollarSign className="h-4 w-4 mr-2" />
-              Professional Admin Plans
-            </Badge>
-            <h2 className="text-4xl lg:text-5xl font-bold mb-6">
-              Scale Your
-              <span className="block bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-                Funding Business
-              </span>
+      <section id="pricing" className="py-24 bg-slate-50 relative z-10 overflow-hidden">
+        {/* Ambient Background Effects */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-7xl pointer-events-none">
+            {/* Top Left Blob */}
+            <div className="absolute top-0 -left-20 w-[500px] h-[500px] bg-teal-200/30 rounded-full blur-[80px] mix-blend-multiply animate-pulse"></div>
+            
+            {/* Bottom Right Blob */}
+            <div className="absolute bottom-0 -right-20 w-[500px] h-[500px] bg-emerald-200/30 rounded-full blur-[80px] mix-blend-multiply animate-pulse delay-1000"></div>
+            
+            {/* Center Decorative Circle */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] border border-slate-200/50 rounded-full"></div>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] border border-slate-200/50 rounded-full opacity-70"></div>
+            
+            {/* Floating Geometric Shapes */}
+            <div className="absolute top-20 right-20 w-24 h-24 bg-gradient-to-br from-teal-100 to-emerald-100 rounded-2xl rotate-12 blur-sm opacity-60"></div>
+            <div className="absolute bottom-40 left-20 w-32 h-32 bg-gradient-to-tr from-blue-100 to-teal-100 rounded-full blur-sm opacity-60"></div>
+        </div>
+
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-bold mb-6 text-slate-900 tracking-tight">
+              Simple, Transparent <span className="bg-gradient-to-r from-teal-600 to-emerald-600 bg-clip-text text-transparent">Pricing</span>
             </h2>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-              Professional-grade administrative platform with advanced management tools
-              designed for funding professionals and agencies
+            <p className="text-xl text-slate-600 max-w-2xl mx-auto font-light">
+              Choose the perfect plan to accelerate your credit journey. Transparent pricing, no hidden fees.
             </p>
           </div>
 
           {/* Billing Cycle Tabs */}
-          <div className="flex justify-center mb-8">
-            <Tabs value={billingFilter} onValueChange={(val) => setBillingFilter(val as 'monthly' | 'yearly')}>
-              <TabsList>
-                <TabsTrigger value="monthly">Monthly</TabsTrigger>
-                <TabsTrigger value="yearly">Yearly</TabsTrigger>
+          <div className="flex justify-center mb-16">
+            <Tabs value={billingFilter} onValueChange={(val) => setBillingFilter(val as 'monthly' | 'yearly')} className="w-full max-w-md">
+              <TabsList className="grid w-full grid-cols-2 p-1.5 bg-teal-50/50 border border-teal-100 rounded-full h-16 shadow-lg">
+                <TabsTrigger 
+                  value="monthly" 
+                  className="rounded-full h-full text-slate-600 data-[state=active]:bg-white data-[state=active]:text-teal-700 data-[state=active]:shadow-sm transition-all duration-300 font-medium text-base"
+                >
+                  Monthly
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="yearly" 
+                  className="group rounded-full h-full text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-600 data-[state=active]:to-emerald-600 data-[state=active]:!text-white data-[state=active]:font-semibold data-[state=active]:shadow-md transition-all duration-300 font-medium text-base relative overflow-hidden"
+                >
+                  Yearly <span className="ml-2 text-xs bg-teal-100/50 text-teal-800 group-data-[state=active]:bg-white/20 group-data-[state=active]:!text-white px-2 py-0.5 rounded-full transition-colors duration-300">Save 20%</span>
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
 
           {plansLoading ? (
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading pricing plans...</p>
-            </div>
+             <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto"></div>
+             </div>
           ) : (
-            <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            <div className="grid md:grid-cols-3 gap-8 max-w-7xl mx-auto items-center">
               {plans.filter(p => p.billing_cycle === billingFilter).map((plan, index) => (
-                <Card key={plan.id} className={`group relative border-0 shadow-xl hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 ${
+                <Card key={plan.id} className={`relative border transition-all duration-500 flex flex-col h-full ${
                   index === 1 
-                    ? 'bg-gradient-to-br from-ocean-blue to-sea-green text-white scale-105' 
-                    : 'bg-white hover:bg-gradient-to-br hover:from-blue-50 hover:to-emerald-50'
+                    ? 'border-teal-500 shadow-[0_20px_60px_-15px_rgba(20,184,166,0.3)] bg-white scale-105 z-10' 
+                    : 'border-slate-200 bg-white/50 backdrop-blur-sm hover:border-teal-200 hover:shadow-xl'
                 }`}>
                   {index === 1 && (
-                    <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-10">
-                      <Badge className="bg-white text-ocean-blue px-4 py-2 shadow-lg font-semibold">
-                        <Sparkles className="h-4 w-4 mr-1" />
+                    <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 w-full text-center">
+                      <div className="inline-block bg-gradient-to-r from-teal-600 via-emerald-600 to-teal-600 text-white px-6 py-1.5 text-sm font-bold uppercase tracking-wider rounded-full shadow-lg shadow-emerald-600/30 animate-shimmer bg-[length:200%_100%]">
                         Most Popular
-                      </Badge>
+                      </div>
                     </div>
                   )}
-                  <CardHeader className="text-center pb-6 pt-8">
-                    <CardTitle className={`text-2xl font-bold mb-2 ${
-                      index === 1 ? 'text-white' : 'text-gray-900'
-                    }`}>
+                  
+                  <CardHeader className={`text-center pb-2 ${index === 1 ? 'pt-10' : 'pt-8'}`}>
+                    <CardTitle className="text-2xl font-bold text-slate-900 mb-2">
                       {plan.name}
                     </CardTitle>
-                    <CardDescription className={`text-base leading-relaxed ${
-                      index === 1 ? 'text-blue-100' : 'text-muted-foreground'
-                    }`}>
+                    <CardDescription className="text-slate-500 text-base min-h-[48px] flex items-center justify-center">
                       {plan.description}
                     </CardDescription>
-                    <div className="mt-6">
-                      <span className={`text-5xl font-bold ${
-                        index === 1 ? 'text-white' : 'text-gray-900'
-                      }`}>
-                        ${plan.price}
-                      </span>
-                      <span className={`text-lg ml-1 ${
-                        index === 1 ? 'text-blue-100' : 'text-muted-foreground'
-                      }`}>
-                        /{plan.billing_cycle}
-                      </span>
+                    <div className="mt-8 flex items-baseline justify-center text-slate-900">
+                      <span className="text-lg text-slate-500 mr-1">$</span>
+                      <span className="text-6xl font-bold tracking-tighter">{plan.price}</span>
+                      <span className="text-lg text-slate-500 ml-1">/{plan.billing_cycle === 'monthly' ? 'mo' : 'yr'}</span>
                     </div>
                   </CardHeader>
-                  <CardContent className="px-6 pb-8">
-                    <ul className="space-y-4 mb-8">
-                      {plan.features.map((feature, featureIndex) => (
-                        <li key={featureIndex} className="flex items-start">
-                          <CheckCircle className={`h-5 w-5 mr-3 mt-0.5 flex-shrink-0 ${
-                            index === 1 ? 'text-blue-200' : 'text-sea-green'
-                          }`} />
-                          <span className={`text-sm leading-relaxed ${
-                            index === 1 ? 'text-blue-50' : 'text-gray-700'
+                  
+                  <CardContent className="px-8 pb-8 pt-6 flex-grow flex flex-col">
+                    <div className="w-full h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent mb-8"></div>
+                    
+                    <div className="space-y-5 mb-8 flex-grow">
+                      {plan.features.map((feature, i) => (
+                        <div key={i} className="flex items-start group">
+                          <div className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 mr-3 transition-colors ${
+                             index === 1 ? 'bg-teal-100 text-teal-600 group-hover:bg-teal-600 group-hover:text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-slate-200 group-hover:text-slate-700'
                           }`}>
-                            {feature}
-                          </span>
-                        </li>
+                            <CheckCircle className="w-4 h-4" />
+                          </div>
+                          <span className={`text-sm leading-relaxed transition-colors ${
+                            index === 1 ? 'text-slate-600 group-hover:text-slate-900' : 'text-slate-500 group-hover:text-slate-700'
+                          }`}>{feature}</span>
+                        </div>
                       ))}
-                    </ul>
+                    </div>
+                    
                     <Button 
                       onClick={() => handleGetStarted(plan.id)}
-                      className={`w-full py-3 font-semibold transition-all duration-300 ${
-                        index === 1 
-                          ? 'bg-white text-ocean-blue hover:bg-blue-50 hover:scale-105 shadow-lg' 
-                          : 'bg-gradient-to-r from-ocean-blue to-sea-green text-white hover:shadow-lg hover:scale-105'
+                      className={`w-full py-7 text-lg font-semibold rounded-2xl transition-all duration-300 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-lg shadow-teal-600/20 hover:shadow-teal-600/30 hover:-translate-y-1 ${
+                        index === 1 ? 'shadow-teal-600/40 ring-2 ring-teal-500/20' : ''
                       }`}
                     >
-                      Start Managing Clients
-                      <ArrowRight className="ml-2 h-4 w-4" />
+                      Choose {plan.name}
                     </Button>
                   </CardContent>
                 </Card>
               ))}
-              {plans.filter(p => p.billing_cycle === billingFilter).length === 0 && (
-                <div className="md:col-span-3 text-center text-gray-600">
-                  No {billingFilter} plans available.
-                </div>
-              )}
             </div>
           )}
         </div>
       </section>
 
-      {/* Testimonials Section */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-white/60 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900 mb-4">
-              Success Stories
-            </h2>
-            <p className="text-lg text-gray-600">
-              See how our clients have transformed their credit scores
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center mb-4">
-                  {[...Array(5)].map((_, i) => (
-                    <Star key={i} className="h-4 w-4 text-yellow-400 fill-current" />
-                  ))}
-                </div>
-                <p className="text-gray-700 mb-4 italic">
-                  "My credit score went from 520 to 720 in just 8 months! The team was professional and kept me updated throughout the process."
-                </p>
-                <div className="flex items-center">
-                  <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                    <span className="text-blue-600 font-semibold">SM</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Sarah M.</p>
-                    <p className="text-sm text-gray-600">Verified Customer</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center mb-4">
-                  {[...Array(5)].map((_, i) => (
-                    <Star key={i} className="h-4 w-4 text-yellow-400 fill-current" />
-                  ))}
-                </div>
-                <p className="text-gray-700 mb-4 italic">
-                  "Finally got approved for my dream home! ScoreMachine removed 15 negative items from my report."
-                </p>
-                <div className="flex items-center">
-                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-3">
-                    <span className="text-green-600 font-semibold">MJ</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Michael J.</p>
-                    <p className="text-sm text-gray-600">Verified Customer</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
-              <CardContent className="p-6">
-                <div className="flex items-center mb-4">
-                  {[...Array(5)].map((_, i) => (
-                    <Star key={i} className="h-4 w-4 text-yellow-400 fill-current" />
-                  ))}
-                </div>
-                <p className="text-gray-700 mb-4 italic">
-                  "The automated dispute process saved me so much time. Great platform and even better results!"
-                </p>
-                <div className="flex items-center">
-                  <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center mr-3">
-                    <span className="text-purple-600 font-semibold">LR</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Lisa R.</p>
-                    <p className="text-sm text-gray-600">Verified Customer</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </section>
-
       {/* CTA Section */}
-      <section className="py-20 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto text-center">
-          <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-0 shadow-2xl">
-            <CardContent className="p-12">
-              <h2 className="text-3xl font-bold mb-4">
-                Ready to Improve Your Credit Score?
-              </h2>
-              <p className="text-xl mb-8 text-blue-100">
-                Thanks to {affiliate.firstName}'s referral, you're one step closer to better credit!
-              </p>
+      <section ref={ctaRef} className="py-32 relative overflow-hidden bg-black">
+        {/* Animated Background Elements */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-black to-black opacity-80"></div>
+        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 mix-blend-overlay"></div>
+        
+        {/* Glowing Orbs */}
+        <div className="cta-glow absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-teal-500/20 rounded-full blur-[120px] mix-blend-screen pointer-events-none"></div>
+        <div className="cta-glow absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-500/20 rounded-full blur-[100px] mix-blend-screen pointer-events-none delay-150"></div>
+
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="max-w-5xl mx-auto text-center">
+            
+            <div className="cta-content mb-8 inline-flex items-center justify-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/50 border border-slate-800 backdrop-blur-md">
+              <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
+              <span className="text-sm font-medium bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+                Exclusive Invitation
+              </span>
+            </div>
+
+            <h2 className="cta-content text-5xl md:text-7xl font-bold mb-8 tracking-tight text-white leading-tight">
+              Start Your Journey <br />
+              <span className="bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                With Score Machine
+              </span>
+            </h2>
+            
+            <p className="cta-content text-xl md:text-2xl text-slate-400 mb-12 max-w-3xl mx-auto leading-relaxed font-light">
+              Join <span className="text-white font-medium">{affiliate.firstName}</span> and others who are working to improve their credit management using Score Machine tools. Outcomes vary and are not guaranteed.
+            </p>
+
+            <div className="cta-content flex flex-col sm:flex-row items-center justify-center gap-6">
               <Button 
-                onClick={handleGetStarted}
+                onClick={scrollToPricing}
                 size="lg" 
-                variant="secondary"
-                className="bg-white text-blue-600 hover:bg-gray-100 px-8 py-4 text-lg font-semibold"
+                className="group relative h-16 px-12 text-lg font-semibold rounded-full bg-white text-black hover:bg-slate-100 transition-all duration-300 shadow-[0_0_40px_-10px_rgba(255,255,255,0.3)] hover:shadow-[0_0_60px_-15px_rgba(255,255,255,0.5)] hover:-translate-y-1"
               >
-                Start Your Funding Journey
-                <ArrowRight className="ml-2 h-5 w-5" />
+                Get Started Now
+                <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Button>
-            </CardContent>
-          </Card>
+              
+              <div className="flex items-center gap-4 text-sm text-slate-500">
+                <div className="flex -space-x-3">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="w-10 h-10 rounded-full border-2 border-black bg-slate-800 flex items-center justify-center overflow-hidden">
+                       <Users className="w-5 h-5 text-slate-400" />
+                    </div>
+                  ))}
+                </div>
+                <div className="text-left">
+                  <p className="text-white font-medium">Thousands of Users</p>
+                  <p>Number updated periodically</p>
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="bg-gray-900 text-white py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto text-center">
-          <div className="flex items-center justify-center space-x-2 mb-4">
-            <Shield className="h-6 w-6" />
-            <span className="text-xl font-bold"> ScoreMachine</span>
-          </div>
-          <p className="text-gray-400 mb-4">
-            Professional funding services you can trust
-          </p>
-          <p className="text-sm text-gray-500">
-            Referred by: {affiliate.name} {affiliate.companyName && `• ${affiliate.companyName}`}
-          </p>
-        </div>
-      </footer>
+      <ReferralFooter affiliate={affiliate} />
+      
+     
     </div>
   );
 };
