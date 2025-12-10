@@ -15,6 +15,16 @@ import { getDatabaseAdapter } from '../database/databaseAdapter.js';
 
 const router = express.Router();
 
+// In-memory scrape jobs store
+const scrapeJobs = new Map();
+const makeJobId = () => `job_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+const updateJob = (jobId, changes) => {
+  const existing = scrapeJobs.get(jobId) || { id: jobId };
+  const updated = { ...existing, ...changes };
+  scrapeJobs.set(jobId, updated);
+  return updated;
+};
+
 // Validation schema for scraper requests
 const scraperRequestSchema = z.object({
   platform: z.string().min(1).refine(val => {
@@ -46,6 +56,15 @@ router.post('/scrape', authenticateToken, async (req, res) => {
       res.setTimeout?.(300000);
       req.socket?.setTimeout?.(300000);
     } catch {}
+    try {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('X-Accel-Buffering', 'no');
+    } catch {}
+    let __keepAlive = null;
+    try {
+      __keepAlive = setInterval(() => { try { res.write(' '); } catch {} }, 10000);
+      res.on('close', () => { try { clearInterval(__keepAlive); } catch {} });
+    } catch {}
     // Validate request body
     const validationResult = scraperRequestSchema.safeParse(req.body);
     
@@ -68,6 +87,147 @@ router.post('/scrape', authenticateToken, async (req, res) => {
       clientId: clientId,
       ...options
     };
+
+    // Async job-based scraping mode: returns immediately
+    const asyncFlag = (
+      (options && options.async === true) ||
+      ['1','true','yes'].includes(String(req.query.async || '').toLowerCase())
+    );
+
+    if (asyncFlag) {
+      try { clearInterval(__keepAlive); } catch {}
+      const jobId = makeJobId();
+      const ws = (req.app && (req.app).websocketService) ? (req.app).websocketService : null;
+      updateJob(jobId, {
+        status: 'queued',
+        progress: 0,
+        platform,
+        clientId,
+        userId: (req.user && req.user.id) ? req.user.id : null,
+        startedAt: new Date().toISOString()
+      });
+
+      // Respond immediately
+      res.status(202).json({ success: true, jobId, status: 'queued' });
+
+      // Run job in background
+      setImmediate(async () => {
+        try {
+          updateJob(jobId, { status: 'running', progress: 5 });
+          try { ws?.broadcastToStream?.('scrape_jobs', 'scrape_job_update', { jobId, status: 'running', progress: 5 }); } catch {}
+
+          const startTime = Date.now();
+          const reportData = await fetchCreditReport(
+            platform,
+            credentials.username,
+            credentials.password,
+            scraperOptions
+          );
+
+          const durationMs = Date.now() - startTime;
+          updateJob(jobId, { progress: 60, durationMs });
+          try { ws?.broadcastToStream?.('scrape_jobs', 'scrape_job_update', { jobId, status: 'running', progress: 60, durationMs }); } catch {}
+
+          // Extract and save report history to DB (fallbacks for scraper payload)
+          try {
+            const dbUtil = await import('../database/dbConnection.js');
+
+            // Compute scores
+            let experianScore = null;
+            let equifaxScore = null;
+            let transunionScore = null;
+            let creditScore = null;
+            let reportDate = null;
+            let notes = null;
+
+            // From normalized route structures
+            if (reportData && reportData.reportData && Array.isArray(reportData.reportData.Score)) {
+              const scores = reportData.reportData.Score;
+              scores.forEach(score => {
+                const scoreValue = parseInt(score.Score);
+                if (!isNaN(scoreValue)) {
+                  if (score.BureauId === 1) transunionScore = scoreValue;
+                  if (score.BureauId === 2) experianScore = scoreValue;
+                  if (score.BureauId === 3) equifaxScore = scoreValue;
+                }
+              });
+            } else if (reportData && Array.isArray(reportData.Score)) {
+              const scores = reportData.Score;
+              scores.forEach(score => {
+                const scoreValue = parseInt(score.Score);
+                if (!isNaN(scoreValue)) {
+                  if (score.BureauId === 1) transunionScore = scoreValue;
+                  if (score.BureauId === 2) experianScore = scoreValue;
+                  if (score.BureauId === 3) equifaxScore = scoreValue;
+                }
+              });
+            } else if (reportData && reportData.scores && typeof reportData.scores === 'object') {
+              // Fallback to scraper's scores object
+              const s = reportData.scores;
+              const toInt = (v) => { const n = parseInt(String(v)); return isNaN(n) ? null : n; };
+              experianScore = toInt(s.experian);
+              equifaxScore = toInt(s.equifax);
+              transunionScore = toInt(s.transunion);
+            }
+            const validScores = [experianScore, equifaxScore, transunionScore].filter(v => v !== null);
+            if (validScores.length > 0) creditScore = Math.max(...validScores);
+
+            // Report date fallback
+            if (reportData && reportData.reportData && reportData.reportData.ReportDate) {
+              reportDate = reportData.reportData.ReportDate;
+            } else if (reportData && Array.isArray(reportData.CreditReport) && reportData.CreditReport[0]?.DateReport) {
+              reportDate = reportData.CreditReport[0].DateReport;
+            } else {
+              reportDate = new Date().toISOString().substring(0,10);
+            }
+
+            // Notes
+            notes = JSON.stringify({
+              platform,
+              scraped_at: new Date().toISOString(),
+              has_scores: !!(experianScore || equifaxScore || transunionScore),
+              bureau_scores: { experian: experianScore, equifax: equifaxScore, transunion: transunionScore }
+            });
+
+            const historyData = {
+              client_id: clientId,
+              platform,
+              report_path: reportData.converted_report_path || reportData.filePath || null,
+              status: 'completed',
+              credit_score: creditScore,
+              experian_score: experianScore,
+              equifax_score: equifaxScore,
+              transunion_score: transunionScore,
+              report_date: reportDate,
+              notes
+            };
+
+            const timeoutMs = 10000;
+            const savePromise = dbUtil.saveCreditReport(historyData);
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('DB save timeout')), timeoutMs));
+            const result = await Promise.race([savePromise, timeoutPromise]);
+
+            updateJob(jobId, { status: 'completed', progress: 100, reportId: result.insertId, result: {
+              convertedReportPath: reportData.converted_report_path || null,
+              filePath: reportData.filePath || null,
+              durationMs,
+              creditScore,
+              scores: { experian: experianScore, equifax: equifaxScore, transunion: transunionScore }
+            }, finishedAt: new Date().toISOString() });
+            try { ws?.broadcastToStream?.('scrape_jobs', 'scrape_job_done', { jobId, status: 'completed', reportId: result.insertId }); } catch {}
+            if (updateJob(jobId, {}).userId) { try { ws?.broadcastToUser?.(updateJob(jobId, {}).userId, 'scrape_job_done', { jobId, reportId: result.insertId }); } catch {} }
+          } catch (dbErr) {
+            updateJob(jobId, { status: 'failed', progress: 100, error: String(dbErr && dbErr.message || dbErr) });
+            try { ws?.broadcastToStream?.('scrape_jobs', 'scrape_job_error', { jobId, error: String(dbErr && dbErr.message || dbErr) }); } catch {}
+          }
+        } catch (err) {
+          updateJob(jobId, { status: 'failed', progress: 100, error: String(err && err.message || err) });
+          try { (req.app && (req.app).websocketService)?.broadcastToStream?.('scrape_jobs', 'scrape_job_error', { jobId, error: String(err && err.message || err) }); } catch {}
+        }
+      });
+
+      return; // ensure no sync path execution
+    }
     
     // Start scraping process
     console.log(`Starting credit report scrape for platform: ${platform}, clientId: ${clientId}`);
@@ -1536,32 +1696,82 @@ const toDDMMYYYY = (s) => {
       // Store the report ID for potential client ID updates later
       const reportId = result.insertId;
       
-      return res.status(200).json({
-        success: true,
-        message: 'Credit report scraped successfully',
-        data: reportData,
-        extractedPaths: reportData.extracted_paths || null,
-        convertedReportPath: reportData.converted_report_path || null,
-        reportId: reportId,
-        clientId: clientId // Include client ID in response (will be "unknown" if not provided)
-      });
+      try { clearInterval(__keepAlive); } catch {}
+      try {
+        res.statusCode = 200;
+        res.end(JSON.stringify({
+          success: true,
+          message: 'Credit report scraped successfully',
+          data: reportData,
+          extractedPaths: reportData.extracted_paths || null,
+          convertedReportPath: reportData.converted_report_path || null,
+          reportId: reportId,
+          clientId: clientId
+        }));
+      } catch {}
+      return;
     } catch (dbError) {
       console.error('Failed to save report to database:', dbError);
       
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to save report to database',
-        error: process.env.NODE_ENV === 'development' ? dbError.message : undefined
-      });
+      try { clearInterval(__keepAlive); } catch {}
+      if (res.headersSent) { return; }
+      res.statusCode = 500;
+      try {
+        res.end(JSON.stringify({
+          success: false,
+          message: 'Failed to save report to database',
+          error: process.env.NODE_ENV === 'development' ? dbError.message : undefined
+        }));
+      } catch {}
+      return;
     }
   } catch (error) {
     console.error('Credit report scraper error:', error);
     
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to scrape credit report',
-      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    try { clearInterval(__keepAlive); } catch {}
+    if (res.headersSent) { return; }
+    res.statusCode = 500;
+    try {
+      res.end(JSON.stringify({
+        success: false,
+        message: error.message || 'Failed to scrape credit report',
+        error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }));
+    } catch {}
+    return;
+  }
+});
+
+router.get('/scrape/jobs/:jobId', authenticateToken, (req, res) => {
+  try {
+    const jobId = req.params.jobId;
+    const job = scrapeJobs.get(jobId);
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Job not found' });
+    }
+
+    const requesterId = req.user && req.user.id ? req.user.id : null;
+    if (job.userId && requesterId && job.userId !== requesterId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const data = {
+      id: job.id || jobId,
+      status: job.status || 'unknown',
+      progress: typeof job.progress === 'number' ? job.progress : null,
+      platform: job.platform || null,
+      clientId: job.clientId || null,
+      reportId: job.reportId || null,
+      error: job.error || null,
+      result: job.result || null,
+      startedAt: job.startedAt || null,
+      finishedAt: job.finishedAt || null,
+      durationMs: job.durationMs || null
+    };
+
+    return res.status(200).json({ success: true, job: data });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: String(err && err.message || err) });
   }
 });
 
