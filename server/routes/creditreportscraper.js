@@ -41,6 +41,11 @@ const scraperRequestSchema = z.object({
  */
 router.post('/scrape', authenticateToken, async (req, res) => {
   try {
+    try {
+      req.setTimeout?.(300000);
+      res.setTimeout?.(300000);
+      req.socket?.setTimeout?.(300000);
+    } catch {}
     // Validate request body
     const validationResult = scraperRequestSchema.safeParse(req.body);
     

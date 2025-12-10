@@ -154,6 +154,12 @@ export async function createServer() {
   const app = express();
   const httpServer = createHttpServer(app);
 
+  try {
+    (httpServer as any).setTimeout?.(0);
+    (httpServer as any).requestTimeout = 0;
+    (httpServer as any).headersTimeout = 0;
+  } catch {}
+
   // Load configuration and initialize database adapter
   const config = loadEnvironmentConfig();
   const dbType = config.DATABASE_URL?.startsWith('mysql://') ? 'mysql' : 'sqlite';

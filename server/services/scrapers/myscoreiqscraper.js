@@ -163,7 +163,13 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
     const launchOpts = {
       headless: true,
       slowMo: puppeteerOverrides.slowMo ?? config.puppeteerConfig?.slowMo ?? 0,
-      args: puppeteerOverrides.args ?? config.puppeteerConfig?.args ?? ['--no-sandbox','--disable-setuid-sandbox']
+      args: puppeteerOverrides.args ?? config.puppeteerConfig?.args ?? [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer'
+      ]
     };
     browser = await puppeteer.launch(launchOpts);
     page = await browser.newPage();
@@ -179,8 +185,8 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
 
     await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9', ...(config.puppeteerHttpHeaders||{}) });
     if (config.puppeteerResolution) await page.setViewport(config.puppeteerResolution);
-    try { page.setDefaultNavigationTimeout(config.waitTimeouts?.navigation || 60000); } catch {}
-    try { page.setDefaultTimeout(config.waitTimeouts?.element || 15000); } catch {}
+    try { page.setDefaultNavigationTimeout(config.waitTimeouts?.navigation || 120000); } catch {}
+    try { page.setDefaultTimeout(config.waitTimeouts?.element || 30000); } catch {}
 
     // response capture
     let rawCreditData = null;
@@ -211,7 +217,7 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
 
     const loginUrl = config.loginUrl || 'https://member.myscoreiq.com/';
     console.log('[MyScoreIQ] Navigating to login URL:', loginUrl);
-    await page.goto(loginUrl, { waitUntil: 'networkidle2', timeout: config.waitTimeouts?.navigation || 60000 });
+    await page.goto(loginUrl, { waitUntil: 'networkidle2', timeout: config.waitTimeouts?.navigation || 120000 });
     await sleep(700); // let SPA hydrate
 
     // optional ready screenshot
@@ -518,7 +524,7 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
       await page.waitForResponse((r) => {
         const u = (r.url() || '').toLowerCase();
         return (/dsply/.test(u) || /csid/.test(u) || /creditreport/.test(u) || /getreport/.test(u) || /report|scrape|trueLink|credit/i.test(u)) && r.status() === 200;
-      }, { timeout: Math.max(15000, config.waitTimeouts?.report_load || 20000) }).catch(()=>null);
+      }, { timeout: Math.max(30000, config.waitTimeouts?.report_load || 60000) }).catch(()=>null);
     } catch (e) {}
 
     await sleep(1200);
@@ -540,7 +546,7 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
       try {
         await reportCtx.waitForFunction(() => {
           try { return /Credit Report Date|Personal Information|Account History|Summary|Inquiries/i.test(document.body.innerText || ''); } catch { return false; }
-        }, { timeout: 20000 });
+        }, { timeout: 60000 });
       } catch {}
     } catch (e) {}
 
