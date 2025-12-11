@@ -540,11 +540,13 @@ export default function SuperAdminOverview() {
 
   // Handle calendar date click
   const handleCalendarDateClick = (date: Date) => {
-    const today = new Date();
-    if (date >= today) {
+    const today = new Date(new Date().setHours(0, 0, 0, 0));
+    const selected = new Date(date);
+    selected.setHours(0, 0, 0, 0);
+    if (selected >= today) {
       setEventForm(prev => ({
         ...prev,
-        date: date.toISOString().split('T')[0]
+        date: selected.toISOString().split('T')[0]
       }));
       setShowEventModal(true);
     }
@@ -862,7 +864,7 @@ export default function SuperAdminOverview() {
                             ${isCurrentMonth ? 'text-foreground' : 'text-muted-foreground'}
                             ${isToday ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}
                             ${hasEvent && isCurrentMonth ? 'bg-blue-50 dark:bg-blue-900/20' : ''}
-                            ${currentDate >= new Date() ? 'hover:bg-blue-100 dark:hover:bg-blue-900/30' : 'cursor-not-allowed opacity-50'}
+                            ${currentDate >= new Date(new Date().setHours(0,0,0,0)) ? 'hover:bg-blue-100 dark:hover:bg-blue-900/30' : 'cursor-not-allowed opacity-50'}
                           `}
                         >
                           <span className="text-sm">{currentDate.getDate()}</span>
