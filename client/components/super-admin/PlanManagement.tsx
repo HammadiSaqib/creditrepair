@@ -19,6 +19,7 @@ import { superAdminApi, coursesApi } from "@/lib/api";
 const ADMIN_PAGES = [
   { id: 'dashboard', name: 'Dashboard', path: '/dashboard', description: 'Main dashboard overview' },
   { id: 'clients', name: 'Clients', path: '/clients', description: 'Client management' },
+  { id: 'employees', name: 'Employees', path: '/employees', description: 'Employee management' },
   { id: 'reports', name: 'Reports', path: '/reports', description: 'Credit reports' },
   { id: 'credit-report', name: 'Credit Report', path: '/credit-report', description: 'Individual credit report view' },
   { id: 'credit-reports-scraper', name: 'Credit Reports Scraper', path: '/credit-reports/scraper', description: 'Credit report scraping tool' },
