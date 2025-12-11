@@ -1386,23 +1386,23 @@ const toDDMMYYYY = (s) => {
         const raw = reportData?.rawCreditData || reportData;
         const bureauFromType = (t) => {
           const s = String(t || '').toLowerCase();
-          if (s.includes('tuc')) return 1; // TransUnion
-          if (s.includes('eqf')) return 2; // Equifax
-          if (s.includes('exp')) return 3; // Experian
+          if (s.includes('exp')) return 1;
+          if (s.includes('eqf')) return 2;
+          if (s.includes('tuc')) return 3;
           return null;
         };
         const bureauFromStr = (b) => {
           const s = String(b || '').toLowerCase();
-          if (s.includes('trans')) return 1; // TransUnion
-          if (s.includes('equif')) return 2; // Equifax
-          if (s.includes('exper')) return 3; // Experian
+          if (s.includes('exper')) return 1;
+          if (s.includes('equif')) return 2;
+          if (s.includes('trans')) return 3;
           return null;
         };
         const bureauFromCode = (c) => {
           const s = String(c || '').toLowerCase();
-          if (s.includes('tuc')) return 1; // TransUnion
-          if (s.includes('eqf')) return 2; // Equifax
-          if (s.includes('exp')) return 3; // Experian
+          if (s.includes('exp')) return 1;
+          if (s.includes('eqf')) return 2;
+          if (s.includes('tuc')) return 3;
           return null;
         };
         const normalizeStr = (v, def = '') => {
@@ -1437,6 +1437,7 @@ const toDDMMYYYY = (s) => {
         const accountsIQ = [];
         const inquiriesIQ = [];
         const employersIQ = [];
+        const addressesIQ = [];
         const scoresIQ = [];
         const namesIQ = [];
         const birthsIQ = [];
@@ -1465,6 +1466,11 @@ const toDDMMYYYY = (s) => {
             } else if (k === 'Inquiry' && typeof v === 'object' && !Array.isArray(v)) {
               const bi = nextBureau;
               inquiriesIQ.push({ inq: v, bi });
+            } else if (k === 'BorrowerAddress' && Array.isArray(v)) {
+              for (const addr of v) {
+                const bi = bureauFromStr(addr?.Source?.Bureau?.['@abbreviation']) || bureauFromCode(addr?.Source?.Bureau?.['@symbol']) || nextBureau;
+                addressesIQ.push({ addr, bi });
+              }
             } else if (k === 'BorrowerName' && Array.isArray(v)) {
               for (const n of v) {
                 const bi = bureauFromStr(n?.Source?.Bureau?.['@abbreviation']) || bureauFromCode(n?.Source?.Bureau?.['@symbol']) || nextBureau;
@@ -1487,40 +1493,56 @@ const toDDMMYYYY = (s) => {
             if (typeof v === 'object') q.push({ node: v, bureau: nextBureau });
           }
         }
-        const accountsFormal = accountsIQ.map(({ a, bi }, idx) => ({
-          BureauId: bi ?? ((idx % 3) + 1),
-          AccountTypeDescription: toTitle(a?.['@accountTypeDescription'] || a?.GrantedTrade?.AccountType?.['@description'] || a?.GrantedTrade?.AccountType?.description || ''),
-          HighBalance: normalizeStr(a?.['@highBalance'] || a?.GrantedTrade?.highBalance || ''),
-          DateReported: (parseDate(a?.['@dateReported']) || '')?.slice(0,10) || '',
-          DateOpened: (parseDate(a?.['@dateOpened']) || '')?.slice(0,10) || '',
-          AccountNumber: normalizeStr(a?.['@accountNumber'] || '').replace(/\*/g, ''),
-          DateAccountStatus: (parseDate(a?.['@dateAccountStatus']) || '')?.slice(0,10) || '',
-          CurrentBalance: String(toNumber(a?.['@currentBalance'])),
-          CreditorName: normalizeStr(a?.['@creditorName'] || ''),
-          AccountCondition: normalizeStr(a?.AccountCondition?.['@description'] || a?.AccountCondition?.description || ''),
-          AccountDesignator: normalizeStr(a?.AccountDesignator?.['@description'] || a?.AccountDesignator?.description || ''),
-          DisputeFlag: normalizeStr(a?.DisputeFlag?.['@description'] || a?.DisputeFlag?.description || ''),
-          Industry: normalizeStr(a?.Industry?.['@description'] || ''),
-          AccountStatus: normalizeStr(a?.AccountCondition?.['@description'] || ''),
-          PaymentStatus: normalizeStr(a?.GrantedTrade?.PayStatus?.['@description'] || a?.GrantedTrade?.PayStatus?.description || ''),
-          AmountPastDue: String(toNumber(a?.GrantedTrade?.amountPastDue || a?.GrantedTrade?.AmountPastDue)),
-          AccountType: toTitle(a?.['@accountTypeDescription'] || a?.GrantedTrade?.CreditType?.['@description'] || a?.GrantedTrade?.CreditType?.description || ''),
-          CreditType: toTitle(a?.GrantedTrade?.AccountType?.['@description'] || a?.GrantedTrade?.AccountType?.description || ''),
-          PaymentFrequency: normalizeStr(a?.GrantedTrade?.PaymentFrequency?.['@description'] || a?.GrantedTrade?.PaymentFrequency?.description || ''),
-          TermType: normalizeStr(a?.GrantedTrade?.TermType?.['@description'] || a?.GrantedTrade?.TermType?.description || ''),
-          WorstPayStatus: normalizeStr(a?.GrantedTrade?.WorstPayStatus?.['@description'] || a?.GrantedTrade?.WorstPayStatus?.description || ''),
-          PayStatusHistoryStartDate: (parseDate(a?.GrantedTrade?.PayStatusHistory?.['@startDate'] || a?.GrantedTrade?.PayStatusHistory?.startDate) || '')?.slice(0,10) || '',
-          PayStatusHistory: normalizeStr(a?.GrantedTrade?.PayStatusHistory?.status || ''),
-          Remark: null,
-          CreditLimit: String(toNumber(a?.['@creditLimit'] || a?.GrantedTrade?.creditLimit))
-        }));
+        const accountsFormal = accountsIQ.map(({ a, bi }, idx) => {
+          const remarkArr = Array.isArray(a?.Remark) ? a.Remark : (a?.Remark ? [a.Remark] : []);
+          const remark = remarkArr.reduce((acc, r) => acc || normalizeStr(r?.RemarkCode?.['@description'] || ''), '');
+          return {
+            BureauId: bi ?? ((idx % 3) + 1),
+            AccountTypeDescription: toTitle(a?.GrantedTrade?.AccountType?.['@description'] || a?.GrantedTrade?.AccountType?.description || ''),
+            HighBalance: String(toNumber(a?.['@highBalance'] || a?.GrantedTrade?.highBalance || a?.GrantedTrade?.HighBalance?.$)),
+            DateReported: (parseDate(a?.['@dateReported']) || '')?.slice(0,10) || '',
+            DateOpened: (parseDate(a?.['@dateOpened']) || '')?.slice(0,10) || '',
+            AccountNumber: normalizeStr(a?.['@accountNumber'] || '').replace(/\*/g, ''),
+            DateAccountStatus: (parseDate(a?.['@dateAccountStatus']) || '')?.slice(0,10) || '',
+            CurrentBalance: String(toNumber(a?.['@currentBalance'])),
+            CreditorName: normalizeStr(a?.['@creditorName'] || ''),
+            AccountCondition: normalizeStr(a?.OpenClosed?.['@description'] || a?.AccountCondition?.['@description'] || a?.AccountCondition?.description || ''),
+            AccountDesignator: normalizeStr(a?.AccountDesignator?.['@description'] || a?.AccountDesignator?.description || ''),
+            DisputeFlag: normalizeStr(a?.VerificationIndicator?.['@description'] || a?.DisputeFlag?.['@description'] || a?.DisputeFlag?.description || ''),
+            Industry: normalizeStr(a?.IndustryCode?.['@description'] || a?.IndustryCode?.description || ''),
+            AccountStatus: normalizeStr(a?.GrantedTrade?.PayStatus?.['@description'] || a?.GrantedTrade?.PayStatus?.description || ''),
+            PaymentStatus: normalizeStr(a?.GrantedTrade?.PayStatus?.['@description'] || a?.GrantedTrade?.PayStatus?.description || ''),
+            AmountPastDue: String(toNumber(a?.GrantedTrade?.AmountPastDue?.$ || a?.GrantedTrade?.amountPastDue || a?.['@amountPastDue'])),
+            AccountType: toTitle(a?.GrantedTrade?.CreditType?.['@description'] || a?.['@accountTypeDescription'] || ''),
+            CreditType: toTitle(a?.GrantedTrade?.CreditType?.['@abbreviation'] || a?.GrantedTrade?.CreditType?.['@symbol'] || a?.['@accountTypeAbbreviation'] || a?.['@accountTypeSymbol'] || ''),
+            PaymentFrequency: normalizeStr(a?.GrantedTrade?.PaymentFrequency?.['@description'] || a?.GrantedTrade?.PaymentFrequency?.description || ''),
+            TermType: normalizeStr(a?.GrantedTrade?.TermType?.['@description'] || a?.GrantedTrade?.TermType?.description || ''),
+            WorstPayStatus: normalizeStr(a?.GrantedTrade?.WorstPayStatus?.['@description'] || a?.GrantedTrade?.WorstPayStatus?.description || ''),
+            PayStatusHistoryStartDate: (parseDate(a?.GrantedTrade?.PayStatusHistory?.['@startDate'] || a?.GrantedTrade?.PayStatusHistory?.startDate) || '')?.slice(0,10) || '',
+            PayStatusHistory: normalizeStr(a?.GrantedTrade?.PayStatusHistory?.['@status'] || ''),
+            Remark: remark || null,
+            CreditLimit: String(toNumber(a?.GrantedTrade?.CreditLimit?.$ || a?.GrantedTrade?.creditLimit || a?.['@creditLimit']))
+          };
+        });
+        const toInquiryTypeFlag = (inq) => {
+          const abbrRaw = normalizeStr(inq?.InquiryType?.['@abbreviation'] || inq?.['@inquiryType'] || '').trim().toUpperCase();
+          const desc = normalizeStr(inq?.InquiryType?.['@description'] || '').toLowerCase();
+          const subscriber = normalizeStr(inq?.['@subscriberName'] || '').toLowerCase();
+          if (abbrRaw) {
+            if (abbrRaw === 'PRM' || abbrRaw === 'ANA' || abbrRaw === 'AM0' || abbrRaw === 'AMO') return abbrRaw;
+            if (abbrRaw === 'I') return 'I';
+            return abbrRaw;
+          }
+          if (desc.includes('promotional') || desc.includes('soft') || desc.includes('analytics') || desc.includes('analytical')) return 'PRM';
+          const lenderPatterns = /(bank|card|finance|credit|capital|auto|loan|mortgage|federal|fccu|fcu|us bank|keybank|jpmcb|chase|barclays|navy|pentagon|coaf|td auto|bmw|green)/;
+          if (lenderPatterns.test(subscriber)) return 'I';
+          return 'PRM';
+        };
         const inquiriesFormal = inquiriesIQ.map(({ inq, bi }, idx) => ({
           BureauId: bi ?? ((idx % 3) + 1),
           DateInquiry: (parseDate(inq?.['@inquiryDate']) || '')?.slice(0,10) || '',
           CreditorName: normalizeStr(inq?.['@subscriberName'] || ''),
-          InquiryType: normalizeStr(
-            inq?.InquiryType?.['@description'] || inq?.InquiryType?.['@abbreviation'] || inq?.['@inquiryType'] || ''
-          ),
+          InquiryType: toInquiryTypeFlag(inq),
           Industry: normalizeStr(
             inq?.IndustryCode?.['@description'] || inq?.IndustryCode?.['@abbreviation'] || inq?.Industry?.['@description'] || inq?.Industry?.['@abbreviation'] || ''
           )
@@ -1530,9 +1552,28 @@ const toDDMMYYYY = (s) => {
           BureauId: bi ?? ((idx % 3) + 1),
           DateReported: (parseDate(emp?.['@dateReported']) || '')?.slice(0,10) || '',
           DateUpdated: (parseDate(emp?.['@dateUpdated']) || '')?.slice(0,10) || '',
-          Position: '',
-          Income: 0
+          Position: normalizeStr(emp?.['@position'] || ''),
+          Income: toNumber(emp?.['@income'] || 0)
         }));
+        const addressesFormal = addressesIQ.map(({ addr, bi }, idx) => {
+          const ca = addr?.CreditAddress || {};
+          const streetRaw = normalizeStr(ca?.['@unparsedStreet'] || '');
+          const builtStreet = [normalizeStr(ca?.['@houseNumber'] || ''), normalizeStr(ca?.['@streetName'] || ''), normalizeStr(ca?.['@streetType'] || '')].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+          const street = streetRaw ? streetRaw.replace(/\s+/g,' ').trim() : builtStreet;
+          const city = normalizeStr(ca?.['@city'] || '');
+          const state = normalizeStr(ca?.['@stateCode'] || '');
+          const zip = normalizeStr(ca?.['@postalCode'] || '');
+          const order = normalizeStr(addr?.['@addressOrder'] || '');
+          const addressType = order === '0' ? 'Current' : 'Previous';
+          return {
+            BureauId: bi ?? ((idx % 3) + 1),
+            StreetAddress: street,
+            City: city,
+            State: state,
+            Zip: zip,
+            AddressType: addressType
+          };
+        }).filter(a => a.StreetAddress || a.City || a.State || a.Zip);
         const namesFormal = namesIQ.map(({ n, bi }, idx) => ({
           BureauId: bi ?? ((idx % 3) + 1),
           FirstName: normalizeStr(n?.Name?.['@first'] || ''),
@@ -1551,24 +1592,149 @@ const toDDMMYYYY = (s) => {
             DOB: date
           };
         });
-        const scoreArray = scoresIQ.map(({ s, bi }) => ({
-          BureauId: bi ?? null,
-          Score: normalizeStr(s?.['@riskScore'] || ''),
-          ScoreType: normalizeStr(s?.['@scoreName'] || s?.['@model'] || ''),
-          DateScore: (parseDate(reportData?.clientInfo?.timestamp) || '')?.slice(0,10) || null
-        })).filter(x => x.Score);
-        const creditReportDates = [1,2,3].map(id => ({ BureauId: id, DateReport: (parseDate(reportData?.clientInfo?.timestamp) || '')?.slice(0,10) || '' }));
+        const baseDateScore = (parseDate(reportData?.reportDate || reportData?.clientInfo?.timestamp) || '')?.slice(0,10) || '';
+        const bureauScoresMap = new Map();
+        for (const { s, bi } of scoresIQ) {
+          const id = bi ?? null;
+          if (!id) continue;
+          bureauScoresMap.set(id, {
+            BureauId: id,
+            Score: normalizeStr(s?.['@riskScore'] || '') || null,
+            ScoreType: normalizeStr(s?.['@scoreName'] || s?.['@model'] || ''),
+            DateScore: baseDateScore
+          });
+        }
+        const scoresArrayFull = [1,2,3].map(id => (bureauScoresMap.get(id) || { BureauId: id, Score: null, ScoreType: '', DateScore: baseDateScore }));
+        const creditorsMap = new Map();
+        const pushCreditor = (name, street, city, state, zip, phone, industry) => {
+          const key = [normalizeStr(name||''), normalizeStr(street||''), normalizeStr(city||''), normalizeStr(state||''), normalizeStr(zip||'')].join('|').toLowerCase();
+          if (!creditorsMap.has(key)) creditorsMap.set(key, { CreditorName: normalizeStr(name||''), StreetAddress: normalizeStr(street||''), City: normalizeStr(city||''), State: normalizeStr(state||''), Zip: normalizeStr(zip||''), Phone: normalizeStr(phone||''), Industry: normalizeStr(industry||'') });
+        };
+        for (const a of accountsFormal) { pushCreditor(a.CreditorName, '', '', '', '', '', a.Industry); }
+        for (const inq of inquiriesFormal) { pushCreditor(inq.CreditorName, '', '', '', '', '', inq.Industry); }
+        const creditorsArray = Array.from(creditorsMap.values()).map((c, idx) => ({ CreditorId: idx+1, ...c }));
+        const birthYears = birthsIQ.map(({ b }) => normalizeStr(b?.BirthDate?.['@year'] || '')).filter(Boolean);
+        const dobCandidates = birthsIQ.map(({ b }) => {
+          const y = normalizeStr(b?.BirthDate?.['@year'] || '');
+          const m = normalizeStr(b?.BirthDate?.['@month'] || '');
+          const d = normalizeStr(b?.BirthDate?.['@day'] || '');
+          const dateRaw = normalizeStr(b?.['@date'] || '');
+          const date = (parseDate(dateRaw || (y && m && d ? `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}` : '')) || '')?.slice(0,10) || '';
+          return date;
+        }).filter(Boolean);
+        const fullDob = dobCandidates[0] || null;
+        const yearOfBirth = birthYears[0] || '';
+        const fullName = (() => {
+          try {
+            const primary = namesFormal.find(n => /primary/i.test(normalizeStr(n?.NameType || '')));
+            const parts = [normalizeStr(primary?.FirstName||''), normalizeStr(primary?.Middle||''), normalizeStr(primary?.LastName||'')].filter(Boolean);
+            return parts.join(' ').trim() || '';
+          } catch { return ''; }
+        })();
+        let ssnLast4 = '';
+        try {
+          const socials = [];
+          const q2 = [{ node: raw }];
+          const seen2 = new Set();
+          while (q2.length) {
+            const { node } = q2.shift();
+            if (!node || typeof node !== 'object' || seen2.has(node)) continue;
+            seen2.add(node);
+            for (const k of Object.keys(node)) {
+              const v = node[k];
+              if (!v) continue;
+              if (k === 'Social' && Array.isArray(v)) { for (const s of v) { socials.push(s); } }
+              if (typeof v === 'object') q2.push({ node: v });
+            }
+          }
+          const ssnRaw = normalizeStr(socials[0]?.SocialSecurityNumber?.['$'] || '');
+          const digits = ssnRaw.replace(/[^0-9]/g,'');
+          ssnLast4 = digits.length >= 4 ? digits.slice(-4) : '';
+        } catch {}
+        const maskedSSN = `XXX-XX-${ssnLast4 || '0000'}`;
+        const identityBlock = { SSN: maskedSSN, YearOfBirth: yearOfBirth, FullDOB: fullDob, FullName: fullName };
+        const namesByBureau = new Map();
+        try {
+          for (const n of namesFormal) {
+            const id = n.BureauId;
+            const existing = namesByBureau.get(id);
+            const isPrimary = /primary/i.test(normalizeStr(n?.NameType || ''));
+            if (!existing || (isPrimary && !(/primary/i.test(normalizeStr(existing?.NameType || ''))))) {
+              namesByBureau.set(id, { BureauId: id, FirstName: n.FirstName || '', Middle: n.Middle || '', LastName: n.LastName || '', NameType: 'Primary' });
+            }
+          }
+        } catch {}
+        const fallbackName = { FirstName: normalizeStr(fullName).split(' ')[0] || '', Middle: '', LastName: (() => { const parts = normalizeStr(fullName).split(' '); return parts.length>1 ? parts[parts.length-1] : ''; })(), NameType: 'Primary' };
+        const namesArrayFull = [1,2,3].map(id => {
+          const v = namesByBureau.get(id);
+          return { BureauId: id, FirstName: v?.FirstName || fallbackName.FirstName, Middle: v?.Middle || fallbackName.Middle, LastName: v?.LastName || fallbackName.LastName, NameType: 'Primary' };
+        });
+        const dobsByBureau = new Map();
+        try { for (const d of dobsFormal) { if (d && d.BureauId) dobsByBureau.set(d.BureauId, d.DOB || ''); } } catch {}
+        const dobNorm = (s) => ((parseDate(s) || '')?.slice(0,10) || '');
+        const fallbackDob = dobNorm(fullDob || '');
+        const dobsArrayFull = [1,2,3].map(id => ({ BureauId: id, DOB: dobNorm(dobsByBureau.get(id) || fallbackDob) }));
+        const isNegative = (acc) => {
+          const ps = normalizeStr(acc?.PaymentStatus || '').toLowerCase();
+          const wps = normalizeStr(acc?.WorstPayStatus || '').toLowerCase();
+          const pastDue = parseFloat(normalizeStr(acc?.AmountPastDue || '0')) || 0;
+          if (/charge|collection/.test(ps)) return true;
+          if (/(30|60|90|120|150|180)/.test(wps)) return true;
+          if (/late|delinq/.test(ps)) return true;
+          if (pastDue > 0) return true;
+          return false;
+        };
+        const totalAccounts = accountsFormal.length;
+        const totalOpen = accountsFormal.filter(a => /open/i.test(normalizeStr(a.AccountCondition||''))).length;
+        const totalClosed = accountsFormal.filter(a => /closed/i.test(normalizeStr(a.AccountCondition||''))).length;
+        const totalNegative = accountsFormal.filter(isNegative).length;
+        const now = new Date();
+        const tsDate = new Date(reportData?.clientInfo?.timestamp || now.toISOString());
+        const monthsDiff = (d) => { try { const dd = new Date(d); return (now.getFullYear()-dd.getFullYear())*12 + (now.getMonth()-dd.getMonth()); } catch { return 999; } };
+        const inquiries24 = inquiriesFormal.filter(i => monthsDiff(i.DateInquiry) <= 24).length;
+        const prTotal = 0;
+        const totalBalances = accountsFormal.reduce((sum,a)=> sum + (parseFloat(normalizeStr(a.CurrentBalance||'0'))||0), 0);
+        const totalCreditLimit = accountsFormal.reduce((sum,a)=> sum + (parseFloat(normalizeStr(a.CreditLimit||'0'))||0), 0);
+        const summaryByBureau = [1,2,3].map(id => {
+          const accs = accountsFormal.filter(a => a.BureauId === id);
+          const inqs = inquiriesFormal.filter(i => i.BureauId === id);
+          const balances = accs.reduce((sum,a)=> sum + (parseFloat(normalizeStr(a.CurrentBalance||'0'))||0), 0);
+          const credit = accs.reduce((sum,a)=> sum + (parseFloat(normalizeStr(a.CreditLimit||'0'))||0), 0);
+          const open = accs.filter(a => /open/i.test(normalizeStr(a.AccountCondition||''))).length;
+          const closed = accs.filter(a => /closed/i.test(normalizeStr(a.AccountCondition||''))).length;
+          const negative = accs.filter(isNegative).length;
+          const inq24 = inqs.filter(i => monthsDiff(i.DateInquiry) <= 24).length;
+          return { BureauId: id, TotalAccounts: accs.length, TotalOpenAccounts: open, TotalClosedAccounts: closed, TotalNegativeAccounts: negative, TotalInquiriesLast24Months: inq24, TotalPublicRecords: prTotal, TotalBalances: balances, TotalCreditLimit: credit };
+        });
+        const summary = { TotalAccounts: totalAccounts, TotalOpenAccounts: totalOpen, TotalClosedAccounts: totalClosed, TotalNegativeAccounts: totalNegative, TotalInquiriesLast24Months: inquiries24, TotalPublicRecords: prTotal, TotalBalances: totalBalances, TotalCreditLimit: totalCreditLimit };
         const converted = {
-          reportData: {
-            CreditReport: creditReportDates,
-            Score: scoreArray,
-            Name: namesFormal,
-            DOB: dobsFormal,
+          report: {
+            Scores: scoresArrayFull,
             Accounts: accountsFormal,
             Inquiries: inquiriesFormal,
             PublicRecords: [],
-            Address: [],
-            Employer: employersFormal
+            Address: addressesFormal,
+            Employer: employersFormal,
+            Creditors: creditorsArray,
+            Summary: summary,
+            SummaryByBureau: summaryByBureau,
+            Identity: identityBlock,
+            Name: namesArrayFull,
+            DOB: dobsArrayFull
+          },
+          reportData: {
+            Scores: scoresArrayFull,
+            Accounts: accountsFormal,
+            Inquiries: inquiriesFormal,
+            PublicRecords: [],
+            Address: addressesFormal,
+            Employer: employersFormal,
+            Creditors: creditorsArray,
+            Summary: summary,
+            SummaryByBureau: summaryByBureau,
+            Identity: identityBlock,
+            Name: namesArrayFull,
+            DOB: dobsArrayFull
           },
           platform,
           clientId,
@@ -1578,7 +1744,7 @@ const toDDMMYYYY = (s) => {
             accounts: accountsFormal.length,
             inquiries: inquiriesFormal.length,
             employers: employersFormal.length,
-            scores: scoreArray.length
+            scores: scoresArrayFull.length
           }
         };
         try {
@@ -1589,9 +1755,8 @@ const toDDMMYYYY = (s) => {
           reportData.filePath = convertedPath;
           try {
             reportData.reportData = converted.reportData;
-            reportData.Score = converted.reportData?.Score;
-            reportData.CreditReport = converted.reportData?.CreditReport;
-            reportData.ReportDate = converted.reportData?.CreditReport?.[0]?.DateReport;
+            reportData.Score = converted.reportData?.Scores;
+            reportData.ReportDate = (parseDate(reportData?.clientInfo?.timestamp) || '')?.slice(0,10) || null;
           } catch {}
         } catch {}
       }
@@ -1615,13 +1780,18 @@ const toDDMMYYYY = (s) => {
       // Extract scores from reportData if available
       if (reportData && reportData.reportData && reportData.reportData.Score && Array.isArray(reportData.reportData.Score)) {
         const scores = reportData.reportData.Score;
-        
         scores.forEach(score => {
           const scoreValue = parseInt(score.Score);
           if (!isNaN(scoreValue)) {
-            if (score.BureauId === 1) transunionScore = scoreValue;
-            if (score.BureauId === 2) experianScore = scoreValue;
-            if (score.BureauId === 3) equifaxScore = scoreValue;
+            if (platform && String(platform).toLowerCase() === String(PLATFORMS.IDENTITYIQ).toLowerCase()) {
+              if (score.BureauId === 1) experianScore = scoreValue;
+              if (score.BureauId === 2) equifaxScore = scoreValue;
+              if (score.BureauId === 3) transunionScore = scoreValue;
+            } else {
+              if (score.BureauId === 1) transunionScore = scoreValue;
+              if (score.BureauId === 2) experianScore = scoreValue;
+              if (score.BureauId === 3) equifaxScore = scoreValue;
+            }
           }
         });
 
@@ -1635,9 +1805,15 @@ const toDDMMYYYY = (s) => {
         scores.forEach(score => {
           const scoreValue = parseInt(score.Score);
           if (!isNaN(scoreValue)) {
-            if (score.BureauId === 1) transunionScore = scoreValue;
-            if (score.BureauId === 2) experianScore = scoreValue;
-            if (score.BureauId === 3) equifaxScore = scoreValue;
+            if (platform && String(platform).toLowerCase() === String(PLATFORMS.IDENTITYIQ).toLowerCase()) {
+              if (score.BureauId === 1) experianScore = scoreValue;
+              if (score.BureauId === 2) equifaxScore = scoreValue;
+              if (score.BureauId === 3) transunionScore = scoreValue;
+            } else {
+              if (score.BureauId === 1) transunionScore = scoreValue;
+              if (score.BureauId === 2) experianScore = scoreValue;
+              if (score.BureauId === 3) equifaxScore = scoreValue;
+            }
           }
         });
         const validScores = [experianScore, equifaxScore, transunionScore].filter(score => score !== null);

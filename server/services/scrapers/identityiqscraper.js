@@ -437,40 +437,50 @@ async function fetchIdentityIQReport(username, password, options = {}) {
     } catch {}
     try { await page.waitForTimeout(3000); } catch {}
 
-    // Visit the chosen report page (CreditReport.aspx per your choice)
     console.log('[IdentityIQ] Clicking "View Credit Report" from dashboard...');
     await sleep(4000);
     let reportClicked = { success: false };
+    let navigated = false;
     try {
-      reportClicked = await page.evaluate(() => {
-        const patterns = /credit report|3.?bureau|view report|full report|credit scores|my report/i;
-        const els = Array.from(document.querySelectorAll('a, button, div[role="button"], span, li'));
-        for (const el of els) {
-          const text = (el.innerText || el.textContent || '');
-          const href = el.getAttribute('href') || '';
-          if (patterns.test(text) || /CreditReport\.aspx/i.test(href)) {
-            try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
-            el.click();
-            return { success: true, text: text.slice(0, 100) };
-          }
-        }
-        return { success: false };
-      });
+      await page.waitForSelector('a[href="/CreditReport.aspx"], a[href*="CreditReport.aspx"]', { timeout: 8000 });
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle0', timeout: Math.max(120000, config.waitTimeouts?.navigation || 120000) }),
+        page.click('a[href="/CreditReport.aspx"], a[href*="CreditReport.aspx"]')
+      ]);
+      navigated = /CreditReport\.aspx/i.test(page.url());
+      reportClicked.success = true;
     } catch {}
-    if (!reportClicked.success) {
+    if (!navigated) {
       try {
-        const clicked2 = await page.evaluate(() => {
-          const anchors = Array.from(document.querySelectorAll('a[href]'));
-          for (const a of anchors) {
-            const href = a.getAttribute('href') || '';
-            if (/CreditReport\.aspx/i.test(href)) { a.click(); return true; }
+        reportClicked = await page.evaluate(() => {
+          const patterns = /credit report|3.?bureau|view report|full report|credit scores|my report/i;
+          const els = Array.from(document.querySelectorAll('a, button, div[role="button"], span, li'));
+          for (const el of els) {
+            const text = (el.innerText || el.textContent || '');
+            const href = el.getAttribute('href') || '';
+            if (patterns.test(text) || /CreditReport\.aspx/i.test(href)) {
+              try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+              el.click();
+              return { success: true, text: text.slice(0, 100) };
+            }
           }
-          return false;
+          return { success: false };
         });
-        if (clicked2) reportClicked = { success: true };
       } catch {}
+      if (reportClicked.success) {
+        try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: Math.max(120000, config.waitTimeouts?.navigation || 120000) }); } catch {}
+        navigated = /CreditReport\.aspx/i.test(page.url());
+      }
     }
-    try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: Math.max(120000, config.waitTimeouts?.navigation || 120000) }); } catch {}
+    if (!navigated) {
+      console.log('[IdentityIQ] Fallback: navigating directly to CreditReport.aspx');
+      try {
+        await page.goto('https://member.identityiq.com/CreditReport.aspx', { waitUntil: 'networkidle0', timeout: Math.max(120000, config.waitTimeouts?.navigation || 120000) });
+        navigated = /CreditReport\.aspx/i.test(page.url());
+      } catch (e) {
+        console.warn('[IdentityIQ] Direct navigation to CreditReport.aspx failed:', e?.message || e);
+      }
+    }
     await sleep(8000);
     if (saveHtml) {
       try {

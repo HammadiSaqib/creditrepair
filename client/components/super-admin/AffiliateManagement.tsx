@@ -59,6 +59,7 @@ import {
   Percent,
   Target
 } from 'lucide-react';
+import { Copy } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
 import { format } from 'date-fns';
 
@@ -82,6 +83,7 @@ interface Affiliate {
   last_login?: string;
   created_at: string;
   updated_at: string;
+  referral_slug?: string;
   // Bank Details
   bank_name?: string;
   account_holder_name?: string;
@@ -836,20 +838,21 @@ const AffiliateManagement: React.FC = () => {
                     <TableHead>Status</TableHead>
                     <TableHead>Joined</TableHead>
                     <TableHead>Last Month Payment</TableHead>
+                    <TableHead>Referral Link</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8">
+                      <TableCell colSpan={9} className="text-center py-8">
                         <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
                         Loading affiliates...
                       </TableCell>
                     </TableRow>
                   ) : filteredAffiliates.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                         No affiliates found
                       </TableCell>
                     </TableRow>
@@ -914,6 +917,31 @@ const AffiliateManagement: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           {renderLastMonthPaymentCell(affiliate.id)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {(() => { const refPart = affiliate.referral_slug && affiliate.referral_slug.length > 0 ? affiliate.referral_slug : String(affiliate.id); const link = `${window.location.origin}/ref/${refPart}`; return (
+                              <>
+                                <Input
+                                  value={link}
+                                  readOnly
+                                  className="font-mono text-xs bg-slate-50 dark:bg-slate-800"
+                                />
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const refPart = affiliate.referral_slug && affiliate.referral_slug.length > 0 ? affiliate.referral_slug : String(affiliate.id);
+                                    const link = `${window.location.origin}/ref/${refPart}`;
+                                    navigator.clipboard.writeText(link);
+                                    toast({ title: 'Link Copied!', description: 'Referral link copied to clipboard' });
+                                  }}
+                                >
+                                  <Copy className="h-4 w-4" />
+                                </Button>
+                              </>
+                            ); })()}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end space-x-2">

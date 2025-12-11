@@ -41,6 +41,14 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
   try {
     const adminIdValue = req.user?.role === 'support' ? 2 : req.user.id;
     const userRole = req.user.role;
+    let hasReferralSlug = false;
+    try {
+      const colRes: any[] = await executeQuery(
+        `SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'affiliates' AND COLUMN_NAME = 'referral_slug'`,
+        []
+      );
+      hasReferralSlug = !!colRes && ((colRes[0]?.cnt || 0) > 0);
+    } catch {}
     
     let query = `
       SELECT 
@@ -76,14 +84,15 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
         a.paypal_email,
         a.stripe_account_id,
         a.created_at,
-        a.updated_at,
+        a.updated_at${hasReferralSlug ? ',\n        a.referral_slug' : ''},
         u.email as admin_email,
         u.first_name as admin_first_name,
         u.last_name as admin_last_name,
         pa.first_name as parent_first_name,
         pa.last_name as parent_last_name,
         pa.email as parent_email,
-        COALESCE(acsum.total_commission, 0) - COALESCE(cpsum.total_paid, 0) AS computed_total_earnings
+        COALESCE(acsum.total_commission, 0) - COALESCE(cpsum.total_paid, 0) AS computed_total_earnings,
+        COALESCE(rfsum.total_referrals, a.total_referrals) AS computed_total_referrals
       FROM affiliates a
       LEFT JOIN users u ON a.admin_id = u.id
       LEFT JOIN affiliates pa ON a.parent_affiliate_id = pa.id
@@ -98,6 +107,11 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
         WHERE status = 'completed'
         GROUP BY affiliate_id
       ) cpsum ON cpsum.affiliate_id = a.id
+      LEFT JOIN (
+        SELECT affiliate_id, COUNT(*) AS total_referrals
+        FROM affiliate_referrals
+        GROUP BY affiliate_id
+      ) rfsum ON rfsum.affiliate_id = a.id
     `;
     
     let queryParams = [];
@@ -132,7 +146,9 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
       total_earnings: (affiliate.computed_total_earnings != null
         ? parseFloat(affiliate.computed_total_earnings)
         : parseFloat(affiliate.total_earnings)) || 0,
-      total_referrals: parseInt(affiliate.total_referrals) || 0,
+      total_referrals: (affiliate.computed_total_referrals != null
+        ? parseInt(affiliate.computed_total_referrals)
+        : parseInt(affiliate.total_referrals)) || 0,
       status: affiliate.status,
       email_verified: affiliate.email_verified || false,
       last_login: affiliate.last_login,
@@ -149,6 +165,7 @@ router.get('/', authenticateToken, requireSuperAdminRole, async (req, res) => {
       stripe_account_id: affiliate.stripe_account_id,
       created_at: affiliate.created_at,
       updated_at: affiliate.updated_at,
+      referral_slug: hasReferralSlug ? affiliate.referral_slug : undefined,
       parent_info: affiliate.parent_first_name ? {
         first_name: affiliate.parent_first_name,
         last_name: affiliate.parent_last_name,
