@@ -224,74 +224,136 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
 
   const revolvingAccounts = useMemo(() => {
     if (!accounts) return [];
-    return accounts.filter(acc => 
-      (acc.type?.toLowerCase().includes('credit') || 
-       acc.type?.toLowerCase().includes('revolving') || 
-       acc.AccountType?.toLowerCase().includes('revolving') ||
-       acc.type === 'Credit Card') &&
-      (Number(acc.balance || acc.Balance || 0) > 0)
-    ).map((acc, index) => {
-      const balance = Number(acc.balance || acc.Balance || 0);
-      const limit = Number(acc.limit || acc.CreditLimit || 0);
-      
-      // Merge with payoff plan
-      const plan = payoffPlans.find(p => p.account_id === String(acc.id || index));
-      
-      return {
-        id: acc.id || index,
-        name: acc.creditor || acc.CreditorName || acc.name || 'Unknown Creditor',
-        balance,
-        limit,
-        utilization: limit > 0 ? (balance / limit) * 100 : 0,
-        age: calculateAge(acc.opened || acc.DateOpened),
-        apr: 0.24, // Mock APR
-        minPayment: Math.max(25, balance * 0.02),
-        plan
-      };
-    }).sort((a, b) => a.balance - b.balance);
+    const isRevolving = (acc: any) => {
+      const t = String(acc.type || '').toLowerCase();
+      const at = String(acc.AccountType || acc.AccountTypeDescription || '').toLowerCase();
+      return t.includes('credit') || t.includes('revolving') || at.includes('revolving') || acc.type === 'Credit Card';
+    };
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const clean = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const canonical = (s: any) => {
+      const t = clean(s);
+      if (/navyfederal|navyfcu/.test(t)) return 'navy federal credit union';
+      if (/creditone|crdtonebnk/.test(t)) return 'credit one bank';
+      if (/jpmcb|chase/.test(t)) return 'chase';
+      if (/americanexpress|amex/.test(t)) return 'american express';
+      if (/discover/.test(t)) return 'discover';
+      return norm(s);
+    };
+    const last4 = (s: any) => String(s || '').replace(/\D/g, '').slice(-4);
+    const raw = accounts.filter(isRevolving);
+    const groups = new Map<string, any>();
+    raw.forEach((acc: any, index: number) => {
+      const nameRaw = acc.creditor || acc.CreditorName || acc.name;
+      const nameKey = canonical(nameRaw);
+      const num4 = last4(acc.accountNumber || acc.AccountNumber);
+      const fallback = String(acc.DateOpened || acc.opened || '').slice(0, 7);
+      const effLimit = Number(acc.limit ?? acc.CreditLimit ?? acc.HighBalance ?? 0);
+      const bucket = effLimit > 0 ? Math.round(effLimit / 100) * 100 : 0;
+      const key = `${nameKey}|${num4 || bucket || fallback}`;
+      const balance = Number(acc.balance ?? acc.Balance ?? acc.CurrentBalance ?? 0);
+      const limit = Number(acc.limit ?? acc.CreditLimit ?? acc.HighBalance ?? 0);
+      const opened = acc.DateOpened || acc.opened || '';
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          id: acc.id ?? index,
+          name: nameRaw || 'Unknown Creditor',
+          balance,
+          limit,
+          opened
+        });
+      } else {
+        if (balance > (existing.balance ?? 0)) existing.balance = balance;
+        if (limit > (existing.limit ?? 0)) existing.limit = limit;
+        const openedDate = new Date(opened);
+        const existingDate = new Date(existing.opened || opened);
+        if (opened && !isNaN(openedDate.getTime()) && (isNaN(existingDate.getTime()) || openedDate < existingDate)) {
+          existing.opened = opened;
+        }
+      }
+    });
+    const unique = Array.from(groups.values());
+    return unique
+      .map((acc: any, index: number) => {
+        const plan = payoffPlans.find(p => p.account_id === String(acc.id ?? index));
+        const balance = Number(acc.balance || 0);
+        const limit = Number(acc.limit || 0);
+        const baseMin = Math.max(25, balance * 0.02);
+        const minPayment = balance <= 50 ? balance : Math.min(balance, baseMin);
+        return {
+          id: acc.id ?? index,
+          name: acc.name,
+          balance,
+          limit,
+          utilization: limit > 0 ? (balance / limit) * 100 : 0,
+          age: calculateAge(acc.opened),
+          apr: 0.24,
+          minPayment,
+          plan
+        };
+      })
+      .filter(a => a.balance > 0 && a.limit > 0)
+      .sort((a, b) => a.balance - b.balance);
   }, [accounts, payoffPlans]);
 
   const totalDebt = revolvingAccounts.reduce((sum, acc) => sum + acc.balance, 0);
 
-  const monthlyBudget = useMemo(() => {
-    if (totalDebt === 0) return 0;
-    const r = 0.24 / 12;
-    const n = payoffMonths;
-    // PMT formula: P * (r(1+r)^n) / ((1+r)^n - 1)
-    const pmt = totalDebt * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
-    return pmt;
-  }, [totalDebt, payoffMonths]);
+  const eligibleAccounts = useMemo(() => {
+    return revolvingAccounts.filter(a => a.limit > 0 && a.balance > 0);
+  }, [revolvingAccounts]);
 
-  const schedule = useMemo(() => {
-    if (revolvingAccounts.length === 0) return [];
-    let plan = [];
-    let currentBalances = revolvingAccounts.map(a => ({...a}));
-    
-    // Simulate one month to get current payment distribution
-    let budgetRemaining = monthlyBudget;
-    let monthDetails = { month: 1, payments: [] as any[] };
-    
-    currentBalances.forEach(acc => {
-        let payment = Math.min(acc.balance, acc.minPayment);
-        budgetRemaining -= payment;
-        monthDetails.payments.push({ id: acc.id, payment, balance: acc.balance });
-    });
-    
-    if (budgetRemaining > 0) {
-        for (let acc of currentBalances) {
-            let p = monthDetails.payments.find(pmt => pmt.id === acc.id);
-            if (p) {
-                let extra = budgetRemaining; // Dump all extra on first (smallest) account
-                p.payment += extra;
-                budgetRemaining = 0;
-                break; // Only apply to first one
-            }
-        }
+  const monthlyBudget = useMemo(() => {
+    return eligibleAccounts.reduce((sum, acc) => sum + acc.minPayment, 0) + 1;
+  }, [eligibleAccounts]);
+
+  const snowballPlan = useMemo(() => {
+    const sorted = eligibleAccounts.slice().sort((a, b) => a.balance - b.balance);
+    let extra = 1;
+    const out = [] as any[];
+    for (const acc of sorted) {
+      const monthlyPay = acc.minPayment + extra;
+      const months = monthlyPay > 0 ? Math.ceil(acc.balance / monthlyPay) : 0;
+      out.push({ id: acc.id, name: acc.name, minPayment: acc.minPayment, extraPayment: extra, payoffMonths: months });
+      extra += acc.minPayment;
     }
-    plan.push(monthDetails);
-    
-    return plan;
-  }, [revolvingAccounts, monthlyBudget]);
+    return out;
+  }, [eligibleAccounts]);
+
+  const oneMonth = useMemo(() => {
+    const updatedBalances: Record<string, number> = {};
+    const payments = eligibleAccounts.map(acc => ({ id: acc.id, minPayment: Math.min(acc.balance, acc.minPayment), extraPayment: 0, totalPayment: 0, balance: acc.balance }));
+    for (const p of payments) {
+      p.totalPayment = p.minPayment;
+      updatedBalances[String(p.id)] = Math.max(0, p.balance - p.minPayment);
+    }
+    if (eligibleAccounts.length > 0) {
+      const smallest = eligibleAccounts[0];
+      const ps = payments.find(x => x.id === smallest.id);
+      if (ps) {
+        const extraPay = Math.min(updatedBalances[String(ps.id)], 1);
+        ps.extraPayment = extraPay;
+        ps.totalPayment += extraPay;
+        updatedBalances[String(ps.id)] = Math.max(0, updatedBalances[String(ps.id)] - extraPay);
+      }
+    }
+    return { payments, updatedBalances };
+  }, [eligibleAccounts]);
+
+  const smallDebtOptions = useMemo(() => {
+    const out: Record<string, { months: number; monthly: number }[]> = {};
+    for (const acc of eligibleAccounts) {
+      if (acc.balance < 500) {
+        const opts = [] as { months: number; monthly: number }[];
+        for (let m = 1; m <= 6; m++) {
+          const monthly = Math.ceil(acc.balance / m);
+          opts.push({ months: m, monthly });
+        }
+        out[String(acc.id)] = opts;
+      }
+    }
+    return out;
+  }, [eligibleAccounts]);
 
   const handlePayoffVerify = () => {
     setPoints(prev => prev + 100);
@@ -508,100 +570,90 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
            <CardContent>
              <div className="rounded-md border overflow-x-auto">
                <Table>
-                 <TableHeader>
-                   <TableRow>
-                     <TableHead className="min-w-[150px]">Account</TableHead>
-                     <TableHead>Limit</TableHead>
-                     <TableHead>Balance</TableHead>
-                     <TableHead>Utilization</TableHead>
-                     <TableHead>Account Age</TableHead>
-                     <TableHead>To 30%</TableHead>
-                     <TableHead>To 25%</TableHead>
-                     <TableHead>To 20%</TableHead>
-                     <TableHead>To 15%</TableHead>
-                     <TableHead>To 10%</TableHead>
-                     <TableHead>To 5%</TableHead>
-                     <TableHead>To 0%</TableHead>
-                     <TableHead className="min-w-[120px]">Suggested Pay</TableHead>
-                     <TableHead>Actions</TableHead>
-                   </TableRow>
-                 </TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[150px]">Account</TableHead>
+                    <TableHead>Limit</TableHead>
+                    <TableHead>Balance</TableHead>
+                    <TableHead>Minimum Payment</TableHead>
+                    <TableHead>Payoff Time</TableHead>
+                    <TableHead>Percent Progress</TableHead>
+                    <TableHead>Updated Balance</TableHead>
+                    <TableHead>Plan Options</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
                  <TableBody>
-                   {revolvingAccounts.length > 0 ? revolvingAccounts.map((acc, idx) => {
-                     const firstMonth = schedule[0];
-                     const payment = firstMonth?.payments.find(p => p.id === acc.id)?.payment || acc.minPayment;
-                     
-                     return (
-                       <TableRow key={idx} className={acc.plan?.track_enabled ? "bg-green-50/50" : ""}>
-                         <TableCell className="font-medium">
-                           <div className="flex items-center gap-2">
-                             <div className="p-1.5 bg-rose-100 rounded-full text-rose-600">
-                                <CreditCard className="h-4 w-4" />
-                             </div>
-                             <div>
-                               <div>{acc.name}</div>
-                               {acc.plan?.track_enabled && (
-                                 <div className="text-xs text-green-600 font-medium flex items-center gap-1">
-                                   <CheckCircle2 className="h-3 w-3" />
-                                   Track Enabled
-                                 </div>
-                               )}
-                             </div>
-                           </div>
-                         </TableCell>
-                         <TableCell>${acc.limit.toLocaleString()}</TableCell>
-                         <TableCell>${acc.balance.toLocaleString()}</TableCell>
-                         <TableCell>
-                           <span className={acc.utilization > 30 ? "text-red-500 font-medium" : "text-green-600 font-medium"}>
-                             {acc.utilization.toFixed(0)}%
-                           </span>
-                         </TableCell>
-                         <TableCell>{acc.age}</TableCell>
-                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 30).toLocaleString()}</TableCell>
-                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 25).toLocaleString()}</TableCell>
-                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 20).toLocaleString()}</TableCell>
-                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 15).toLocaleString()}</TableCell>
-                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 10).toLocaleString()}</TableCell>
-                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 5).toLocaleString()}</TableCell>
-                         <TableCell>${calculatePayoffToTarget(acc.balance, acc.limit, 0).toLocaleString()}</TableCell>
-                         <TableCell className="font-bold text-green-600">${Math.ceil(payment).toLocaleString()}</TableCell>
-                         <TableCell>
-                           <div className="flex items-center gap-2">
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleEditClick(acc)}>
-                                <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
-                            </Button>
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={handlePayoffVerify}>
-                                <CheckCircle2 className="h-5 w-5 text-slate-300 hover:text-green-500 transition-colors" />
-                            </Button>
-                           </div>
-                         </TableCell>
-                       </TableRow>
-                     );
-                   }) : (
-                     <TableRow>
-                        <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
-                            No revolving accounts found.
+                  {eligibleAccounts.length > 0 ? eligibleAccounts.map((acc, idx) => {
+                    const planRec = snowballPlan.find(p => p.id === acc.id);
+                    const pm = oneMonth.payments.find(p => p.id === acc.id);
+                    const progressPct = pm && acc.balance > 0 ? Math.min(100, ((pm.totalPayment / acc.balance) * 100)) : 0;
+                    const updated = oneMonth.updatedBalances[String(acc.id)] ?? acc.balance;
+                    return (
+                      <TableRow key={idx} className={acc.plan?.track_enabled ? "bg-green-50/50" : ""}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-rose-100 rounded-full text-rose-600">
+                               <CreditCard className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <div>{acc.name}</div>
+                              {acc.plan?.track_enabled && (
+                                <div className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Track Enabled
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </TableCell>
-                     </TableRow>
-                   )}
+                        <TableCell>${acc.limit.toLocaleString()}</TableCell>
+                        <TableCell>${acc.balance.toLocaleString()}</TableCell>
+                        <TableCell className="font-bold">${Math.ceil(acc.minPayment).toLocaleString()}</TableCell>
+                        <TableCell>{planRec?.payoffMonths || 0} months</TableCell>
+                        <TableCell>
+                          <div className="text-xs font-medium">
+                            {progressPct.toFixed(1)}%
+                          </div>
+                        </TableCell>
+                        <TableCell>${Math.ceil(updated).toLocaleString()}</TableCell>
+                        <TableCell>
+                          {smallDebtOptions[String(acc.id)] ? (
+                            <div className="flex flex-wrap gap-1">
+                              {smallDebtOptions[String(acc.id)].map((opt, i) => (
+                                <Badge key={i} variant="outline" className="text-xs">
+                                  {opt.months}m ${opt.monthly}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleEditClick(acc)}>
+                               <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                           </Button>
+                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={handlePayoffVerify}>
+                               <CheckCircle2 className="h-5 w-5 text-slate-300 hover:text-green-500 transition-colors" />
+                           </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }) : (
+                    <TableRow>
+                       <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                           No revolving accounts found.
+                       </TableCell>
+                    </TableRow>
+                  )}
                  </TableBody>
                </Table>
              </div>
              
-             <div className="mt-6 bg-gradient-to-r from-yellow-50 to-orange-50 dark:from-yellow-900/10 dark:to-orange-900/10 p-4 rounded-xl border border-yellow-200 dark:border-yellow-800/50 flex flex-col sm:flex-row items-center justify-between gap-4">
-               <div className="flex items-center gap-4">
-                 <div className="p-3 bg-white dark:bg-slate-800 rounded-full shadow-sm">
-                    <Award className="h-8 w-8 text-yellow-500" />
-                 </div>
-                 <div>
-                   <div className="font-bold text-yellow-800 dark:text-yellow-500 text-lg">Prize Pool Leaderboard</div>
-                   <div className="text-sm text-yellow-700 dark:text-yellow-400">Current Rank: #4 • Next Reward: $10,000</div>
-                 </div>
-               </div>
-               <Button className="bg-yellow-500 hover:bg-yellow-600 text-white border-0 shadow-md">
-                 View Leaderboard
-               </Button>
-             </div>
+            
            </CardContent>
          </Card>
        </div>
@@ -1562,7 +1614,13 @@ export default function CreditReport() {
       if (!utilizationByBureau[bureauId]) return;
 
       // Revolving accounts (credit cards, lines of credit)
-      if (account.CreditType === 'Revolving Account' || account.AccountTypeDescription === 'Revolving Account') {
+      if (
+        account.CreditType === 'Revolving Account' ||
+        account.AccountTypeDescription === 'Revolving Account' ||
+        String(account.CreditType || '').toLowerCase().includes('credit card') ||
+        String(account.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+        String(account.AccountType || '').toLowerCase().includes('credit card')
+      ) {
         // All revolving accounts
         utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
         utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
@@ -2160,7 +2218,7 @@ export default function CreditReport() {
     const openRevolvingAccounts = accounts.filter((account: any) => {
       const accountType = account.CreditType || account.type || account.AccountType || '';
       const status = account.AccountStatus || account.status || '';
-      return accountType.toLowerCase().includes('revolving') && 
+      return (accountType.toLowerCase().includes('revolving') || accountType.toLowerCase().includes('credit card')) &&
              (status.toLowerCase() === 'open' || status.toLowerCase() === 'current');
     });
     
@@ -2266,7 +2324,13 @@ export default function CreditReport() {
     // Filter only open revolving accounts with positive limits - using correct field names from API
     const openRevolvingAccounts = accounts.filter(acc => {
       const isOpen = acc.AccountStatus === 'Open';
-      const isRevolving = acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account';
+      const isRevolving = (
+        acc.CreditType === 'Revolving Account' ||
+        acc.AccountTypeDescription === 'Revolving Account' ||
+        String(acc.CreditType || '').toLowerCase().includes('credit card') ||
+        String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+        String(acc.AccountType || '').toLowerCase().includes('credit card')
+      );
       const hasLimit = parseFloat(acc.CreditLimit || '0') > 0;
       
       if (acc.CreditorName && acc.CreditorName.includes('CAPITAL')) {
@@ -2921,7 +2985,13 @@ export default function CreditReport() {
               if (!utilizationByBureau[bureauId]) return;
 
               // Revolving accounts (credit cards, lines of credit)
-              if (account.CreditType === 'Revolving Account' || account.AccountTypeDescription === 'Revolving Account') {
+              if (
+                account.CreditType === 'Revolving Account' ||
+                account.AccountTypeDescription === 'Revolving Account' ||
+                String(account.CreditType || '').toLowerCase().includes('credit card') ||
+                String(account.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+                String(account.AccountType || '').toLowerCase().includes('credit card')
+              ) {
                 // All revolving accounts
                 utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
                 utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
@@ -3042,7 +3112,13 @@ export default function CreditReport() {
               const bureauAccounts = apiData.reportData?.Accounts?.filter((acc: any) => acc.BureauId === bureauId) || [];
               
               const openRevolvingAccounts = bureauAccounts.filter((acc: any) => 
-                (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account') && 
+                (
+                  acc.CreditType === 'Revolving Account' ||
+                  acc.AccountTypeDescription === 'Revolving Account' ||
+                  String(acc.CreditType || '').toLowerCase().includes('credit card') ||
+                  String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+                  String(acc.AccountType || '').toLowerCase().includes('credit card')
+                ) &&
                 (acc.AccountStatus === 'Open' || acc.AccountStatus === 'Current')
               );
               
@@ -3063,7 +3139,13 @@ export default function CreditReport() {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
                 const monthsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
-                return monthsOld <= 12 && (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account');
+                return monthsOld <= 12 && (
+                  acc.CreditType === 'Revolving Account' ||
+                  acc.AccountTypeDescription === 'Revolving Account' ||
+                  String(acc.CreditType || '').toLowerCase().includes('credit card') ||
+                  String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+                  String(acc.AccountType || '').toLowerCase().includes('credit card')
+                );
               });
               criteria[bureauId].maxFourUnsecuredIn12Months = recentUnsecuredAccounts.length <= 4;
 
@@ -7203,7 +7285,13 @@ export default function CreditReport() {
                 if (Array.isArray(apiAccounts) && apiAccounts.length > 0) {
                   accounts = apiAccounts
                     .filter((acc: any) =>
-                      (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account') &&
+                      (
+                        acc.CreditType === 'Revolving Account' ||
+                        acc.AccountTypeDescription === 'Revolving Account' ||
+                        String(acc.CreditType || '').toLowerCase().includes('credit card') ||
+                        String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+                        String(acc.AccountType || '').toLowerCase().includes('credit card')
+                      ) &&
                       ((parseFloat(acc.CreditLimit) || parseFloat(acc.HighBalance) || 0) > 0)
                     )
                     .map((acc: any) => ({
@@ -8730,12 +8818,36 @@ export default function CreditReport() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <DebtConsolidationView 
-                accounts={reportData?.accounts || detailedReport.accounts} 
-                payoffPlans={payoffPlans}
-                onSavePlan={handleSavePayoffPlan}
-                clientId={clientId}
-              />
+              {(() => {
+                const raw = reportData?.accounts || detailedReport.accounts || [];
+                const seen = new Map<string, boolean>();
+                const normalizeName = (s: any) => String(s || '').split('/')?.[0]?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+                const deduped: any[] = [];
+                for (const acc of raw) {
+                  const name = normalizeName((acc as any).CreditorName || (acc as any).creditor);
+                  const digits = String((acc as any).AccountNumber || (acc as any).accountNumber || '').replace(/\D/g, '');
+                  const len = digits.length;
+                  const limitVal = parseFloat((acc as any).CreditLimit || (acc as any).limit || (acc as any).HighBalance || '0') || 0;
+                  const limitKey = Math.round(limitVal);
+                  const prefix6 = digits.slice(0, 6);
+                  const prefix5 = digits.slice(0, 5);
+                  const key = len >= 6
+                    ? prefix6
+                    : [name, prefix5 || (digits || 'na'), limitKey].join('|');
+                  if (!seen.has(key)) {
+                    seen.set(key, true);
+                    deduped.push(acc);
+                  }
+                }
+                return (
+                  <DebtConsolidationView
+                    accounts={deduped}
+                    payoffPlans={payoffPlans}
+                    onSavePlan={handleSavePayoffPlan}
+                    clientId={clientId}
+                  />
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
@@ -8761,10 +8873,12 @@ export default function CreditReport() {
                   return [];
                 }
 
-                const grouped = {};
-                const accountGroupTracker = new Set(); // Track unique account groups by first 5 digits + account type
-                
-                reportData.accounts.forEach(account => {
+                const grouped: Record<string, any> = {};
+
+                const normName = (s: any) => String(s || '').split('/')?.[0]?.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const digitsOnly = (s: any) => String(s || '').replace(/\D/g, '');
+
+                reportData.accounts.forEach((account) => {
                   const creditorName = account.CreditorName || account.creditor || 'Unknown';
                   const accountNumber =
                     account.AccountNumber ||
@@ -8775,99 +8889,43 @@ export default function CreditReport() {
                     account.maskedAccountNumber ||
                     'N/A';
                   const accountType = account.AccountTypeDescription || account.CreditType || account.type || 'N/A';
-                  
-                  // Get first 5 digits of account number for grouping
-                  const normalizedAccountNumber = accountNumber.toString().replace(/[\s\-]/g, '');
-                  const first5Digits = normalizedAccountNumber.substring(0, 5);
-                  
-                  // Create a unique identifier based on first 5 digits + account type
-                  const groupIdentifier = `${first5Digits}_${accountType}`.toLowerCase();
-                  
-                  // Check if this account group already exists
-                  const existingKey = Object.keys(grouped).find(key => {
-                    const existingAccountNumber = grouped[key].accountNumber.toString().replace(/[\s\-]/g, '');
-                    const existingFirst5 = existingAccountNumber.substring(0, 5);
-                    const existingType = grouped[key].type;
-                    const existingIdentifier = `${existingFirst5}_${existingType}`.toLowerCase();
-                    return existingIdentifier === groupIdentifier;
+
+                  const numDigits = digitsOnly(accountNumber);
+                  const prefix6 = numDigits.slice(0, 6);
+                  const prefix5 = numDigits.slice(0, 5);
+                  const limitVal = parseFloat(account.CreditLimit || account.creditLimit || account.limit || account.HighBalance || '0') || 0;
+                  const nameKey = normName(creditorName);
+                  const idKey = numDigits.length >= 6
+                    ? prefix6
+                    : [nameKey, prefix5 || 'na', Math.round(limitVal)].join('|');
+
+                  const existingKey = Object.keys(grouped).find((k) => {
+                    const g = grouped[k];
+                    const gDigits = digitsOnly(g.accountNumber);
+                    const gPrefix6 = gDigits.slice(0, 6);
+                    const gPrefix5 = gDigits.slice(0, 5);
+                    const nameMatch = normName(g.creditor) === nameKey;
+                    const numExact = gDigits.length > 0 && numDigits.length > 0 && gDigits === numDigits;
+                    const num6Match = prefix6 && gPrefix6 && gPrefix6 === prefix6;
+                    const limits = Object.values(g.bureaus || {});
+                    const withinLimit = limits.length === 0 ? true : limits.some((b: any) => Math.abs(parseFloat(b.limit || 0) - limitVal) <= 100);
+                    const num5Match = numDigits.length < 6 && numDigits.length >= 5 && prefix5 && gPrefix5 && gPrefix5 === prefix5 && withinLimit;
+                    const typeMatch = String(g.type || '').toLowerCase() === String(accountType || '').toLowerCase();
+                    return (num6Match || numExact || (nameMatch && num5Match)) && typeMatch;
                   });
-                  
-                  if (existingKey && accountNumber !== 'N/A') {
-                    // Merge bureau data into existing group
-                    const bureauName = account.bureau || 'Unknown';
-                    grouped[existingKey].bureaus[bureauName] = {
-                      balance: account.CurrentBalance || account.balance || 0,
-                      limit: account.CreditLimit || account.creditLimit || account.limit || 0,
-                      status: account.AccountStatus || account.status || 'Unknown',
-                      utilization: account.utilization || (() => {
-                        const balance = parseInt(account.CurrentBalance || 0);
-                        const creditLimit = parseInt(account.CreditLimit || 0);
-                        const highBalance = parseInt(account.HighBalance || 0);
-                        
-                        // Use High Balance as credit limit when Credit Limit is 0
-                        const effectiveLimit = creditLimit > 0 ? creditLimit : highBalance;
-                        
-                        if (balance && effectiveLimit > 0) {
-                          return Math.round((balance / effectiveLimit) * 100);
-                        }
-                        return 0;
-                      })(),
-                      opened: account.DateOpened || account.dateOpened || account.opened,
-                      paymentHistory: account.PaymentStatus || account.paymentHistory || 'N/A',
-                      designator: account.AccountDesignator || account.designator || 'N/A',
-                      reported: account.DateReported || account.dateReported || account.reported,
-                      pastDue: account.AmountPastDue || account.pastDue || 0,
-                      highBalance: account.HighBalance || account.highBalance || 0,
-                      industry: account.Industry || account.industry || 'N/A',
-                      worstStatus: account.WorstPayStatus || account.worstStatus || 'N/A',
-                      remark: account.Remark || account.remark || 'N/A',
-                      payStatusHistory: account.PayStatusHistory || account.payStatusHistory || 'N/A',
-                      payStatusHistoryStartDate: account.PayStatusHistoryStartDate || account.payStatusHistoryStartDate || 'N/A',
-                      // Ensure creditor and account number are present for merged bureaus
-                      creditorName: account.CreditorName || account.creditor || 'Unknown',
-                      accountNumber: (
-                        account.AccountNumber ||
-                        account.accountNumber ||
-                        account.MaskAccountNumber ||
-                        account.maskAccountNumber ||
-                        account.MaskedAccountNumber ||
-                        account.maskedAccountNumber ||
-                        'N/A'
-                      ),
-                      // Add additional bureau-specific fields to avoid N/A in TU/EQ
-                      creditType: account.CreditType || account.creditType || grouped[existingKey]?.type || 'N/A',
-                      accountTypeDescription: account.AccountTypeDescription || account.accountTypeDescription || 'N/A',
-                      accountType: account.AccountType || account.accountType || 'N/A',
-                      paymentFrequency: account.PaymentFrequency || account.paymentFrequency || 'N/A',
-                      accountCondition: account.AccountCondition || account.accountCondition || account.AccountStatus || 'N/A',
-                      disputeFlag: account.DisputeFlag || account.disputeFlag || 'N/A'
-                      ,
-                      // Ensure status date is carried per bureau
-                      dateAccountStatus: account.DateAccountStatus || account.dateAccountStatus || 'N/A'
-                    };
-                    return; // Skip creating new group
-                  }
-                  
-                  // Create a unique key based on creditor name, first 5 digits, and account type
-                  const key = `${creditorName}_${first5Digits}_${accountType}`;
-                  
-                  if (!grouped[key]) {
-                    grouped[key] = {
+
+                  const targetKey = existingKey || idKey;
+                  if (!grouped[targetKey]) {
+                    grouped[targetKey] = {
                       creditor: creditorName,
                       accountNumber: accountNumber,
                       type: accountType,
                       bureaus: {}
                     };
-                    
-                    // Track this account group to prevent duplicates
-                    if (accountNumber !== 'N/A') {
-                      accountGroupTracker.add(groupIdentifier);
-                    }
                   }
-                  
-                  // Add account data for this bureau
+
                   const bureauName = account.bureau || 'Unknown';
-                  grouped[key].bureaus[bureauName] = {
+                  grouped[targetKey].bureaus[bureauName] = {
                     balance: account.CurrentBalance || account.balance || 0,
                     limit: account.CreditLimit || account.creditLimit || account.limit || 0,
                     status: account.AccountStatus || account.status || 'Unknown',
@@ -8895,7 +8953,7 @@ export default function CreditReport() {
                     disputeFlag: account.DisputeFlag || account.disputeFlag || 'N/A'
                   };
                 });
-                
+
                 return Object.values(grouped);
               };
 
@@ -11941,9 +11999,9 @@ export default function CreditReport() {
                     return reportData.inquiries.filter(inquiry => inquiry.bureau === bureauId) || [];
                   };
 
-                  const experianInquiries = getBureauInquiries('Experian');
+                  const experianInquiries = getBureauInquiries('Equifax');
                   const transUnionInquiries = getBureauInquiries('TransUnion');
-                  const equifaxInquiries = getBureauInquiries('Equifax');
+                  const equifaxInquiries = getBureauInquiries('Experian');
 
                   return (
                     <>
@@ -12356,16 +12414,16 @@ export default function CreditReport() {
               </CardHeader>
           <CardContent>
             {(() => {
-              // Group accounts by creditor and account number for comparison
               const groupAccountsForComparison = () => {
                 if (!reportData.accounts || reportData.accounts.length === 0) {
                   return [];
                 }
 
-                const grouped = {};
-                const accountNumberTracker = new Set(); // Track unique account numbers
-                
-                reportData.accounts.forEach(account => {
+                const grouped: Record<string, any> = {};
+                const normName = (s: any) => String(s || '').split('/')?.[0]?.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const digitsOnly = (s: any) => String(s || '').replace(/\D/g, '');
+
+                reportData.accounts.forEach((account) => {
                   const creditorName = account.CreditorName || account.creditor || 'Unknown';
                   const accountNumber =
                     account.AccountNumber ||
@@ -12375,131 +12433,72 @@ export default function CreditReport() {
                     account.MaskedAccountNumber ||
                     account.maskedAccountNumber ||
                     'N/A';
-                  
-                  // Normalize account number for comparison (remove spaces, dashes, etc.)
-                  const normalizedAccountNumber = accountNumber.toString().replace(/[\s\-]/g, '').toLowerCase();
-                  
-                  // Skip if this exact account number has already been processed
-                  if (accountNumber !== 'N/A' && accountNumberTracker.has(normalizedAccountNumber)) {
-                    // Find existing group with same account number and merge bureau data
-                    const existingKey = Object.keys(grouped).find(key => {
-                      const existingAccountNumber = grouped[key].accountNumber.toString().replace(/[\s\-]/g, '').toLowerCase();
-                      return existingAccountNumber === normalizedAccountNumber;
-                    });
-                    
-                  if (existingKey) {
-                      const bureauName = account.bureau || 'Unknown';
-                      grouped[existingKey].bureaus[bureauName] = {
-                        // Core monetary and status fields
-                        balance: account.CurrentBalance || account.balance || 0,
-                        limit: account.CreditLimit || account.creditLimit || account.limit || 0,
-                        status: account.AccountStatus || account.status || 'Unknown',
-                        utilization: account.utilization || (calculateAccountUtilization(account)?.utilization ?? 0),
-                        opened: account.DateOpened || account.dateOpened || account.opened,
-                        reported: account.DateReported || account.dateReported || account.reported,
-                        pastDue: account.AmountPastDue || account.pastDue || 0,
-                        highBalance: account.HighBalance || account.highBalance || 0,
+                  const accountType = account.AccountTypeDescription || account.CreditType || account.type || 'N/A';
 
-                        // Descriptive fields
-                        designator: account.AccountDesignator || account.designator || 'N/A',
-                        industry: account.Industry || account.industry || 'N/A',
-                        worstStatus: account.WorstPayStatus || account.worstStatus || 'N/A',
-                        remark: account.Remark || account.remark || 'N/A',
+                  const numDigits = digitsOnly(accountNumber);
+                  const prefix6 = numDigits.slice(0, 6);
+                  const prefix5 = numDigits.slice(0, 5);
+                  const limitVal = parseFloat(account.CreditLimit || account.creditLimit || account.limit || account.HighBalance || '0') || 0;
+                  const nameKey = normName(creditorName);
+                  const idKey = numDigits.length >= 6
+                    ? prefix6
+                    : [nameKey, prefix5 || 'na', Math.round(limitVal)].join('|');
 
-                        // History fields
-                        paymentHistory: account.PaymentStatus || account.paymentHistory || 'N/A',
-                        payStatusHistory: account.PayStatusHistory || account.payStatusHistory || 'N/A',
-                        payStatusHistoryStartDate: account.PayStatusHistoryStartDate || account.payStatusHistoryStartDate || 'N/A',
+                  const existingKey = Object.keys(grouped).find((k) => {
+                    const g = grouped[k];
+                    const gDigits = digitsOnly(g.accountNumber);
+                    const gPrefix6 = gDigits.slice(0, 6);
+                    const gPrefix5 = gDigits.slice(0, 5);
+                    const nameMatch = normName(g.creditor) === nameKey;
+                    const numExact = gDigits.length > 0 && numDigits.length > 0 && gDigits === numDigits;
+                    const num6Match = prefix6 && gPrefix6 && gPrefix6 === prefix6;
+                    const limits = Object.values(g.bureaus || {});
+                    const withinLimit = limits.length === 0 ? true : limits.some((b: any) => Math.abs(parseFloat(b.limit || 0) - limitVal) <= 100);
+                    const num5Match = numDigits.length < 6 && numDigits.length >= 5 && prefix5 && gPrefix5 && gPrefix5 === prefix5 && withinLimit;
+                    const typeMatch = String(g.type || '').toLowerCase() === String(accountType || '').toLowerCase();
+                    return (num6Match || numExact || (nameMatch && num5Match)) && typeMatch;
+                  });
 
-                        // Bureau-identifying/account basics
-                        creditorName: creditorName,
-                        accountNumber:
-                          account.AccountNumber ||
-                          account.accountNumber ||
-                          account.MaskAccountNumber ||
-                          account.maskAccountNumber ||
-                          account.MaskedAccountNumber ||
-                          account.maskedAccountNumber ||
-                          'N/A',
-
-                        // Additional bureau-specific metadata
-                        creditType: account.CreditType || account.creditType || account.AccountType || 'N/A',
-                        accountTypeDescription: account.AccountTypeDescription || account.accountTypeDescription || account.AccountType || 'N/A',
-                        accountType: account.AccountType || account.accountType || account.AccountTypeDescription || 'N/A',
-                        paymentFrequency: account.PaymentFrequency || account.paymentFrequency || 'N/A',
-                        termType: account.TermType || account.termType || 'N/A',
-                        dateAccountStatus: account.DateAccountStatus || account.dateAccountStatus || 'N/A',
-                        accountCondition: account.AccountCondition || account.accountCondition || account.AccountStatus || 'N/A',
-                        disputeFlag: account.DisputeFlag || account.disputeFlag || 'N/A'
-                      };
-                    }
-                    return; // Skip creating new group
-                  }
-                  
-                  // Create a unique key based on creditor name and account number
-                  const key = `${creditorName}_${accountNumber}`;
-                  
-                  if (!grouped[key]) {
-                    grouped[key] = {
+                  const targetKey = existingKey || idKey;
+                  if (!grouped[targetKey]) {
+                    grouped[targetKey] = {
                       creditor: creditorName,
                       accountNumber: accountNumber,
-                      type: account.AccountTypeDescription || account.CreditType || account.type || 'N/A',
+                      type: accountType,
                       bureaus: {}
                     };
-                    
-                    // Track this account number to prevent duplicates
-                    if (accountNumber !== 'N/A') {
-                      accountNumberTracker.add(normalizedAccountNumber);
-                    }
                   }
-                  
-                  // Add account data for this bureau
+
                   const bureauName = account.bureau || 'Unknown';
-                  grouped[key].bureaus[bureauName] = {
-                    // Core monetary and status fields
+                  grouped[targetKey].bureaus[bureauName] = {
                     balance: account.CurrentBalance || account.balance || 0,
                     limit: account.CreditLimit || account.creditLimit || account.limit || 0,
                     status: account.AccountStatus || account.status || 'Unknown',
                     utilization: account.utilization || (calculateAccountUtilization(account)?.utilization ?? 0),
                     opened: account.DateOpened || account.dateOpened || account.opened,
+                    paymentHistory: account.PaymentStatus || account.paymentHistory || 'N/A',
+                    designator: account.AccountDesignator || account.designator || 'N/A',
                     reported: account.DateReported || account.dateReported || account.reported,
                     pastDue: account.AmountPastDue || account.pastDue || 0,
                     highBalance: account.HighBalance || account.highBalance || 0,
-
-                    // Descriptive fields
-                    designator: account.AccountDesignator || account.designator || 'N/A',
                     industry: account.Industry || account.industry || 'N/A',
                     worstStatus: account.WorstPayStatus || account.worstStatus || 'N/A',
                     remark: account.Remark || account.remark || 'N/A',
-
-                    // History fields
-                    paymentHistory: account.PaymentStatus || account.paymentHistory || 'N/A',
                     payStatusHistory: account.PayStatusHistory || account.payStatusHistory || 'N/A',
                     payStatusHistoryStartDate: account.PayStatusHistoryStartDate || account.payStatusHistoryStartDate || 'N/A',
-
-                    // Bureau-identifying/account basics
                     creditorName: creditorName,
-                    accountNumber:
-                      account.AccountNumber ||
-                      account.accountNumber ||
-                      account.MaskAccountNumber ||
-                      account.maskAccountNumber ||
-                      account.MaskedAccountNumber ||
-                      account.maskedAccountNumber ||
-                      'N/A',
-
-                    // Additional bureau-specific metadata
-                    creditType: account.CreditType || account.creditType || account.AccountType || 'N/A',
-                    accountTypeDescription: account.AccountTypeDescription || account.accountTypeDescription || account.AccountType || 'N/A',
-                    accountType: account.AccountType || account.accountType || account.AccountTypeDescription || 'N/A',
+                    accountNumber: accountNumber,
+                    creditType: account.CreditType || account.creditType || accountType || 'N/A',
+                    accountTypeDescription: account.AccountTypeDescription || account.accountTypeDescription || 'N/A',
+                    accountType: account.AccountType || account.accountType || 'N/A',
                     paymentFrequency: account.PaymentFrequency || account.paymentFrequency || 'N/A',
                     termType: account.TermType || account.termType || 'N/A',
                     dateAccountStatus: account.DateAccountStatus || account.dateAccountStatus || 'N/A',
-                    accountCondition: account.AccountCondition || account.accountCondition || account.AccountStatus || 'N/A',
+                    accountCondition: account.AccountCondition || account.accountCondition || 'N/A',
                     disputeFlag: account.DisputeFlag || account.disputeFlag || 'N/A'
                   };
                 });
-                
+
                 return Object.values(grouped);
               };
 
@@ -13933,9 +13932,9 @@ export default function CreditReport() {
                     return reportData.inquiries.filter(inquiry => inquiry.bureau === bureauId) || [];
                   };
 
-                  const experianInquiries = getBureauInquiries('Experian');
+                  const experianInquiries = getBureauInquiries('Equifax');
                   const transUnionInquiries = getBureauInquiries('TransUnion');
-                  const equifaxInquiries = getBureauInquiries('Equifax');
+                  const equifaxInquiries = getBureauInquiries('Experian');
 
                   return (
                     <>
