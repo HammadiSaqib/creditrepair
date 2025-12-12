@@ -26,9 +26,10 @@ interface AddClientDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  mode?: "scrape" | "manual";
 }
 
-export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClientDialogProps) {
+export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "scrape" }: AddClientDialogProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -39,6 +40,22 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
     ssnLast4: "",
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [manualClient, setManualClient] = useState({
+    first_name: "",
+    last_name: "",
+    email: "",
+    phone: "",
+    date_of_birth: "",
+    address: "",
+    city: "",
+    state: "",
+    zip_code: "",
+    notes: "",
+    platform: "",
+    platform_email: "",
+    platform_password: "",
+  });
+  const [showManualPassword, setShowManualPassword] = useState(false);
 
   const handleSubmitClient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -500,6 +517,99 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
     }
   };
 
+  const handleSubmitManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const token = localStorage.getItem("auth_token");
+      if (!token) {
+        toast({
+          title: "Authentication Required",
+          description: "Please log in to add a new client.",
+          variant: "destructive",
+        });
+        navigate("/login");
+        return;
+      }
+
+      if (!manualClient.first_name || !manualClient.last_name || !manualClient.email) {
+        toast({
+          title: "Missing Information",
+          description: "First name, last name and email are required.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const selectedPlatform = manualClient.platform || undefined;
+      const platformNote = manualClient.platform
+        ? (["transunion", "experian", "equifax", "creditkarma"].includes(manualClient.platform)
+            ? `Saved platform: ${manualClient.platform} (not pullable)`
+            : `Saved platform: ${manualClient.platform} (pullable)`)
+        : "";
+
+      const data = {
+        first_name: manualClient.first_name,
+        last_name: manualClient.last_name,
+        email: manualClient.email,
+        phone: manualClient.phone || undefined,
+        date_of_birth: manualClient.date_of_birth || undefined,
+        address: manualClient.address || undefined,
+        city: manualClient.city || undefined,
+        state: manualClient.state || undefined,
+        zip_code: manualClient.zip_code || undefined,
+        status: "active" as const,
+        platform: selectedPlatform,
+        platform_email: manualClient.platform_email || undefined,
+        platform_password: manualClient.platform_password || undefined,
+        notes: (manualClient.notes || "Client created manually") + (platformNote ? ` | ${platformNote}` : ""),
+      };
+
+      const response = await clientsApi.createClient(data);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      setManualClient({
+        first_name: "",
+        last_name: "",
+        email: "",
+        phone: "",
+        date_of_birth: "",
+        address: "",
+        city: "",
+        state: "",
+        zip_code: "",
+        notes: "",
+        platform: "",
+        platform_email: "",
+        platform_password: "",
+      });
+      onClose();
+
+      if (onSuccess) {
+        onSuccess();
+      }
+
+      toast({
+        title: "Success!",
+        description: `Client ${data.first_name} ${data.last_name} has been added manually.`,
+      });
+
+      // Stay on the current page after manual addition
+    } catch (error: any) {
+      console.error("Error adding client manually:", error);
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to add client",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleClose = () => {
     // Reset form when closing
     setNewClient({
@@ -507,6 +617,18 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
       email: "",
       password: "",
       ssnLast4: "",
+    });
+    setManualClient({
+      first_name: "",
+      last_name: "",
+      email: "",
+      phone: "",
+      date_of_birth: "",
+      address: "",
+      city: "",
+      state: "",
+      zip_code: "",
+      notes: "",
     });
     onClose();
   };
@@ -518,116 +640,294 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess }: AddClien
           <DialogTitle className="gradient-text-primary">
             Add New Client
           </DialogTitle>
-          <DialogDescription>
-            Enter the client's credit monitoring platform credentials to automatically import their information.
-          </DialogDescription>
+          {mode === "scrape" ? (
+            <DialogDescription>
+              Enter the client's credit monitoring platform credentials to automatically import their information.
+            </DialogDescription>
+          ) : (
+            <DialogDescription>
+              Enter the client's personal information to create the profile.
+            </DialogDescription>
+          )}
         </DialogHeader>
-        <form onSubmit={handleSubmitClient} className="space-y-6">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="platform">Credit Monitoring Platform</Label>
-              <Select
-                value={newClient.platform}
-                onValueChange={(value) =>
-                  setNewClient({ ...newClient, platform: value })
-                }
-                required
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select platform" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="myfreescorenow">My Free Score Now</SelectItem>
-                  <SelectItem value="identityiq">IdentityIQ</SelectItem>
-                  <SelectItem value="myscoreiq">MyScoreIQ</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">Platform Email/Username</Label>
-              <Input
-                id="email"
-                type="email"
-                value={newClient.email}
-                onChange={(e) =>
-                  setNewClient({ ...newClient, email: e.target.value })
-                }
-                placeholder="Enter platform email"
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Platform Password</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={newClient.password}
-                  onChange={(e) =>
-                    setNewClient({ ...newClient, password: e.target.value })
-                  }
-                  placeholder="Enter platform password"
-                  required
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  aria-pressed={showPassword}
-                  title={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-5 w-5" />
-                  ) : (
-                    <Eye className="h-5 w-5" />
-                  )}
-                </button>
-              </div>
-            </div>
-            {(newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && (
+        {mode === "scrape" ? (
+          <form onSubmit={handleSubmitClient} className="space-y-6">
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="ssnLast4">SSN Last 4 *</Label>
-                <Input
-                  id="ssnLast4"
-                  type="tel"
-                  inputMode="numeric"
-                  pattern="[0-9]{4}"
-                  maxLength={4}
-                  autoComplete="off"
-                  title="Please enter 4 digits (e.g., 1234)"
-                  value={newClient.ssnLast4}
-                  onChange={(e) =>
-                    setNewClient({ ...newClient, ssnLast4: e.target.value.replace(/[^0-9]/g, "") })
+                <Label htmlFor="platform">Credit Monitoring Platform</Label>
+                <Select
+                  value={newClient.platform}
+                  onValueChange={(value) =>
+                    setNewClient({ ...newClient, platform: value })
                   }
-                  placeholder="1234"
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select platform" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="myfreescorenow">My Free Score Now</SelectItem>
+                    <SelectItem value="identityiq">IdentityIQ</SelectItem>
+                    <SelectItem value="myscoreiq">MyScoreIQ</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email">Platform Email/Username</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={newClient.email}
+                  onChange={(e) => setNewClient({ ...newClient, email: e.target.value })}
+                  placeholder="Enter platform email"
                   required
                 />
               </div>
-            )}
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="gradient-primary"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Adding Client..." : "Add Client"}
-            </Button>
-          </DialogFooter>
-        </form>
+              <div className="space-y-2">
+                <Label htmlFor="password">Platform Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={newClient.password}
+                    onChange={(e) => setNewClient({ ...newClient, password: e.target.value })}
+                    placeholder="Enter platform password"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              {(newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && (
+                <div className="space-y-2">
+                  <Label htmlFor="ssnLast4">SSN Last 4 *</Label>
+                  <Input
+                    id="ssnLast4"
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]{4}"
+                    maxLength={4}
+                    autoComplete="off"
+                    title="Please enter 4 digits (e.g., 1234)"
+                    value={newClient.ssnLast4}
+                    onChange={(e) =>
+                      setNewClient({ ...newClient, ssnLast4: e.target.value.replace(/[^0-9]/g, "") })
+                    }
+                    placeholder="1234"
+                    required
+                  />
+                </div>
+              )}
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClose}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="gradient-primary"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Adding Client..." : "Add Client"}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <form onSubmit={handleSubmitManual} className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="first_name">First Name</Label>
+                <Input
+                  id="first_name"
+                  value={manualClient.first_name}
+                  onChange={(e) => setManualClient({ ...manualClient, first_name: e.target.value })}
+                  placeholder="John"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="last_name">Last Name</Label>
+                <Input
+                  id="last_name"
+                  value={manualClient.last_name}
+                  onChange={(e) => setManualClient({ ...manualClient, last_name: e.target.value })}
+                  placeholder="Doe"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="email_manual">Email</Label>
+                <Input
+                  id="email_manual"
+                  type="email"
+                  value={manualClient.email}
+                  onChange={(e) => setManualClient({ ...manualClient, email: e.target.value })}
+                  placeholder="name@example.com"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone</Label>
+                <Input
+                  id="phone"
+                  value={manualClient.phone}
+                  onChange={(e) => setManualClient({ ...manualClient, phone: e.target.value })}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="date_of_birth">Date of Birth</Label>
+                <Input
+                  id="date_of_birth"
+                  type="date"
+                  value={manualClient.date_of_birth}
+                  onChange={(e) => setManualClient({ ...manualClient, date_of_birth: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Input
+                  id="address"
+                  value={manualClient.address}
+                  onChange={(e) => setManualClient({ ...manualClient, address: e.target.value })}
+                  placeholder="123 Main St"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="city">City</Label>
+                <Input
+                  id="city"
+                  value={manualClient.city}
+                  onChange={(e) => setManualClient({ ...manualClient, city: e.target.value })}
+                  placeholder="Anytown"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="state">State</Label>
+                <Input
+                  id="state"
+                  value={manualClient.state}
+                  onChange={(e) => setManualClient({ ...manualClient, state: e.target.value.toUpperCase() })}
+                  placeholder="CA"
+                  maxLength={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="zip_code">Zip Code</Label>
+                <Input
+                  id="zip_code"
+                  value={manualClient.zip_code}
+                  onChange={(e) => setManualClient({ ...manualClient, zip_code: e.target.value })}
+                  placeholder="90210"
+                />
+              </div>
+              <div className="sm:col-span-2 space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Input
+                  id="notes"
+                  value={manualClient.notes}
+                  onChange={(e) => setManualClient({ ...manualClient, notes: e.target.value })}
+                  placeholder="Notes"
+                />
+              </div>
+              <div className="sm:col-span-2 space-y-2">
+                <Label htmlFor="manual_platform">Platform (for saving only)</Label>
+                <Select
+                  value={manualClient.platform}
+                  onValueChange={(value) => setManualClient({ ...manualClient, platform: value })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select platform" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="transunion">TransUnion — Not Pullable</SelectItem>
+                    <SelectItem value="experian">Experian — Not Pullable</SelectItem>
+                    <SelectItem value="equifax">Equifax — Not Pullable</SelectItem>
+                    <SelectItem value="creditkarma">Credit Karma — Not Pullable</SelectItem>
+                    <SelectItem value="myfreescorenow">My Free Score Now — Pullable</SelectItem>
+                    <SelectItem value="identityiq">IdentityIQ — Pullable</SelectItem>
+                    <SelectItem value="myscoreiq">MyScoreIQ — Pullable</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="manual_platform_email">Platform Email/Username</Label>
+                <Input
+                  id="manual_platform_email"
+                  type="email"
+                  value={manualClient.platform_email}
+                  onChange={(e) => setManualClient({ ...manualClient, platform_email: e.target.value })}
+                  placeholder="Enter platform email"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="manual_platform_password">Platform Password</Label>
+                <div className="relative">
+                  <Input
+                    id="manual_platform_password"
+                    type={showManualPassword ? "text" : "password"}
+                    value={manualClient.platform_password}
+                    onChange={(e) => setManualClient({ ...manualClient, platform_password: e.target.value })}
+                    placeholder="Enter platform password"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowManualPassword(!showManualPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label={showManualPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showManualPassword}
+                    title={showManualPassword ? "Hide password" : "Show password"}
+                  >
+                    {showManualPassword ? (
+                      <EyeOff className="h-5 w-5" />
+                    ) : (
+                      <Eye className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClose}
+                disabled={isSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="gradient-primary"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Adding Client..." : "Add Client"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

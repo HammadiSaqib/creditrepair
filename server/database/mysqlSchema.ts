@@ -78,6 +78,9 @@ export interface Client {
   credit_score?: number;
   target_score?: number;
   notes?: string;
+  platform?: string;
+  platform_email?: string;
+  platform_password?: string;
   created_at: string;
   updated_at: string;
   created_by: number;
@@ -463,6 +466,14 @@ export async function initializeMySQLDatabase(): Promise<void> {
       if (alters.length) {
         await executeQuery(`ALTER TABLE clients ${alters.join(', ')}`);
       }
+      try {
+        await executeQuery(
+          `ALTER TABLE clients MODIFY COLUMN platform ENUM('myfreescorenow','identityiq','smartcredit','myscoreiq','transunion','experian','equifax','creditkarma','other') NULL`
+        );
+        console.log('✅ Updated clients.platform ENUM to include new values');
+      } catch (error: any) {
+        console.log('ℹ️  clients.platform column already updated or conversion not needed');
+      }
     } catch (e) {
     }
     
@@ -688,7 +699,7 @@ async function createMySQLTables(): Promise<void> {
       fundable_in_ex BOOLEAN NOT NULL DEFAULT FALSE,
       fundable_in_eq BOOLEAN NOT NULL DEFAULT FALSE,
       notes TEXT,
-      platform VARCHAR(50),
+      platform ENUM('myfreescorenow','identityiq','smartcredit','myscoreiq','transunion','experian','equifax','creditkarma','other'),
       platform_email VARCHAR(255),
       platform_password VARCHAR(255),
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -97,6 +97,8 @@ type ClientData = {
   change: number;
   amount: number;
   lastReportPull: string | null;
+  platform?: string | null;
+  manuallyAdded?: boolean;
 };
 
 const getStatusColor = (status: string) => {
@@ -157,6 +159,7 @@ const getScoreChange = (current: number, previous: number) => {
   });
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [showAddClient, setShowAddClient] = useState(false);
+  const [showAddClientManual, setShowAddClientManual] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({
@@ -263,7 +266,9 @@ const getScoreChange = (current: number, previous: number) => {
           fundingStatus,
           change: creditScore - previousScore, // Real credit score change
           amount: fundingAmount,
-          lastReportPull
+          lastReportPull,
+          platform: client.platform || null,
+          manuallyAdded: !client.platform || client.platform === 'other'
         };
       }));
 
@@ -813,10 +818,14 @@ const getScoreChange = (current: number, previous: number) => {
                   <SelectItem value="login-disabled">Login Disabled</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm">
-                <Filter className="h-4 w-4 mr-2" />
-                More Filters
-              </Button>
+            <Button variant="outline" size="sm">
+              <Filter className="h-4 w-4 mr-2" />
+              More Filters
+            </Button>
+            <Button size="sm" onClick={() => setShowAddClientManual(true)}>
+              <UserPlus className="h-4 w-4 mr-2" />
+              Add Client Manually
+            </Button>
 
               {/* Inline Add Client form */}
               <form className="flex items-center gap-2 flex-wrap" onSubmit={handleAddClientInline}>
@@ -1062,6 +1071,12 @@ const getScoreChange = (current: number, previous: number) => {
                                <FileText className="h-4 w-4 mr-2" />
                                View Reports
                              </DropdownMenuItem>
+                             {client.manuallyAdded && (
+                               <DropdownMenuItem onClick={() => navigate(`/funding/diy/personal`, { state: { clientId: client.id } })}>
+                                 <CreditCard className="h-4 w-4 mr-2" />
+                                 DIY Funding
+                               </DropdownMenuItem>
+                             )}
                              <DropdownMenuItem 
                                onClick={(e) => {
                                  e.stopPropagation();
@@ -1106,6 +1121,14 @@ const getScoreChange = (current: number, previous: number) => {
         onSuccess={() => {
           fetchClients();
         }}
+      />
+      <AddClientDialog
+        isOpen={showAddClientManual}
+        onClose={() => setShowAddClientManual(false)}
+        onSuccess={() => {
+          fetchClients();
+        }}
+        mode="manual"
       />
     </DashboardLayout>
   );
