@@ -22,15 +22,28 @@ router.get('/latest', async (req: Request, res: Response) => {
 
     let contract: any = null;
     if (dbType === 'mysql') {
-      const rows = await adapter.allQuery(
-        `SELECT c.*, t.content AS template_content
-         FROM contracts c
-         LEFT JOIN contract_templates t ON c.template_id = t.id
-         WHERE c.user_id = ?
-         ORDER BY c.created_at DESC
-         LIMIT 1`,
-        [user.id]
-      );
+      let rows: any[] | null = null;
+      try {
+        rows = await adapter.allQuery(
+          `SELECT c.*, t.content AS template_content
+           FROM contracts c
+           LEFT JOIN contract_templates t ON c.template_id = t.id
+           WHERE c.user_id = ?
+           ORDER BY c.created_at DESC
+           LIMIT 1`,
+          [user.id]
+        );
+      } catch {
+        rows = await adapter.allQuery(
+          `SELECT c.*, t.content AS template_content
+           FROM contracts c
+           LEFT JOIN contract_templates t ON c.template_id = t.id
+           WHERE c.admin_id = ?
+           ORDER BY c.created_at DESC
+           LIMIT 1`,
+          [user.id]
+        );
+      }
       contract = rows && rows.length > 0 ? rows[0] : null;
       // If no contract exists, create one using the admin's active template or fall back to super admin template
       if (!contract) {
@@ -70,21 +83,42 @@ router.get('/latest', async (req: Request, res: Response) => {
             }
           } catch {}
 
-          await adapter.executeQuery(
-            `INSERT INTO contracts (user_id, client_id, template_id, title, body, status, sent_at, created_at, updated_at, created_by, updated_by)
-             VALUES (?, NULL, ?, ?, ?, 'sent', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)`,
-            [user.id, templateId, title, body, creatorId, creatorId]
-          );
+          try {
+            await adapter.executeQuery(
+              `INSERT INTO contracts (user_id, client_id, template_id, title, body, status, sent_at, created_at, updated_at, created_by, updated_by)
+               VALUES (?, NULL, ?, ?, ?, 'sent', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)`,
+              [user.id, templateId, title, body, creatorId, creatorId]
+            );
+          } catch {
+            await adapter.executeQuery(
+              `INSERT INTO contracts (admin_id, client_id, template_id, title, body, status, sent_at, created_at, updated_at, created_by, updated_by)
+               VALUES (?, NULL, ?, ?, ?, 'sent', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)`,
+              [user.id, templateId, title, body, creatorId, creatorId]
+            );
+          }
 
-          const rows2 = await adapter.allQuery(
-            `SELECT c.*, t.content AS template_content
-             FROM contracts c
-             LEFT JOIN contract_templates t ON c.template_id = t.id
-             WHERE c.user_id = ?
-             ORDER BY c.created_at DESC
-             LIMIT 1`,
-            [user.id]
-          );
+          let rows2: any[] | null = null;
+          try {
+            rows2 = await adapter.allQuery(
+              `SELECT c.*, t.content AS template_content
+               FROM contracts c
+               LEFT JOIN contract_templates t ON c.template_id = t.id
+               WHERE c.user_id = ?
+               ORDER BY c.created_at DESC
+               LIMIT 1`,
+              [user.id]
+            );
+          } catch {
+            rows2 = await adapter.allQuery(
+              `SELECT c.*, t.content AS template_content
+               FROM contracts c
+               LEFT JOIN contract_templates t ON c.template_id = t.id
+               WHERE c.admin_id = ?
+               ORDER BY c.created_at DESC
+               LIMIT 1`,
+              [user.id]
+            );
+          }
           contract = rows2 && rows2.length > 0 ? rows2[0] : null;
         } catch (createErr) {
           console.error('Error creating admin onboarding contract:', createErr);
@@ -143,12 +177,25 @@ router.post('/latest/sign', async (req: Request, res: Response) => {
     const dbType = adapter.getType();
 
     // Find latest contract
-    const latestRows = await adapter.allQuery(
-      dbType === 'mysql'
-        ? 'SELECT id, status FROM contracts WHERE user_id = ? ORDER BY created_at DESC LIMIT 1'
-        : 'SELECT id, status FROM contracts WHERE admin_id = ? ORDER BY created_at DESC LIMIT 1',
-      [user.id]
-    );
+    let latestRows: any[] | null = null;
+    if (dbType === 'mysql') {
+      try {
+        latestRows = await adapter.allQuery(
+          'SELECT id, status FROM contracts WHERE user_id = ? ORDER BY created_at DESC LIMIT 1',
+          [user.id]
+        );
+      } catch {
+        latestRows = await adapter.allQuery(
+          'SELECT id, status FROM contracts WHERE admin_id = ? ORDER BY created_at DESC LIMIT 1',
+          [user.id]
+        );
+      }
+    } else {
+      latestRows = await adapter.allQuery(
+        'SELECT id, status FROM contracts WHERE admin_id = ? ORDER BY created_at DESC LIMIT 1',
+        [user.id]
+      );
+    }
     const latest = latestRows && latestRows.length > 0 ? latestRows[0] : null;
     if (!latest) {
       return res.status(404).json({ success: false, error: 'No contract found to sign' });
