@@ -311,6 +311,45 @@ export async function createCalendarEvent(req: Request, res: Response) {
     const eventId = result.insertId;
     console.log(`[DEBUG ${debugId}] New event ID:`, eventId);
 
+    const repeatWeeklyRaw = (req.body as any)?.repeat_weekly;
+    const repeatWeeksRaw = (req.body as any)?.repeat_weeks;
+    const repeatWeekly = repeatWeeklyRaw === true || repeatWeeklyRaw === 'true' || repeatWeeklyRaw === 1;
+    const repeatWeeks = parseInt(repeatWeeksRaw as any) || 0;
+    if (repeatWeekly && repeatWeeks > 1) {
+      console.log(`[DEBUG ${debugId}] Recurrence enabled: weekly x${repeatWeeks}`);
+      const base = new Date(`${dateForDb}T${timeForDb || '00:00:00'}`);
+      for (let i = 1; i < repeatWeeks; i++) {
+        const next = new Date(base);
+        next.setDate(next.getDate() + i * 7);
+        const y = next.getFullYear();
+        const m = String(next.getMonth() + 1).padStart(2, '0');
+        const d = String(next.getDate()).padStart(2, '0');
+        const nextDateForDb = `${y}-${m}-${d}`;
+        const values = [
+          eventData.title,
+          eventData.description || null,
+          nextDateForDb,
+          timeForDb,
+          eventData.duration,
+          eventData.type,
+          eventData.instructor || null,
+          eventData.location || null,
+          eventData.is_virtual ? 1 : 0,
+          eventData.is_physical ? 1 : 0,
+          eventData.max_attendees || null,
+          eventData.meeting_link || null,
+          eventData.visible_to_admins ? 1 : 0,
+          userId
+        ];
+        try {
+          await db.executeQuery(insertQuery, values);
+          console.log(`[DEBUG ${debugId}] Inserted recurring event for ${nextDateForDb}`);
+        } catch (recErr) {
+          console.log(`[DEBUG ${debugId}] Failed inserting recurring event for ${nextDateForDb}:`, recErr);
+        }
+      }
+    }
+
     console.log(`[DEBUG ${debugId}] Fetching created event...`);
     let createdEvent;
     try {
@@ -423,8 +462,8 @@ export async function updateCalendarEvent(req: Request, res: Response) {
 
     console.log(`[DEBUG ${debugId}] Checking user permissions...`);
     console.log(`[DEBUG ${debugId}] Event creator ID: ${existingEvent.created_by}, Current user ID: ${userId}`);
-    // Only allow creator or admin to update
-    if (existingEvent.created_by !== userId) {
+    const role = (req as any).user?.role;
+    if (existingEvent.created_by !== userId && role !== 'admin' && role !== 'super_admin') {
       console.log(`[DEBUG ${debugId}] Permission denied - user is not the creator`);
       return res.status(403).json({
         success: false,
@@ -444,6 +483,42 @@ export async function updateCalendarEvent(req: Request, res: Response) {
         console.log(`[DEBUG ${debugId}] Zod validation errors:`, JSON.stringify(validationError.errors, null, 2));
       }
       throw validationError;
+    }
+
+    console.log(`[DEBUG ${debugId}] Normalizing date/time fields for DB...`);
+    try {
+      if (eventData.date !== undefined) {
+        const parsed = new Date(eventData.date as any);
+        if (isNaN(parsed.getTime())) {
+          throw new Error(`Invalid date provided: ${eventData.date}`);
+        }
+        const iso = parsed.toISOString();
+        const dateForDb = iso.slice(0, 10);
+        let timeForDb: string | undefined = undefined;
+        if (eventData.time !== undefined) {
+          const t = eventData.time as any;
+          if (typeof t === 'string' && /^\d{2}:\d{2}$/.test(t)) {
+            timeForDb = `${t}:00`;
+          } else if (typeof t === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(t)) {
+            timeForDb = t;
+          }
+        } else {
+          timeForDb = iso.slice(11, 19);
+        }
+        (eventData as any).date = dateForDb;
+        if (timeForDb !== undefined) {
+          (eventData as any).time = timeForDb;
+        }
+        console.log(`[DEBUG ${debugId}] Normalized update date/time:`, { dateForDb: (eventData as any).date, timeForDb: (eventData as any).time });
+      } else if (eventData.time !== undefined) {
+        const t = eventData.time as any;
+        if (typeof t === 'string' && /^\d{2}:\d{2}$/.test(t)) {
+          (eventData as any).time = `${t}:00`;
+        }
+      }
+    } catch (normErr) {
+      console.log(`[DEBUG ${debugId}] Failed to normalize update date/time:`, normErr);
+      throw normErr;
     }
 
     console.log(`[DEBUG ${debugId}] Building dynamic update query...`);
@@ -626,8 +701,8 @@ export async function deleteCalendarEvent(req: Request, res: Response) {
 
     console.log(`[DEBUG ${debugId}] Checking user permissions...`);
     console.log(`[DEBUG ${debugId}] Event creator ID: ${existingEvent.created_by}, Current user ID: ${userId}`);
-    // Only allow creator or admin to delete
-    if (existingEvent.created_by !== userId) {
+    const role = (req as any).user?.role;
+    if (existingEvent.created_by !== userId && role !== 'admin' && role !== 'super_admin') {
       console.log(`[DEBUG ${debugId}] Permission denied - user is not the creator`);
       return res.status(403).json({
         success: false,

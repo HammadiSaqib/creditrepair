@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Users,
   CreditCard,
@@ -31,6 +32,8 @@ import {
   MapPin,
   Link,
   Video,
+  Edit,
+  Trash2,
 } from "lucide-react";
 import { superAdminApi } from "@/lib/api";
 import { toast } from "sonner";
@@ -193,8 +196,11 @@ export default function SuperAdminOverview() {
     type: 'meeting', // meeting, physical_event, offer
     meetingLink: '',
     location: '',
-    isPhysical: false
+    isPhysical: false,
+    repeatWeekly: false,
+    repeatWeeks: 8
   });
+  const [editingEventId, setEditingEventId] = useState<number | null>(null);
   const [eventLoading, setEventLoading] = useState(false);
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [admins, setAdmins] = useState<AdminProfile[]>([]);
@@ -460,15 +466,30 @@ export default function SuperAdminOverview() {
 
   // Format relative date
   const formatRelativeDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffTime = date.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+    let target: Date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      const [y, m, d] = dateString.split('-').map((n) => parseInt(n, 10));
+      target = new Date(y, (m || 1) - 1, d || 1);
+    } else {
+      target = new Date(dateString);
+    }
+    const today = new Date();
+    const start = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const diffDays = Math.ceil((start - todayStart) / (1000 * 60 * 60 * 24));
+
     if (diffDays === 0) return "Today";
     if (diffDays === 1) return "Tomorrow";
-    if (diffDays < 7) return date.toLocaleDateString('en-US', { weekday: 'long' });
-    return date.toLocaleDateString();
+    return target.toLocaleDateString('en-US', { weekday: 'long' });
+  };
+
+  const parseEventId = (raw: any): number | null => {
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string') {
+      const match = raw.match(/\d+$/);
+      if (match) return parseInt(match[0], 10);
+    }
+    return null;
   };
 
   // Handle event creation
@@ -507,13 +528,17 @@ export default function SuperAdminOverview() {
         location: eventForm.location || null,
         is_virtual: !eventForm.isPhysical && eventForm.type !== 'physical_event', // Set is_virtual properly
         is_physical: eventForm.isPhysical || eventForm.type === 'physical_event',
-        visible_to_admins: true // Make events visible to all admins
+        visible_to_admins: true,
+        repeat_weekly: eventForm.repeatWeekly,
+        repeat_weeks: eventForm.repeatWeekly ? Math.max(1, Math.min(52, Number(eventForm.repeatWeeks) || 8)) : 0
       };
 
-      const response = await calendarApi.createEvent(eventData);
+      const response = editingEventId
+        ? await calendarApi.updateEvent(editingEventId, eventData as any)
+        : await calendarApi.createEvent(eventData as any);
 
-      if (response.data?.success) {
-        toast.success("Event scheduled successfully!");
+      if ((response as any)?.success) {
+        toast.success(editingEventId ? "Event updated successfully!" : "Event scheduled successfully!");
         setShowEventModal(false);
         setEventForm({
           title: '',
@@ -523,18 +548,64 @@ export default function SuperAdminOverview() {
           type: 'meeting',
           meetingLink: '',
           location: '',
-          isPhysical: false
+          isPhysical: false,
+          repeatWeekly: false,
+          repeatWeeks: 8
         });
+        setEditingEventId(null);
         // Reload events to show the new one
         loadUpcomingEvents();
       } else {
-        toast.error(response.data?.error || "Failed to create event");
+        const errMsg = (response as any)?.error || (response as any)?.message || (editingEventId ? "Failed to update event" : "Failed to create event");
+        toast.error(errMsg);
       }
     } catch (error) {
       console.error("Error creating event:", error);
-      toast.error("Failed to create event");
+      toast.error(editingEventId ? "Failed to update event" : "Failed to create event");
     } finally {
       setEventLoading(false);
+    }
+  };
+
+  const openEditEvent = (event: any) => {
+    if (event?.type === 'client_reminder') {
+      toast.error("This item cannot be edited");
+      return;
+    }
+    const dateStr = typeof event.date === 'string' ? event.date.slice(0, 10) : new Date(event.date).toISOString().slice(0, 10);
+    const timeStr = (event.time && typeof event.time === 'string') ? event.time.slice(0,5) : (new Date(event.date).toISOString().slice(11,16));
+    setEventForm({
+      title: event.title || '',
+      description: event.description || '',
+      date: dateStr,
+      time: timeStr || '',
+      type: event.type || 'meeting',
+      meetingLink: event.meeting_link || '',
+      location: event.location || '',
+      isPhysical: Boolean(event.is_physical),
+      repeatWeekly: false,
+      repeatWeeks: 8,
+    });
+    const idNum = parseEventId(event.id);
+    if (idNum === null) {
+      toast.error("This item cannot be edited");
+      return;
+    }
+    setEditingEventId(idNum);
+    setShowEventModal(true);
+  };
+
+  const handleDeleteEvent = async (id: number) => {
+    try {
+      const resp = await calendarApi.deleteEvent(id);
+      if ((resp as any)?.success !== false) {
+        toast.success("Event deleted");
+        loadUpcomingEvents();
+      } else {
+        toast.error("Failed to delete event");
+      }
+    } catch (e) {
+      toast.error("Failed to delete event");
     }
   };
 
@@ -897,9 +968,30 @@ export default function SuperAdminOverview() {
                               <div className={`w-2 h-2 rounded-full ${getEventDotColor(event.type)}`}></div>
                               <span className="text-sm">{event.title}</span>
                             </div>
-                            <span className="text-xs text-muted-foreground">
-                              {formatRelativeDate(event.date)}
-                            </span>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs text-muted-foreground">
+                                {formatRelativeDate(event.date)}
+                              </span>
+                              <Button variant="outline" size="sm" onClick={() => openEditEvent(event)} className="h-6 px-2">
+                                <Edit className="h-3 w-3 mr-1" />
+                                Edit
+                              </Button>
+                              <Button variant="destructive" size="sm" onClick={() => {
+                                if (event?.type === 'client_reminder') {
+                                  toast.error("This item cannot be deleted");
+                                  return;
+                                }
+                                const idNum = parseEventId(event.id);
+                                if (idNum !== null) {
+                                  handleDeleteEvent(idNum);
+                                } else {
+                                  toast.error("This item cannot be deleted");
+                                }
+                              }} className="h-6 px-2">
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Delete
+                              </Button>
+                            </div>
                           </div>
                         ))
                       ) : (
@@ -1430,6 +1522,30 @@ export default function SuperAdminOverview() {
                 </div>
               </div>
             )}
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Repeat Weekly</Label>
+                <Switch
+                  checked={eventForm.repeatWeekly}
+                  onCheckedChange={(checked) => setEventForm(prev => ({ ...prev, repeatWeekly: checked }))}
+                />
+              </div>
+              {eventForm.repeatWeekly && (
+                <div className="space-y-2">
+                  <Label htmlFor="repeat-weeks">Repeat Weeks</Label>
+                  <Input
+                    id="repeat-weeks"
+                    type="number"
+                    min={1}
+                    max={52}
+                    value={eventForm.repeatWeeks}
+                    onChange={(e) => setEventForm(prev => ({ ...prev, repeatWeeks: Number(e.target.value) }))}
+                  />
+                  <p className="text-xs text-muted-foreground">Creates weekly occurrences on the same weekday.</p>
+                </div>
+              )}
+            </div>
           </div>
 
           <DialogFooter>
