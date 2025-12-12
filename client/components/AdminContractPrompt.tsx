@@ -26,7 +26,6 @@ interface AdminLatestContract {
 
 export default function AdminContractPrompt() {
   const { userProfile } = useAuthContext();
-  const { hasActiveSubscription } = useSubscriptionStatus();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -48,14 +47,7 @@ export default function AdminContractPrompt() {
   };
 
   const fetchLatest = async () => {
-    // Only prompt admins after first purchase
     if (userProfile?.role !== "admin") return;
-    if (!hasActiveSubscription) {
-      // Do not fetch or prompt until subscription is active
-      setContract(null);
-      setOpen(false);
-      return;
-    }
     try {
       setLoading(true);
       setError(null);
@@ -83,15 +75,9 @@ export default function AdminContractPrompt() {
   };
 
   useEffect(() => {
-    if (hasActiveSubscription) {
-      fetchLatest();
-    } else {
-      // Ensure dialog is closed when not subscribed
-      setContract(null);
-      setOpen(false);
-    }
+    fetchLatest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile?.role, hasActiveSubscription]);
+  }, [userProfile?.role]);
 
   useEffect(() => {
     const onRequire = async () => {
@@ -119,10 +105,6 @@ export default function AdminContractPrompt() {
     }
     return;
   }, []);
-
-  const handleDismiss = () => {
-    setOpen(false);
-  };
 
   const handleSign = async () => {
     if (!contract?.id) return;
@@ -239,7 +221,9 @@ export default function AdminContractPrompt() {
   if (userProfile?.role !== "admin") return null;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => {
+      if (!contract || !shouldPrompt(contract.status)) setOpen(next);
+    }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
@@ -339,9 +323,6 @@ export default function AdminContractPrompt() {
         )}
 
         <DialogFooter className="mt-4">
-          <Button variant="ghost" onClick={handleDismiss}>
-            Not now
-          </Button>
           <Button
             className="gradient-primary"
             onClick={handleSign}
