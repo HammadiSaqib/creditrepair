@@ -3195,8 +3195,13 @@ export default function CreditReport() {
               ) || [];
               criteria[bureauId].noInquiries = bureauInquiries.length === 0;
 
-              // Check bankruptcies (simplified - would need more detailed bankruptcy data)
-              criteria[bureauId].noBankruptcies = true; // Assume no bankruptcies for now
+              const bureauPublicRecords = apiData.reportData?.PublicRecords?.filter((rec: any) => rec.BureauId === bureauId) || [];
+              const hasBankruptcy = bureauPublicRecords.some((rec: any) => {
+                const cls = String(rec.Classification || '').toLowerCase();
+                const typ = String(rec.Type || '').toLowerCase();
+                return cls.includes('bankruptcy') || typ.includes('bankruptcy');
+              });
+              criteria[bureauId].noBankruptcies = !hasBankruptcy;
             });
 
             return criteria;
@@ -3234,7 +3239,7 @@ export default function CreditReport() {
               date: inquiry.DateInquiry || new Date().toISOString().split('T')[0],
               bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Equifax' : 'Experian'
             })),
-            publicRecords: apiData?.PublicRecords || [],
+            publicRecords: (data.data.reportData.PublicRecords || []),
             // Keep the original structure for other data
             creditUtilization: detailedReport.creditUtilization,
             debtUtilization: debtUtilization, // Add calculated debt utilization
@@ -4597,7 +4602,11 @@ export default function CreditReport() {
                       const hasBk = (id: number) =>
                         pr.some(
                           (r: any) =>
-                            Number(r?.BureauId) === Number(id) && /bankruptcy|chapter/i.test(String(r?.RecordType || ""))
+                            Number(r?.BureauId) === Number(id) && (
+                              /bankruptcy|chapter/i.test(String(r?.RecordType || "")) ||
+                              /bankruptcy|chapter/i.test(String(r?.Type || "")) ||
+                              /bankruptcy/i.test(String(r?.Classification || ""))
+                            )
                         );
                       const any = hasBk(1) || hasBk(3) || hasBk(2);
                       grades.push(any ? 0 : 10);
@@ -6028,8 +6037,14 @@ export default function CreditReport() {
                             try {
                               return pr.some((record: any) => {
                                 if (Number(record?.BureauId) !== Number(bureauId)) return false;
-                                const type = String(record?.RecordType || '').toLowerCase();
-                                return type.includes('bankruptcy') || type.includes('chapter');
+                                const recType = String(record?.RecordType || '').toLowerCase();
+                                const type = String(record?.Type || '').toLowerCase();
+                                const classification = String(record?.Classification || '').toLowerCase();
+                                return (
+                                  recType.includes('bankruptcy') || recType.includes('chapter') ||
+                                  type.includes('bankruptcy') || type.includes('chapter') ||
+                                  classification.includes('bankruptcy')
+                                );
                               });
                             } catch {
                               return false;
@@ -6062,10 +6077,15 @@ export default function CreditReport() {
                               if (!apiData?.PublicRecords) return 'No';
                               
                               const hasBankruptcy = apiData.PublicRecords?.some(record => {
-                                if (record.BureauId !== bureauId) return false;
-                                
-                                const recordType = record.RecordType?.toLowerCase() || '';
-                                return recordType.includes('bankruptcy') || recordType.includes('chapter');
+                                if (Number(record.BureauId) !== Number(bureauId)) return false;
+                                const recType = String(record.RecordType || '').toLowerCase();
+                                const type = String(record.Type || '').toLowerCase();
+                                const classification = String(record.Classification || '').toLowerCase();
+                                return (
+                                  recType.includes('bankruptcy') || recType.includes('chapter') ||
+                                  type.includes('bankruptcy') || type.includes('chapter') ||
+                                  classification.includes('bankruptcy')
+                                );
                               });
                               
                               return hasBankruptcy ? 'Yes' : 'No';
@@ -16966,85 +16986,55 @@ export default function CreditReport() {
             </CardHeader>
             <CardContent>
               {reportData.publicRecords && reportData.publicRecords.length > 0 ? (
-                <div className="space-y-4">
-                  {reportData.publicRecords.map((record, index) => (
-                    <div
-                      key={record.id || index}
-                      className="border border-orange-200 rounded-lg p-4 bg-orange-50/30"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <h4 className="font-semibold text-orange-800">
-                            {record.type}
-                          </h4>
-                          <p className="text-sm text-orange-700">
-                            Case: {record.caseNumber}
-                          </p>
+                <div className="space-y-6">
+                  {[1, 2, 3].map((bid) => {
+                    const bureauRecords = (reportData.publicRecords as any[]).filter((r: any) => Number(r?.BureauId) === bid);
+                    if (!bureauRecords || bureauRecords.length === 0) return null;
+                    const bureauLabel = bid === 1 ? "Experian" : bid === 2 ? "TransUnion" : "Equifax";
+                    return (
+                      <div key={bid} className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold text-orange-800">{bureauLabel}</h4>
+                          <Badge variant="outline" className="border-orange-500 text-orange-700">
+                            {bureauRecords.length} record{bureauRecords.length > 1 ? "s" : ""}
+                          </Badge>
                         </div>
-                        <Badge
-                          variant="outline"
-                          className="border-orange-500 text-orange-700"
-                        >
-                          {record.status}
-                        </Badge>
+                        {bureauRecords.map((record: any, index: number) => (
+                          <div
+                            key={index}
+                            className="border border-orange-200 rounded-lg p-4 bg-orange-50/30"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <h5 className="font-medium text-orange-800">{record?.Type || "Public Record"}</h5>
+                                {record?.Classification && (
+                                  <p className="text-sm text-orange-700">{record.Classification}</p>
+                                )}
+                                {record?.Industry && (
+                                  <p className="text-xs text-muted-foreground">{record.Industry}</p>
+                                )}
+                              </div>
+                              <Badge variant="outline" className="border-orange-500 text-orange-700">
+                                {record?.Status || "Unknown"}
+                              </Badge>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-4 text-sm mb-3">
+                              <div>
+                                <span className="text-muted-foreground">Date:</span>
+                                <p className="font-medium">
+                                  {record?.Date ? new Date(record.Date).toLocaleDateString() : "N/A"}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Designator:</span>
+                                <p className="font-medium">{record?.AccountDesignator || "N/A"}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-
-                      <div className="grid md:grid-cols-2 gap-4 text-sm mb-3">
-                        <div>
-                          <span className="text-muted-foreground">
-                            Filing Date:
-                          </span>
-                          <p className="font-medium">
-                            {new Date(record.filingDate).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">
-                            Discharge Date:
-                          </span>
-                          <p className="font-medium">
-                            {new Date(
-                              record.dischargeDate,
-                            ).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Court:</span>
-                          <p className="font-medium">{record.court}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">
-                            Chapter:
-                          </span>
-                          <p className="font-medium">{record.chapter}</p>
-                        </div>
-                      </div>
-
-                      <div className="grid md:grid-cols-2 gap-4 text-sm mb-3">
-                        <div>
-                          <span className="text-muted-foreground">Assets:</span>
-                          <p className="font-medium">
-                            ${(record.assets || 0).toLocaleString()}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">
-                            Liabilities:
-                          </span>
-                          <p className="font-medium">
-                            ${(record.liabilities || 0).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-
-                      {record.notes && (
-                        <div className="mt-3 p-2 bg-orange-100 rounded text-sm">
-                          <span className="text-muted-foreground">Notes:</span>{" "}
-                          {record.notes}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
