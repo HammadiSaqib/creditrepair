@@ -63,18 +63,7 @@ export default function AdminContractPrompt() {
       const data = resp?.data?.data as AdminLatestContract | undefined;
       if (data && shouldPrompt(data.status)) {
         setContract(data);
-        // Auto-open once per session to avoid repeated prompts
-        const sessionKey = `admin_contract_prompt_shown_${userProfile?.id ?? 'unknown'}`;
-        let alreadyShown = false;
-        try {
-          alreadyShown = typeof window !== 'undefined' && sessionStorage.getItem(sessionKey) === '1';
-        } catch {}
-        if (!alreadyShown) {
-          setOpen(true);
-          try { sessionStorage.setItem(sessionKey, '1'); } catch {}
-        } else {
-          setOpen(false);
-        }
+        setOpen(true);
       } else {
         setContract(null);
         setOpen(false);
