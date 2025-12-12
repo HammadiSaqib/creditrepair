@@ -51,6 +51,7 @@ api.interceptors.response.use(
   (error) => {
     const status = error?.response?.status;
     const code = error?.response?.data?.code;
+    const errTag = error?.response?.data?.error;
     const originalConfig = error?.config || {};
     if (status === 401 && code === 'TOKEN_EXPIRED' && !originalConfig.__isRetry) {
       const refreshToken = localStorage.getItem('refresh_token');
@@ -87,6 +88,14 @@ api.interceptors.response.use(
           window.location.href = `${loginPath}${redirect}`;
         }
       }
+    }
+    if (status === 403 && (errTag === 'contract_signature_required' || errTag === 'contract_signature_required_grace_exceeded')) {
+      try {
+        if (typeof window !== 'undefined') {
+          const ev = new CustomEvent('admin-contract-required', { detail: { source: error?.config?.url } });
+          window.dispatchEvent(ev);
+        }
+      } catch {}
     }
     return Promise.reject(error);
   }

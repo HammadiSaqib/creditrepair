@@ -169,7 +169,13 @@ export async function createServer() {
 
   // Middleware
   app.use(cors({
-    origin: ['http://localhost:3002', 'http://localhost:8080', 'http://localhost:3001'],
+    origin: [
+      'http://localhost:3002',
+      'http://localhost:8080',
+      'http://localhost:3001',
+      'https://thescoremachine.com',
+      'https://www.thescoremachine.com'
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']

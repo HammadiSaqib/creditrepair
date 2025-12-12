@@ -104,6 +104,33 @@ export default function AdminContractPrompt() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.role, hasActiveSubscription]);
 
+  useEffect(() => {
+    const onRequire = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const resp = await api.get("/api/contracts-admin/latest");
+        const data = resp?.data?.data as AdminLatestContract | undefined;
+        if (data && shouldPrompt(data.status)) {
+          setContract(data);
+          setOpen(true);
+        } else {
+          setContract(null);
+          setOpen(false);
+        }
+      } catch (err: any) {
+        setError("Failed to check admin contract status.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("admin-contract-required", onRequire as any);
+      return () => window.removeEventListener("admin-contract-required", onRequire as any);
+    }
+    return;
+  }, []);
+
   const handleDismiss = () => {
     setOpen(false);
   };
