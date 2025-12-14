@@ -52,7 +52,7 @@ const BillingHistory: React.FC = () => {
       console.log('👤 Auth state - User:', user && user !== 'undefined' ? JSON.parse(user) : null);
       
       const [transactionsResponse, subscriptionResponse] = await Promise.all([
-        api.get('/api/billing/history'),
+        api.get('/api/billing/stripe-history'),
         api.get('/api/billing/subscription')
       ]);
 
@@ -64,6 +64,13 @@ const BillingHistory: React.FC = () => {
         setTransactions(transactionsResponse.data.transactions || []);
       } else {
         console.log('❌ Transactions response not successful:', transactionsResponse);
+        // Fallback to DB history if Stripe route fails or unauthorized
+        try {
+          const fallback = await api.get('/api/billing/history');
+          if (fallback.data?.success) {
+            setTransactions(fallback.data.transactions || []);
+          }
+        } catch {}
       }
 
       if (subscriptionResponse.data?.success) {

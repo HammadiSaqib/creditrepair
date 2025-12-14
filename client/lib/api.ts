@@ -314,6 +314,7 @@ export const analyticsApi = {
 // Billing API
 export const billingApi = {
   getHistory: () => api.get('/api/billing/history'),
+  getStripeHistory: () => api.get('/api/billing/stripe-history'),
   
   getSubscription: () => api.get('/api/billing/subscription'),
   

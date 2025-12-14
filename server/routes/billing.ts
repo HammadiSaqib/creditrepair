@@ -86,6 +86,163 @@ router.get('/history', authenticateToken, async (req, res) => {
   }
 });
 
+// Get live billing history from Stripe for authenticated user (all-time)
+router.get('/stripe-history', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+    // Ensure Stripe is initialized
+    if (!stripe) {
+      await initializeStripe();
+    }
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    // Resolve Stripe customer ID for this user (supports users and affiliates)
+    let customerId: string | null = null;
+    try {
+      const userRows = await executeQuery<any[]>(
+        'SELECT stripe_customer_id, email, first_name, last_name FROM users WHERE id = ? LIMIT 1',
+        [userId]
+      );
+      if (Array.isArray(userRows) && userRows.length > 0 && userRows[0]?.stripe_customer_id) {
+        customerId = String(userRows[0].stripe_customer_id);
+      } else {
+        const affRows = await executeQuery<any[]>(
+          'SELECT stripe_customer_id, email, first_name, last_name FROM affiliates WHERE id = ? LIMIT 1',
+          [userId]
+        );
+        if (Array.isArray(affRows) && affRows.length > 0 && affRows[0]?.stripe_customer_id) {
+          customerId = String(affRows[0].stripe_customer_id);
+        }
+      }
+    } catch {}
+
+    if (!customerId) {
+      return res.status(404).json({ error: 'Stripe customer not found for user' });
+    }
+
+    // Fetch all payment intents with pagination
+    const transactions: any[] = [];
+    let piStartingAfter: string | undefined = undefined;
+    let piHasMore = true;
+    while (piHasMore) {
+      const piList = await stripe.paymentIntents.list({
+        customer: customerId,
+        limit: 100,
+        ...(piStartingAfter ? { starting_after: piStartingAfter } : {})
+      });
+      for (const pi of piList.data) {
+        let pmType: string | null = null;
+        let pmBrand: string | null = null;
+        let pmLast4: string | null = null;
+        let invoiceId: string | null = null;
+        let feeAmount: number | null = null;
+        try {
+          const piFull = await stripe.paymentIntents.retrieve(pi.id, { expand: ['payment_method'] });
+          const pm = piFull.payment_method as Stripe.PaymentMethod | null;
+          if (pm) {
+            pmType = pm.type || null;
+            if (pm.type === 'card' && pm.card) {
+              pmBrand = pm.card.brand || null;
+              pmLast4 = pm.card.last4 || null;
+            }
+          }
+          const chId = typeof piFull.latest_charge === 'string' ? piFull.latest_charge : null;
+          if (chId) {
+            const ch = await stripe.charges.retrieve(chId);
+            const inv = ch.invoice;
+            invoiceId = typeof inv === 'string' ? inv : null;
+            const btId = typeof ch.balance_transaction === 'string' ? ch.balance_transaction : null;
+            if (btId) {
+              const bt = await stripe.balanceTransactions.retrieve(btId);
+              const fee = typeof bt.fee === 'number' ? bt.fee : null;
+              feeAmount = fee != null ? Number(fee) / 100 : null;
+            }
+          }
+        } catch {}
+        transactions.push({
+          id: transactions.length + 1,
+          stripe_payment_intent_id: pi.id,
+          stripe_customer_id: customerId,
+          amount: typeof pi.amount === 'number' ? Number(pi.amount) / 100 : 0,
+          currency: (pi.currency || 'usd').toUpperCase(),
+          status: (pi.status || 'succeeded') as any,
+          plan_name: 'Subscription',
+          plan_type: 'monthly',
+          description: pi.description || '',
+          created_at: new Date(pi.created * 1000).toISOString(),
+          updated_at: new Date(pi.created * 1000).toISOString(),
+          stripe_invoice_id: invoiceId,
+          stripe_payment_method_type: pmType,
+          stripe_payment_method_brand: pmBrand,
+          stripe_payment_method_last4: pmLast4,
+          stripe_fee_amount: feeAmount,
+        });
+      }
+      piHasMore = piList.has_more;
+      if (piHasMore && piList.data.length > 0) {
+        piStartingAfter = piList.data[piList.data.length - 1].id;
+      }
+    }
+
+    // Fetch invoices and merge missing ones
+    let invStartingAfter: string | undefined = undefined;
+    let invHasMore = true;
+    const piIndex = new Map<string, number>();
+    transactions.forEach((t, idx) => {
+      if (t.stripe_payment_intent_id) piIndex.set(String(t.stripe_payment_intent_id), idx);
+    });
+    while (invHasMore) {
+      const invList = await stripe.invoices.list({
+        customer: customerId,
+        limit: 100,
+        ...(invStartingAfter ? { starting_after: invStartingAfter } : {})
+      });
+      for (const inv of invList.data) {
+        const piId = typeof inv.payment_intent === 'string' ? inv.payment_intent : null;
+        const createdIso = new Date((inv.created || Math.floor(Date.now() / 1000)) * 1000).toISOString();
+        if (piId && piIndex.has(piId)) {
+          const idx = piIndex.get(piId)!;
+          transactions[idx].stripe_invoice_id = inv.id;
+          transactions[idx].amount = typeof inv.total === 'number' ? Number(inv.total) / 100 : transactions[idx].amount;
+          transactions[idx].currency = (inv.currency || transactions[idx].currency || 'usd').toUpperCase();
+        } else {
+          transactions.push({
+            id: transactions.length + 1,
+            stripe_payment_intent_id: piId || '',
+            stripe_customer_id: customerId,
+            amount: typeof inv.total === 'number' ? Number(inv.total) / 100 : 0,
+            currency: (inv.currency || 'usd').toUpperCase(),
+            status: (inv.status || 'paid') as any,
+            plan_name: 'Subscription',
+            plan_type: 'monthly',
+            description: inv.description || '',
+            created_at: createdIso,
+            updated_at: createdIso,
+            stripe_invoice_id: inv.id,
+          });
+        }
+      }
+      invHasMore = invList.has_more;
+      if (invHasMore && invList.data.length > 0) {
+        invStartingAfter = invList.data[invList.data.length - 1].id;
+      }
+    }
+
+    // Sort desc by created_at
+    transactions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    res.json({
+      success: true,
+      transactions
+    });
+  } catch (error) {
+    console.error('Error fetching Stripe billing history:', error);
+    res.status(500).json({ error: 'Failed to fetch Stripe billing history' });
+  }
+});
+
 // Get current subscription
 router.get('/subscription', authenticateToken, async (req, res) => {
   try {
