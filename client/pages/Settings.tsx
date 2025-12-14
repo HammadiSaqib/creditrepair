@@ -81,27 +81,23 @@ const integrationStatus = [
   },
   {
     name: "IdentityIQ",
-    status: "Disconnected",
-    lastSync: "Never",
-    health: "In Progress",
-  },
-  {
-    name: "SmartCredit",
-    status: "Disconnected",
-    lastSync: "Never",
-    health: "In Progress",
+    status: "Connected",
+    lastSync: "2025-12-15 16:00",
+    health: "Good",
   },
   {
     name: "MyScoreIQ",
-    status: "Disconnected",
-    lastSync: "Never",
-    health: "In Progress",
+    status: "Connected",
+    lastSync: "2025-12-15 16:00",
+    health: "Good",
   },
 ];
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState("profile");
   const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -322,7 +318,11 @@ export default function Settings() {
 
   // Handle password update
   const handlePasswordUpdate = async () => {
-    if (!currentPassword || !newPassword || !confirmPassword) {
+    const cp = currentPassword.trim();
+    const np = newPassword.trim();
+    const conf = confirmPassword.trim();
+
+    if (!cp || !np || !conf) {
       toast({
         title: "Error",
         description: "Please fill in all password fields",
@@ -331,7 +331,7 @@ export default function Settings() {
       return;
     }
 
-    if (newPassword !== confirmPassword) {
+    if (np !== conf) {
       toast({
         title: "Error",
         description: "New passwords do not match",
@@ -340,7 +340,7 @@ export default function Settings() {
       return;
     }
 
-    if (newPassword.length < 6) {
+    if (np.length < 6) {
       toast({
         title: "Error",
         description: "New password must be at least 6 characters long",
@@ -351,15 +351,16 @@ export default function Settings() {
 
     try {
       setUpdatingPassword(true);
-      const response = await authApi.updateProfile({
-        current_password: currentPassword,
-        new_password: newPassword,
+      const response = await authApi.updatePassword({
+        currentPassword: cp,
+        newPassword: np,
       });
-
-      if (response.error) {
+      
+      const respData = response?.data;
+      if (respData?.error) {
         toast({
           title: "Error",
-          description: response.error || "Failed to update password",
+          description: respData.error || "Failed to update password",
           variant: "destructive",
         });
         return;
@@ -372,13 +373,17 @@ export default function Settings() {
 
       toast({
         title: "Success",
-        description: "Password updated successfully",
+        description: respData?.message || "Password updated successfully",
       });
-    } catch (error) {
+    } catch (error: any) {
+      const serverMsg =
+        error?.response?.data?.error ||
+        (Array.isArray(error?.response?.data?.details) ? error.response.data.details[0]?.message : undefined) ||
+        error?.message;
       console.error("Error updating password:", error);
       toast({
         title: "Error",
-        description: "Failed to update password",
+        description: serverMsg || "Failed to update password",
         variant: "destructive",
       });
     } finally {
@@ -961,20 +966,58 @@ export default function Settings() {
                         )}
                       </Button>
                     </div>
-                    <Input
-                      type="password"
-                      placeholder="New password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="bg-gradient-light border-border/40"
-                    />
-                    <Input
-                      type="password"
-                      placeholder="Confirm new password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="bg-gradient-light border-border/40"
-                    />
+                    <div className="space-y-2">
+                      <Label htmlFor="newPassword">New Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="newPassword"
+                          type={showNewPassword ? "text" : "password"}
+                          placeholder="New password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="bg-gradient-light border-border/40 pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-1 top-1/2 transform -translate-y-1/2"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                        >
+                          {showNewPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                      <div className="relative">
+                        <Input
+                          id="confirmPassword"
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="Confirm new password"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="bg-gradient-light border-border/40 pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-1 top-1/2 transform -translate-y-1/2"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                     <Button
                       size="sm"
                       className="gradient-primary hover:opacity-90"
