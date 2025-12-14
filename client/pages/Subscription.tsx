@@ -240,8 +240,11 @@ const SubscriptionContent: React.FC = () => {
         const dbSubscription = subscriptionResponse.data.subscription;
         console.log('📊 Raw subscription data:', dbSubscription);
         
-        // Find matching plan from database plans
-        const matchingPlan = databasePlans.find(p => p.name === dbSubscription.plan_name);
+        // Find matching plan from database plans with correct billing cycle
+        const desiredCycle = dbSubscription.plan_type === 'monthly' ? 'monthly' : 'yearly';
+        const matchingPlan =
+          databasePlans.find(p => p.name === dbSubscription.plan_name && p.billing_cycle === desiredCycle) ||
+          databasePlans.find(p => p.name === dbSubscription.plan_name);
         console.log('🔍 Matching plan found:', matchingPlan);
         
         if (matchingPlan) {
@@ -253,7 +256,7 @@ const SubscriptionContent: React.FC = () => {
             current_period_start: dbSubscription.current_period_start,
             current_period_end: dbSubscription.current_period_end,
             cancel_at_period_end: !!dbSubscription.cancel_at_period_end,
-            billing_cycle: dbSubscription.plan_type === 'monthly' ? 'monthly' : 'yearly',
+            billing_cycle: desiredCycle,
             plan: {
               ...matchingPlan,
               price: parseFloat(matchingPlan.price.toString())
@@ -684,8 +687,14 @@ const SubscriptionContent: React.FC = () => {
                 planData: plan
               });
               
-              const isCurrentPlan = subscription?.plan_name === plan.name && subscription?.status === 'active';
-              const isPendingPlan = subscription?.plan_name === plan.name && subscription?.status === 'pending';
+              const isCurrentPlan =
+                subscription?.plan_name === plan.name &&
+                subscription?.billing_cycle === plan.billing_cycle &&
+                subscription?.status === 'active';
+              const isPendingPlan =
+                subscription?.plan_name === plan.name &&
+                subscription?.billing_cycle === plan.billing_cycle &&
+                subscription?.status === 'pending';
               
               console.log('🎯 Button State for', plan.name, ':', {
                 isCurrentPlan,
