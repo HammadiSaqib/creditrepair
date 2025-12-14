@@ -12662,9 +12662,32 @@ export default function CreditReport() {
                                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100 dark:from-blue-950/40 dark:to-indigo-950/40 dark:border-blue-900/40">
                                   <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
                                   <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
-                                  <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.Experian.utilization)}`}>
-                                    {accountGroup.bureaus.Experian.utilization}% utilization
-                                  </div>
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
+                                    <div className="space-y-1 mt-1">
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.Experian.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.Experian.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.Experian.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
+                                    </div>
+                                  ) : (
+                                    <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.Experian.utilization)}`}>
+                                      {accountGroup.bureaus.Experian.utilization}% utilization
+                                    </div>
+                                  )}
                                 </div>
                                 
                                 <div className="space-y-2 text-xs">
