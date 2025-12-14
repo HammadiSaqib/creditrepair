@@ -9,6 +9,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis } from "recharts";
+import { format, startOfMonth, endOfMonth } from "date-fns";
+import type { DateRange } from "react-day-picker";
 import {
   Users,
   CreditCard,
@@ -168,10 +174,17 @@ export default function SuperAdminOverview() {
     totalClients: 0,
     clientsPerAdmin: 0,
   });
+  const [stripeSeries, setStripeSeries] = useState<Array<{ date: string; amount: number }>>([]);
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [dateRange, setDateRange] = useState<DateRange | undefined>({
+    from: startOfMonth(new Date()),
+    to: endOfMonth(new Date()),
+  });
   const [clientStats, setClientStats] = useState<ClientStatistics | null>(null);
   const [salesChatData, setSalesChatData] = useState<any[]>([]);
   const [reportPullingData, setReportPullingData] = useState<any[]>([]);
   const [alertsData, setAlertsData] = useState<any[]>([]);
+  const [errorAnalysisData, setErrorAnalysisData] = useState<any>(null);
   
   // New state for events and invitations
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
@@ -627,7 +640,7 @@ export default function SuperAdminOverview() {
     setLoading(true);
     try {
       // Load actual data from all endpoints
-      const [plansResponse, adminsResponse, usersResponse, subscriptionsResponse, transactionsResponse, clientsResponse, clientStatsResponse, salesChatResponse, reportPullingResponse, alertsResponse] = await Promise.all([
+      const [plansResponse, adminsResponse, usersResponse, subscriptionsResponse, transactionsResponse, clientsResponse, clientStatsResponse, salesChatResponse, reportPullingResponse, alertsResponse, errorAnalysisResponse] = await Promise.all([
         superAdminApi.getPlans({ limit: 1000 }),
         superAdminApi.getAdminProfiles({ limit: 1000 }),
         superAdminApi.getUsers({ limit: 1000 }),
@@ -635,12 +648,41 @@ export default function SuperAdminOverview() {
         superAdminApi.getBillingTransactions({ limit: 1000 }),
         superAdminApi.getClients({ limit: 1000 }),
         superAdminApi.getClientStatistics(),
-        superAdminApi.getSalesChatAnalytics(),
-        superAdminApi.getReportPullingAnalytics(),
-        superAdminApi.getRecentAlerts()
+        superAdminApi.getSalesChatAnalyticsRange({
+          from: (dateRange?.from || startOfMonth(new Date())).toISOString(),
+          to: (dateRange?.to || endOfMonth(new Date())).toISOString()
+        }),
+        superAdminApi.getReportPullingAnalyticsRange({
+          from: (dateRange?.from || startOfMonth(new Date())).toISOString(),
+          to: (dateRange?.to || endOfMonth(new Date())).toISOString()
+        }),
+        superAdminApi.getRecentAlerts(),
+        superAdminApi.getErrorAnalysisRange({
+          from: (dateRange?.from || startOfMonth(new Date())).toISOString(),
+          to: (dateRange?.to || endOfMonth(new Date())).toISOString()
+        })
       ]);
 
-      
+      // Load Stripe revenue for selected range
+      try {
+        setStripeLoading(true);
+        const from = dateRange?.from ? dateRange.from.toISOString() : startOfMonth(new Date()).toISOString();
+        const to = dateRange?.to ? dateRange.to.toISOString() : endOfMonth(new Date()).toISOString();
+        const stripeRevenueResp = await superAdminApi.getStripeRevenue({ from, to, group_by: 'day' });
+        const revenueData = stripeRevenueResp?.data?.data;
+        const series = Array.isArray(revenueData?.series) ? revenueData.series : [];
+        setStripeSeries(series);
+        // Use Stripe totals for monthly revenue and growth
+        const totalRevenue = Number(revenueData?.totalRevenue || 0);
+        const revenueGrowth = Number(revenueData?.revenueGrowth || 0);
+        // We'll set into stats after computing other metrics below
+        // Temporarily store for merge
+        var stripeTotals = { totalRevenue, revenueGrowth };
+      } catch (e) {
+        console.error("Failed to load Stripe revenue:", e);
+      } finally {
+        setStripeLoading(false);
+      }
 
       // Extract data from responses - APIs return nested data structure
         const plansData = plansResponse?.data?.data || [];
@@ -664,6 +706,7 @@ export default function SuperAdminOverview() {
       setSalesChatData(salesChatResponse?.data?.data || null);
       setReportPullingData(reportPullingResponse?.data?.data || null);
       setAlertsData(alertsResponse?.data?.data || null);
+      setErrorAnalysisData(errorAnalysisResponse?.data?.data || null);
 
       // Calculate statistics from actual data
       const totalPlans = Array.isArray(plansData) ? plansData.length : 0;
@@ -680,41 +723,13 @@ export default function SuperAdminOverview() {
         transactionsData.filter((transaction: any) => transaction.status === 'succeeded') : [];
       
       const totalTransactions = successfulTransactions.length;
-      
-      // Calculate current month revenue
-      const currentDate = new Date();
-      const currentMonth = currentDate.getMonth();
-      const currentYear = currentDate.getFullYear();
-      
-      const currentMonthRevenue = successfulTransactions
-        .filter((transaction: any) => {
-          const transactionDate = new Date(transaction.created_at);
-          return transactionDate.getMonth() === currentMonth && 
-                 transactionDate.getFullYear() === currentYear;
-        })
-        .reduce((sum: number, transaction: any) => {
-          const amount = parseFloat(transaction.amount) || 0;
-          return sum + amount;
-        }, 0);
-      
-      // Calculate previous month revenue for growth rate
-      const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-      const previousYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-      
-      const previousMonthRevenue = successfulTransactions
-        .filter((transaction: any) => {
-          const transactionDate = new Date(transaction.created_at);
-          return transactionDate.getMonth() === previousMonth && 
-                 transactionDate.getFullYear() === previousYear;
-        })
-        .reduce((sum: number, transaction: any) => {
-          const amount = parseFloat(transaction.amount) || 0;
-          return sum + amount;
-        }, 0);
-      
-      // Calculate growth rate
-      const revenueGrowth = previousMonthRevenue > 0 ? 
-        ((currentMonthRevenue - previousMonthRevenue) / previousMonthRevenue) * 100 : 0;
+      // Use Stripe totals for monthly revenue and growth if available
+      const currentMonthRevenue = typeof (stripeTotals?.totalRevenue) === 'number'
+        ? stripeTotals.totalRevenue
+        : 0;
+      const revenueGrowth = typeof (stripeTotals?.revenueGrowth) === 'number'
+        ? stripeTotals.revenueGrowth
+        : 0;
 
       // Calculate client statistics
       const totalClients = Array.isArray(clientsData) ? clientsData.length : 0;
@@ -1255,6 +1270,107 @@ export default function SuperAdminOverview() {
             <DynamicAlertsCard data={alertsData} loading={loading} onRefresh={loadDashboardData} />
           </div>
 
+          <Card className="gradient-border shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <AlertTriangle className="h-5 w-5 text-ocean-blue" />
+                <span>Error Analysis</span>
+              </CardTitle>
+              <CardDescription>Detailed breakdown of server errors by activity and user</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!errorAnalysisData ? (
+                <div className="text-sm text-muted-foreground">No error data for selected range</div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">Total Errors</span>
+                        <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
+                          {errorAnalysisData.total_errors || 0}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+                      <div className="text-sm font-medium mb-2">Top Tasks</div>
+                      <div className="space-y-2">
+                        {(errorAnalysisData.by_task || []).slice(0, 3).map((t: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between">
+                            <span className="text-xs capitalize">{t.task}</span>
+                            <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50">
+                              {t.count}
+                            </Badge>
+                          </div>
+                        ))}
+                        {(errorAnalysisData.by_task || []).length === 0 && (
+                          <div className="text-xs text-muted-foreground">No task errors</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20">
+                      <div className="text-sm font-medium mb-2">Top Users</div>
+                      <div className="space-y-2">
+                        {(errorAnalysisData.top_users || []).slice(0, 3).map((u: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between">
+                            <span className="text-xs">User #{u.user_id}</span>
+                            <Badge variant="outline" className="text-amber-600 border-amber-200 bg-amber-50">
+                              {u.error_count}
+                            </Badge>
+                          </div>
+                        ))}
+                        {(errorAnalysisData.top_users || []).length === 0 && (
+                          <div className="text-xs text-muted-foreground">No user errors</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 dark:border-gray-700">
+                          <th className="text-left py-3 px-4 font-semibold">Time</th>
+                          <th className="text-left py-3 px-4 font-semibold">User</th>
+                          <th className="text-left py-3 px-4 font-semibold">Task</th>
+                          <th className="text-left py-3 px-4 font-semibold">Activity</th>
+                          <th className="text-left py-3 px-4 font-semibold">Message</th>
+                          <th className="text-left py-3 px-4 font-semibold">Endpoint</th>
+                          <th className="text-center py-3 px-4 font-semibold">Method</th>
+                          <th className="text-center py-3 px-4 font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(errorAnalysisData.recent_errors || []).map((err: any) => (
+                          <tr key={err.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                            <td className="py-3 px-4 text-xs">{format(new Date(err.created_at), "MM/dd/yyyy HH:mm")}</td>
+                            <td className="py-3 px-4 text-xs">{err.user_id ? `#${err.user_id}` : '—'}</td>
+                            <td className="py-3 px-4 text-xs capitalize">{err.task || 'general'}</td>
+                            <td className="py-3 px-4 text-xs capitalize">{err.activity || 'other'}</td>
+                            <td className="py-3 px-4 text-xs">{err.message || '—'}</td>
+                            <td className="py-3 px-4 text-xs truncate max-w-[240px]">{err.url || '—'}</td>
+                            <td className="py-3 px-4 text-xs text-center">{err.method || '—'}</td>
+                            <td className="py-3 px-4 text-xs text-center">
+                              <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">
+                                {err.status || 500}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                        {(errorAnalysisData.recent_errors || []).length === 0 && (
+                          <tr>
+                            <td colSpan={8} className="py-4 px-4 text-center text-muted-foreground text-sm">
+                              No recent errors
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Client Statistics by Admin */}
           {clientStats?.byAdmin?.length > 0 && (
             <Card className="gradient-border shadow-lg">
@@ -1317,6 +1433,112 @@ export default function SuperAdminOverview() {
             </Card>
           )}
         </div>
+
+        {/* Stripe Payments */}
+        <Card className="gradient-border shadow-lg">
+          <CardHeader className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center space-x-2">
+                <DollarSign className="h-5 w-5 text-ocean-blue" />
+                <span>Stripe Payments</span>
+              </CardTitle>
+              <CardDescription>Platform-wide revenue directly from Stripe</CardDescription>
+            </div>
+            <div className="flex items-center gap-3">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    {dateRange?.from && dateRange?.to ? (
+                      `${format(dateRange.from, "MM/dd/yyyy")} - ${format(dateRange.to, "MM/dd/yyyy")}`
+                    ) : (
+                      "Select Date Range"
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <DayPickerCalendar
+                    mode="range"
+                    selected={dateRange}
+                    onSelect={(range) => {
+                      setDateRange(range);
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <Button
+                variant="default"
+                onClick={async () => {
+                  try {
+                    setStripeLoading(true);
+                    const from = dateRange?.from ? dateRange.from.toISOString() : startOfMonth(new Date()).toISOString();
+                    const to = dateRange?.to ? dateRange.to.toISOString() : endOfMonth(new Date()).toISOString();
+                    const stripeRevenueResp = await superAdminApi.getStripeRevenue({ from, to, group_by: 'day' });
+                    const revenueData = stripeRevenueResp?.data?.data;
+                    const series = Array.isArray(revenueData?.series) ? revenueData.series : [];
+                    setStripeSeries(series);
+                    setStats((prev) => ({
+                      ...prev,
+                      monthlyRevenue: Math.round(Number(revenueData?.totalRevenue || 0) * 100) / 100,
+                      revenueGrowth: Math.round(Number(revenueData?.revenueGrowth || 0) * 100) / 100,
+                    }));
+                    const [salesChatResp, reportPullingResp, errorAnalysisResp] = await Promise.all([
+                      superAdminApi.getSalesChatAnalyticsRange({ from, to }),
+                      superAdminApi.getReportPullingAnalyticsRange({ from, to }),
+                      superAdminApi.getErrorAnalysisRange({ from, to })
+                    ]);
+                    setSalesChatData(salesChatResp?.data?.data || null);
+                    setReportPullingData(reportPullingResp?.data?.data || null);
+                    setErrorAnalysisData(errorAnalysisResp?.data?.data || null);
+                  } catch (e) {
+                    toast.error("Failed to load Stripe payments");
+                  } finally {
+                    setStripeLoading(false);
+                  }
+                }}
+              >
+                Apply
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <ChartContainer
+                config={{
+                  revenue: {
+                    label: "Revenue",
+                    color: "hsl(var(--chart-1))",
+                  },
+                }}
+                className="h-full w-full"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={stripeSeries}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(value) => format(new Date(value), "MM/dd")}
+                    />
+                    <YAxis tickFormatter={(value) => `$${value}`} />
+                    <ChartTooltip content={<ChartTooltipContent />} formatter={(value, name) => [`$${value}`, name]} />
+                    <Line
+                      type="monotone"
+                      dataKey="amount"
+                      name="revenue"
+                      stroke="var(--color-revenue)"
+                      strokeWidth={2}
+                      dot={{ fill: "var(--color-revenue)" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+              {stripeLoading && (
+                <div className="mt-2 text-sm text-muted-foreground">Loading Stripe data…</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Sales Chat Section */}
         <div className="space-y-6 mt-8">

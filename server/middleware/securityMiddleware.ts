@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyTokenHelper } from '../controllers/enhancedAuthController.js';
 import { SECURITY_CONFIG, SECURITY_HEADERS, sanitizeInput } from '../config/security.js';
 import { z } from 'zod';
+import { logActivity } from '../database/enhancedSchema.js';
+import { securityLogger, LogLevel } from '../utils/securityLogger.js';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -342,6 +344,73 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
 // Error handling middleware
 export function errorHandler(error: any, req: Request, res: Response, next: NextFunction) {
   console.error('Unhandled error:', error);
+  const ip = req.ip || (req as any)?.connection?.remoteAddress || 'unknown';
+  const ua = req.get('User-Agent') || 'unknown';
+  const url = String(req.url || '');
+  const method = String(req.method || 'GET').toUpperCase();
+  const classify = () => {
+    if (url.includes('/api/credit-reports')) return { task: 'report_pull', activity: 'report_generated' };
+    if (url.includes('/api/support/settings') || url.includes('/api/super-admin/stripe') || (url.includes('/api/affiliate/settings')) || (url.includes('/api/admin') && url.includes('settings'))) return { task: 'settings_update', activity: 'other' };
+    if (url.includes('/api/auth') && (url.includes('reset-password') || (url.includes('/profile') && ((req as any)?.body?.new_password || (req as any)?.body?.current_password)))) return { task: 'password_change', activity: 'password_changed' };
+    if (url.includes('/api/clients')) {
+      if (method === 'POST') return { task: 'client_add', activity: 'client_created' };
+      if (method === 'PUT') return { task: 'client_update', activity: 'client_updated' };
+      if (method === 'DELETE') return { task: 'client_delete', activity: 'other' };
+    }
+    return { task: 'general', activity: 'other' };
+  };
+  const ctx = classify();
+  try {
+    const safeBody = (() => {
+      try {
+        const sensitiveKeys = ['password', 'current_password', 'new_password', 'password_hash', 'stripe_secret_key', 'api_key', 'nmi_api_key', 'nmi_password'];
+        const clone = typeof (req as any)?.body === 'object' && (req as any)?.body !== null ? JSON.parse(JSON.stringify((req as any).body)) : (req as any).body;
+        if (clone && typeof clone === 'object') {
+          for (const key of Object.keys(clone)) {
+            if (sensitiveKeys.includes(key)) clone[key] = '[REDACTED]';
+          }
+        }
+        return clone;
+      } catch {
+        return undefined;
+      }
+    })();
+    const userId = (req as any)?.user?.id;
+    logActivity(
+      'other',
+      'server_error',
+      userId,
+      undefined,
+      undefined,
+      {
+        is_error: true,
+        task: ctx.task,
+        activity: ctx.activity,
+        url,
+        method,
+        body: safeBody,
+        status: error?.status || 500,
+        message: error?.message
+      },
+      ip,
+      ua
+    );
+  } catch {}
+  try {
+    const userId = (req as any)?.user?.id;
+    securityLogger.logSecurityEvent({
+      level: LogLevel.ERROR,
+      eventType: 'server_error' as any,
+      userId,
+      ip,
+      userAgent: ua,
+      message: `${ctx.task} error at ${method} ${url}: ${error?.message || 'Unknown error'}`,
+      metadata: {
+        activity: ctx.activity,
+        status: error?.status || 500
+      }
+    });
+  } catch {}
   
   // Don't leak error details in production
   const isDevelopment = process.env.NODE_ENV === 'development';

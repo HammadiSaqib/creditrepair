@@ -2466,6 +2466,162 @@ router.get('/analytics/subscriptions', authenticateToken, requireAdmin, async (r
   }
 });
 
+// Stripe Revenue (platform-wide)
+router.get('/analytics/stripe-revenue', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const cfg = await db.getQuery('SELECT stripe_secret_key FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1');
+    const secret = (cfg && cfg.stripe_secret_key) ? String(cfg.stripe_secret_key) : process.env.STRIPE_SECRET_KEY || '';
+    if (!secret) {
+      return res.status(500).json({ success: false, error: 'Stripe not configured' });
+    }
+    const stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+
+    const { from, to, group_by } = req.query as any;
+    const fromDate = from ? new Date(String(from)) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const toDate = to ? new Date(String(to)) : new Date();
+    const groupBy: 'day' | 'month' = (String(group_by || 'day') === 'month') ? 'month' : 'day';
+
+    const fromUnix = Math.floor(fromDate.getTime() / 1000);
+    const toUnix = Math.floor(toDate.getTime() / 1000);
+
+    let startingAfter: string | undefined = undefined;
+    let hasMore = true;
+    let totalRevenue = 0;
+    const seriesMap = new Map<string, number>();
+
+    while (hasMore) {
+      const list = await stripe.paymentIntents.list({
+        limit: 100,
+        created: { gte: fromUnix, lte: toUnix },
+        ...(startingAfter ? { starting_after: startingAfter } : {})
+      });
+      for (const pi of list.data) {
+        if (pi.status === 'succeeded') {
+          const amount = typeof pi.amount === 'number' ? Number(pi.amount) / 100 : 0;
+          totalRevenue += amount;
+          const dt = new Date(pi.created * 1000);
+          const key = groupBy === 'month'
+            ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+            : dt.toISOString().slice(0, 10);
+          seriesMap.set(key, (seriesMap.get(key) || 0) + amount);
+        }
+      }
+      hasMore = list.has_more;
+      if (hasMore && list.data.length > 0) {
+        startingAfter = list.data[list.data.length - 1].id;
+      }
+    }
+
+    const series = Array.from(seriesMap.entries())
+      .map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Previous period revenue for growth comparison (same length as current range)
+    const rangeDays = Math.max(1, Math.ceil((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24)));
+    const prevToDate = new Date(fromDate.getTime() - 1);
+    const prevFromDate = new Date(prevToDate.getTime() - rangeDays * 24 * 60 * 60 * 1000);
+    const prevFromUnix = Math.floor(prevFromDate.getTime() / 1000);
+    const prevToUnix = Math.floor(prevToDate.getTime() / 1000);
+
+    let prevStartingAfter: string | undefined = undefined;
+    let prevHasMore = true;
+    let previousRevenue = 0;
+    while (prevHasMore) {
+      const list = await stripe.paymentIntents.list({
+        limit: 100,
+        created: { gte: prevFromUnix, lte: prevToUnix },
+        ...(prevStartingAfter ? { starting_after: prevStartingAfter } : {})
+      });
+      for (const pi of list.data) {
+        if (pi.status === 'succeeded') {
+          const amount = typeof pi.amount === 'number' ? Number(pi.amount) / 100 : 0;
+          previousRevenue += amount;
+        }
+      }
+      prevHasMore = list.has_more;
+      if (prevHasMore && list.data.length > 0) {
+        prevStartingAfter = list.data[list.data.length - 1].id;
+      }
+    }
+
+    const revenueGrowth = previousRevenue > 0 ? ((totalRevenue - previousRevenue) / previousRevenue) * 100 : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        totalRevenue,
+        revenueGrowth,
+        series,
+        group_by: groupBy,
+        from: fromDate.toISOString(),
+        to: toDate.toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching Stripe revenue:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch Stripe revenue' });
+  }
+});
+
+// Stripe Payments time series (detailed)
+router.get('/analytics/stripe-payments', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const cfg = await db.getQuery('SELECT stripe_secret_key FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1');
+    const secret = (cfg && cfg.stripe_secret_key) ? String(cfg.stripe_secret_key) : process.env.STRIPE_SECRET_KEY || '';
+    if (!secret) {
+      return res.status(500).json({ success: false, error: 'Stripe not configured' });
+    }
+    const stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+
+    const { from, to } = req.query as any;
+    const fromDate = from ? new Date(String(from)) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const toDate = to ? new Date(String(to)) : new Date();
+    const fromUnix = Math.floor(fromDate.getTime() / 1000);
+    const toUnix = Math.floor(toDate.getTime() / 1000);
+
+    let startingAfter: string | undefined = undefined;
+    let hasMore = true;
+    const payments: Array<{ date: string; amount: number; currency: string; id: string }> = [];
+
+    while (hasMore) {
+      const list = await stripe.paymentIntents.list({
+        limit: 100,
+        created: { gte: fromUnix, lte: toUnix },
+        ...(startingAfter ? { starting_after: startingAfter } : {})
+      });
+      for (const pi of list.data) {
+        if (pi.status === 'succeeded') {
+          const amount = typeof pi.amount === 'number' ? Number(pi.amount) / 100 : 0;
+          payments.push({
+            date: new Date(pi.created * 1000).toISOString().slice(0, 10),
+            amount,
+            currency: (pi.currency || 'usd').toUpperCase(),
+            id: pi.id
+          });
+        }
+      }
+      hasMore = list.has_more;
+      if (hasMore && list.data.length > 0) {
+        startingAfter = list.data[list.data.length - 1].id;
+      }
+    }
+
+    payments.sort((a, b) => a.date.localeCompare(b.date));
+
+    return res.json({
+      success: true,
+      data: payments,
+      from: fromDate.toISOString(),
+      to: toDate.toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching Stripe payments:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch Stripe payments' });
+  }
+});
+
 // Stripe Configuration Management
 
 // Get current Stripe configuration
@@ -3966,6 +4122,11 @@ router.get('/clients', authenticateToken, requireSuperAdmin, async (req: Request
 router.get('/analytics/sales-chat', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
   try {
     const db = getDatabaseAdapter();
+    const { from, to } = req.query as any;
+    const toDate = to ? new Date(String(to)) : new Date();
+    const fromDate = from ? new Date(String(from)) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const fromStr = fromDate.toISOString().slice(0, 19).replace('T', ' ');
+    const toStr = toDate.toISOString().slice(0, 19).replace('T', ' ');
     
     // Get chat statistics across all users (using existing chat_messages table)
     const chatStatsQuery = `
@@ -3975,12 +4136,12 @@ router.get('/analytics/sales-chat', authenticateToken, requireAdmin, async (req:
         COUNT(DISTINCT sender_id) as active_users,
         0 as avg_response_time
       FROM chat_messages 
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      WHERE created_at >= ? AND created_at <= ?
       GROUP BY DATE(created_at)
       ORDER BY date DESC
     `;
     
-    const chatStats = await db.executeQuery(chatStatsQuery);
+    const chatStats = await db.executeQuery(chatStatsQuery, [fromStr, toStr]);
     
     // Get top performing support agents (using existing users and chat_messages)
     const topAgentsQuery = `
@@ -3992,13 +4153,13 @@ router.get('/analytics/sales-chat', authenticateToken, requireAdmin, async (req:
         COUNT(DISTINCT cm.receiver_id) as clients_helped
       FROM users u
       JOIN chat_messages cm ON u.id = cm.sender_id
-      WHERE u.role IN ('support', 'admin') AND cm.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      WHERE u.role IN ('support', 'admin') AND cm.created_at >= ? AND cm.created_at <= ?
       GROUP BY u.id
       ORDER BY messages_sent DESC
       LIMIT 10
     `;
     
-    const topAgents = await db.executeQuery(topAgentsQuery);
+    const topAgents = await db.executeQuery(topAgentsQuery, [fromStr, toStr]);
     
     // Get conversion metrics (using existing subscriptions table)
     const conversionQuery = `
@@ -4014,10 +4175,10 @@ router.get('/analytics/sales-chat', authenticateToken, requireAdmin, async (req:
       LEFT JOIN subscriptions s ON cm.sender_id = s.user_id 
         AND s.created_at >= cm.created_at 
         AND s.created_at <= DATE_ADD(cm.created_at, INTERVAL 7 DAY)
-      WHERE cm.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      WHERE cm.created_at >= ? AND cm.created_at <= ?
     `;
     
-    const conversionStats = await db.executeQuery(conversionQuery);
+    const conversionStats = await db.executeQuery(conversionQuery, [fromStr, toStr]);
     
     res.json({
       success: true,
@@ -4036,6 +4197,11 @@ router.get('/analytics/sales-chat', authenticateToken, requireAdmin, async (req:
 router.get('/analytics/report-pulling', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
   try {
     const db = getDatabaseAdapter();
+    const { from, to } = req.query as any;
+    const toDate = to ? new Date(String(to)) : new Date();
+    const fromDate = from ? new Date(String(from)) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const fromStr = fromDate.toISOString().slice(0, 19).replace('T', ' ');
+    const toStr = toDate.toISOString().slice(0, 19).replace('T', ' ');
     
     // Get report pulling statistics (using existing credit_reports table)
     const reportStatsQuery = `
@@ -4047,12 +4213,12 @@ router.get('/analytics/report-pulling', authenticateToken, requireAdmin, async (
         SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_reports,
         0 as avg_processing_time
       FROM credit_reports 
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      WHERE created_at >= ? AND created_at <= ?
       GROUP BY DATE(created_at)
       ORDER BY date DESC
     `;
     
-    const reportStats = await db.executeQuery(reportStatsQuery);
+    const reportStats = await db.executeQuery(reportStatsQuery, [fromStr, toStr]);
     
     // Get bureau-wise statistics (using existing bureau column)
     const bureauStatsQuery = `
@@ -4063,12 +4229,12 @@ router.get('/analytics/report-pulling', authenticateToken, requireAdmin, async (
         0 as avg_processing_time,
         SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_pulls
       FROM credit_reports 
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      WHERE created_at >= ? AND created_at <= ?
       GROUP BY bureau
       ORDER BY total_pulls DESC
     `;
     
-    const bureauStats = await db.executeQuery(bureauStatsQuery);
+    const bureauStats = await db.executeQuery(bureauStatsQuery, [fromStr, toStr]);
     
     // Get user activity for report pulling (using existing clients and credit_reports)
     const userActivityQuery = `
@@ -4081,13 +4247,13 @@ router.get('/analytics/report-pulling', authenticateToken, requireAdmin, async (
         0 as avg_processing_time
       FROM clients c
       JOIN credit_reports cr ON c.id = cr.client_id
-      WHERE cr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      WHERE cr.created_at >= ? AND cr.created_at <= ?
       GROUP BY c.id
       ORDER BY reports_pulled DESC
       LIMIT 20
     `;
     
-    const userActivity = await db.executeQuery(userActivityQuery);
+    const userActivity = await db.executeQuery(userActivityQuery, [fromStr, toStr]);
     
     // Get error analysis (simplified since we don't have error_type column)
     const errorAnalysisQuery = `
@@ -4096,10 +4262,10 @@ router.get('/analytics/report-pulling', authenticateToken, requireAdmin, async (
         COUNT(*) as error_count,
         (COUNT(*) / (SELECT COUNT(*) FROM credit_reports WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY))) * 100 as error_percentage
       FROM credit_reports 
-      WHERE status = 'error' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      WHERE status = 'error' AND created_at >= ? AND created_at <= ?
     `;
     
-    const errorAnalysis = await db.executeQuery(errorAnalysisQuery);
+    const errorAnalysis = await db.executeQuery(errorAnalysisQuery, [fromStr, toStr]);
     
     res.json({
       success: true,
@@ -4113,6 +4279,118 @@ router.get('/analytics/report-pulling', authenticateToken, requireAdmin, async (
   } catch (error) {
     console.error('Error fetching report pulling analytics:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch report pulling analytics' });
+  }
+});
+
+// Error Analysis Endpoint
+router.get('/analytics/error-analysis', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const { from, to } = req.query as any;
+    const toDate = to ? new Date(String(to)) : new Date();
+    const fromDate = from ? new Date(String(from)) : new Date(toDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const fromStr = fromDate.toISOString().slice(0, 19).replace('T', ' ');
+    const toStr = toDate.toISOString().slice(0, 19).replace('T', ' ');
+    const dbType = db.getType();
+    const activityCol = dbType === 'mysql' ? '`type`' : 'activity_type';
+    const metadataCol = dbType === 'mysql' ? '`metadata`' : 'metadata';
+    const metadataIsError = dbType === 'mysql'
+      ? `(${metadataCol} IS NOT NULL AND (JSON_EXTRACT(${metadataCol}, '$.is_error') = true OR CAST(${metadataCol} AS CHAR) LIKE '%"is_error":true%'))`
+      : `(metadata IS NOT NULL AND metadata LIKE '%"is_error":true%')`;
+    const ipSelect = dbType === 'mysql'
+      ? `JSON_UNQUOTE(JSON_EXTRACT(${metadataCol}, '$.ip_address'))`
+      : `ip_address`;
+    const uaSelect = dbType === 'mysql'
+      ? `JSON_UNQUOTE(JSON_EXTRACT(${metadataCol}, '$.user_agent'))`
+      : `user_agent`;
+    const errorsQuery = `
+      SELECT 
+        id,
+        user_id,
+        ${activityCol} as activity,
+        description,
+        ${metadataCol} as metadata,
+        ${ipSelect} as ip_address,
+        ${uaSelect} as user_agent,
+        created_at
+      FROM activities
+      WHERE created_at >= ? AND created_at <= ?
+        AND (
+          description = 'server_error'
+          OR ${metadataIsError}
+        )
+      ORDER BY created_at DESC
+      LIMIT 200
+    `;
+    const rows = await db.executeQuery(errorsQuery, [fromStr, toStr]);
+    
+    const recentErrors = [];
+    const byTask: Record<string, { count: number; last_occurrence: string }> = {};
+    const byUser: Record<string, number> = {};
+    
+    for (const row of rows || []) {
+      let meta: any = {};
+      try {
+        if (row.metadata && typeof row.metadata === 'string') {
+          meta = JSON.parse(row.metadata);
+        } else if (row.metadata && typeof row.metadata === 'object') {
+          meta = row.metadata;
+        } else {
+          meta = {};
+        }
+      } catch {
+        meta = {};
+      }
+      const task = meta?.task || 'general';
+      const message = meta?.message || row.description || 'server_error';
+      
+      if (!byTask[task]) byTask[task] = { count: 0, last_occurrence: row.created_at };
+      byTask[task].count += 1;
+      if (new Date(row.created_at).getTime() > new Date(byTask[task].last_occurrence).getTime()) {
+        byTask[task].last_occurrence = row.created_at;
+      }
+      const uid = String(row.user_id || 'unknown');
+      byUser[uid] = (byUser[uid] || 0) + 1;
+      
+      recentErrors.push({
+        id: row.id,
+        user_id: row.user_id || null,
+        activity: row.activity,
+        task,
+        message,
+        url: meta?.url || null,
+        method: meta?.method || null,
+        status: meta?.status || null,
+        ip_address: row.ip_address || meta?.ip_address || null,
+        user_agent: row.user_agent || meta?.user_agent || null,
+        created_at: row.created_at
+      });
+    }
+    
+    const taskSummary = Object.entries(byTask).map(([task, info]) => ({
+      task,
+      count: info.count,
+      last_occurrence: info.last_occurrence
+    })).sort((a, b) => b.count - a.count);
+    
+    const topUsers = Object.entries(byUser)
+      .filter(([uid]) => uid !== 'unknown')
+      .map(([uid, count]) => ({ user_id: uid, error_count: count }))
+      .sort((a, b) => b.error_count - a.error_count)
+      .slice(0, 10);
+    
+    res.json({
+      success: true,
+      data: {
+        total_errors: rows?.length || 0,
+        by_task: taskSummary,
+        top_users: topUsers,
+        recent_errors: recentErrors
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching error analysis:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch error analysis' });
   }
 });
 

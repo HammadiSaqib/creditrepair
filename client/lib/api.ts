@@ -564,8 +564,18 @@ export const superAdminApi = {
     api.get('/api/super-admin/clients', { params }),
   getClientStatistics: () => api.get('/api/super-admin/client-statistics'),
   getSalesChatAnalytics: () => api.get('/api/super-admin/analytics/sales-chat'),
+  getSalesChatAnalyticsRange: (params?: { from?: string; to?: string }) =>
+    api.get('/api/super-admin/analytics/sales-chat', { params }),
   getReportPullingAnalytics: () => api.get('/api/super-admin/analytics/report-pulling'),
+  getReportPullingAnalyticsRange: (params?: { from?: string; to?: string }) =>
+    api.get('/api/super-admin/analytics/report-pulling', { params }),
+  getErrorAnalysisRange: (params?: { from?: string; to?: string }) =>
+    api.get('/api/super-admin/analytics/error-analysis', { params }),
   getRecentAlerts: () => api.get('/api/super-admin/analytics/recent-alerts'),
+  getStripeRevenue: (params?: { from?: string; to?: string; group_by?: 'day' | 'month' }) =>
+    api.get('/api/super-admin/analytics/stripe-revenue', { params }),
+  getStripePayments: (params?: { from?: string; to?: string }) =>
+    api.get('/api/super-admin/analytics/stripe-payments', { params }),
   loginAsAdmin: (adminId: string) => api.post('/api/auth/login-as-admin', { adminId }),
   // Support Users Management
   getSupportUsers: (params?: { page?: number; limit?: number; search?: string; is_active?: string }) =>
