@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CheckCircle, Star, Users, ArrowRight, Shield, BarChart3, Menu, Play, Zap, FileText, TrendingUp, Mail, DollarSign, Sparkles, Globe, Target } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import FallingMoney from '@/components/ui/FallingMoney'; // Assuming this is available as in Index.tsx
@@ -105,6 +106,7 @@ const ReferralLandingPage: React.FC = () => {
   const [plansLoading, setPlansLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [billingFilter, setBillingFilter] = useState<'monthly' | 'yearly'>('monthly');
+  const [demoOpen, setDemoOpen] = useState(false);
   const ctaRef = React.useRef<HTMLDivElement>(null);
 
   useGSAP(() => {
@@ -196,7 +198,7 @@ const ReferralLandingPage: React.FC = () => {
       localStorage.setItem('referralAffiliateId', affiliate.id);
       localStorage.setItem('referralAffiliateName', affiliate.name);
     }
-    navigate('/');
+    setDemoOpen(true);
   };
 
   const scrollToPricing = () => {
@@ -241,6 +243,25 @@ const ReferralLandingPage: React.FC = () => {
         <title>Score Machine - Referred by {affiliate.firstName}</title>
         <meta name="description" content={`Special offer from ${affiliate.name} to join Score Machine.`} />
       </Helmet>
+
+      <Dialog open={demoOpen} onOpenChange={setDemoOpen}>
+        <DialogContent className="!h-[190vh] !w-[95vw] sm:!w-[80vw] !max-w-none p-0 overflow-hidden flex flex-col">
+          <DialogHeader className="px-6 pt-6">
+            <DialogTitle>Score Machine Demo</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6 flex-1 min-h-0">
+            {demoOpen && (
+              <iframe
+                className="h-full w-full rounded-lg"
+                src="https://www.youtube.com/embed/6bE9svjqp80?autoplay=1&rel=0"
+                title="Score Machine Pro Full Walkthrough"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* --- GLOBAL BACKGROUND PATTERN --- */}
       <div className="fixed inset-0 z-0 pointer-events-none">
@@ -528,7 +549,7 @@ const ReferralLandingPage: React.FC = () => {
                   value="yearly" 
                   className="group rounded-full h-full text-slate-600 data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-600 data-[state=active]:to-emerald-600 data-[state=active]:!text-white data-[state=active]:font-semibold data-[state=active]:shadow-md transition-all duration-300 font-medium text-base relative overflow-hidden"
                 >
-                  Yearly <span className="ml-2 text-xs bg-teal-100/50 text-teal-800 group-data-[state=active]:bg-white/20 group-data-[state=active]:!text-white px-2 py-0.5 rounded-full transition-colors duration-300">Save 20%</span>
+                  Yearly <span className="ml-2 text-xs bg-teal-100/50 text-teal-800 group-data-[state=active]:bg-white/20 group-data-[state=active]:!text-white px-2 py-0.5 rounded-full transition-colors duration-300">2 months free</span>
                 </TabsTrigger>
               </TabsList>
             </Tabs>

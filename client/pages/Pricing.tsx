@@ -307,7 +307,7 @@ export default function Pricing() {
                 >
                   Yearly
                   <Badge className="absolute -top-2 -right-2 bg-emerald-600 text-white text-xs">
-                    Save 20%
+                    2 months free
                   </Badge>
                 </button>
               </div>
