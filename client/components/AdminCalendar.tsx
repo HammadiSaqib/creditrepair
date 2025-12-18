@@ -44,6 +44,34 @@ interface UpcomingData {
 }
 
 const AdminCalendar: React.FC = () => {
+  const NEW_YORK_TIME_ZONE = 'America/New_York';
+  const getYmdInTimeZone = (date: Date, timeZone: string) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value;
+    const y = get('year');
+    const m = get('month');
+    const d = get('day');
+    if (!y || !m || !d) return '';
+    return `${y}-${m}-${d}`;
+  };
+  const ymdToSafeDate = (ymd: string) => new Date(`${ymd}T12:00:00.000Z`);
+  const normalizeTime = (timeStr: string) => (/^\d{2}:\d{2}$/.test(timeStr) ? `${timeStr}:00` : timeStr);
+  const formatTime = (timeStr: string | null) => {
+    if (!timeStr) return 'No time set';
+    const t = normalizeTime(timeStr);
+    const match = t.match(/^(\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match) return timeStr;
+    const hour24 = parseInt(match[1], 10);
+    const minute = match[2];
+    const hour12 = ((hour24 + 11) % 12) + 1;
+    const suffix = hour24 >= 12 ? 'PM' : 'AM';
+    return `${hour12}:${minute} ${suffix}`;
+  };
   const [calendarData, setCalendarData] = useState<CalendarData | null>(null);
   const [upcomingData, setUpcomingData] = useState<UpcomingData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,23 +83,22 @@ const AdminCalendar: React.FC = () => {
   const computeUpcomingFallback = () => {
     if (!calendarData || !calendarData.events || calendarData.events.length === 0) return null;
 
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
+    const startYmd = getYmdInTimeZone(new Date(), NEW_YORK_TIME_ZONE);
+    const endDate = ymdToSafeDate(startYmd);
+    endDate.setUTCDate(endDate.getUTCDate() + 7);
+    const endYmd = endDate.toISOString().slice(0, 10);
 
     const withinRange = (dateStr: string) => {
-      const d = new Date(dateStr);
-      d.setHours(0, 0, 0, 0);
-      return d >= start && d <= end;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+      return dateStr >= startYmd && dateStr <= endYmd;
     };
 
     const upcomingEvents = calendarData.events
       .filter((e) => withinRange(e.date))
       .sort((a, b) => {
-        const ta = new Date(`${a.date} ${a.time || '23:59:59'}`).getTime();
-        const tb = new Date(`${b.date} ${b.time || '23:59:59'}`).getTime();
-        return ta - tb;
+        const ta = `${a.date}T${normalizeTime(a.time || '23:59:59')}`;
+        const tb = `${b.date}T${normalizeTime(b.time || '23:59:59')}`;
+        return ta.localeCompare(tb);
       });
 
     if (upcomingEvents.length === 0) return null;
@@ -194,29 +221,31 @@ const AdminCalendar: React.FC = () => {
 
     const year = selectedDate.getFullYear();
     const month = selectedDate.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
+    const firstDay = new Date(Date.UTC(year, month, 1, 12, 0, 0));
     const startDate = new Date(firstDay);
-    startDate.setDate(startDate.getDate() - firstDay.getDay());
+    startDate.setUTCDate(startDate.getUTCDate() - firstDay.getUTCDay());
 
     const days = [];
     const current = new Date(startDate);
+    const todayYmd = getYmdInTimeZone(new Date(), NEW_YORK_TIME_ZONE);
 
     for (let i = 0; i < 42; i++) {
-      const dateStr = current.toISOString().split('T')[0];
+      const dateStr = current.toISOString().slice(0, 10);
       const dayEvents = calendarData.events.filter(event => event.date === dateStr);
       
       days.push({
         date: new Date(current),
         dateStr,
-        isCurrentMonth: current.getMonth() === month,
-        isToday: current.toDateString() === new Date().toDateString(),
-        isPrevMonth: current.getFullYear() < year || (current.getFullYear() === year && current.getMonth() < month),
-        isNextMonth: current.getFullYear() > year || (current.getFullYear() === year && current.getMonth() > month),
+        isCurrentMonth: current.getUTCMonth() === month,
+        isToday: dateStr === todayYmd,
+        isPrevMonth:
+          current.getUTCFullYear() < year || (current.getUTCFullYear() === year && current.getUTCMonth() < month),
+        isNextMonth:
+          current.getUTCFullYear() > year || (current.getUTCFullYear() === year && current.getUTCMonth() > month),
         events: dayEvents,
       });
 
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     }
 
     return days;
@@ -224,21 +253,13 @@ const AdminCalendar: React.FC = () => {
 
   // Format date for display
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: NEW_YORK_TIME_ZONE,
       weekday: 'short',
       month: 'short',
       day: 'numeric',
-    });
-  };
-
-  // Format time for display
-  const formatTime = (timeStr: string | null) => {
-    if (!timeStr) return 'No time set';
-    return new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
+    }).format(ymdToSafeDate(dateStr));
   };
 
   useEffect(() => {
@@ -383,7 +404,7 @@ const AdminCalendar: React.FC = () => {
                     )}
                     <div className="relative z-10">
                       <div className="text-sm font-medium mb-1">
-                        {day.date.getDate()}
+                        {day.date.getUTCDate()}
                       </div>
                       <div className="space-y-1">
                         {day.events.slice(0, 2).map(event => (
