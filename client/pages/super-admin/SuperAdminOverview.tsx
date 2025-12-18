@@ -162,6 +162,23 @@ interface ClientWithAdmin {
 }
 
 export default function SuperAdminOverview() {
+  const NEW_YORK_TIME_ZONE = "America/New_York";
+  const pad2 = (n: number) => String(n).padStart(2, "0");
+  const getYMDInTimeZone = (date: Date, timeZone: string) => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+    const get = (type: string) => parts.find((p) => p.type === type)?.value;
+    const y = get("year");
+    const m = get("month");
+    const d = get("day");
+    if (!y || !m || !d) return "";
+    return `${y}-${m}-${d}`;
+  };
+  const minDateNY = getYMDInTimeZone(new Date(), NEW_YORK_TIME_ZONE);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     totalPlans: 0,
@@ -479,21 +496,29 @@ export default function SuperAdminOverview() {
 
   // Format relative date
   const formatRelativeDate = (dateString: string) => {
-    let target: Date;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-      const [y, m, d] = dateString.split('-').map((n) => parseInt(n, 10));
-      target = new Date(y, (m || 1) - 1, d || 1);
-    } else {
-      target = new Date(dateString);
-    }
-    const today = new Date();
-    const start = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    const diffDays = Math.ceil((start - todayStart) / (1000 * 60 * 60 * 24));
+    const targetYmd = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
+      ? dateString.slice(0, 10)
+      : getYMDInTimeZone(new Date(dateString), NEW_YORK_TIME_ZONE);
+
+    const todayYmd = getYMDInTimeZone(new Date(), NEW_YORK_TIME_ZONE);
+    if (!targetYmd || !todayYmd) return dateString;
+    const parseYmd = (ymd: string) => {
+      const [y, m, d] = ymd.split("-").map((n) => parseInt(n, 10));
+      return { y, m, d };
+    };
+    const t = parseYmd(targetYmd);
+    const td = parseYmd(todayYmd);
+    const targetUtc = Date.UTC(t.y, (t.m || 1) - 1, t.d || 1);
+    const todayUtc = Date.UTC(td.y, (td.m || 1) - 1, td.d || 1);
+    const diffDays = Math.round((targetUtc - todayUtc) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) return "Today";
     if (diffDays === 1) return "Tomorrow";
-    return target.toLocaleDateString('en-US', { weekday: 'long' });
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: NEW_YORK_TIME_ZONE,
+      weekday: "long",
+    }).format(new Date(`${targetYmd}T12:00:00Z`));
+    return weekday;
   };
 
   const parseEventId = (raw: any): number | null => {
@@ -528,12 +553,10 @@ export default function SuperAdminOverview() {
 
     setEventLoading(true);
     try {
-      const eventDateTime = new Date(`${eventForm.date}T${eventForm.time}`);
-      
       const eventData = {
         title: eventForm.title,
         description: eventForm.description,
-        date: eventDateTime.toISOString(),
+        date: `${eventForm.date}T12:00:00.000Z`,
         time: eventForm.time, // Add the time field
         duration: '1h', // Add default duration
         type: eventForm.type,
@@ -585,8 +608,11 @@ export default function SuperAdminOverview() {
       toast.error("This item cannot be edited");
       return;
     }
-    const dateStr = typeof event.date === 'string' ? event.date.slice(0, 10) : new Date(event.date).toISOString().slice(0, 10);
-    const timeStr = (event.time && typeof event.time === 'string') ? event.time.slice(0,5) : (new Date(event.date).toISOString().slice(11,16));
+    const dateStr =
+      typeof event.date === "string"
+        ? event.date.slice(0, 10)
+        : getYMDInTimeZone(new Date(event.date), NEW_YORK_TIME_ZONE);
+    const timeStr = (event.time && typeof event.time === 'string') ? event.time.slice(0, 5) : '';
     setEventForm({
       title: event.title || '',
       description: event.description || '',
@@ -630,7 +656,7 @@ export default function SuperAdminOverview() {
     if (selected >= today) {
       setEventForm(prev => ({
         ...prev,
-        date: selected.toISOString().split('T')[0]
+        date: `${selected.getFullYear()}-${pad2(selected.getMonth() + 1)}-${pad2(selected.getDate())}`
       }));
       setShowEventModal(true);
     }
@@ -1633,7 +1659,7 @@ export default function SuperAdminOverview() {
                   type="date"
                   value={eventForm.date}
                   onChange={(e) => setEventForm(prev => ({ ...prev, date: e.target.value }))}
-                  min={new Date().toISOString().split('T')[0]}
+                  min={minDateNY}
                 />
               </div>
               <div className="space-y-2">

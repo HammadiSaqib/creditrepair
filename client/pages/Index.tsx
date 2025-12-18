@@ -61,6 +61,14 @@ export default function Index() {
     return () => clearTimeout(t);
   }, []);
 
+  const scrollToHowItWorks = () => {
+    if (howItWorksRef.current) {
+      howItWorksRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -589,6 +597,7 @@ export default function Index() {
                       size="lg"
                       variant="outline"
                       className="h-14 px-8 text-lg rounded-full border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-100 hover:border-slate-400 transition-all duration-300 bg-white/50 backdrop-blur-sm"
+                      onClick={scrollToHowItWorks}
                     >
                       <Play className="mr-2 h-5 w-5 fill-current" />
                       Watch Demo
@@ -825,9 +834,6 @@ export default function Index() {
               {/* Ambient Glow - Light Theme */}
               <div className="absolute -z-10 bottom-[-40px] left-1/2 -translate-x-1/2 w-[120%] h-[60px] bg-teal-500/10 blur-[50px] rounded-[100%] animate-pulse"></div>
               
-              <p className="text-center text-xs text-slate-500 mt-16 italic relative z-10">
-                Demo video presented for illustrative purposes only.
-              </p>
             </div>
           </div>
         </div>
@@ -894,7 +900,7 @@ export default function Index() {
                  <Button asChild size="lg" className="bg-teal-600 hover:bg-teal-700 text-white rounded-full px-8">
                     <Link to="/signup">Create Free Account</Link>
                  </Button>
-                 <Button variant="outline" size="lg" className="border-slate-300 text-slate-700 hover:bg-slate-100 rounded-full px-8">
+                 <Button variant="outline" size="lg" className="border-slate-300 text-slate-700 hover:bg-slate-100 rounded-full px-8" onClick={scrollToHowItWorks}>
                     Watch Demo
                  </Button>
               </div>
