@@ -3,6 +3,12 @@ import { Calendar, Clock, Users, AlertCircle, CheckCircle, ExternalLink } from '
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { cn } from '../lib/utils';
 
@@ -78,6 +84,7 @@ const AdminCalendar: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState('calendar');
+  const [selectedDayDateStr, setSelectedDayDateStr] = useState<string | null>(null);
 
   // Derive upcoming events from calendar events if API returns none
   const computeUpcomingFallback = () => {
@@ -322,6 +329,10 @@ const AdminCalendar: React.FC = () => {
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+  const selectedDayEvents =
+    selectedDayDateStr && calendarData
+      ? calendarData.events.filter((e) => e.date === selectedDayDateStr)
+      : [];
 
   return (
     <div className="space-y-6">
@@ -396,8 +407,22 @@ const AdminCalendar: React.FC = () => {
                       "border-gray-200",
                       !day.isCurrentMonth && day.isPrevMonth && "bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-700 border-emerald-200 dark:text-white dark:border-slate-700",
                       !day.isCurrentMonth && day.isNextMonth && "bg-gradient-to-br from-blue-50 to-blue-100 text-blue-700 border-blue-200 dark:text-white dark:border-slate-700",
-                      day.isToday && "bg-blue-50 border-blue-300 dark:text-white dark:border-slate-700"
+                      day.isToday && "bg-blue-50 border-blue-300 dark:text-white dark:border-slate-700",
+                      day.events.length > 0 && "cursor-pointer"
                     )}
+                    onClick={() => {
+                      if (day.events.length === 0) return;
+                      setSelectedDayDateStr(day.dateStr);
+                    }}
+                    role={day.events.length > 0 ? "button" : undefined}
+                    tabIndex={day.events.length > 0 ? 0 : undefined}
+                    onKeyDown={(e) => {
+                      if (day.events.length === 0) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedDayDateStr(day.dateStr);
+                      }
+                    }}
                   >
                     {(!day.isCurrentMonth || day.isToday) && (
                       <div className="absolute inset-0 gradient-primary opacity-0 dark:opacity-100" />
@@ -526,6 +551,92 @@ const AdminCalendar: React.FC = () => {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!selectedDayDateStr} onOpenChange={(open) => (!open ? setSelectedDayDateStr(null) : undefined)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedDayDateStr ? formatDate(selectedDayDateStr) : "Day Events"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {selectedDayEvents.length > 0 ? (
+              selectedDayEvents
+                .slice()
+                .sort((a, b) => {
+                  const ta = `${a.date}T${normalizeTime(a.time || '23:59:59')}`;
+                  const tb = `${b.date}T${normalizeTime(b.time || '23:59:59')}`;
+                  return ta.localeCompare(tb);
+                })
+                .map((event) => (
+                  <div
+                    key={event.id}
+                    className="flex items-start gap-4 p-4 border border-gray-200 rounded-lg"
+                  >
+                    <div
+                      className="w-4 h-4 rounded-full mt-1"
+                      style={{ backgroundColor: event.color }}
+                    ></div>
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h4 className="font-medium text-gray-900">{event.title}</h4>
+                          <p className="text-sm text-gray-600 mt-1">{event.description}</p>
+                          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                            <span>{formatTime(event.time)}</span>
+                            {event.duration && <span>{event.duration}</span>}
+                          </div>
+                          {event.client_name && (
+                            <div className="mt-2">
+                              <Badge variant="secondary" className="text-xs">
+                                {event.client_name}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={event.priority === 'high' ? 'destructive' : 'secondary'}
+                            className="text-xs"
+                          >
+                            {event.priority}
+                          </Badge>
+                          {event.type === 'client_reminder' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => markReminderCompleted(event)}
+                              className="text-xs"
+                            >
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Mark Done
+                            </Button>
+                          )}
+                          {event.meeting_link && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => window.open(event.meeting_link, '_blank')}
+                              className="text-xs"
+                            >
+                              <ExternalLink className="h-3 w-3 mr-1" />
+                              Join
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+            ) : (
+              <div className="text-center py-6 text-gray-500">
+                <Calendar className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                <p>No events for this day</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
