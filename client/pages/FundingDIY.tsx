@@ -8,6 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import { useAuthContext } from "@/contexts/AuthContext";
@@ -47,11 +49,16 @@ function formatCurrency(n: number): string {
 
 export default function FundingDIY() {
   const navigate = useNavigate();
-  const { type } = useParams();
+  const location = useLocation();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const { type } = useParams();
   const isBusiness = type === "business";
   const isPersonal = type === "personal";
   const resolvedType: CardType | null = isBusiness ? "business" : isPersonal ? "personal" : null;
+  const isBoth = (!resolvedType && String(type || '').toLowerCase() === 'both') || String((location.state as any)?.goal || '').toLowerCase() === 'both';
+  const shouldAskForGoal = !resolvedType && !isBoth;
+  const [goalDialogOpen, setGoalDialogOpen] = useState<boolean>(false);
 
   const [cards, setCards] = useState<FundingCard[]>([]);
   const [allCards, setAllCards] = useState<FundingCard[]>([]);
@@ -63,8 +70,6 @@ export default function FundingDIY() {
   const [lockedMap, setLockedMap] = useState<Record<number, { status: string; amount_approved: number; admin_percent: number; description?: string }>>({});
   const [hydratedLockedSlots, setHydratedLockedSlots] = useState<boolean>(false);
   const [globalAdminPercent, setGlobalAdminPercent] = useState<number>(10);
-  const [searchParams] = useSearchParams();
-  const location = useLocation();
   const { userProfile } = useAuthContext();
   // Accept multiple query param names to preserve client context from previous pages
   const clientIdFromQuery = Number(
@@ -85,12 +90,68 @@ export default function FundingDIY() {
   const [clientIdInput, setClientIdInput] = useState<number>(clientIdDetected);
   const [firstApprovedSubmitted, setFirstApprovedSubmitted] = useState<boolean>(false);
   const [invoiceMap, setInvoiceMap] = useState<Record<number, { token: string; url: string }>>({});
+  const goalValue: 'personal' | 'business' | 'both' = isBoth ? 'both' : (resolvedType === 'business' ? 'business' : 'personal');
+  const handleGoalChange = (next: string) => {
+    const nextGoal = (String(next || '').toLowerCase() as any) as 'personal' | 'business' | 'both';
+    if (!['personal', 'business', 'both'].includes(nextGoal)) return;
+    if (nextGoal === goalValue) return;
+    const clientId = (Number.isFinite(clientIdDetected) && clientIdDetected > 0) ? clientIdDetected : clientIdInput;
+    const search = searchParams.toString();
+    navigate(
+      {
+        pathname: `/funding/diy/${nextGoal}`,
+        search: search ? `?${search}` : '',
+      },
+      {
+        state: {
+          ...(location.state as any),
+          clientId: clientId > 0 ? clientId : undefined,
+          goal: nextGoal,
+        },
+      },
+    );
+  };
+
+  useEffect(() => {
+    if (shouldAskForGoal) setGoalDialogOpen(true);
+  }, [shouldAskForGoal]);
+
+  const chooseGoalFromDialog = (nextGoal: 'personal' | 'business' | 'both') => {
+    const clientId = (Number.isFinite(clientIdDetected) && clientIdDetected > 0) ? clientIdDetected : clientIdInput;
+    const search = searchParams.toString();
+    setGoalDialogOpen(false);
+    navigate(
+      {
+        pathname: `/funding/diy/${nextGoal}`,
+        search: search ? `?${search}` : '',
+      },
+      {
+        state: {
+          ...(location.state as any),
+          clientId: clientId > 0 ? clientId : undefined,
+          goal: nextGoal,
+        },
+      },
+    );
+  };
 
   const bureaus = ["all", "Equifax", "Experian", "TransUnion"];
+  const canonicalProductType = (x: any) => {
+    const t = String(x || '').toLowerCase();
+    if (t.includes('sba')) return 'SBA Loan';
+    if (t.includes('line')) return 'Line of Credit';
+    if (t.includes('credit')) return 'Credit Card';
+    return x;
+  };
+  const productTypesFromState: string[] = Array.isArray((location.state as any)?.productTypes)
+    ? ((location.state as any).productTypes as string[]).map(canonicalProductType)
+    : ['Credit Card','SBA Loan','Line of Credit'];
+  const allowedFundingTypeSet = useMemo(() => new Set(productTypesFromState), [productTypesFromState]);
   const fundingTypes = useMemo(() => {
-    const unique = Array.from(new Set((cards || []).map((c) => c.funding_type).filter(Boolean)));
+    const source = (cards || []).filter((c) => allowedFundingTypeSet.has(c.funding_type));
+    const unique = Array.from(new Set(source.map((c) => c.funding_type).filter(Boolean)));
     return ["all", ...unique];
-  }, [cards]);
+  }, [cards, allowedFundingTypeSet]);
 
   // Client details for eligibility
   const [clientDetails, setClientDetails] = useState<any>(null);
@@ -111,7 +172,7 @@ export default function FundingDIY() {
   const [bankSearchMap, setBankSearchMap] = useState<Record<number, string>>({});
   const [selectedSlots, setSelectedSlots] = useState<Array<{ bankId: number; cardId: number }>>([]);
 
-  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[] }>>([]);
+  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; recommended?: boolean; priority_rank?: number }>>([]);
 
   const banksFromCards = useMemo(() => {
     const map = new Map<number, { id: number; name: string; logo?: string }>();
@@ -308,9 +369,19 @@ export default function FundingDIY() {
           (elig.bureauEligible.Equifax && clientFundableFlags.Equifax) ||
           (elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion)
         );
-        return hasAnyEligibleBureau;
+        const canon = canonBureau(selectedBureau);
+        const hasRelevantProduct = ((cards.length > 0 ? cards : allCards) || []).some((c) => {
+          if (c.bank_id !== bank.id) return false;
+          if (!allowedFundingTypeSet.has(c.funding_type)) return false;
+          if (!isBoth && c.card_type !== resolvedType) return false;
+          if (!canon) return true;
+          return cardHasBureau(c, canon);
+        });
+        return hasAnyEligibleBureau && hasRelevantProduct;
       })
       .sort((a, b) => {
+        if (Boolean(b.recommended) !== Boolean(a.recommended)) return Number(b.recommended) - Number(a.recommended);
+        if (Number(a.priority_rank || 0) !== Number(b.priority_rank || 0)) return Number(a.priority_rank || 0) - Number(b.priority_rank || 0);
         const eligA = bankEligibility(a.id);
         const eligB = bankEligibility(b.id);
         const scoreA = Number(eligA.stateRank || (eligA.stateEligible ? 1 : 0));
@@ -318,7 +389,7 @@ export default function FundingDIY() {
         if (scoreB !== scoreA) return scoreB - scoreA;
         return a.name.localeCompare(b.name);
       });
-  }, [allBanks, selectedState, allCards, clientFundableFlags]);
+  }, [allBanks, cards, allCards, selectedBureau, clientFundableFlags, allowedFundingTypeSet, resolvedType, isBoth, selectedState, clientDetails]);
 
   useEffect(() => {
     const fetchCards = async () => {
@@ -409,7 +480,9 @@ export default function FundingDIY() {
               ? b.credit_bureaus
               : (typeof b?.credit_bureaus === 'string'
                 ? (() => { try { const arr = JSON.parse(b.credit_bureaus); return Array.isArray(arr) ? arr : []; } catch { return []; } })()
-                : [])
+                : []),
+            recommended: Boolean(b?.is_recommended ?? b?.recommended ?? b?.isPriority ?? false),
+            priority_rank: Number(b?.priority_rank ?? b?.rank ?? 0)
           }));
           all.push(...items);
           const totalPages = Number((data?.pagination?.totalPages ?? 1));
@@ -496,13 +569,15 @@ export default function FundingDIY() {
 
   const filteredCards = useMemo(() => {
     const byType = selectedFundingType === "all"
-      ? cards
-      : cards.filter((c) => (c.funding_type || "").toLowerCase() === selectedFundingType.toLowerCase());
-    if (selectedBureau === "all") return byType;
+      ? cards.filter((c) => allowedFundingTypeSet.has(c.funding_type))
+      : cards.filter((c) => (c.funding_type || "").toLowerCase() === selectedFundingType.toLowerCase())
+          .filter((c) => allowedFundingTypeSet.has(c.funding_type));
+    const byGoal = isBoth ? byType : byType.filter((c) => c.card_type === resolvedType);
+    if (selectedBureau === "all") return byGoal;
     const canon = canonBureau(selectedBureau);
-    if (!canon) return byType;
-    return byType.filter((c) => cardHasBureau(c, canon));
-  }, [cards, selectedFundingType, selectedBureau]);
+    if (!canon) return byGoal;
+    return byGoal.filter((c) => cardHasBureau(c, canon));
+  }, [cards, selectedFundingType, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth]);
 
   // Summary metrics across all cards (not just filtered)
   const { totalFunding, highestAmount, amountCharged } = useMemo(() => {
@@ -524,6 +599,81 @@ export default function FundingDIY() {
   const hasAnyApproved = useMemo(() => {
     return cards.some((c) => adminData[c.id]?.status === "approved" && (adminData[c.id]?.amountApproved || 0) > 0);
   }, [cards, adminData]);
+
+  useEffect(() => {
+    if (!(resolvedType || isBoth)) return;
+    if (hydratedLockedSlots) return;
+    if (slotForms.some((s) => s.bankId || s.cardId)) return;
+    const sourceCards: FundingCard[] = (cards && cards.length > 0) ? cards : allCards;
+    if (!sourceCards || sourceCards.length === 0) return;
+    const priorityBankIds = sortedBanks.filter((b) => b.recommended).map((b) => b.id);
+    const bankOrder = new Map<number, number>();
+    sortedBanks.forEach((b, idx) => bankOrder.set(b.id, idx));
+    const ib = (location.state as any)?.inquiriesByBureau || {};
+    const counts: Record<string, number> = {
+      Experian: Number(ib?.Experian || 0),
+      Equifax: Number(ib?.Equifax || 0),
+      TransUnion: Number(ib?.TransUnion || 0),
+    };
+    const total = Math.max(0, (counts.Experian || 0) + (counts.Equifax || 0) + (counts.TransUnion || 0));
+    const bureaus = ['Experian','Equifax','TransUnion'];
+    const weights = bureaus.map((b) => ({ b, w: total > 0 ? (counts[b] || 0) / total : 1 / 3 }));
+    const baseSlots = weights.map(({ b, w }) => ({ b, s: Math.floor(w * 3) }));
+    let allocated = baseSlots.reduce((sum, x) => sum + x.s, 0);
+    const remainders = weights.map(({ b, w }) => ({ b, r: (w * 3) - Math.floor(w * 3) })).sort((a, b) => b.r - a.r);
+    while (allocated < 3) {
+      const next = remainders.shift();
+      if (!next) break;
+      const t = baseSlots.find((x) => x.b === next.b);
+      if (t) { t.s += 1; allocated += 1; }
+    }
+    if (allocated > 3) {
+      baseSlots.sort((a, b) => a.s - b.s);
+      while (allocated > 3) {
+        baseSlots[baseSlots.length - 1].s -= 1;
+        allocated -= 1;
+      }
+    }
+    const targets: Array<{ type: CardType; bureau?: string }> = [];
+    baseSlots.forEach(({ b, s }) => {
+      if (s <= 0) return;
+      if (isBoth) {
+        const businessSlots = Math.ceil(s / 2);
+        const personalSlots = s - businessSlots;
+        for (let i = 0; i < businessSlots; i++) targets.push({ type: 'business', bureau: b });
+        for (let i = 0; i < personalSlots; i++) targets.push({ type: 'personal', bureau: b });
+      } else if (resolvedType) {
+        for (let i = 0; i < s; i++) targets.push({ type: resolvedType, bureau: b });
+      }
+    });
+    const pickedCardIds = new Set<number>();
+    const pickFor = (t: { type: CardType; bureau?: string }) => {
+      let pool = sourceCards.filter((c) => c.card_type === t.type && allowedFundingTypeSet.has(c.funding_type));
+      if (t.bureau) {
+        pool = pool.filter((c) => cardHasBureau(c, t.bureau as any));
+      }
+      if (pool.length === 0) return null;
+      const sortedPool = [...pool].sort((a, b) => {
+        const ai = bankOrder.get(a.bank_id) ?? 1_000_000;
+        const bi = bankOrder.get(b.bank_id) ?? 1_000_000;
+        if (ai !== bi) return ai - bi;
+        return a.card_name.localeCompare(b.card_name);
+      });
+      const prioritySortedPool = sortedPool.filter((c) => priorityBankIds.includes(c.bank_id));
+      const pickFrom = (prioritySortedPool.length > 0 ? prioritySortedPool : sortedPool);
+      const picked = pickFrom.find((c) => !pickedCardIds.has(c.id)) || pickFrom[0];
+      if (picked) pickedCardIds.add(picked.id);
+      return picked;
+    };
+    const newSlots = targets.map((t) => {
+      const chosen = pickFor(t);
+      if (!chosen) return null;
+      return { bankId: chosen.bank_id, cardId: chosen.id, fundingType: chosen.funding_type };
+    }).filter(Boolean) as Array<{ bankId: number; cardId: number; fundingType: string }>;
+    if (newSlots.length > 0) {
+      setSlotForms(newSlots);
+    }
+  }, [resolvedType, isBoth, hydratedLockedSlots, slotForms, cards, allCards, sortedBanks, allowedFundingTypeSet, location.state]);
 
   const updateAdmin = (cardId: number, patch: Partial<AdminInputs>) => {
     setAdminData((prev) => ({ ...prev, [cardId]: { ...prev[cardId], ...patch } }));
@@ -642,20 +792,40 @@ export default function FundingDIY() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        <Dialog open={goalDialogOpen} onOpenChange={setGoalDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Choose funding type</DialogTitle>
+              <DialogDescription>What do you want to apply for?</DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button onClick={() => chooseGoalFromDialog('personal')}>Personal</Button>
+              <Button variant="secondary" onClick={() => chooseGoalFromDialog('business')}>Business</Button>
+              <Button variant="outline" onClick={() => chooseGoalFromDialog('both')}>Both</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <FileText className="h-6 w-6 text-green-600" />
+            <div className="p-2 rounded-lg gradient-primary">
+              <FileText className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">
+              <h1 className="text-2xl font-bold gradient-text-primary">
                 DIY Funding Cards {isBusiness ? "— Business" : isPersonal ? "— Personal" : ""}
               </h1>
               <p className="text-sm text-muted-foreground">Admin can configure approvals, percentages, notes and submit.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {(resolvedType || isBoth) && (
+              <ToggleGroup type="single" value={goalValue} onValueChange={handleGoalChange} className="mr-2">
+                <ToggleGroupItem value="personal">Personal</ToggleGroupItem>
+                <ToggleGroupItem value="business">Business</ToggleGroupItem>
+                <ToggleGroupItem value="both">Both</ToggleGroupItem>
+              </ToggleGroup>
+            )}
             <Button variant="outline" onClick={() => navigate(-1)}>
               <ArrowLeft className="h-4 w-4 mr-2" /> Back
             </Button>
@@ -663,7 +833,7 @@ export default function FundingDIY() {
         </div>
 
         {/* Global Admin Percentage */}
-        {resolvedType && (
+        {(resolvedType || isBoth) && (
           <Card>
             <CardHeader>
               <CardTitle>Admin Percentage (applies to all cards)</CardTitle>
@@ -734,7 +904,7 @@ export default function FundingDIY() {
         )}
 
         {/* Type selector when none chosen */}
-        {!resolvedType && (
+        {!resolvedType && !isBoth && (
           <Card>
             <CardHeader>
               <CardTitle>Select funding type</CardTitle>
@@ -747,32 +917,32 @@ export default function FundingDIY() {
         )}
 
         {/* Metrics */}
-        {resolvedType && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
+        {(resolvedType || isBoth) && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="rounded-xl bg-red-50 border border-red-200 shadow-sm">
               <CardHeader>
-                <CardTitle>Total Funding (Across All Cards)</CardTitle>
+                <CardTitle>Total approvals</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(totalFunding)}</div>
-                <p className="text-xs text-muted-foreground">Sum of approved amounts</p>
+                <div className="text-2xl font-bold text-red-700">{formatCurrency(totalFunding)}</div>
+                <p className="text-xs text-muted-foreground">Total approvals across all cards</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="rounded-xl bg-yellow-50 border border-yellow-200 shadow-sm">
               <CardHeader>
-                <CardTitle>Highest Amount (Top Card)</CardTitle>
+                <CardTitle>Highest amount</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(highestAmount)}</div>
-                <p className="text-xs text-muted-foreground">Largest approved amount</p>
+                <div className="text-2xl font-bold text-yellow-700">{formatCurrency(highestAmount)}</div>
+                <p className="text-xs text-muted-foreground">Highest amount of all cards</p>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="rounded-xl bg-green-50 border border-green-200 shadow-sm">
               <CardHeader>
-                <CardTitle>Amount Charged (Admin Percentage)</CardTitle>
+                <CardTitle>Amount to charge client</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(amountCharged)}</div>
+                <div className="text-2xl font-bold text-green-700">{formatCurrency(amountCharged)}</div>
                 <p className="text-xs text-muted-foreground">Calculated from the global admin %</p>
               </CardContent>
             </Card>
@@ -780,20 +950,20 @@ export default function FundingDIY() {
         )}
 
         {/* Loading / Error */}
-        {resolvedType && loading && (
+        {(resolvedType || isBoth) && loading && (
           <div className="text-center py-12">
             <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg animate-pulse">
               <CreditCard className="h-10 w-10 text-white" />
             </div>
             <h3 className="text-3xl font-bold mb-4 bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-              Loading {isBusiness ? "Business" : "Personal"} Cards...
+              Loading {isBoth ? "Funding" : isBusiness ? "Business" : "Personal"} Cards...
             </h3>
             <div className="flex justify-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
             </div>
           </div>
         )}
-        {resolvedType && !loading && error && (
+        {(resolvedType || isBoth) && !loading && error && (
           <Card>
             <CardHeader>
               <CardTitle>Error Loading Cards</CardTitle>
@@ -806,16 +976,16 @@ export default function FundingDIY() {
         )}
 
         {/* Three-Slot Selection Workflow */}
-        {resolvedType && !loading && !error && (
-          <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-green-50">
+        {(resolvedType || isBoth) && !loading && !error && (
+          <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-blue-50 to-emerald-50">
             <CardHeader className="pb-4">
               <CardTitle className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  {isBusiness ? <Building2 className="h-6 w-6 text-green-600" /> : <User className="h-6 w-6 text-green-600" />}
+                <div className="p-2 rounded-lg gradient-primary">
+                  {isBusiness ? <Building2 className="h-6 w-6 text-white" /> : <User className="h-6 w-6 text-white" />}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-green-800">{isBusiness ? "Business" : "Personal"} DIY Funding: Compare up to 3 options</h3>
-                  <p className="text-sm text-green-600 font-medium">Select a bank, review eligibility, add cards to compare.</p>
+                  <h3 className="text-xl font-bold gradient-text-primary">{isBoth ? "Personal + Business" : (isBusiness ? "Business" : "Personal")} DIY Funding: Compare up to 3 options</h3>
+                  <p className="text-sm text-emerald-700 font-medium">Select a bank, review eligibility, add cards to compare.</p>
                 </div>
               </CardTitle>
             </CardHeader>
@@ -948,13 +1118,17 @@ export default function FundingDIY() {
                         </SelectTrigger>
                         <SelectContent>
                           {(cards.length > 0 ? cards : allCards)
-                            .filter(c => (c.bank_id === slot.bankId && c.card_type === resolvedType) || c.id === slot.cardId)
+                            .filter(c => {
+                              const goalOk = isBoth ? true : c.card_type === resolvedType;
+                              return ((c.bank_id === slot.bankId && goalOk) || c.id === slot.cardId);
+                            })
                             .filter(c => {
                               const effective = selectedFundingType === 'all' ? (slot.fundingType || 'all') : selectedFundingType;
                               if (effective === 'all') return true;
                               if (c.id === slot.cardId) return true;
                               return (c.funding_type || '').toLowerCase() === String(effective).toLowerCase();
                             })
+                            .filter(c => allowedFundingTypeSet.has(c.funding_type))
                             .filter(c => {
                               if (selectedBureau === 'all') return true;
                               const canon = canonBureau(selectedBureau);

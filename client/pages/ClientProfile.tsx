@@ -10,6 +10,16 @@ import { Separator } from "@/components/ui/separator";
 import { clientsApi, creditReportScraperApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import EditClientForm from "@/components/EditClientForm";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { 
   ArrowLeft, 
   Mail, 
@@ -103,6 +113,22 @@ export default function ClientProfile() {
   const [jsonSearchTerm, setJsonSearchTerm] = useState("");
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const jsonContainerRef = useRef<HTMLPreElement>(null);
+  const [fundingDialogOpen, setFundingDialogOpen] = useState(false);
+  const [selectedFundingType, setSelectedFundingType] = useState<"personal" | "business" | "both" | "">("");
+  const [selectedFundingMethod, setSelectedFundingMethod] = useState<"diy" | "dfy" | "">("");
+  const [startWithType, setStartWithType] = useState<"personal" | "business">("personal");
+
+  const isManuallyAddedClient = useMemo(() => {
+    if (!client) return false;
+    const notesText = String(client.notes || "").toLowerCase();
+    return (
+      notesText.includes("created manually") ||
+      notesText.includes("added manually") ||
+      notesText.includes("manually added") ||
+      (!client.platform && !client.platform_email && !client.platform_password) ||
+      String(client.platform || "").toLowerCase() === "other"
+    );
+  }, [client]);
 
   const jsonString = useMemo(() => {
     try {
@@ -228,9 +254,27 @@ export default function ClientProfile() {
 
   const handleViewReports = () => {
     if (!clientId) return;
+    if (isManuallyAddedClient) {
+      toast({
+        title: "No Reports Available",
+        description: "This client was added manually and does not have a credit report JSON.",
+      });
+      return;
+    }
     navigate(`/credit-report/${clientId}`);
   };
 
+  const handleApplyFunding = () => {
+    if (!client) return;
+    setFundingDialogOpen(true);
+  };
+  const handleFundingContinue = () => {
+    if (!clientId || !selectedFundingType || !selectedFundingMethod) return;
+    const typeToUse = selectedFundingType === "both" ? startWithType : selectedFundingType;
+    const base = selectedFundingMethod === "diy" ? "/funding/diy" : "/funding/apply";
+    setFundingDialogOpen(false);
+    navigate(`${base}/${typeToUse}?clientId=${clientId}`);
+  };
   const handleEditClient = () => {
     setShowEditForm(true);
   };
@@ -259,11 +303,20 @@ export default function ClientProfile() {
 
         // Fetch latest credit report data
         console.log('Fetching credit report data...');
-        const reportResponse = await creditReportScraperApi.getClientReport(clientId);
-        console.log('Report response:', reportResponse);
         let reportData = null;
-        if (!reportResponse.error && reportResponse.data) {
-          reportData = reportResponse.data;
+        try {
+          const reportResponse = await creditReportScraperApi.getClientReport(clientId);
+          console.log('Report response:', reportResponse);
+          if (reportResponse && reportResponse.data) {
+            reportData = reportResponse.data;
+          }
+        } catch (err: any) {
+          const status = err?.response?.status;
+          if (status === 404) {
+            console.log('No credit report found for this client. Continuing without JSON data.');
+          } else {
+            console.error('Error fetching credit report data:', err);
+          }
         }
 
         // Fetch credit report history from database
@@ -608,28 +661,37 @@ export default function ClientProfile() {
               </div>
             </div>
           </div>
-          <div className="flex items-center flex-wrap gap-2">
-            <Badge variant="outline" className={getStatusColor(client.status)}>
-              {client.status}
-            </Badge>
-            <Button variant="outline" size="sm" onClick={handleEditClient}>
-              <Edit className="h-4 w-4 mr-2" />
-              Edit Client
-            </Button>
+        <div className="flex items-center flex-wrap gap-2">
+          <Badge variant="outline" className={getStatusColor(client.status)}>
+            {client.status}
+          </Badge>
+          <Button variant="outline" size="sm" onClick={handleEditClient}>
+            <Edit className="h-4 w-4 mr-2" />
+            Edit Client
+          </Button>
+          {!client.latestJsonData && (
             <Button 
               variant="default" 
               size="sm" 
-              onClick={handleScrapeNewReport}
-              disabled={scrapingLoading}
+              onClick={handleApplyFunding}
             >
-              {scrapingLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4 mr-2" />
-              )}
-              {scrapingLoading ? "Fetching..." : "Fetch New Report"}
+              Apply for Funding
             </Button>
-          </div>
+          )}
+          <Button 
+            variant="default" 
+            size="sm" 
+            onClick={handleScrapeNewReport}
+            disabled={scrapingLoading}
+          >
+            {scrapingLoading ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4 mr-2" />
+            )}
+            {scrapingLoading ? "Fetching..." : "Fetch New Report"}
+          </Button>
+        </div>
         </div>
 
         {/* Quick Stats - Credit Bureau Scores and Funding */}
@@ -1172,6 +1234,83 @@ export default function ClientProfile() {
           onSuccess={handleEditSuccess}
         />
       )}
+      
+      <Dialog open={fundingDialogOpen} onOpenChange={setFundingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Apply for Funding</DialogTitle>
+            <DialogDescription>Select type and method to continue</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <Label className="text-sm">Funding Type</Label>
+              <RadioGroup
+                value={selectedFundingType}
+                onValueChange={(v) => setSelectedFundingType(v as any)}
+                className="grid gap-3"
+              >
+                <div className="flex items-center space-x-3 p-3 border rounded-lg">
+                  <RadioGroupItem value="personal" id="type-personal" />
+                  <Label htmlFor="type-personal" className="cursor-pointer">Personal</Label>
+                </div>
+                <div className="flex items-center space-x-3 p-3 border rounded-lg">
+                  <RadioGroupItem value="business" id="type-business" />
+                  <Label htmlFor="type-business" className="cursor-pointer">Business</Label>
+                </div>
+                <div className="flex items-center space-x-3 p-3 border rounded-lg">
+                  <RadioGroupItem value="both" id="type-both" />
+                  <Label htmlFor="type-both" className="cursor-pointer">Both</Label>
+                </div>
+              </RadioGroup>
+            </div>
+            {selectedFundingType === "both" && (
+              <div className="space-y-3">
+                <Label className="text-sm">Start With</Label>
+                <RadioGroup
+                  value={startWithType}
+                  onValueChange={(v) => setStartWithType(v as any)}
+                  className="grid gap-3"
+                >
+                  <div className="flex items-center space-x-3 p-3 border rounded-lg">
+                    <RadioGroupItem value="personal" id="start-personal" />
+                    <Label htmlFor="start-personal" className="cursor-pointer">Personal</Label>
+                  </div>
+                  <div className="flex items-center space-x-3 p-3 border rounded-lg">
+                    <RadioGroupItem value="business" id="start-business" />
+                    <Label htmlFor="start-business" className="cursor-pointer">Business</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+            )}
+            <div className="space-y-3">
+              <Label className="text-sm">Funding Method</Label>
+              <RadioGroup
+                value={selectedFundingMethod}
+                onValueChange={(v) => setSelectedFundingMethod(v as any)}
+                className="grid gap-3"
+              >
+                <div className="flex items-center space-x-3 p-3 border rounded-lg">
+                  <RadioGroupItem value="dfy" id="method-dfy" />
+                  <Label htmlFor="method-dfy" className="cursor-pointer">Done For You</Label>
+                </div>
+                <div className="flex items-center space-x-3 p-3 border rounded-lg">
+                  <RadioGroupItem value="diy" id="method-diy" />
+                  <Label htmlFor="method-diy" className="cursor-pointer">DIY</Label>
+                </div>
+              </RadioGroup>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFundingDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleFundingContinue}
+              disabled={!selectedFundingType || !selectedFundingMethod}
+            >
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

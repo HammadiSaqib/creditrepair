@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation, useSearchParams } from "react-router-dom";
 import { Building2, DollarSign, User, ArrowLeft, CheckCircle, Upload, FileText } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { clientsApi } from "@/lib/api";
 
 type FundingType = "personal" | "business";
 
@@ -14,6 +15,13 @@ export default function FundingApplication() {
   const navigate = useNavigate();
   const { type } = useParams();
   const fundingType = (type as FundingType) || "personal";
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const clientFromState = (location.state as any)?.client || null;
+  const clientIdParam = searchParams.get("clientId") || searchParams.get("client_id") || null;
+  const clientId = clientIdParam
+    ? parseInt(clientIdParam, 10)
+    : (clientFromState?.id ? parseInt(String(clientFromState.id), 10) : NaN);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -103,13 +111,140 @@ export default function FundingApplication() {
     setForm(prev => ({ ...prev, [key]: value }));
   };
 
+  useEffect(() => {
+    const prefill = async () => {
+      let c = clientFromState;
+      if (!c && Number.isFinite(clientId) && clientId > 0) {
+        try {
+          const resp = await clientsApi.getClient(String(clientId));
+          c = resp.data;
+        } catch {}
+      }
+      if (!c) return;
+      setForm(prev => ({
+        ...prev,
+        firstName: c.first_name || "",
+        lastName: c.last_name || "",
+        personalEmail: c.email || "",
+        personalPhone: c.phone || "",
+        homeAddress: c.address || "",
+        personalCity: c.city || prev.personalCity,
+        personalState: c.state || prev.personalState,
+        personalZip: c.zip_code || prev.personalZip,
+        dateOfBirth: c.date_of_birth || prev.dateOfBirth,
+        businessEmail: fundingType === "business" ? (prev.businessEmail || c.email || "") : prev.businessEmail,
+        businessPhone: fundingType === "business" ? (prev.businessPhone || c.phone || "") : prev.businessPhone,
+        businessAddress: fundingType === "business" ? (prev.businessAddress || c.address || "") : prev.businessAddress,
+        city: fundingType === "business" ? (prev.city || c.city || "") : prev.city,
+        state: fundingType === "business" ? (prev.state || c.state || "") : prev.state,
+        zip: fundingType === "business" ? (prev.zip || c.zip_code || "") : prev.zip
+      }));
+    };
+    prefill();
+  }, [clientFromState, clientId, fundingType]);
+
   const handleSubmit = async () => {
-    setSubmitting(true);
-    // Simulate submit
-    setTimeout(() => {
-      setSubmitting(false);
+    try {
+      setSubmitting(true);
+      const amountNum = parseFloat((form.fundingAmount || "").replace(/[^0-9.]/g, "")) || 0;
+      const banksToIgnoreArray = form.banksToIgnore
+        ? form.banksToIgnore.split(",").map(s => s.trim()).filter(Boolean)
+        : [];
+      const submissionData: any = {
+        title: `${form.businessName || `${form.firstName} ${form.lastName}`}`.trim() + ` - Funding Request (${fundingType})`,
+        description: `Funding application for ${form.intendedUse || "general purposes"}`,
+        amount: amountNum,
+        purpose: "other",
+        title_position: form.titlePosition,
+        intended_use: form.intendedUse,
+        business_name: form.businessName,
+        business_phone: form.businessPhone,
+        business_email: form.businessEmail,
+        business_address: form.businessAddress,
+        business_city: form.city,
+        business_state: form.state,
+        business_zip: form.zip,
+        date_commenced: form.dateCommenced,
+        business_website: form.businessWebsite,
+        business_industry: form.businessIndustry,
+        entity_type: form.entityType,
+        incorporation_state: form.incorporationState,
+        number_of_employees: form.numberOfEmployees ? parseInt(form.numberOfEmployees) : undefined,
+        ein: form.ein,
+        monthly_gross_sales: form.monthlyGrossSales ? parseFloat(form.monthlyGrossSales) : undefined,
+        projected_annual_revenue: form.projectedAnnualRevenue ? parseFloat(form.projectedAnnualRevenue) : undefined,
+        first_name: form.firstName,
+        middle_name: form.middleName,
+        last_name: form.lastName,
+        date_of_birth: form.dateOfBirth,
+        birth_city: form.birthCity,
+        ssn: form.ssn,
+        mothers_maiden_name: form.mothersMaidenName,
+        home_address: form.homeAddress,
+        personal_city: form.personalCity,
+        personal_state: form.personalState,
+        personal_zip: form.personalZip,
+        home_phone: form.homePhone,
+        mobile_phone: form.mobilePhone,
+        housing_status: form.housingStatus,
+        monthly_housing_payment: form.monthlyHousingPayment ? parseFloat(form.monthlyHousingPayment) : undefined,
+        years_at_address: form.yearsAtAddress ? parseFloat(form.yearsAtAddress) : undefined,
+        drivers_license: form.driversLicense,
+        issuing_state: form.issuingState,
+        issue_date: form.issueDate,
+        expiration_date: form.expirationDate,
+        current_employer: form.currentEmployer,
+        position: form.position,
+        years_at_employer: form.yearsAtEmployer ? parseFloat(form.yearsAtEmployer) : undefined,
+        employer_phone: form.employerPhone,
+        employer_address: form.employerAddress,
+        personal_bank_name: form.personalBankName,
+        personal_bank_balance: form.personalBankBalance ? parseFloat(form.personalBankBalance) : undefined,
+        business_bank_name: form.businessBankName,
+        business_bank_balance: form.businessBankBalance ? parseFloat(form.businessBankBalance) : undefined,
+        us_citizen: form.usCitizen,
+        savings_account: form.savingsAccount,
+        investment_accounts: form.investmentAccounts,
+        military_affiliation: form.militaryAffiliation,
+        other_income: form.otherIncome,
+        other_assets: form.otherAssets,
+        banks_to_ignore: banksToIgnoreArray
+      };
+      const token = localStorage.getItem("auth_token") || "";
+      const response = await fetch("/api/funding-requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` })
+        },
+        body: JSON.stringify(submissionData)
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to submit funding request");
+      }
+      const result = await response.json();
+      if (driversLicenseFile || einConfirmationFile || articlesFromStateFile) {
+        const uploadForm = new FormData();
+        uploadForm.append("requestId", String(result.id));
+        if (driversLicenseFile) uploadForm.append("driverLicenseFile", driversLicenseFile);
+        if (einConfirmationFile) uploadForm.append("einConfirmationFile", einConfirmationFile);
+        if (articlesFromStateFile) uploadForm.append("articlesFromStateFile", articlesFromStateFile);
+        await fetch("/api/funding-requests/upload-documents", {
+          method: "POST",
+          headers: {
+            ...(token && { Authorization: `Bearer ${token}` })
+          },
+          body: uploadForm
+        });
+      }
       setSubmitted(true);
-    }, 800);
+    } catch (e) {
+      console.error(e);
+      alert(e instanceof Error ? e.message : "Submission failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -633,7 +768,7 @@ export default function FundingApplication() {
             </div>
 
             <div className="flex items-center justify-end gap-3">
-              <Button variant="outline" onClick={() => navigate("/credit-report")}>Cancel</Button>
+              <Button variant="outline" onClick={() => navigate(-1)}>Cancel</Button>
               <Button onClick={handleSubmit} disabled={submitting}>
                 {submitting ? "Submitting..." : "Submit Application"}
                 </Button>
@@ -648,7 +783,7 @@ export default function FundingApplication() {
               </div>
               <h2 className="text-2xl font-bold mb-2">Application Submitted</h2>
               <p className="text-muted-foreground mb-6">We will reach out shortly with next steps.</p>
-              <Button onClick={() => navigate("/credit-report")}>Return to Credit Report</Button>
+              <Button onClick={() => (Number.isFinite(clientId) && clientId > 0) ? navigate(`/clients/${clientId}`) : navigate(-1)}>Return to Client Profile</Button>
             </CardContent>
           </Card>
         )}

@@ -40,6 +40,13 @@ import { clientsApi, creditReportScraperApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Users,
   Search,
   MoreHorizontal,
@@ -162,6 +169,8 @@ const getScoreChange = (current: number, previous: number) => {
   const [showAddClientManual, setShowAddClientManual] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fundingEstimateNoticeOpen, setFundingEstimateNoticeOpen] = useState(false);
+  const [pendingFundingClientId, setPendingFundingClientId] = useState<number | null>(null);
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -205,14 +214,25 @@ const getScoreChange = (current: number, previous: number) => {
         const creditScore = client.credit_score || 650;
         const previousScore = client.previous_credit_score || 600;
         
-        const fundingStatus =
-          client.fundable_status === 'fundable'
-            ? 'Fundable'
-            : client.fundable_status === 'not_fundable'
-            ? 'Not Fundable'
-            : creditScore > 650
-            ? 'Fundable'
-            : 'Not Fundable';
+        const notesText = String(client.notes || "").toLowerCase();
+        const manuallyAdded =
+          Boolean((client as any).manually_added) ||
+          Boolean((client as any).manuallyAdded) ||
+          Boolean((client as any).is_manual) ||
+          notesText.includes("created manually") ||
+          notesText.includes("added manually") ||
+          notesText.includes("manually added") ||
+          (!client.platform && !client.platform_email && !client.platform_password) ||
+          client.platform === "other";
+        const fundingStatus = manuallyAdded
+          ? "Manually Added"
+          : client.fundable_status === "fundable"
+          ? "Fundable"
+          : client.fundable_status === "not_fundable"
+          ? "Not Fundable"
+          : creditScore > 650
+          ? "Fundable"
+          : "Not Fundable";
         
         // Calculate funding amount based on credit score and other factors
         let fundingAmount = 0;
@@ -268,7 +288,7 @@ const getScoreChange = (current: number, previous: number) => {
           amount: fundingAmount,
           lastReportPull,
           platform: client.platform || null,
-          manuallyAdded: !client.platform || client.platform === 'other'
+          manuallyAdded,
         };
       }));
 
@@ -395,6 +415,20 @@ const getScoreChange = (current: number, previous: number) => {
   useEffect(() => {
     fetchClients();
   }, [pagination.page, searchTerm, statusFilter]);
+
+  const goToDiyFundingForClient = (clientId: number) => {
+    setPendingFundingClientId(clientId);
+    setFundingEstimateNoticeOpen(true);
+  };
+
+  const acknowledgeFundingEstimateNotice = () => {
+    const clientId = pendingFundingClientId;
+    setFundingEstimateNoticeOpen(false);
+    setPendingFundingClientId(null);
+    if (clientId && clientId > 0) {
+      navigate(`/funding/diy/personal`, { state: { clientId } });
+    }
+  };
 
   // Load available scraper platforms
   useEffect(() => {
@@ -1048,63 +1082,88 @@ const getScoreChange = (current: number, previous: number) => {
                         />
                       </TableCell>
                       <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
+                        <div className="flex items-center justify-end gap-2">
+                          {client.manuallyAdded && (
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                goToDiyFundingForClient(client.id);
+                              }}
                             >
-                              <MoreHorizontal className="h-4 w-4" />
+                              <CreditCard className="h-4 w-4 mr-2" />
+                              DIY Funding
                             </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                             <DropdownMenuItem onClick={() => navigate(`/clients/${client.id}`)}>
-                               <Eye className="h-4 w-4 mr-2" />
-                               View Profile
-                             </DropdownMenuItem>
-                             <DropdownMenuItem>
-                               <Edit className="h-4 w-4 mr-2" />
-                               Edit Client
-                             </DropdownMenuItem>
-                             <DropdownMenuItem>
-                               <FileText className="h-4 w-4 mr-2" />
-                               View Reports
-                             </DropdownMenuItem>
-                             {client.manuallyAdded && (
-                               <DropdownMenuItem onClick={() => navigate(`/funding/diy/personal`, { state: { clientId: client.id } })}>
-                                 <CreditCard className="h-4 w-4 mr-2" />
-                                 DIY Funding
-                               </DropdownMenuItem>
-                             )}
-                             <DropdownMenuItem 
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 handleToggleLoginStatus(client.id, client.status.toLowerCase());
-                               }}
-                               className={client.status === 'Inactive' ? 'text-green-600' : 'text-orange-600'}
-                             >
-                               {client.status === 'Inactive' ? (
-                                 <>
-                                   <Unlock className="h-4 w-4 mr-2" />
-                                   Enable Login
-                                 </>
-                               ) : (
-                                 <>
-                                   <Lock className="h-4 w-4 mr-2" />
-                                   Disable Login
-                                 </>
-                               )}
-                             </DropdownMenuItem>
-                             <DropdownMenuItem 
-                               className="text-destructive"
-                               onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.id); }}
-                             >
-                               <Trash2 className="h-4 w-4 mr-2" />
-                               Delete Client
-                             </DropdownMenuItem>
-                           </DropdownMenuContent>
-                        </DropdownMenu>
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/clients/${client.id}`);
+                                }}
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Profile
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit Client
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                                <FileText className="h-4 w-4 mr-2" />
+                                View Reports
+                              </DropdownMenuItem>
+                              {client.manuallyAdded && (
+                                <DropdownMenuItem
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    goToDiyFundingForClient(client.id);
+                                  }}
+                                >
+                                  <CreditCard className="h-4 w-4 mr-2" />
+                                  DIY Funding
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleLoginStatus(client.id, client.status.toLowerCase());
+                                }}
+                                className={client.status === 'Inactive' ? 'text-green-600' : 'text-orange-600'}
+                              >
+                                {client.status === 'Inactive' ? (
+                                  <>
+                                    <Unlock className="h-4 w-4 mr-2" />
+                                    Enable Login
+                                  </>
+                                ) : (
+                                  <>
+                                    <Lock className="h-4 w-4 mr-2" />
+                                    Disable Login
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={(e) => { e.stopPropagation(); handleDeleteClient(client.id); }}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Client
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -1115,6 +1174,32 @@ const getScoreChange = (current: number, previous: number) => {
           </div>
         </CardContent>
       </Card>
+      <Dialog
+        open={fundingEstimateNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingEstimateNoticeOpen(open);
+          if (!open) setPendingFundingClientId(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Estimate Notice</DialogTitle>
+            <DialogDescription>
+              Funding amounts and terms shown are estimates generated by our software.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              These figures are not a guarantee of approval, rates, limits, or final terms. Banks and lenders make the final
+              decision based on their underwriting criteria.
+            </p>
+            <p>Please verify all details with the lender before applying.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingEstimateNotice}>Acknowledge &amp; Continue</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <AddClientDialog
         isOpen={showAddClient}
         onClose={() => setShowAddClient(false)}

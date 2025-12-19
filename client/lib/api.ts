@@ -14,25 +14,22 @@ const api = axios.create({
   },
 });
 
+const apiDebug = import.meta.env.DEV && import.meta.env.VITE_API_DEBUG === 'true';
+
 // Add auth token to requests
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('auth_token');
-  console.log('🔗 API Interceptor: Request to', config.url);
-  console.log('🔗 API Interceptor: Token found:', !!token);
-  console.log('🔗 API Interceptor: Token preview:', token?.substring(0, 50) + '...');
+  if (apiDebug) {
+    console.log('🔗 API Interceptor: Request to', config.url);
+    console.log('🔗 API Interceptor: Token found:', !!token);
+  }
   
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-    console.log('✅ API Interceptor: Authorization header set');
+    if (apiDebug) console.log('✅ API Interceptor: Authorization header set');
   } else {
-    console.log('⚠️ API Interceptor: No token found, request will be unauthenticated');
+    if (apiDebug) console.log('⚠️ API Interceptor: No token found, request will be unauthenticated');
   }
-  
-  console.log('🔗 API Interceptor: Final headers:', {
-    ...config.headers,
-    Authorization: config.headers.Authorization ? 'Bearer [TOKEN]' : 'Not set'
-  });
-  
   return config;
 });
 
@@ -393,6 +390,24 @@ export const scraperLogsApi = {
   runScraper: (data: { username: string; password: string; clientId?: string }) => apiRequest('/api/scraper/run', { method: 'POST', body: JSON.stringify(data) }),
   getServerStatus: () => apiRequest('/api/scraper/status'),
   getLogs: () => apiRequest('/api/scraper/logs')
+};
+
+// War Machine API
+export const warMachineApi = {
+  runSmPiSuperEngine: (payload: any) =>
+    api.post('/api/war-machine/run', {
+      command: 'WAR_MACHINE.RUN_SM_PI_SUPER_ENGINE',
+      payload,
+    }),
+  runInquiriesReview: (payload: any) =>
+    api.post('/api/war-machine/run', {
+      command: 'WAR_MACHINE.RUN_INQUIRIES_REVIEW',
+      payload,
+    }),
+  runAccountsEval: (payload: any) =>
+    api.post('/api/war-machine/accounts/eval', payload),
+  runPublicRecordsEval: (payload: any) =>
+    api.post('/api/war-machine/public-records/eval', payload),
 };
 
 export interface CalendarEvent {

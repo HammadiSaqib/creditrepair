@@ -90,10 +90,10 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
       pageKey: "ai-coach",
     },
     {
-      name: "School",
+      name: "Knowledge Base",
       href: "/school",
       icon: GraduationCap,
-      badge: "Learning",
+      badge: null,
       pageKey: "school",
     },
     {

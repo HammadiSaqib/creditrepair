@@ -39,6 +39,7 @@ interface AdminProfile {
   first_name: string;
   last_name: string;
   email: string;
+  phone?: string;
   role: string;
   permissions: any;
   status: 'active' | 'inactive' | 'suspended';
@@ -52,6 +53,7 @@ interface AdminProfile {
   plan_name?: string;
   plan_type?: string;
   plan_price?: number;
+  plan_monthly_price?: number;
   clients_count?: number;
   next_billing_date?: string;
 }
@@ -670,6 +672,7 @@ const AdminProfileManagement: React.FC = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="font-semibold">Administrator</TableHead>
+                      <TableHead className="font-semibold">Phone</TableHead>
                       <TableHead className="font-semibold">Role</TableHead>
                       <TableHead className="font-semibold">Plan</TableHead>
                       <TableHead className="font-semibold">Clients</TableHead>
@@ -696,6 +699,9 @@ const AdminProfileManagement: React.FC = () => {
                             </div>
                           </div>
                         </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {admin.phone || '—'}
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-medium">
                             {admin.role}
@@ -713,7 +719,9 @@ const AdminProfileManagement: React.FC = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {admin.plan_price !== undefined && admin.plan_price !== null ? `$${Number(admin.plan_price).toFixed(2)}` : '—'}
+                          {admin.plan_price !== undefined && admin.plan_price !== null
+                            ? `$${Number(admin.plan_price).toFixed(2)}`
+                            : '—'}
                         </TableCell>
                         <TableCell>
                           {admin.next_billing_date ? new Date(admin.next_billing_date).toLocaleDateString() : '—'}

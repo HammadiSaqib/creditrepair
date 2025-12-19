@@ -2027,6 +2027,21 @@ async function createMySQLTables(): Promise<void> {
       console.log('⚠️  Error adding credit_bureaus column to banks:', error.message);
     }
   }
+  
+  // Add is_recommended column to banks if it doesn't exist
+  try {
+    await executeQuery(`
+      ALTER TABLE banks 
+      ADD COLUMN is_recommended BOOLEAN NOT NULL DEFAULT FALSE AFTER is_active
+    `);
+    console.log('✅ Added is_recommended column to banks table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  is_recommended column already exists on banks');
+    } else {
+      console.log('⚠️  Error adding is_recommended column to banks:', error.message);
+    }
+  }
 }
 
 // Seed MySQL database with initial data

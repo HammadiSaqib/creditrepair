@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '../.env') });
+const enableDebugRoutes = process.env.ENABLE_DEBUG_ROUTES === "true";
 
 import express from "express";
 import cors from "cors";
@@ -50,6 +51,7 @@ import { initializeWebSocketService } from "./services/websocketService.js";
 import creditReportScraperRoutes from "./routes/creditreportscraper.js";
 import scraperLogsRoutes from "./routes/scraperLogs.js";
 import aiRoutes from "./routes/ai.js";
+import warMachineRoutes from "./routes/warMachine.js";
 import contractsRoutes from "./routes/contracts.js";
 import contractsAdminRoutes from "./routes/contractsAdmin.js";
 import employeesRoutes from "./routes/employees.js";
@@ -200,14 +202,6 @@ export async function createServer() {
     });
   });
 
-  // Debug current user endpoint
-  app.get("/api/debug/current-user", authenticateToken, (req: any, res) => {
-    res.json({
-      user: req.user,
-      message: "Current authenticated user info",
-    });
-  });
-
   // Simple user check endpoint
   app.get("/api/check-demo-user", async (_req, res) => {
     try {
@@ -228,59 +222,64 @@ export async function createServer() {
     }
   });
 
-  // Debug endpoint to check users (temporary)
-  app.get("/api/debug/users", async (_req, res) => {
-    try {
-      const { allQuery } = await import("./database/schema.js");
-      const users = await allQuery(
-        "SELECT email, first_name, last_name, role, created_at FROM users",
-      );
-      res.json({ users, count: users.length });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
+  if (enableDebugRoutes) {
+    app.get("/api/debug/current-user", authenticateToken, (req: any, res) => {
+      res.json({
+        user: req.user,
+        message: "Current authenticated user info",
+      });
+    });
 
-  // Debug endpoint to test password (temporary)
-  app.post("/api/debug/test-password", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      const { getUserByEmail, comparePassword } = await import(
-        "./controllers/authController.js"
-      );
-
-      const user = await getUserByEmail(email);
-      if (!user) {
-        return res.json({ result: "user_not_found" });
+    app.get("/api/debug/users", async (_req, res) => {
+      try {
+        const { allQuery } = await import("./database/schema.js");
+        const users = await allQuery(
+          "SELECT email, first_name, last_name, role, created_at FROM users",
+        );
+        res.json({ users, count: users.length });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
       }
+    });
 
-      const passwordMatch = comparePassword(password, user.password_hash);
-      res.json({
-        result: passwordMatch ? "password_match" : "password_mismatch",
-        user_exists: true,
-        email: user.email,
-        password_hash_preview: user.password_hash.substring(0, 10) + "...",
-      });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
+    app.post("/api/debug/test-password", async (req, res) => {
+      try {
+        const { email, password } = req.body;
+        const { getUserByEmail, comparePassword } = await import(
+          "./controllers/authController.js"
+        );
 
-  // Debug endpoint to reset database (temporary)
-  app.post("/api/debug/reset-database", async (req, res) => {
-    try {
-      const { resetDatabase } = await import("./utils/resetDatabase.js");
-      const success = await resetDatabase();
-      res.json({
-        success,
-        message: success
-          ? "Database reset successfully"
-          : "Failed to reset database",
-      });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  });
+        const user = await getUserByEmail(email);
+        if (!user) {
+          return res.json({ result: "user_not_found" });
+        }
+
+        const passwordMatch = comparePassword(password, user.password_hash);
+        res.json({
+          result: passwordMatch ? "password_match" : "password_mismatch",
+          user_exists: true,
+          email: user.email,
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    app.post("/api/debug/reset-database", async (req, res) => {
+      try {
+        const { resetDatabase } = await import("./utils/resetDatabase.js");
+        const success = await resetDatabase();
+        res.json({
+          success,
+          message: success
+            ? "Database reset successfully"
+            : "Failed to reset database",
+        });
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+  }
 
   // Legacy demo route
   app.get("/api/demo", handleDemo);
@@ -531,6 +530,9 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.get("/api/reports", authenticateToken, (req, res) => {
     res.json({ message: "Please use the new /api/credit-reports endpoints" });
   });
+
+  // War Machine routes
+  app.use("/api/war-machine", warMachineRoutes);
 
   // =============================================================================
   // AI FEATURES (Mock implementations)

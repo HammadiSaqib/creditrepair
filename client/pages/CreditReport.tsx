@@ -1,6 +1,6 @@
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { clientsApi } from "@/lib/api";
+import { clientsApi, warMachineApi } from "@/lib/api";
 import { toast } from "sonner";
 import {
   Card,
@@ -118,6 +118,7 @@ import {
   Gauge,
   BadgeCheck,
   Settings,
+  Gavel,
 } from "lucide-react";
 import FundingProjectionsCalculator from '../utils/fundingProjections.js';
 import GapAnalyzer from '../utils/gapAnalyzer.js';
@@ -1290,6 +1291,38 @@ export default function CreditReport() {
   const [eligibilityBureau, setEligibilityBureau] = useState<'all' | 'tu' | 'ex' | 'eq'>('all');
   const analysisRef = useRef<HTMLDivElement>(null);
   const [personalInfoMode, setPersonalInfoMode] = useState<'normal' | 'credit_repair'>('normal');
+  const [smPiLoading, setSmPiLoading] = useState(false);
+  const [smPiResult, setSmPiResult] = useState<any | null>(null);
+  const [smPiError, setSmPiError] = useState<string | null>(null);
+  const [lawEngineAutoMode, setLawEngineAutoMode] = useState(false);
+  const [lawEngineNoticeOpen, setLawEngineNoticeOpen] = useState(false);
+  const [pendingLawEngineTab, setPendingLawEngineTab] = useState<string | null>(null);
+  const creditReportTabs = ['overview', 'personal', 'inquiries', 'public', 'accounts'] as const;
+  type CreditReportTab = (typeof creditReportTabs)[number];
+  const isLawEngineView = lawEngineAutoMode && (creditReportTabs as readonly string[]).includes(activeTab);
+
+  const requestEnableLawEngine = (tab?: CreditReportTab) => {
+    const nextTab = tab ?? ((creditReportTabs as readonly string[]).includes(activeTab as any) ? (activeTab as any) : 'overview');
+    if (lawEngineAutoMode) {
+      setActiveTab(nextTab);
+      return;
+    }
+    setPendingLawEngineTab(nextTab);
+    setLawEngineNoticeOpen(true);
+  };
+
+  const acknowledgeLawEngineNotice = () => {
+    setLawEngineNoticeOpen(false);
+    setLawEngineAutoMode(true);
+    if (pendingLawEngineTab) setActiveTab(pendingLawEngineTab);
+    setPendingLawEngineTab(null);
+  };
+
+  useEffect(() => {
+    if (!(creditReportTabs as readonly string[]).includes(activeTab as any)) {
+      setLawEngineAutoMode(false);
+    }
+  }, [activeTab]);
   
   const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
   const { clientId: urlClientId } = useParams<{ clientId: string }>();
@@ -1321,6 +1354,283 @@ export default function CreditReport() {
   // Subscription status for tab access control
   const subscriptionStatus = useSubscriptionStatus();
 
+  const employmentMismatch = useMemo(() => {
+    if (!smPiResult?.debug?.trigger_hits) return false;
+    try {
+      return smPiResult.debug.trigger_hits.some((h: any) => String(h?.trigger) === 'EMPLOYMENT_INCONSISTENT');
+    } catch {
+      return false;
+    }
+  }, [smPiResult]);
+
+  const buildSmPiPayload = () => {
+    const nameFor = (bureauId: number) => {
+      const names = apiData?.Name?.filter((n: any) => Number(n.BureauId) === Number(bureauId)) || [];
+      const primary = names.find((n: any) => (n.NameType || '') === 'Primary') || names[0];
+      if (!primary) return null;
+      const parts = [primary.FirstName || '', primary.Middle || '', primary.LastName || ''].filter(Boolean);
+      const full = parts.join(' ').trim();
+      return full || null;
+    };
+    const aliasesFor = (bureauId: number) => {
+      const names = apiData?.Name?.filter((n: any) => Number(n.BureauId) === Number(bureauId)) || [];
+      return names
+        .filter((n: any) => /(aka|alias|also known as|former)/i.test(String(n.NameType || '')))
+        .map((n: any) => `${n.FirstName || ''} ${n.Middle || ''} ${n.LastName || ''}`.trim())
+        .filter(Boolean);
+    };
+    const dobFor = (bureauId: number) => {
+      const dob = apiData?.DOB?.find((d: any) => Number(d.BureauId) === Number(bureauId))?.DOB;
+      return dob || (reportData?.personalInfo?.dateOfBirth || null);
+    };
+    const addressesFor = (bureauId: number) => {
+      const addresses = apiData?.Address?.filter((a: any) => Number(a.BureauId) === Number(bureauId)) || [];
+      const toText = (a: any) => `${a.StreetAddress || ''}, ${a.City || ''}, ${a.State || ''} ${a.Zip || ''}`.replace(/^,\s*|,\s*$/, '').trim();
+      const current = addresses.filter((a: any) => String(a.AddressType || '').toLowerCase() === 'current').map(toText).filter(Boolean);
+      const previous = addresses.filter((a: any) => String(a.AddressType || '').toLowerCase() !== 'current').map(toText).filter(Boolean);
+      // Fallback to mocked personalInfo addresses if API empty
+      if (addresses.length === 0 && Array.isArray(reportData?.personalInfo?.addresses)) {
+        const arr = reportData.personalInfo.addresses;
+        current.push(
+          ...arr.filter((x: any) => String(x.type || '').toLowerCase() === 'current')
+              .map((x: any) => `${x.street || ''}, ${x.city || ''}, ${x.state || ''} ${x.zip || ''}`.replace(/^,\s*|,\s*$/, '').trim())
+              .filter(Boolean)
+        );
+        previous.push(
+          ...arr.filter((x: any) => String(x.type || '').toLowerCase() !== 'current')
+              .map((x: any) => `${x.street || ''}, ${x.city || ''}, ${x.state || ''} ${x.zip || ''}`.replace(/^,\s*|,\s*$/, '').trim())
+              .filter(Boolean)
+        );
+      }
+      return { current, previous };
+    };
+    const employmentFor = (bureauId: number) => {
+      const employers = (reportData as any)?.personalInfo?.employers || [];
+      const list = employers.filter((e: any) => Number(e.bureauId) === Number(bureauId));
+      const toText = (e: any) => [e.name || '', e.position || ''].filter(Boolean).join(' - ');
+      return list.map(toText).filter(Boolean);
+    };
+    const phones = ((reportData as any)?.personalInfo?.phoneNumbers || [])
+      .map((p: any) => p.number)
+      .filter(Boolean);
+    const ssn = (reportData as any)?.personalInfo?.ssn || null;
+    const BID = { equifax: 1, transunion: 2, experian: 3 };
+    const exAddr = addressesFor(BID.experian);
+    const tuAddr = addressesFor(BID.transunion);
+    const eqAddr = addressesFor(BID.equifax);
+    return {
+      consumer_id: String(clientId || ''),
+      pi: {
+        experian: {
+          full_name: nameFor(BID.experian),
+          aka_names: aliasesFor(BID.experian),
+          dob: dobFor(BID.experian),
+          ssn,
+          current_addresses: exAddr.current,
+          previous_addresses: exAddr.previous,
+          phones,
+          employment: employmentFor(BID.experian),
+        },
+        transunion: {
+          full_name: nameFor(BID.transunion),
+          aka_names: aliasesFor(BID.transunion),
+          dob: dobFor(BID.transunion),
+          ssn,
+          current_addresses: tuAddr.current,
+          previous_addresses: tuAddr.previous,
+          phones,
+          employment: employmentFor(BID.transunion),
+        },
+        equifax: {
+          full_name: nameFor(BID.equifax),
+          aka_names: aliasesFor(BID.equifax),
+          dob: dobFor(BID.equifax),
+          ssn,
+          current_addresses: eqAddr.current,
+          previous_addresses: eqAddr.previous,
+          phones,
+          employment: employmentFor(BID.equifax),
+        },
+      },
+      options: { strict_mode: true, normalize: true },
+    };
+  };
+
+  const handleRunSmPiEngine = async () => {
+    try {
+      setSmPiLoading(true);
+      setSmPiError(null);
+      const payload = buildSmPiPayload();
+      const resp = await warMachineApi.runSmPiSuperEngine(payload);
+      const data = resp?.data;
+      setSmPiResult(data?.result || data);
+      toast.success('SM PI Super engine completed');
+    } catch (err: any) {
+      console.error('SM PI Super engine error:', err);
+      setSmPiError('Failed to run engine');
+      toast.error('Failed to run SM PI Super engine');
+    } finally {
+      setSmPiLoading(false);
+    }
+  };
+
+  const buildInquiriesPayload = () => {
+    const list = (apiData as any)?.reportData?.reportData?.Inquiries ?? (apiData as any)?.reportData?.Inquiries ?? (apiData as any)?.Inquiries ?? [];
+    const group = {
+      experian: [] as any[],
+      transunion: [] as any[],
+      equifax: [] as any[],
+    };
+    for (const inq of list) {
+      const b = Number(inq?.BureauId);
+      const item = {
+        creditor_name: inq?.CreditorName ?? null,
+        date: inq?.DateInquiry ?? null,
+        type: inq?.InquiryType === 'I' ? 'HARD' : inq?.InquiryType === 'S' ? 'SOFT' : String(inq?.InquiryType || '').toUpperCase() || null,
+        industry: inq?.Industry ?? null,
+      };
+      if (b === 2) group.experian.push(item);
+      else if (b === 1) group.transunion.push(item);
+      else group.equifax.push(item);
+    }
+    return {
+      consumer_id: String(clientId || ''),
+      inquiries: group,
+      options: { strict_mode: true, normalize: true, window_months: 12 },
+    };
+  };
+
+  const [inqReviewLoading, setInqReviewLoading] = useState(false);
+  const [inqReviewError, setInqReviewError] = useState<string | null>(null);
+  const [inqReviewResult, setInqReviewResult] = useState<any>(null);
+
+  const handleRunInquiriesReview = async () => {
+    try {
+      setInqReviewLoading(true);
+      setInqReviewError(null);
+      const payload = buildInquiriesPayload();
+      const resp = await warMachineApi.runInquiriesReview(payload);
+      const data = resp?.data;
+      setInqReviewResult(data?.result || data);
+      toast.success('War Machine Inquiries Review completed');
+    } catch (err: any) {
+      console.error('Inquiries Review engine error:', err);
+      setInqReviewError('Failed to Run Law Engine Inquiries');
+      toast.error('Failed to Run Law Engine Inquiries Review');
+    } finally {
+      setInqReviewLoading(false);
+    }
+  };
+  const buildAccountsEvalPayload = () => {
+    const accountsList =
+      (apiData as any)?.reportData?.reportData?.Accounts ??
+      (apiData as any)?.reportData?.Accounts ??
+      (apiData as any)?.Accounts ??
+      [];
+    const pick = (...vals: any[]) => {
+      for (const v of vals) {
+        if (v === undefined || v === null) continue;
+        const s = String(v).trim();
+        if (!s || s.toLowerCase() === 'n/a') continue;
+        return s;
+      }
+      return null;
+    };
+    const normalizedAccountsList = Array.isArray(accountsList)
+      ? accountsList.map((acc: any) => ({
+          ...acc,
+          CreditorName: pick(
+            acc?.CreditorName,
+            acc?.Creditor,
+            acc?.creditor,
+            acc?.SubscriberName,
+            acc?.Subscriber,
+            acc?.company,
+            acc?.Company,
+          ),
+          AccountNumber: pick(
+            acc?.AccountNumber,
+            acc?.accountNumber,
+            acc?.MaskAccountNumber,
+            acc?.maskAccountNumber,
+            acc?.MaskedAccountNumber,
+            acc?.maskedAccountNumber,
+          ),
+        }))
+      : [];
+    return {
+      version: '1.0',
+      case_id: String(clientId || ''),
+      consumer_id: String(clientId || ''),
+      normalize: true,
+      match_strategy: 'strict',
+      bureau_ids: [1, 2, 3],
+      data: { Accounts: normalizedAccountsList },
+    };
+  };
+  const [acctEvalLoading, setAcctEvalLoading] = useState(false);
+  const [acctEvalError, setAcctEvalError] = useState<string | null>(null);
+  const [acctEvalResult, setAcctEvalResult] = useState<any>(null);
+  const [prEvalLoading, setPrEvalLoading] = useState(false);
+  const [prEvalError, setPrEvalError] = useState<string | null>(null);
+  const [prEvalResult, setPrEvalResult] = useState<any>(null);
+  const handleRunAccountsEval = async () => {
+    try {
+      setAcctEvalLoading(true);
+      setAcctEvalError(null);
+      const payload = buildAccountsEvalPayload();
+      const resp = await warMachineApi.runAccountsEval(payload);
+      const data = resp?.data;
+      setAcctEvalResult(data?.result || data);
+      toast.success('War Machine Accounts Evaluation completed');
+    } catch (err: any) {
+      console.error('Accounts Eval engine error:', err);
+      setAcctEvalError('Failed to run Accounts Law Engine');
+      toast.error('Failed to run Accounts Law Engine');
+    } finally {
+      setAcctEvalLoading(false);
+    }
+  };
+  const handleRunPublicRecordsEval = async () => {
+    try {
+      setPrEvalLoading(true);
+      setPrEvalError(null);
+      const publicRecords =
+        (apiData as any)?.PublicRecords ??
+        (reportData as any)?.publicRecords ??
+        [];
+      const payload = {
+        version: '1.0',
+        case_id: String(clientId || ''),
+        consumer_id: String(clientId || ''),
+        normalize: true,
+        bureau_ids: [1, 2, 3],
+        data: { PublicRecords: publicRecords },
+      };
+      const resp = await warMachineApi.runPublicRecordsEval(payload);
+      const data = resp?.data;
+      setPrEvalResult(data?.result || data);
+      toast.success('Public Records Evaluation completed');
+    } catch (err: any) {
+      setPrEvalError('Failed to run Public Records Law Engine');
+      toast.error('Failed to run Public Records Law Engine');
+    } finally {
+      setPrEvalLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!lawEngineAutoMode) return;
+    if (activeTab === 'personal') {
+      if (!smPiResult && !smPiLoading) handleRunSmPiEngine();
+    } else if (activeTab === 'inquiries') {
+      if (!inqReviewResult && !inqReviewLoading) handleRunInquiriesReview();
+    } else if (activeTab === 'public') {
+      if (!prEvalResult && !prEvalLoading) handleRunPublicRecordsEval();
+    } else if (activeTab === 'accounts') {
+      if (subscriptionStatus.hasActiveSubscription && !acctEvalResult && !acctEvalLoading) handleRunAccountsEval();
+    }
+  }, [activeTab, lawEngineAutoMode]);
   // Global helper: read underwriting flag for a bureau/key
   // This is used by the Basic (table) header indicator so it must be in component scope
   const getCriteriaFlag = (bureau: number, key: string) =>
@@ -1479,8 +1789,49 @@ export default function CreditReport() {
   
   // Funding application modal states
   const [showFundingModal, setShowFundingModal] = useState(false);
-  const [fundingType, setFundingType] = useState<'personal' | 'business' | null>(null);
+  const [fundingType, setFundingType] = useState<'personal' | 'business' | 'both' | null>(null);
   const [fundingOption, setFundingOption] = useState<'done-for-you' | 'diy' | null>(null);
+  const [selectedProductTypes, setSelectedProductTypes] = useState<string[]>(['Credit Card','SBA Loan','Line of Credit']);
+  const [fundingEstimateNoticeOpen, setFundingEstimateNoticeOpen] = useState(false);
+  const [pendingFundingGoal, setPendingFundingGoal] = useState<'personal' | 'business' | 'both' | null>(null);
+
+  const performGoToDiyFunding = (goal: 'personal' | 'business' | 'both' = 'both') => {
+    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+    const infer = (inq: any) => {
+      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
+      if (b) return String(b);
+      const id = inq?.BureauId;
+      if (id === 1) return 'TransUnion';
+      if (id === 2) return 'Equifax';
+      if (id === 3) return 'Experian';
+      return '';
+    };
+    const ib = {
+      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
+      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
+      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
+    };
+    navigate(`/funding/diy/${goal}`, {
+      state: {
+        clientId: clientId ? Number(clientId) : undefined,
+        productTypes: selectedProductTypes,
+        inquiriesByBureau: ib,
+        goal,
+      },
+    });
+  };
+
+  const goToDiyFunding = (goal: 'personal' | 'business' | 'both' = 'both') => {
+    setPendingFundingGoal(goal);
+    setFundingEstimateNoticeOpen(true);
+  };
+
+  const acknowledgeFundingEstimateNotice = () => {
+    const goal = pendingFundingGoal ?? 'both';
+    setFundingEstimateNoticeOpen(false);
+    setPendingFundingGoal(null);
+    performGoToDiyFunding(goal);
+  };
   
   // DIY Cards visibility states (for page section instead of modal)
   const [showDIYSection, setShowDIYSection] = useState(false);
@@ -3284,7 +3635,50 @@ export default function CreditReport() {
             if (historyResponse.ok) {
               const historyData = await historyResponse.json();
               console.log('🔍 DEBUG: Report history data:', historyData);
-              transformedData.reportHistory = historyData.data || [];
+              const rawHistory = Array.isArray(historyData?.data) ? historyData.data : [];
+
+              const tokenForFetch = freshToken || token;
+              const fetchReportJson = async (reportPath: any) => {
+                if (!reportPath || typeof reportPath !== 'string') return null;
+                try {
+                  const resp = await fetch(`/api/credit-reports/json-file?path=${encodeURIComponent(reportPath)}`, {
+                    method: 'GET',
+                    headers: {
+                      'Authorization': `Bearer ${tokenForFetch}`,
+                      'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                  });
+                  if (!resp.ok) return null;
+                  const json = await resp.json();
+                  return json?.data ?? null;
+                } catch {
+                  return null;
+                }
+              };
+
+              const oldestRow = rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
+              const latestRow = rawHistory.length > 0 ? rawHistory[0] : null;
+
+              let oldestData: any = null;
+              let latestData: any = null;
+              try {
+                if (oldestRow?.report_path) {
+                  oldestData = await fetchReportJson(oldestRow.report_path);
+                }
+                if (latestRow?.report_path && latestRow?.id !== oldestRow?.id) {
+                  latestData = await fetchReportJson(latestRow.report_path);
+                }
+              } catch (e) {
+                console.warn('Failed to load report JSON for history compare:', e);
+              }
+
+              transformedData.reportHistory = rawHistory.map((h: any) => {
+                if (oldestRow?.id != null && h?.id === oldestRow.id && oldestData) return { ...h, data: oldestData };
+                if (latestRow?.id != null && h?.id === latestRow.id && latestData) return { ...h, data: latestData };
+                if (oldestRow?.id != null && latestRow?.id === oldestRow.id && h?.id === oldestRow.id && oldestData) return { ...h, data: oldestData };
+                return h;
+              });
             } else {
               const errorText = await historyResponse.text();
               console.warn('Failed to fetch report history:', historyResponse.status, errorText);
@@ -3517,6 +3911,62 @@ export default function CreditReport() {
       title={`Credit Report - ${clientName}`}
       description="Detailed credit report analysis and information"
     >
+      <Dialog
+        open={lawEngineNoticeOpen}
+        onOpenChange={(open) => {
+          setLawEngineNoticeOpen(open);
+          if (!open) setPendingLawEngineTab(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Law Engine Notice</DialogTitle>
+            <DialogDescription>
+              This feature uses automated software algorithms to generate outputs and recommendations.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              Please independently review and verify all information before using it in any communication, dispute, or decision.
+            </p>
+            <p>
+              Score Machine does not provide legal advice, and we do not assume responsibility for outcomes resulting from the use
+              of Law Engine outputs.
+            </p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeLawEngineNotice}>Acknowledge &amp; Activate</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fundingEstimateNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingEstimateNoticeOpen(open);
+          if (!open) setPendingFundingGoal(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Estimate Notice</DialogTitle>
+            <DialogDescription>
+              Funding amounts and terms shown are estimates generated by our software.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              These figures are not a guarantee of approval, rates, limits, or final terms. Banks and lenders make the final
+              decision based on their underwriting criteria.
+            </p>
+            <p>Please verify all details with the lender before applying.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingEstimateNotice}>Acknowledge &amp; Continue</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header Navigation */}
       <div className="mb-6">
         <Button
@@ -3540,6 +3990,7 @@ export default function CreditReport() {
               <Download className="h-4 w-4 mr-2" />
               Download PDF
             </Button>
+            
             <Button size="sm" variant="default">
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
@@ -3698,6 +4149,33 @@ export default function CreditReport() {
               {/* Connector */}
               <div className="flex-1 h-0.5 bg-border mx-4">
                 <div className={`h-full bg-primary transition-all duration-500 ${
+                  lawEngineAutoMode || ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
+                }`}></div>
+              </div>
+
+              {/* Run Law Engine */}
+              <div className="flex items-center">
+                <button
+                  onClick={() => requestEnableLawEngine()}
+                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                    lawEngineAutoMode
+                      ? 'bg-purple-500 border-purple-500 text-white shadow-lg scale-110'
+                      : 'bg-card border-border text-muted-foreground hover:border-purple-300 hover:text-purple-500'
+                  }`}
+                >
+                  <Gauge className="w-5 h-5" />
+                </button>
+                <div className="ml-3 hidden lg:block">
+                  <div className={`text-sm font-semibold ${lawEngineAutoMode ? 'text-purple-600' : 'text-muted-foreground'}`}>
+                    Run Law Engine
+                  </div>
+                  <div className="text-xs text-muted-foreground">Automated Analysis</div>
+                </div>
+              </div>
+
+              {/* Connector */}
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
                   ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
@@ -3762,7 +4240,7 @@ export default function CreditReport() {
               <div className="flex items-center">
                 <button
                   disabled={!effectiveFundingEligible}
-                  onClick={() => effectiveFundingEligible && setActiveTab('fundingApplications')}
+                  onClick={() => effectiveFundingEligible && goToDiyFunding('both')}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     !effectiveFundingEligible
                       ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
@@ -3783,150 +4261,277 @@ export default function CreditReport() {
             </div>
           </div>
 
-          {/* Credit Report group */}
-          <div>
-            <div className="text-xs font-semibold text-muted-foreground mb-2">Credit Report</div>
-            <div className="hidden md:flex items-center justify-between bg-card rounded-2xl shadow-lg border border-border p-6 overflow-x-auto">
-              {/* Overview */}
-              <div className="flex items-center">
-                <button
-                  onClick={() => setActiveTab('overview')}
-                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
-                    activeTab === 'overview'
-                      ? 'bg-blue-500 border-blue-500 text-white shadow-lg scale-110'
-                      : ['accounts','inquiries','personal','public'].includes(activeTab)
-                      ? 'bg-blue-500 border-blue-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-blue-300 hover:text-blue-500'
-                  }`}
-                >
-                  <Home className="w-5 h-5" />
-                </button>
-                <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'overview' ? 'text-blue-600' : 'text-muted-foreground'}`}>
-                    Overview
+          {lawEngineAutoMode ? (
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground mb-2">Credit Report (Law Engine)</div>
+              <div className="hidden md:flex items-center justify-between bg-card rounded-2xl shadow-lg border border-border p-6 overflow-x-auto">
+                <div className="flex items-center">
+                  <button
+                    onClick={() => requestEnableLawEngine('overview')}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      activeTab === 'overview'
+                        ? 'bg-blue-500 border-blue-500 text-white shadow-lg scale-110'
+                        : ['accounts','inquiries','personal','public'].includes(activeTab)
+                        ? 'bg-blue-500 border-blue-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-blue-300 hover:text-blue-500'
+                    }`}
+                  >
+                    <Home className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${activeTab === 'overview' ? 'text-blue-600' : 'text-muted-foreground'}`}>
+                      Overview
+                    </div>
+                    <div className="text-xs text-muted-foreground">Dashboard</div>
                   </div>
-                  <div className="text-xs text-muted-foreground">Dashboard</div>
+                </div>
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['accounts','personal','inquiries','public'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+                <div className="flex items-center">
+                  <button
+                    onClick={() => requestEnableLawEngine('personal')}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      activeTab === 'personal'
+                        ? 'bg-purple-500 border-purple-500 text-white shadow-lg scale-110'
+                        : ['inquiries','public','accounts'].includes(activeTab)
+                        ? 'bg-purple-500 border-purple-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-purple-300 hover:text-purple-500'
+                    }`}
+                  >
+                    <UserCheck className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${activeTab === 'personal' ? 'text-purple-600' : 'text-muted-foreground'}`}>
+                      Personal
+                    </div>
+                    <div className="text-xs text-muted-foreground">Identity</div>
+                  </div>
+                </div>
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['inquiries','public','accounts'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+                <div className="flex items-center">
+                  <button
+                    onClick={() => requestEnableLawEngine('inquiries')}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      activeTab === 'inquiries'
+                        ? 'bg-yellow-500 border-yellow-500 text-white shadow-lg scale-110'
+                        : ['public','accounts'].includes(activeTab)
+                        ? 'bg-yellow-500 border-yellow-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-yellow-300 hover:text-yellow-500'
+                    }`}
+                  >
+                    <Search className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${activeTab === 'inquiries' ? 'text-yellow-600' : 'text-muted-foreground'}`}>
+                      Inquiries
+                    </div>
+                    <div className="text-xs text-muted-foreground">Credit Pulls</div>
+                  </div>
+                </div>
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['public','accounts'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+                <div className="flex items-center">
+                  <button
+                    onClick={() => requestEnableLawEngine('public')}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      activeTab === 'public'
+                        ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
+                        : ['accounts'].includes(activeTab)
+                        ? 'bg-red-500 border-red-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
+                    }`}
+                  >
+                    <ScrollText className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${activeTab === 'public' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                      Public Records
+                    </div>
+                    <div className="text-xs text-muted-foreground">Legal</div>
+                  </div>
+                </div>
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['accounts'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+                <div className="flex items-center">
+                  <button
+                    onClick={() => subscriptionStatus.hasActiveSubscription && requestEnableLawEngine('accounts')}
+                    disabled={!subscriptionStatus.hasActiveSubscription}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      !subscriptionStatus.hasActiveSubscription
+                        ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
+                        : activeTab === 'accounts'
+                        ? 'bg-green-500 border-green-500 text-white shadow-lg scale-110'
+                        : 'bg-card border-border text-muted-foreground hover:border-green-300 hover:text-green-500'
+                    }`}
+                  >
+                    <CreditCard className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${!subscriptionStatus.hasActiveSubscription ? 'text-muted-foreground' : activeTab === 'accounts' ? 'text-green-600' : 'text-muted-foreground'}`}>
+                      Accounts
+                    </div>
+                    <div className="text-xs text-muted-foreground">Credit Lines</div>
+                  </div>
                 </div>
               </div>
-
-              {/* Connector */}
-              <div className="flex-1 h-0.5 bg-border mx-4">
-                <div className={`h-full bg-primary transition-all duration-500 ${
-                  ['accounts','personal','inquiries','public'].includes(activeTab) ? 'w-full' : 'w-0'
-                }`}></div>
-              </div>
-
-              {/* Personal */}
-              <div className="flex items-center">
-                <button
-                  onClick={() => setActiveTab('personal')}
-                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
-                    activeTab === 'personal'
-                      ? 'bg-purple-500 border-purple-500 text-white shadow-lg scale-110'
-                      : ['inquiries','public','accounts'].includes(activeTab)
-                      ? 'bg-purple-500 border-purple-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-purple-300 hover:text-purple-500'
-                  }`}
-                >
-                  <UserCheck className="w-5 h-5" />
-                </button>
-                <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'personal' ? 'text-purple-600' : 'text-muted-foreground'}`}>
-                    Personal
-                  </div>
-                  <div className="text-xs text-muted-foreground">Identity</div>
-                </div>
-              </div>
-
-              {/* Connector */}
-              <div className="flex-1 h-0.5 bg-border mx-4">
-                <div className={`h-full bg-primary transition-all duration-500 ${
-                  ['inquiries','public','accounts'].includes(activeTab) ? 'w-full' : 'w-0'
-                }`}></div>
-              </div>
-
-              {/* Inquiries */}
-              <div className="flex items-center">
-                <button
-                  onClick={() => setActiveTab('inquiries')}
-                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
-                    activeTab === 'inquiries'
-                      ? 'bg-yellow-500 border-yellow-500 text-white shadow-lg scale-110'
-                      : ['public','accounts'].includes(activeTab)
-                      ? 'bg-yellow-500 border-yellow-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-yellow-300 hover:text-yellow-500'
-                  }`}
-                >
-                  <Search className="w-5 h-5" />
-                </button>
-                <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'inquiries' ? 'text-yellow-600' : 'text-muted-foreground'}`}>
-                    Inquiries
-                  </div>
-                  <div className="text-xs text-muted-foreground">Credit Pulls</div>
-                </div>
-              </div>
-
-              {/* Connector */}
-              <div className="flex-1 h-0.5 bg-border mx-4">
-                <div className={`h-full bg-primary transition-all duration-500 ${
-                  ['public','accounts'].includes(activeTab) ? 'w-full' : 'w-0'
-                }`}></div>
-              </div>
-              {/* Public Records */}
-              <div className="flex items-center">
-                <button
-                  onClick={() => setActiveTab('public')}
-                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
-                    activeTab === 'public'
-                      ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
-                      : ['accounts'].includes(activeTab)
-                      ? 'bg-red-500 border-red-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
-                  }`}
-                >
-                  <ScrollText className="w-5 h-5" />
-                </button>
-                <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'public' ? 'text-red-600' : 'text-muted-foreground'}`}>
-                    Public Records
-                  </div>
-                  <div className="text-xs text-muted-foreground">Legal</div>
-                </div>
-              </div>
-
-              {/* Connector */}
-              <div className="flex-1 h-0.5 bg-border mx-4">
-                <div className={`h-full bg-primary transition-all duration-500 ${
-                  ['accounts'].includes(activeTab) ? 'w-full' : 'w-0'
-                }`}></div>
-              </div>
-
-              {/* Accounts (moved to end, after Public Records) */}
-              <div className="flex items-center">
-                <button
-                  onClick={() => subscriptionStatus.hasActiveSubscription ? setActiveTab('accounts') : null}
-                  disabled={!subscriptionStatus.hasActiveSubscription}
-                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
-                    !subscriptionStatus.hasActiveSubscription
-                      ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
-                      : activeTab === 'accounts'
-                      ? 'bg-green-500 border-green-500 text-white shadow-lg scale-110'
-                      : 'bg-card border-border text-muted-foreground hover:border-green-300 hover:text-green-500'
-                  }`}
-                >
-                  <CreditCard className="w-5 h-5" />
-                </button>
-                <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${!subscriptionStatus.hasActiveSubscription ? 'text-muted-foreground' : activeTab === 'accounts' ? 'text-green-600' : 'text-muted-foreground'}`}>
-                    Accounts
-                  </div>
-                  <div className="text-xs text-muted-foreground">Credit Lines</div>
-                </div>
-              </div>
-
             </div>
-          </div>
+          ) : (
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground mb-2">Credit Report</div>
+              <div className="hidden md:flex items-center justify-between bg-card rounded-2xl shadow-lg border border-border p-6 overflow-x-auto">
+                {/* Overview */}
+                <div className="flex items-center">
+                  <button
+                    onClick={() => { setLawEngineAutoMode(false); setActiveTab('overview'); }}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      activeTab === 'overview'
+                        ? 'bg-blue-500 border-blue-500 text-white shadow-lg scale-110'
+                        : ['accounts','inquiries','personal','public'].includes(activeTab)
+                        ? 'bg-blue-500 border-blue-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-blue-300 hover:text-blue-500'
+                    }`}
+                  >
+                    <Home className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${activeTab === 'overview' ? 'text-blue-600' : 'text-muted-foreground'}`}>
+                      Overview
+                    </div>
+                    <div className="text-xs text-muted-foreground">Dashboard</div>
+                  </div>
+                </div>
+
+                {/* Connector */}
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['accounts','personal','inquiries','public'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+
+                {/* Personal */}
+                <div className="flex items-center">
+                  <button
+                    onClick={() => { setLawEngineAutoMode(false); setActiveTab('personal'); }}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      activeTab === 'personal'
+                        ? 'bg-purple-500 border-purple-500 text-white shadow-lg scale-110'
+                        : ['inquiries','public','accounts'].includes(activeTab)
+                        ? 'bg-purple-500 border-purple-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-purple-300 hover:text-purple-500'
+                    }`}
+                  >
+                    <UserCheck className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${activeTab === 'personal' ? 'text-purple-600' : 'text-muted-foreground'}`}>
+                      Personal
+                    </div>
+                    <div className="text-xs text-muted-foreground">Identity</div>
+                  </div>
+                </div>
+
+                {/* Connector */}
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['inquiries','public','accounts'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+
+                {/* Inquiries */}
+                <div className="flex items-center">
+                  <button
+                    onClick={() => { setLawEngineAutoMode(false); setActiveTab('inquiries'); }}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      activeTab === 'inquiries'
+                        ? 'bg-yellow-500 border-yellow-500 text-white shadow-lg scale-110'
+                        : ['public','accounts'].includes(activeTab)
+                        ? 'bg-yellow-500 border-yellow-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-yellow-300 hover:text-yellow-500'
+                    }`}
+                  >
+                    <Search className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${activeTab === 'inquiries' ? 'text-yellow-600' : 'text-muted-foreground'}`}>
+                      Inquiries
+                    </div>
+                    <div className="text-xs text-muted-foreground">Credit Pulls</div>
+                  </div>
+                </div>
+
+                {/* Connector */}
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['public','accounts'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+                {/* Public Records */}
+                <div className="flex items-center">
+                  <button
+                    onClick={() => { setLawEngineAutoMode(false); setActiveTab('public'); }}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      activeTab === 'public'
+                        ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
+                        : ['accounts'].includes(activeTab)
+                        ? 'bg-red-500 border-red-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
+                    }`}
+                  >
+                    <ScrollText className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${activeTab === 'public' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                      Public Records
+                    </div>
+                    <div className="text-xs text-muted-foreground">Legal</div>
+                  </div>
+                </div>
+
+                {/* Connector */}
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['accounts'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+
+                {/* Accounts (moved to end, after Public Records) */}
+                <div className="flex items-center">
+                  <button
+                    onClick={() => { setLawEngineAutoMode(false); if (subscriptionStatus.hasActiveSubscription) setActiveTab('accounts'); }}
+                    disabled={!subscriptionStatus.hasActiveSubscription}
+                    className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                      !subscriptionStatus.hasActiveSubscription
+                        ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
+                        : activeTab === 'accounts'
+                        ? 'bg-green-500 border-green-500 text-white shadow-lg scale-110'
+                        : 'bg-card border-border text-muted-foreground hover:border-green-300 hover:text-green-500'
+                    }`}
+                  >
+                    <CreditCard className="w-5 h-5" />
+                  </button>
+                  <div className="ml-3 hidden lg:block">
+                    <div className={`text-sm font-semibold ${!subscriptionStatus.hasActiveSubscription ? 'text-muted-foreground' : activeTab === 'accounts' ? 'text-green-600' : 'text-muted-foreground'}`}>
+                      Accounts
+                    </div>
+                    <div className="text-xs text-muted-foreground">Credit Lines</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Underwriting Tab */}
@@ -6795,7 +7400,7 @@ export default function CreditReport() {
                         <CheckCircle2 className="h-5 w-5" />
                         Qualified for funding
                       </div>
-                      <Button onClick={() => setActiveTab('fundingApplications')} className="bg-green-600 hover:bg-green-700">
+                      <Button onClick={() => goToDiyFunding('both')} className="bg-green-600 hover:bg-green-700">
                         Go to Funding
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
@@ -8563,6 +9168,8 @@ export default function CreditReport() {
                 );
                 
                 latePaymentAccounts.forEach(account => {
+                  const accountDigits = String(account.accountNumber || account.id || '').replace(/\D/g, '');
+                  const accountKey = accountDigits ? (accountDigits.length >= 4 ? accountDigits.slice(-4) : accountDigits) : String(account.accountNumber || account.id || '').toLowerCase();
                   allNegativeItems.push({
                     id: account.accountNumber || account.id,
                     type: 'Late Payment',
@@ -8570,13 +9177,37 @@ export default function CreditReport() {
                     bureau: account.bureau,
                     accountNumber: account.accountNumber,
                     accountDate: account.DateOpened || account.dateOpened || account.opened || account.DateReported || account.dateReported || account.reported,
-                    category: 'late-payment'
+                    category: 'late-payment',
+                    accountKey
+                  });
+                });
+
+                const chargeOffAccounts = reportData.accounts.filter((account: any) => {
+                  const st = String(account.status || account.AccountStatus || account.AccountCondition || '').toLowerCase();
+                  const ph = String(account.paymentHistory || account.PaymentStatus || account.WorstPayStatus || '').toLowerCase();
+                  return ph.includes('charge') || st.includes('charge') || ph.includes('chargeoff') || ph.includes('charged off') || ph.includes('charge off');
+                }).filter((account: any) => !(latePaymentAccounts as any[]).includes(account));
+
+                chargeOffAccounts.forEach((account: any) => {
+                  const accountDigits = String(account.accountNumber || account.AccountNumber || account.id || '').replace(/\D/g, '');
+                  const accountKey = accountDigits ? (accountDigits.length >= 4 ? accountDigits.slice(-4) : accountDigits) : String(account.accountNumber || account.AccountNumber || account.id || '').toLowerCase();
+                  allNegativeItems.push({
+                    id: account.accountNumber || account.AccountNumber || account.id,
+                    type: 'Charge Off',
+                    creditor: account.creditor || account.CreditorName,
+                    bureau: account.bureau || (account.BureauId === 1 ? 'Experian' : account.BureauId === 2 ? 'TransUnion' : 'Equifax'),
+                    accountNumber: account.accountNumber || account.AccountNumber || account.id,
+                    accountDate: account.DateOpened || account.dateOpened || account.opened || account.DateReported || account.dateReported || account.reported,
+                    category: 'charge-off',
+                    accountKey
                   });
                 });
                 
                 // Add collections
                 if (reportData.collections) {
                   reportData.collections.forEach(collection => {
+                    const colDigits = String(collection.accountNumber || collection.id || '').replace(/\D/g, '');
+                    const accountKey = colDigits ? (colDigits.length >= 4 ? colDigits.slice(-4) : colDigits) : String(collection.accountNumber || collection.id || '').toLowerCase();
                     allNegativeItems.push({
                       id: collection.id,
                       type: 'Collection',
@@ -8584,7 +9215,8 @@ export default function CreditReport() {
                       bureau: collection.bureau || 'Multiple',
                       accountNumber: collection.accountNumber || collection.id,
                       accountDate: collection.dateOpened || collection.dateReported || collection.lastActivity,
-                      category: 'collection'
+                      category: 'collection',
+                      accountKey
                     });
                   });
                 }
@@ -8592,6 +9224,8 @@ export default function CreditReport() {
                 // Add public records
                 if (reportData.publicRecords) {
                   reportData.publicRecords.forEach(record => {
+                    const recDigits = String(record.caseNumber || record.id || '').replace(/\D/g, '');
+                    const accountKey = recDigits ? (recDigits.length >= 4 ? recDigits.slice(-4) : recDigits) : String(record.caseNumber || record.id || '').toLowerCase();
                     allNegativeItems.push({
                       id: record.id,
                       type: record.type || 'Public Record',
@@ -8599,7 +9233,8 @@ export default function CreditReport() {
                       bureau: record.bureau || 'Multiple',
                       accountNumber: record.caseNumber || record.id,
                       accountDate: record.filingDate || record.dischargeDate,
-                      category: 'public-record'
+                      category: 'public-record',
+                      accountKey
                     });
                   });
                 }
@@ -8607,6 +9242,11 @@ export default function CreditReport() {
                  // Add hard inquiries
                  const hardInquiries = reportData.inquiries.filter(inquiry => inquiry.type === 'Hard');
                  hardInquiries.forEach(inquiry => {
+                   const creditor = inquiry.company || inquiry.creditorName || '';
+                   const date = inquiry.date || inquiry.DateInquiry || '';
+                   const inqKeyRaw = `INQ|HARD|${creditor}|${date}`;
+                   const inqDigits = String(inqKeyRaw || '').replace(/\D/g, '');
+                   const accountKey = inqDigits ? (inqDigits.length >= 4 ? inqDigits.slice(-4) : inqDigits) : String(inqKeyRaw || '').toLowerCase();
                    allNegativeItems.push({
                      id: inquiry.id,
                      type: 'Inquiry',
@@ -8614,13 +9254,19 @@ export default function CreditReport() {
                      bureau: inquiry.bureau,
                      accountNumber: inquiry.id || `INQ-${inquiry.company}`,
                      accountDate: inquiry.date || inquiry.DateInquiry,
-                     category: 'hard-inquiry'
+                     category: 'hard-inquiry',
+                     accountKey
                    });
                  });
                  
                  // Add soft inquiries
                  const softInquiries = reportData.inquiries.filter(inquiry => inquiry.type === 'Soft' || !inquiry.type);
                  softInquiries.forEach(inquiry => {
+                   const creditor = inquiry.company || inquiry.creditorName || '';
+                   const date = inquiry.date || inquiry.DateInquiry || '';
+                   const inqKeyRaw = `INQ|SOFT|${creditor}|${date}`;
+                   const inqDigits = String(inqKeyRaw || '').replace(/\D/g, '');
+                   const accountKey = inqDigits ? (inqDigits.length >= 4 ? inqDigits.slice(-4) : inqDigits) : String(inqKeyRaw || '').toLowerCase();
                    allNegativeItems.push({
                      id: inquiry.id,
                      type: 'Inquiry',
@@ -8628,83 +9274,133 @@ export default function CreditReport() {
                      bureau: inquiry.bureau,
                      accountNumber: inquiry.id || `INQ-${inquiry.company}`,
                      accountDate: inquiry.date || inquiry.DateInquiry,
-                     category: 'soft-inquiry'
+                     category: 'soft-inquiry',
+                     accountKey
                    });
                  });
                 
                 const getDateFromHistoryItem = (h: any) => {
                   const d = h?.created_at || h?.date || h?.reportDate || h?.report_date || (h?.bureauDates && (h.bureauDates.experian || h.bureauDates.transunion || h.bureauDates.equifax));
-                  try { return d ? new Date(d).getTime() : 0; } catch { return 0; }
+                  try {
+                    if (!d) return 0;
+                    if (d instanceof Date) return d.getTime();
+                    const s = String(d);
+                    const t = new Date(s.includes(' ') && !s.includes('T') ? s.replace(' ', 'T') : s).getTime();
+                    return Number.isFinite(t) ? t : 0;
+                  } catch {
+                    return 0;
+                  }
                 };
                 const extractNegatives = (base: any) => {
                   const items: any[] = [];
-                  const accounts = (base?.accounts) || (base?.reportData?.Accounts) || [];
-                  const collectionsRaw = (base?.collections) || (base?.reportData?.Accounts) || [];
-                  const inquiriesRaw = (base?.inquiries) || (base?.reportData?.Inquiries) || [];
+                  const accounts = (base?.accounts) || (base?.Accounts) || (base?.reportData?.Accounts) || [];
+                  const collectionsRaw = (base?.collections) || (base?.Collections) || (base?.reportData?.Collections) || (base?.reportData?.Accounts) || [];
+                  const inquiriesRaw = (base?.inquiries) || (base?.Inquiries) || (base?.reportData?.Inquiries) || [];
                   const publicRecordsRaw = base?.publicRecords || base?.PublicRecords || [];
                   const lateAccounts = Array.isArray(accounts) ? accounts.filter((a: any) => {
                     const st = (a.status || a.AccountStatus || '').toString().toLowerCase();
                     const lp = a.latePayments && a.latePayments.total > 0;
                     return st.includes('late') || st.includes('delinquent') || st.includes('default') || lp;
                   }) : [];
-                  lateAccounts.forEach((a: any) => items.push({
+                  lateAccounts.forEach((a: any) => {
+                    const digits = String(a.accountNumber || a.AccountNumber || a.id || '').replace(/\D/g, '');
+                    const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(a.accountNumber || a.AccountNumber || a.id || '').toLowerCase();
+                    items.push({
                     id: a.accountNumber || a.AccountNumber || a.id,
                     type: 'Late Payment',
                     creditor: a.creditor || a.CreditorName,
                     bureau: a.bureau || (a.BureauId === 1 ? 'TransUnion' : a.BureauId === 2 ? 'Experian' : 'Equifax'),
                     accountNumber: a.accountNumber || a.AccountNumber || a.id,
                     accountDate: a.DateOpened || a.dateOpened || a.opened || a.DateReported || a.dateReported || a.reported,
-                    category: 'late-payment'
-                  }));
+                    category: 'late-payment',
+                    accountKey
+                  });
+                  const chargeOffAccountsLocal = Array.isArray(accounts) ? accounts.filter((a: any) => {
+                    const st = (a.status || a.AccountStatus || a.AccountCondition || '').toString().toLowerCase();
+                    const ph = (a.paymentHistory || a.PaymentStatus || a.WorstPayStatus || '').toString().toLowerCase();
+                    return ph.includes('charge') || st.includes('charge') || ph.includes('chargeoff') || ph.includes('charged off') || ph.includes('charge off');
+                  }) : [];
+                  chargeOffAccountsLocal.forEach((a: any) => {
+                    const digits = String(a.accountNumber || a.AccountNumber || a.id || '').replace(/\D/g, '');
+                    const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(a.accountNumber || a.AccountNumber || a.id || '').toLowerCase();
+                    items.push({
+                    id: a.accountNumber || a.AccountNumber || a.id,
+                    type: 'Charge Off',
+                    creditor: a.creditor || a.CreditorName,
+                    bureau: a.bureau || (a.BureauId === 1 ? 'TransUnion' : a.BureauId === 2 ? 'Experian' : 'Equifax'),
+                    accountNumber: a.accountNumber || a.AccountNumber || a.id,
+                    accountDate: a.DateOpened || a.dateOpened || a.opened || a.DateReported || a.dateReported || a.reported,
+                    category: 'charge-off',
+                    accountKey
+                  });
+                  });
+                  });
                   if (Array.isArray(collectionsRaw)) {
                     collectionsRaw.forEach((c: any) => {
                       const isCollection = (c.PaymentStatus && String(c.PaymentStatus).includes('Collection')) || (c.AccountType && String(c.AccountType).includes('Collection')) || c.type === 'Collection';
-                      if (isCollection) items.push({
+                      if (isCollection) {
+                        const digits = String(c.accountNumber || c.AccountNumber || c.id || '').replace(/\D/g, '');
+                        const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(c.accountNumber || c.AccountNumber || c.id || '').toLowerCase();
+                        items.push({
                         id: c.id || c.AccountNumber,
                         type: 'Collection',
                         creditor: c.agency || c.originalCreditor || c.CreditorName,
                         bureau: c.bureau || (c.BureauId === 1 ? 'TransUnion' : c.BureauId === 2 ? 'Experian' : 'Equifax') || 'Multiple',
                         accountNumber: c.accountNumber || c.AccountNumber || c.id,
                         accountDate: c.dateOpened || c.DateOpened || c.dateReported || c.DateReported || c.lastActivity,
-                        category: 'collection'
+                        category: 'collection',
+                        accountKey
                       });
+                      }
                     });
                   }
                   if (Array.isArray(publicRecordsRaw)) {
-                    publicRecordsRaw.forEach((r: any) => items.push({
+                    publicRecordsRaw.forEach((r: any) => {
+                      const digits = String(r.caseNumber || r.id || '').replace(/\D/g, '');
+                      const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(r.caseNumber || r.id || '').toLowerCase();
+                      items.push({
                       id: r.id,
                       type: r.type || 'Public Record',
                       creditor: r.creditor || 'Court/Government',
                       bureau: r.bureau || 'Multiple',
                       accountNumber: r.caseNumber || r.id,
                       accountDate: r.filingDate || r.dischargeDate,
-                      category: 'public-record'
-                    }));
+                      category: 'public-record',
+                      accountKey
+                    });
+                    });
                   }
                   if (Array.isArray(inquiriesRaw)) {
-                    inquiriesRaw.forEach((inq: any) => items.push({
+                    inquiriesRaw.forEach((inq: any) => {
+                      const creditor = inq.company || inq.creditorName || inq.CreditorName || '';
+                      const date = inq.date || inq.DateInquiry || '';
+                      const bureau = inq.bureau || (inq.BureauId === 1 ? 'TransUnion' : inq.BureauId === 2 ? 'Experian' : 'Equifax');
+                      const inqKeyRaw = `INQ|${inq.type === 'Hard' || inq.InquiryType === 'I' ? 'HARD' : 'SOFT'}|${creditor}|${date}`;
+                      const digits = String(inqKeyRaw || '').replace(/\D/g, '');
+                      const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(inqKeyRaw || '').toLowerCase();
+                      items.push({
                       id: inq.id,
                       type: 'Inquiry',
-                      creditor: inq.company || inq.creditorName || inq.CreditorName,
-                      bureau: inq.bureau || (inq.BureauId === 1 ? 'TransUnion' : inq.BureauId === 2 ? 'Experian' : 'Equifax'),
+                      creditor: creditor,
+                      bureau: bureau,
                       accountNumber: inq.id || `INQ-${inq.company || inq.creditorName || inq.CreditorName}`,
                       accountDate: inq.date || inq.DateInquiry,
-                      category: (inq.type === 'Hard' || inq.InquiryType === 'I') ? 'hard-inquiry' : 'soft-inquiry'
-                    }));
+                      category: (inq.type === 'Hard' || inq.InquiryType === 'I') ? 'hard-inquiry' : 'soft-inquiry',
+                      accountKey
+                    });
+                    });
                   }
                   return items;
                 };
                 const history = Array.isArray(reportData.reportHistory) ? reportData.reportHistory : [];
-                let oldest: any = null;
-                if (history.length > 0) {
-                  oldest = history.slice().sort((a: any, b: any) => getDateFromHistoryItem(a) - getDateFromHistoryItem(b))[0] || history[history.length - 1];
-                }
+                const oldest: any = history.length > 0 ? history[history.length - 1] : null;
                 const prevItems = oldest ? extractNegatives(oldest?.data || oldest?.reportData || oldest) : [];
-                const keyOf = (it: any) => `${(it.category||'').toLowerCase()}|${(it.type||'').toLowerCase()}|${(it.accountNumber||'').toString().toLowerCase()}|${(it.creditor||'').toString().toLowerCase()}`;
+                const keyOf = (it: any) => `${(it.category||'').toLowerCase()}|${(it.type||'').toLowerCase()}|${String((it as any).accountKey || '').toLowerCase()}|${(it.creditor||'').toString().toLowerCase()}`;
                 const prevSet = new Set(prevItems.map(keyOf));
                 const currSet = new Set(allNegativeItems.map(keyOf));
                 const removed = prevItems.filter((it: any) => !currSet.has(keyOf(it)));
                 const added = allNegativeItems.filter((it: any) => !prevSet.has(keyOf(it)));
+                const stillPresent = allNegativeItems.filter((it: any) => prevSet.has(keyOf(it)));
                 return allNegativeItems.length > 0 ? (
                   <>
                     <div className="overflow-x-auto">
@@ -8762,10 +9458,14 @@ export default function CreditReport() {
                       </table>
                     </div>
                     {oldest && (
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
                         <div className="rounded-lg border bg-white p-4">
                           <div className="text-sm text-gray-600">Oldest Report Date</div>
                           <div className="text-lg font-bold text-gray-800">{(() => { const d = oldest?.created_at || oldest?.date || oldest?.reportDate || (oldest?.bureauDates && (oldest.bureauDates.experian || oldest.bureauDates.transunion || oldest.bureauDates.equifax)); try { return d ? new Date(d).toLocaleDateString('en-US') : 'N/A'; } catch { return 'N/A'; } })()}</div>
+                        </div>
+                        <div className="rounded-lg border bg-white p-4">
+                          <div className="text-sm text-gray-600">Current Negative Items</div>
+                          <div className="text-lg font-bold text-gray-800">{allNegativeItems.length}</div>
                         </div>
                         <div className="rounded-lg border bg-white p-4">
                           <div className="text-sm text-gray-600">Removed Since Oldest</div>
@@ -8778,7 +9478,7 @@ export default function CreditReport() {
                       </div>
                     )}
                     {oldest && (
-                      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-white rounded-lg border shadow-sm">
                           <div className="px-4 py-3 border-b font-semibold text-green-700">Removed Items</div>
                           <div className="p-4 space-y-2">
@@ -8795,10 +9495,25 @@ export default function CreditReport() {
                           </div>
                         </div>
                         <div className="bg-white rounded-lg border shadow-sm">
-                          <div className="px-4 py-3 border-b font-semibold text-red-700">Nagetive Items</div>
+                          <div className="px-4 py-3 border-b font-semibold text-yellow-700">Still Present</div>
+                          <div className="p-4 space-y-2">
+                            {stillPresent.length === 0 ? (
+                              <div className="text-sm text-gray-500">None</div>
+                            ) : (
+                              stillPresent.map((it: any, idx: number) => (
+                                <div key={`present-${idx}`} className="flex items-center justify-between text-sm">
+                                  <span className="text-gray-700">{it.type} • {it.accountNumber || 'N/A'}</span>
+                                  <span className="text-gray-500">{it.creditor || 'Unknown'}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                        <div className="bg-white rounded-lg border shadow-sm">
+                          <div className="px-4 py-3 border-b font-semibold text-red-700">New Items</div>
                           <div className="p-4 space-y-2">
                             {added.length === 0 ? (
-                              <div className="text-sm text-gray-500">No Nagetive items</div>
+                              <div className="text-sm text-gray-500">None</div>
                             ) : (
                               added.map((it: any, idx: number) => (
                                 <div key={`added-${idx}`} className="flex items-center justify-between text-sm">
@@ -8880,12 +9595,29 @@ export default function CreditReport() {
             <CardTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-ocean-blue" />
               Account Details by Bureau
+              <Button onClick={handleRunAccountsEval} disabled={acctEvalLoading} className="ml-auto">
+                {acctEvalLoading ? 'Running…' : 'Run Accounts Law Engine'}
+              </Button>
             </CardTitle>
                 <CardDescription>
                   Detailed account information from each credit bureau
                 </CardDescription>
               </CardHeader>
           <CardContent>
+            {acctEvalError && (
+              <div className="text-red-600 text-sm mb-3">{acctEvalError}</div>
+            )}
+            {acctEvalResult?.summary && (
+              <div className="mb-6 rounded-lg border p-4">
+                <div className="font-semibold mb-2">Accounts Law Engine Summary</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div>Total records: {acctEvalResult.summary.total_records}</div>
+                  <div>Positive skipped: {acctEvalResult.summary.positive_skipped}</div>
+                  <div>Negative detected: {acctEvalResult.summary.negative_detected}</div>
+                  <div>Negative with violations: {acctEvalResult.summary.negative_with_violations}</div>
+                </div>
+              </div>
+            )}
             {(() => {
               // Group accounts by creditor and account number for comparison
               const groupAccountsForComparison = () => {
@@ -9039,7 +9771,7 @@ export default function CreditReport() {
                         </div>
                       </div>
                       
-                      <div className={`grid grid-cols-1 ${activeTab === 'credit-repair' ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-6`}>
+                      <div className={`grid grid-cols-1 ${activeTab === 'credit-repair' ? 'lg:grid-cols-4' : 'lg:grid-cols-4'} gap-6`}>
                         {/* Account Info Column */}
                         {activeTab !== 'credit-repair' && (
                         <div className="bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-xl p-5 border border-slate-200 shadow-md hover:shadow-lg transition-shadow dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 dark:border-slate-700">
@@ -10958,6 +11690,130 @@ export default function CreditReport() {
                             </div>
                           )}
                         </div>
+
+                        {/* Credit Repair Analysis */}
+                        {activeTab === 'credit-repair' && (
+                          <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
+                            {(() => {
+                              const up = (s: string) => s.toUpperCase();
+                              const trimCollapse = (s: string) => s.replace(/\s+/g, ' ').trim();
+                              const removePunctExceptHyphen = (s: string) => s.replace(/[^\w\s-]/g, '');
+                              const digitsOnly = (s: string) => s.replace(/\D/g, '');
+                              const canonicalCreditor = (s: string) => {
+                                const t = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                if (/navyfederal|navyfcu/.test(t)) return 'NAVY FEDERAL CREDIT UNION';
+                                if (/creditone|crdtonebnk/.test(t)) return 'CREDIT ONE BANK';
+                                if (/jpmcb|chase|jpmmorgan/.test(t)) return 'CHASE';
+                                if (/americanexpress|amex/.test(t)) return 'AMERICAN EXPRESS';
+                                if (/discover/.test(t)) return 'DISCOVER';
+                                if (/capitalone|capone/.test(t)) return 'CAPITAL ONE';
+                                if (/synchrony|syncb/.test(t)) return 'SYNCHRONY BANK';
+                                if (/citi(bank)?/.test(t)) return 'CITIBANK';
+                                if (/wellsfargo/.test(t)) return 'WELLS FARGO';
+                                if (/barclays/.test(t)) return 'BARCLAYS';
+                                return up(trimCollapse(removePunctExceptHyphen(String(s ?? '').trim())));
+                              };
+                              const parseDate = (s: any) => {
+                                const raw = String(s ?? '').trim();
+                                if (!raw) return null;
+                                const d = new Date(raw);
+                                if (isNaN(d.getTime())) {
+                                  const dd = digitsOnly(raw);
+                                  if (dd.length === 8) {
+                                    const y = dd.slice(0,4);
+                                    const m = dd.slice(4,6);
+                                    const day = dd.slice(6,8);
+                                    const d2 = new Date(`${y}-${m}-${day}T00:00:00Z`);
+                                    return isNaN(d2.getTime()) ? null : d2;
+                                  }
+                                  return null;
+                                }
+                                return d;
+                              };
+                              const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0,10) : '');
+                              const bureauNameById: Record<string, string> = { '1': 'TransUnion', '2': 'Experian', '3': 'Equifax' };
+                              const lawset = {
+                                FCRA: ["§602","§603","§604(a–f)","§605","§605A","§605B","§606","§607(a)","§607(b)","§607(c)","§609(a)(1)","§609(a)(2)","§609(a)(3)","§611(a–e)","§615","§616","§617","§623(a)(1)","§623(a)(2)","§623(a)(5)","§623(a)(7)","§623(b)"],
+                                FACTA: ["§112","§113","§151","§153","§315"],
+                                GLBA: ["§501(a)–(b)","§502(a)–(b)","§503–§504"],
+                                Metro2: ["ALL Metro 2 Account Reporting Standards","ALL Portfolio Type Standards","ALL Status and Special Comment Rules","ALL DOFD and Compliance Condition Rules","ALL Payment Rating and Current Status Rules"],
+                                Regulatory: ["CFPB Accuracy & Integrity Rule","CFPB Furnisher Rule","OCC, FDIC, NCUA accuracy guidelines","FTC Misrepresentation Doctrine"],
+                                Other: ["UDAAP","UCC Article 9 (obligation attachment)","Bankruptcy Abuse Prevention and Consumer Protection Act"]
+                              };
+                              const creditor = canonicalCreditor(accountGroup.creditor || '');
+                              const accNum = String(accountGroup.accountNumber || '');
+                              const digits = digitsOnly(accNum);
+                              let tradelineKey = '';
+                              if (digits.length >= 4) {
+                                const last4 = digits.slice(-4);
+                                tradelineKey = `${creditor}|${last4}`;
+                              } else {
+                                const type = up(trimCollapse(String(accountGroup.type || '')));
+                                const openedVals = Object.values(accountGroup.bureaus || {}).map((b: any) => b.opened).filter(Boolean);
+                                const earliest = openedVals.length ? openedVals.map(parseDate).filter(Boolean as any as (x: any) => x).sort((a: any, b: any) => (a as Date).getTime() - (b as Date).getTime())[0] : null;
+                                tradelineKey = `${creditor}|${type}|${fmtDate(earliest as any)}`;
+                              }
+                              const item = Array.isArray(acctEvalResult?.accounts) ? acctEvalResult.accounts.find((x: any) => x.tradeline_key === tradelineKey) : null;
+                              if (!item) {
+                                return (
+                                  <div className="text-sm text-muted-foreground">
+                                    No evaluation data for this account
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <Badge
+                                      variant={item.account_status === 'Negative' ? 'destructive' : 'default'}
+                                      className={`text-xs font-medium px-3 py-1 ${item.account_status === 'Negative' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-green-100 text-green-800 border-green-200'}`}
+                                    >
+                                      {item.account_status}
+                                    </Badge>
+                                    <span className="text-xs text-gray-500 dark:text-slate-400">{item.account_type_output}</span>
+                                  </div>
+                                  {item.violations && item.violations.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {item.violations.map((v: any, idx: number) => (
+                                        <div key={idx} className="rounded-md border border-red-200 bg-red-50 p-2 text-sm dark:border-red-900 dark:bg-red-950/40">
+                                          <div className="font-semibold text-red-700 dark:text-red-300">{v.field}</div>
+                                          <div className="text-red-800 dark:text-red-200">{v.reason}</div>
+                                          {v.what_mismatched && (
+                                            <div className="mt-1 grid grid-cols-1 gap-1">
+                                              {Object.entries(v.what_mismatched).map(([bid, val]) => (
+                                                <div key={bid} className="flex items-center justify-between">
+                                                  <span className="text-xs text-gray-600 dark:text-slate-300">{bureauNameById[bid] || `Bureau ${bid}`}</span>
+                                                  <span className="text-xs font-medium text-gray-900 dark:text-white">{val === null || val === undefined || val === '' ? '—' : String(val)}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                          {v.laws?.FULL_ACCOUNT_LAWSET && (
+                                            <details className="mt-2">
+                                              <summary className="cursor-pointer text-xs text-indigo-700">Applicable law set</summary>
+                                              <div className="mt-1 text-xs space-y-1">
+                                                {Object.entries(lawset).map(([cat, list]) => (
+                                                  <div key={cat}>
+                                                    <div className="font-semibold text-gray-700">{cat}</div>
+                                                    <div className="text-gray-600">{(list as string[]).join(', ')}</div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </details>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="rounded-md border border-green-200 bg-green-50 p-2 text-sm text-green-800">
+                                      No violations detected
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                     </div>
                     );
@@ -11446,14 +12302,53 @@ export default function CreditReport() {
               <CardDescription className="text-muted-foreground font-medium ml-11 dark:text-white">
                 Identity verification across all credit bureaus
               </CardDescription>
-              <div className="ml-auto mt-2">
+              <div className="ml-auto mt-2 flex items-center gap-2">
                 <ToggleGroup type="single" value={personalInfoMode} onValueChange={(v) => setPersonalInfoMode((v as any) || 'normal')} className="gap-1">
                   <ToggleGroupItem value="normal">Normal</ToggleGroupItem>
                   <ToggleGroupItem value="credit_repair">Credit Repair</ToggleGroupItem>
                 </ToggleGroup>
+                <Button onClick={handleRunSmPiEngine} disabled={smPiLoading} className="ml-2">
+                  {smPiLoading ? 'Running…' : 'Run Law Engine'}
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
+              {smPiError && (
+                <div className="mb-4 text-sm text-red-600">{smPiError}</div>
+              )}
+              {smPiResult && (
+                <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                  <div className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                    {smPiResult?.human_summary || 'SM PI Super engine result'}
+                  </div>
+                  <div className="text-sm text-gray-700 dark:text-slate-200">
+                    <div className="mb-2">
+                      <span className="font-medium">Match:</span>{' '}
+                      {String(smPiResult?.backend_json?.match ?? false).toUpperCase()}
+                    </div>
+                    {Array.isArray(smPiResult?.backend_json?.issues_detected) && smPiResult.backend_json.issues_detected.length > 0 && (
+                      <div className="mb-2">
+                        <div className="font-medium">Issues Detected:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {smPiResult.backend_json.issues_detected.map((issue: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">{issue}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(smPiResult?.backend_json?.laws) && smPiResult.backend_json.laws.length > 0 && (
+                      <div>
+                        <div className="font-medium">Relevant Laws:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {smPiResult.backend_json.laws.map((law: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800">{law}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               {/* Personal Information Cards */}
               <div className="grid md:grid-cols-3 gap-4 mb-6">
                 {(() => {
@@ -11816,8 +12711,40 @@ export default function CreditReport() {
               <CardDescription className="text-slate-600 font-medium dark:text-white">
                 Employment information reported by Experian, TransUnion, and Equifax
               </CardDescription>
+              <div className="ml-auto mt-2">
+                <Button onClick={handleRunSmPiEngine} disabled={smPiLoading}>
+                  {smPiLoading ? 'Running…' : 'Run Law Engine'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
+              {smPiResult && (
+                <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                  <div className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                    {smPiResult?.human_summary || 'Engine result'}
+                  </div>
+                  <div className="text-sm text-gray-700 dark:text-slate-200">
+                    <div className="mb-2">
+                      <span className="font-medium">Employment Consistency:</span>{' '}
+                      {employmentMismatch ? (
+                        <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Not Match</span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Match</span>
+                      )}
+                    </div>
+                    {employmentMismatch && Array.isArray(smPiResult?.backend_json?.laws) && smPiResult.backend_json.laws.length > 0 && (
+                      <div>
+                        <div className="font-medium">Relevant Laws:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {smPiResult.backend_json.laws.map((law: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800">{law}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="grid md:grid-cols-3 gap-6">
                 {/* Experian Employers */}
                 <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-blue-950 dark:to-cyan-950 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
@@ -11833,6 +12760,15 @@ export default function CreditReport() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
+                    {smPiResult && (
+                      <div className="mt-1 mb-2">
+                        {employmentMismatch ? (
+                          <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Not Match</span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Match</span>
+                        )}
+                      </div>
+                    )}
                     {reportData.personalInfo.employers && reportData.personalInfo.employers.filter(emp => emp.bureauId === 2 || emp.bureauId === "experian").length > 0 ? (
                       <div className="space-y-3">
                         {reportData.personalInfo.employers
@@ -11893,6 +12829,15 @@ export default function CreditReport() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
+                    {smPiResult && (
+                      <div className="mt-1 mb-2">
+                        {employmentMismatch ? (
+                          <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Not Match</span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Match</span>
+                        )}
+                      </div>
+                    )}
                     {reportData.personalInfo.employers && reportData.personalInfo.employers.filter(emp => emp.bureauId === 1 || emp.bureauId === "transunion").length > 0 ? (
                       <div className="space-y-3">
                         {reportData.personalInfo.employers
@@ -11953,6 +12898,15 @@ export default function CreditReport() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
+                    {smPiResult && (
+                      <div className="mt-1 mb-2">
+                        {employmentMismatch ? (
+                          <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Not Match</span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Match</span>
+                        )}
+                      </div>
+                    )}
                     {reportData.personalInfo.employers && reportData.personalInfo.employers.filter(emp => emp.bureauId === 3 || emp.bureauId === "equifax").length > 0 ? (
                       <div className="space-y-3">
                         {reportData.personalInfo.employers
@@ -12010,8 +12964,45 @@ export default function CreditReport() {
               <CardDescription className="text-gray-600 font-medium dark:text-white">
                 Recent credit inquiries from each credit bureau
               </CardDescription>
+              <div className="ml-auto mt-2 flex items-center gap-2">
+                <Button onClick={handleRunInquiriesReview} disabled={inqReviewLoading} className="ml-2" variant="outline">
+                  {inqReviewLoading ? 'Running…' : 'Run Law Engine Inquiries'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-6">
+              {inqReviewError && (
+                <div className="mb-4 text-sm text-red-600">{inqReviewError}</div>
+              )}
+              {inqReviewResult && (
+                <div className="mb-6 p-3 rounded-md border border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-900/20">
+                  <div className="font-semibold text-indigo-900 dark:text-indigo-100 mb-1">
+                    {inqReviewResult?.human_summary || 'Inquiries Review result'}
+                  </div>
+                  <div className="text-sm text-gray-700 dark:text-slate-200">
+                    {Array.isArray(inqReviewResult?.backend_json?.issues_detected) && inqReviewResult.backend_json.issues_detected.length > 0 && (
+                      <div className="mb-2">
+                        <div className="font-medium">Issues Detected:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {inqReviewResult.backend_json.issues_detected.map((issue: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">{issue}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(inqReviewResult?.backend_json?.laws) && inqReviewResult.backend_json.laws.length > 0 && (
+                      <div>
+                        <div className="font-medium">Relevant Laws:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {inqReviewResult.backend_json.laws.map((law: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800">{law}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="grid md:grid-cols-3 gap-6">
                 {(() => {
                   // Get inquiries for each bureau
@@ -12019,9 +13010,9 @@ export default function CreditReport() {
                     return reportData.inquiries.filter(inquiry => inquiry.bureau === bureauId) || [];
                   };
 
-                  const experianInquiries = getBureauInquiries('Equifax');
+                  const experianInquiries = getBureauInquiries('Experian');
                   const transUnionInquiries = getBureauInquiries('TransUnion');
-                  const equifaxInquiries = getBureauInquiries('Experian');
+                  const equifaxInquiries = getBureauInquiries('Equifax');
 
                   return (
                     <>
@@ -12236,8 +13227,18 @@ export default function CreditReport() {
               <div className="grid md:grid-cols-3 gap-4">
                 {(() => {
                   // Get public records for each bureau
-                  const getBureauPublicRecords = (bureauId) => {
-                    return reportData.publicRecords?.filter(record => record.bureau === bureauId) || [];
+                  const getBureauPublicRecords = (bureauName: string) => {
+                    const mapBureauIdToName = (bid: number) => {
+                      if (bid === 2) return 'TransUnion';
+                      if (bid === 3) return 'Equifax';
+                      return 'Experian';
+                    };
+                    const list = Array.isArray(reportData.publicRecords) ? reportData.publicRecords : [];
+                    return list.filter((record: any) => {
+                      const bid = Number(record?.BureauId ?? record?.bureauId ?? record?.BureauID ?? 0);
+                      const name = record?.bureau || mapBureauIdToName(bid);
+                      return name === bureauName;
+                    });
                   };
 
                   const experianRecords = getBureauPublicRecords('Experian');
@@ -12270,23 +13271,23 @@ export default function CreditReport() {
                             <div className="space-y-2">
                               {experianRecords.map((record, idx) => (
                                 <div key={idx} className="border border-border/20 rounded-lg p-2">
-                                  <div className="text-xs font-medium">{record.type}</div>
+                                  <div className="text-xs font-medium">{record.type ?? record.RecordType ?? record.Type ?? 'Public Record'}</div>
                                   <div className="text-xs text-muted-foreground">
-                                    Status: {record.status}
+                                    Status: {record.status ?? record.Status ?? 'Unknown'}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    Filed: {new Date(record.filingDate).toLocaleDateString()}
+                                    Filed: {(record.filingDate || record.DateFiled) ? new Date(record.filingDate || record.DateFiled).toLocaleDateString() : 'N/A'}
                                   </div>
-                                  {record.court && (
+                                  {(record.court ?? record.CourtName ?? record.Court) && (
                                     <div className="text-xs text-muted-foreground">
-                                      Court: {record.court}
+                                      Court: {record.court ?? record.CourtName ?? record.Court}
                                     </div>
                                   )}
                                   <Badge 
-                                    variant={record.status === 'Discharged' ? 'secondary' : 'destructive'}
+                                    variant={(record.status ?? record.Status) === 'Discharged' ? 'secondary' : 'destructive'}
                                     className="text-xs mt-1"
                                   >
-                                    {record.status}
+                                    {record.status ?? record.Status ?? 'Unknown'}
                                   </Badge>
                                 </div>
                               ))}
@@ -12326,23 +13327,23 @@ export default function CreditReport() {
                             <div className="space-y-2">
                               {transUnionRecords.map((record, idx) => (
                                 <div key={idx} className="border border-border/20 rounded-lg p-2">
-                                  <div className="text-xs font-medium">{record.type}</div>
+                                  <div className="text-xs font-medium">{record.type ?? record.RecordType ?? record.Type ?? 'Public Record'}</div>
                                   <div className="text-xs text-muted-foreground">
-                                    Status: {record.status}
+                                    Status: {record.status ?? record.Status ?? 'Unknown'}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    Filed: {new Date(record.filingDate).toLocaleDateString()}
+                                    Filed: {(record.filingDate || record.DateFiled) ? new Date(record.filingDate || record.DateFiled).toLocaleDateString() : 'N/A'}
                                   </div>
-                                  {record.court && (
+                                  {(record.court ?? record.CourtName ?? record.Court) && (
                                     <div className="text-xs text-muted-foreground">
-                                      Court: {record.court}
+                                      Court: {record.court ?? record.CourtName ?? record.Court}
                                     </div>
                                   )}
                                   <Badge 
-                                    variant={record.status === 'Discharged' ? 'secondary' : 'destructive'}
+                                    variant={(record.status ?? record.Status) === 'Discharged' ? 'secondary' : 'destructive'}
                                     className="text-xs mt-1"
                                   >
-                                    {record.status}
+                                    {record.status ?? record.Status ?? 'Unknown'}
                                   </Badge>
                                 </div>
                               ))}
@@ -12382,23 +13383,23 @@ export default function CreditReport() {
                             <div className="space-y-2">
                               {equifaxRecords.map((record, idx) => (
                                 <div key={idx} className="border border-border/20 rounded-lg p-2">
-                                  <div className="text-xs font-medium">{record.type}</div>
+                                  <div className="text-xs font-medium">{record.type ?? record.RecordType ?? record.Type ?? 'Public Record'}</div>
                                   <div className="text-xs text-muted-foreground">
-                                    Status: {record.status}
+                                    Status: {record.status ?? record.Status ?? 'Unknown'}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    Filed: {new Date(record.filingDate).toLocaleDateString()}
+                                    Filed: {(record.filingDate || record.DateFiled) ? new Date(record.filingDate || record.DateFiled).toLocaleDateString() : 'N/A'}
                                   </div>
-                                  {record.court && (
+                                  {(record.court ?? record.CourtName ?? record.Court) && (
                                     <div className="text-xs text-muted-foreground">
-                                      Court: {record.court}
+                                      Court: {record.court ?? record.CourtName ?? record.Court}
                                     </div>
                                   )}
                                   <Badge 
-                                    variant={record.status === 'Discharged' ? 'secondary' : 'destructive'}
+                                    variant={(record.status ?? record.Status) === 'Discharged' ? 'secondary' : 'destructive'}
                                     className="text-xs mt-1"
                                   >
-                                    {record.status}
+                                    {record.status ?? record.Status ?? 'Unknown'}
                                   </Badge>
                                 </div>
                               ))}
@@ -13966,8 +14967,45 @@ export default function CreditReport() {
               <CardDescription className="text-muted-foreground font-medium dark:text-white">
                 Recent credit inquiries from each credit bureau
               </CardDescription>
+              <div className="ml-auto mt-2 flex items-center gap-2">
+                <Button onClick={handleRunInquiriesReview} disabled={inqReviewLoading} className="ml-2" variant="outline">
+                  {inqReviewLoading ? 'Running…' : 'Run Law Engine Inquiries'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-6">
+              {inqReviewError && (
+                <div className="mb-4 text-sm text-red-600">{inqReviewError}</div>
+              )}
+              {inqReviewResult && (
+                <div className="mb-6 p-3 rounded-md border border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-900/20">
+                  <div className="font-semibold text-indigo-900 dark:text-indigo-100 mb-1">
+                    {inqReviewResult?.human_summary || 'Inquiries Review result'}
+                  </div>
+                  <div className="text-sm text-gray-700 dark:text-slate-200">
+                    {Array.isArray(inqReviewResult?.backend_json?.issues_detected) && inqReviewResult.backend_json.issues_detected.length > 0 && (
+                      <div className="mb-2">
+                        <div className="font-medium">Issues Detected:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {inqReviewResult.backend_json.issues_detected.map((issue: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">{issue}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(inqReviewResult?.backend_json?.laws) && inqReviewResult.backend_json.laws.length > 0 && (
+                      <div>
+                        <div className="font-medium">Relevant Laws:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {inqReviewResult.backend_json.laws.map((law: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800">{law}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="grid md:grid-cols-3 gap-6">
                 {(() => {
                   // Get inquiries for each bureau
@@ -13975,9 +15013,9 @@ export default function CreditReport() {
                     return reportData.inquiries.filter(inquiry => inquiry.bureau === bureauId) || [];
                   };
 
-                  const experianInquiries = getBureauInquiries('Equifax');
+                  const experianInquiries = getBureauInquiries('Experian');
                   const transUnionInquiries = getBureauInquiries('TransUnion');
-                  const equifaxInquiries = getBureauInquiries('Experian');
+                  const equifaxInquiries = getBureauInquiries('Equifax');
 
                   return (
                     <>
@@ -14195,14 +15233,53 @@ export default function CreditReport() {
               <CardDescription className="text-muted-foreground font-medium ml-11">
                 Identity verification across all credit bureaus
               </CardDescription>
-              <div className="ml-auto mt-2">
+              <div className="ml-auto mt-2 flex items-center gap-2">
                 <ToggleGroup type="single" value={personalInfoMode} onValueChange={(v) => setPersonalInfoMode((v as any) || 'normal')} className="gap-1">
                   <ToggleGroupItem value="normal">Normal</ToggleGroupItem>
                   <ToggleGroupItem value="credit_repair">Credit Repair</ToggleGroupItem>
                 </ToggleGroup>
+                <Button onClick={handleRunSmPiEngine} disabled={smPiLoading} className="ml-2">
+                  {smPiLoading ? 'Running…' : 'Run Law Engine'}
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
+              {smPiError && (
+                <div className="mb-4 text-sm text-red-600">{smPiError}</div>
+              )}
+              {smPiResult && (
+                <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                  <div className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                    {smPiResult?.human_summary || 'SM PI Super engine result'}
+                  </div>
+                  <div className="text-sm text-gray-700 dark:text-slate-200">
+                    <div className="mb-2">
+                      <span className="font-medium">Match:</span>{' '}
+                      {String(smPiResult?.backend_json?.match ?? false).toUpperCase()}
+                    </div>
+                    {Array.isArray(smPiResult?.backend_json?.issues_detected) && smPiResult.backend_json.issues_detected.length > 0 && (
+                      <div className="mb-2">
+                        <div className="font-medium">Issues Detected:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {smPiResult.backend_json.issues_detected.map((issue: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">{issue}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {Array.isArray(smPiResult?.backend_json?.laws) && smPiResult.backend_json.laws.length > 0 && (
+                      <div>
+                        <div className="font-medium">Relevant Laws:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {smPiResult.backend_json.laws.map((law: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800">{law}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               {/* Personal Information Cards */}
               <div className="grid md:grid-cols-3 gap-4 mb-6">
                 {(() => {
@@ -14557,11 +15634,43 @@ export default function CreditReport() {
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>
-            <CardDescription className="text-slate-600 font-medium dark:text-white">
-                Employment information reported by Experian, TransUnion, and Equifax
-              </CardDescription>
+              <CardDescription className="text-slate-600 font-medium dark:text-white">
+                  Employment information reported by Experian, TransUnion, and Equifax
+                </CardDescription>
+              <div className="ml-auto mt-2">
+                <Button onClick={handleRunSmPiEngine} disabled={smPiLoading}>
+                  {smPiLoading ? 'Running…' : 'Run Law Engine'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
+              {smPiResult && (
+                <div className="mb-4 p-3 rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+                  <div className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                    {smPiResult?.human_summary || 'SM PI Super engine result'}
+                  </div>
+                  <div className="text-sm text-gray-700 dark:text-slate-200">
+                    <div className="mb-2">
+                      <span className="font-medium">Employment Consistency:</span>{' '}
+                      {employmentMismatch ? (
+                        <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Not Match</span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Match</span>
+                      )}
+                    </div>
+                    {employmentMismatch && Array.isArray(smPiResult?.backend_json?.laws) && smPiResult.backend_json.laws.length > 0 && (
+                      <div>
+                        <div className="font-medium">Relevant Laws:</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {smPiResult.backend_json.laws.map((law: string, i: number) => (
+                            <span key={i} className="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800">{law}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="grid md:grid-cols-3 gap-6">
                 {/* Experian Employers */}
                 <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] dark:from-blue-950 dark:to-cyan-950">
@@ -14577,6 +15686,15 @@ export default function CreditReport() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0">
+                    {smPiResult && (
+                      <div className="mt-1 mb-2">
+                        {employmentMismatch ? (
+                          <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Not Match</span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Match</span>
+                        )}
+                      </div>
+                    )}
                     {reportData.personalInfo.employers && reportData.personalInfo.employers.filter(emp => emp.bureauId === 2 || emp.bureauId === "experian").length > 0 ? (
                       <div className="space-y-3">
                         {reportData.personalInfo.employers
@@ -14637,6 +15755,15 @@ export default function CreditReport() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0">
+                    {smPiResult && (
+                      <div className="mt-1 mb-2">
+                        {employmentMismatch ? (
+                          <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Not Match</span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Match</span>
+                        )}
+                      </div>
+                    )}
                     {reportData.personalInfo.employers && reportData.personalInfo.employers.filter(emp => emp.bureauId === 1 || emp.bureauId === "transunion").length > 0 ? (
                       <div className="space-y-3">
                         {reportData.personalInfo.employers
@@ -14697,6 +15824,15 @@ export default function CreditReport() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0">
+                    {smPiResult && (
+                      <div className="mt-1 mb-2">
+                        {employmentMismatch ? (
+                          <span className="px-2 py-1 text-xs rounded bg-red-100 text-red-800">Not Match</span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-800">Match</span>
+                        )}
+                      </div>
+                    )}
                     {reportData.personalInfo.employers && reportData.personalInfo.employers.filter(emp => emp.bureauId === 3 || emp.bureauId === "equifax").length > 0 ? (
                       <div className="space-y-3">
                         {reportData.personalInfo.employers
@@ -16936,11 +18072,11 @@ export default function CreditReport() {
                   Apply for Personal Funding
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
-              </CardContent>
-            </Card>
+            </CardContent>
+          </Card>
 
-            {/* Business Funding Card */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 dark:bg-slate-900 dark:border dark:border-blue-900/50">
+          {/* Business Funding Card */}
+          <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 dark:bg-slate-900 dark:border dark:border-blue-900/50">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-3">
                   <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
@@ -16977,20 +18113,49 @@ export default function CreditReport() {
                 </div>
 
                 {/* Apply Button */}
-                <Button 
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 dark:bg-blue-700 dark:hover:bg-blue-800"
-                  size="lg"
-                  onClick={() => {
-                    setShowFundingModal(true);
-                    setFundingType('business');
-                  }}
-                >
-                  <Building2 className="h-5 w-5 mr-2" />
-                  Apply for Business Funding
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
-              </CardContent>
-            </Card>
+            <Button 
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 dark:bg-blue-700 dark:hover:bg-blue-800"
+              size="lg"
+              onClick={() => {
+                setShowFundingModal(true);
+                setFundingType('business');
+              }}
+            >
+              <Building2 className="h-5 w-5 mr-2" />
+              Apply for Business Funding
+              <ArrowRight className="h-4 w-4 ml-2" />
+            </Button>
+          </CardContent>
+          </Card>
+          
+          {/* Both Funding Card */}
+          <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-emerald-50 dark:from-slate-900 dark:to-slate-900 dark:bg-slate-900 dark:border dark:border-slate-700">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-3">
+                <div className="p-2 bg-gradient-to-br from-blue-500 to-emerald-600 rounded-lg">
+                  <Users className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800 dark:text-slate-300">Both: Personal + Business</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">Split recommendations across bureaus</p>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <Button 
+                className="w-full bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 text-white font-semibold py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
+                size="lg"
+                onClick={() => {
+                  setShowFundingModal(true);
+                  setFundingType('both');
+                }}
+              >
+                <CreditCard className="h-5 w-5 mr-2" />
+                Apply for Both
+                <ArrowRight className="h-4 w-4 ml-2" />
+              </Button>
+            </CardContent>
+          </Card>
           </div>
         </TabsContent>
 
@@ -16999,13 +18164,20 @@ export default function CreditReport() {
           <TrialCreditReportWrapper featureName="Public Records">
           <Card className="border-0 shadow-md">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building className="h-5 w-5 text-orange-600" />
-                Public Records
-              </CardTitle>
-              <CardDescription>
-                Bankruptcies, liens, judgments, and other court records
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Building className="h-5 w-5 text-orange-600" />
+                    Public Records
+                  </CardTitle>
+                  <CardDescription>
+                    Bankruptcies, liens, judgments, and other court records
+                  </CardDescription>
+                </div>
+                <Button size="sm" variant="outline" onClick={handleRunPublicRecordsEval} disabled={prEvalLoading}>
+                  {prEvalLoading ? 'Running…' : 'Run Public Records Law Engine'}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {reportData.publicRecords && reportData.publicRecords.length > 0 ? (
@@ -17068,6 +18240,81 @@ export default function CreditReport() {
               )}
             </CardContent>
           </Card>
+          {prEvalResult ? (
+            <Card className="border-0 shadow-md">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building className="h-5 w-5 text-orange-600" />
+                  Public Records Evaluation
+                </CardTitle>
+                <CardDescription>
+                  Detected inconsistencies and law applicability per record
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-4 grid grid-cols-3 gap-4">
+                  <div className="p-3 rounded bg-orange-50 border border-orange-100">
+                    <div className="text-xs text-muted-foreground">Total Records</div>
+                    <div className="text-lg font-semibold">{prEvalResult?.summary?.total_records ?? 0}</div>
+                  </div>
+                  <div className="p-3 rounded bg-green-50 border border-green-100">
+                    <div className="text-xs text-muted-foreground">Consistent</div>
+                    <div className="text-lg font-semibold">{prEvalResult?.summary?.records_consistent ?? 0}</div>
+                  </div>
+                  <div className="p-3 rounded bg-red-50 border border-red-100">
+                    <div className="text-xs text-muted-foreground">With Violations</div>
+                    <div className="text-lg font-semibold">{prEvalResult?.summary?.records_with_violations ?? 0}</div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  {(prEvalResult?.records ?? []).map((rec: any, idx: number) => (
+                    <div key={rec.record_key || idx} className="border rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-medium">{rec.record_key}</div>
+                        {rec.match ? (
+                          <Badge className="bg-green-100 text-green-800 border-green-200">Consistent</Badge>
+                        ) : (
+                          <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">Violation</Badge>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground mb-2">
+                        Bureaus: {Array.isArray(rec.bureaus_present) ? rec.bureaus_present.join(', ') : '—'}
+                      </div>
+                      {rec.violations && rec.violations.length > 0 ? (
+                        <div className="space-y-3">
+                          {rec.violations.map((v: any, i: number) => (
+                            <div key={i} className="border rounded p-3">
+                              <div className="text-sm font-medium">{v.field}</div>
+                              <div className="mt-1 grid grid-cols-3 gap-2 text-xs">
+                                <div>EXP: {v.what_mismatched?.['1'] ?? 'Missing'}</div>
+                                <div>TU: {v.what_mismatched?.['2'] ?? 'Missing'}</div>
+                                <div>EQ: {v.what_mismatched?.['3'] ?? 'Missing'}</div>
+                              </div>
+                              <div className="mt-1 text-xs text-muted-foreground">{v.reason}</div>
+                              {v.laws ? (
+                                <details className="mt-2 text-xs">
+                                  <summary className="font-medium">Applicable law set</summary>
+                                  <div className="ml-2 mt-1 space-y-1">
+                                    {Object.entries(v.laws).map(([cat, items]: any) => (
+                                      <div key={cat}>
+                                        <span className="font-medium">{cat}:</span> {(items || []).join(', ')}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">No violations detected</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
           </TrialCreditReportWrapper>
         </TabsContent>
       </Tabs>
@@ -17077,13 +18324,57 @@ export default function CreditReport() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
-              {fundingType === 'personal' ? 'Personal' : 'Business'} Funding Application
+              {fundingType === 'personal' ? 'Personal' : fundingType === 'business' ? 'Business' : 'Both'} Funding Application
             </DialogTitle>
           </DialogHeader>
 
           {!fundingOption ? (
             // Enhanced Funding Option Selection
             <div className="space-y-8 py-6">
+              <div className="space-y-3 max-w-3xl mx-auto">
+                <h4 className="text-lg font-semibold">What are you looking for?</h4>
+                <div className="flex flex-wrap gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('Credit Card')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('Credit Card'); else next.delete('Credit Card');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>Credit cards</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('SBA Loan')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('SBA Loan'); else next.delete('SBA Loan');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>SBA loans</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('Line of Credit')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('Line of Credit'); else next.delete('Line of Credit');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>Lines of credit</span>
+                  </label>
+                </div>
+              </div>
               <div className="text-center">
                 <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
                   <DollarSign className="h-10 w-10 text-white" />
@@ -17100,7 +18391,22 @@ export default function CreditReport() {
                 <Card 
                   className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-blue-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-blue-50"
                   onClick={() => {
-                    navigate(`/funding/apply/${fundingType}`);
+                    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+                    const infer = (inq: any) => {
+                      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
+                      if (b) return String(b);
+                      const id = inq?.BureauId;
+                      if (id === 1) return 'TransUnion';
+                      if (id === 2) return 'Equifax';
+                      if (id === 3) return 'Experian';
+                      return '';
+                    };
+                    const ib = {
+                      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
+                      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
+                      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
+                    };
+                    navigate(`/funding/apply/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined, productTypes: selectedProductTypes, inquiriesByBureau: ib, goal: fundingType } });
                     setShowFundingModal(false);
                   }}
                 >
@@ -17144,7 +18450,22 @@ export default function CreditReport() {
                 <Card 
                   className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-green-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-green-50"
                   onClick={() => {
-                    navigate(`/funding/diy/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined } });
+                    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+                    const infer = (inq: any) => {
+                      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
+                      if (b) return String(b);
+                      const id = inq?.BureauId;
+                      if (id === 1) return 'TransUnion';
+                      if (id === 2) return 'Equifax';
+                      if (id === 3) return 'Experian';
+                      return '';
+                    };
+                    const ib = {
+                      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
+                      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
+                      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
+                    };
+                    navigate(`/funding/diy/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined, productTypes: selectedProductTypes, inquiriesByBureau: ib, goal: fundingType } });
                     setShowFundingModal(false);
                   }}
                 >
@@ -17200,10 +18521,10 @@ export default function CreditReport() {
             ) : (
               <PersonalCardsDisplay onClose={() => setFundingOption(null)} />
             )
-          ) : (
-            // Enhanced 4-Step Form (only show for Done For You option)
-            fundingOption === 'done-for-you' && (
-              <div className="space-y-8 py-6">
+            ) : (
+              // Enhanced 4-Step Form (only show for Done For You option)
+              fundingOption === 'done-for-you' && (
+                <div className="space-y-8 py-6">
                 {/* Enhanced Step Navigation with Progress Bar */}
                 <div className="relative mb-12">
                   <div className="flex items-center justify-between mb-8">

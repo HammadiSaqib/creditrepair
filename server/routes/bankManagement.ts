@@ -16,6 +16,7 @@ const createBankSchema = z.object({
   states: z.array(z.enum(STATE_OR_COUNTRY_CODES)).min(1).optional(),
   credit_bureaus: z.array(z.enum(['Experian', 'Equifax', 'TransUnion'] as const)).min(1),
   funding_manager_id: z.number().int().positive().optional(),
+  is_recommended: z.boolean().optional(),
 }).refine((data) => !!data.state || !!data.states, { message: 'state or states is required' });
 
 const updateBankSchema = z.object({
@@ -25,6 +26,7 @@ const updateBankSchema = z.object({
   states: z.array(z.enum(STATE_OR_COUNTRY_CODES)).min(1).optional(),
   credit_bureaus: z.array(z.enum(['Experian', 'Equifax', 'TransUnion'] as const)).min(1).optional(),
   is_active: z.boolean().optional(),
+  is_recommended: z.boolean().optional(),
 });
 
 const querySchema = z.object({
@@ -63,7 +65,7 @@ export async function getBanks(req: Request, res: Response) {
 
     // Get banks with pagination
     const query = `
-      SELECT id, name, logo, state, credit_bureaus, is_active, created_at, updated_at 
+      SELECT id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at 
       FROM banks 
       ${whereClause}
       ORDER BY created_at DESC 
@@ -92,7 +94,7 @@ export async function getBank(req: Request, res: Response) {
   try {
     const { id } = req.params;
     
-    const query = 'SELECT id, name, logo, state, credit_bureaus, is_active, created_at, updated_at FROM banks WHERE id = ?';
+    const query = 'SELECT id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?';
     const result = await executeQuery(query, [id]);
     
     if (result.length === 0) {
@@ -127,8 +129,8 @@ export async function createBank(req: Request, res: Response) {
     }
     
     const query = `
-      INSERT INTO banks (funding_manager_id, name, logo, state, credit_bureaus, is_active, created_at, updated_at) 
-      VALUES (?, ?, ?, ?, ?, true, NOW(), NOW())
+      INSERT INTO banks (funding_manager_id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at) 
+      VALUES (?, ?, ?, ?, ?, true, ?, NOW(), NOW())
     `;
     
     const statesArr = Array.isArray(validatedData.states) && validatedData.states.length > 0
@@ -142,13 +144,14 @@ export async function createBank(req: Request, res: Response) {
       validatedData.logo || null,
       stateValue,
       JSON.stringify(validatedData.credit_bureaus),
+      validatedData.is_recommended ?? false,
     ]);
     
     const bankId = (result as any).insertId;
     
     // Fetch the created bank
     const createdBank = await executeQuery(
-      'SELECT id, name, logo, state, credit_bureaus, is_active, created_at, updated_at FROM banks WHERE id = ?',
+      'SELECT id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?',
       [bankId]
     );
     
@@ -206,6 +209,10 @@ export async function updateBank(req: Request, res: Response) {
       updateFields.push('is_active = ?');
       updateValues.push(validatedData.is_active);
     }
+    if (validatedData.is_recommended !== undefined) {
+      updateFields.push('is_recommended = ?');
+      updateValues.push(validatedData.is_recommended);
+    }
     
     if (updateFields.length === 0) {
       return res.status(400).json({ error: 'No fields to update' });
@@ -219,7 +226,7 @@ export async function updateBank(req: Request, res: Response) {
     
     // Fetch updated bank
     const updatedBank = await executeQuery(
-      'SELECT id, name, logo, state, credit_bureaus, is_active, created_at, updated_at FROM banks WHERE id = ?',
+      'SELECT id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?',
       [id]
     );
     

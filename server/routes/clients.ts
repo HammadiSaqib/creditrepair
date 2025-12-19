@@ -87,8 +87,8 @@ export async function getClients(req: AuthRequest, res: Response) {
 
     const hasBaseFilter = !isFundingManager;
     if (hasBaseFilter && baseUserId !== null) {
-      query += ' WHERE user_id = ?';
-      params.push(baseUserId);
+      query += ' WHERE (user_id = ? OR user_id IN (SELECT user_id FROM employees WHERE admin_id = ? AND status = ?))';
+      params.push(baseUserId, baseUserId, 'active');
     }
     
     // Add filters
@@ -121,8 +121,8 @@ export async function getClients(req: AuthRequest, res: Response) {
     let countParams: any[] = [];
 
     if (hasBaseFilter && baseUserId !== null) {
-      countQuery += ' WHERE user_id = ?';
-      countParams.push(baseUserId);
+      countQuery += ' WHERE (user_id = ? OR user_id IN (SELECT user_id FROM employees WHERE admin_id = ? AND status = ?))';
+      countParams.push(baseUserId, baseUserId, 'active');
     }
     
     if (status) {
@@ -178,8 +178,10 @@ export async function getClient(req: AuthRequest, res: Response) {
     }
 
     const client = await getQuery(
-      'SELECT * FROM clients WHERE id = ? AND user_id = ?',
-      [id, baseUserId]
+      isFundingManager
+        ? 'SELECT * FROM clients WHERE id = ?'
+        : 'SELECT * FROM clients WHERE id = ? AND (user_id = ? OR user_id IN (SELECT user_id FROM employees WHERE admin_id = ? AND status = ?))',
+      isFundingManager ? [id] : [id, baseUserId, baseUserId, 'active']
     );
     
     if (!client) {

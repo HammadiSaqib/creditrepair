@@ -233,6 +233,14 @@ const App = () => (
             }
           />
           <Route
+            path="/funding/diy"
+            element={
+              <ProtectedRoute pageId="credit-report">
+                <FundingDIY />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/funding/diy/:type"
             element={
               <ProtectedRoute pageId="credit-report">

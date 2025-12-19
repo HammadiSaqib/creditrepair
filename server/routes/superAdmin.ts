@@ -1098,10 +1098,11 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
         extras.push(`(SELECT s.current_period_end FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1) AS next_billing_date`);
       }
       if (hasSubscriptions && hasSubscriptionPlans) {
-        extras.push(`(SELECT sp.price FROM subscription_plans sp JOIN subscriptions s2 ON sp.name = s2.plan_name WHERE s2.user_id = u.id AND s2.status = 'active' ORDER BY s2.created_at DESC LIMIT 1) AS plan_price`);
+        extras.push(`(SELECT sp.price FROM subscription_plans sp JOIN subscriptions s2 ON sp.name = s2.plan_name AND sp.billing_cycle = s2.plan_type WHERE s2.user_id = u.id AND s2.status = 'active' ORDER BY s2.created_at DESC LIMIT 1) AS plan_price`);
+        extras.push(`(SELECT spm.price FROM subscription_plans spm JOIN subscriptions s2 ON spm.name = s2.plan_name WHERE s2.user_id = u.id AND s2.status = 'active' AND spm.billing_cycle = 'monthly' ORDER BY s2.created_at DESC LIMIT 1) AS plan_monthly_price`);
       }
       const selectExtras = extras.length ? `, ${extras.join(', ')}` : '';
-      const query = `SELECT u.id, u.first_name, u.last_name, u.email, u.role, ${statusColumn} as status,
+      const query = `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.role, ${statusColumn} as status,
                 u.last_login, u.created_at, u.updated_at,
                 u.role as access_level, 'General' as department, 1 as is_active,
                 CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title,
@@ -1139,8 +1140,12 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
           if (hasSubscriptions) {
             extras.push(`(SELECT s.current_period_end FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1) AS next_billing_date`);
           }
+          if (hasSubscriptions && hasSubscriptionPlans) {
+            extras.push(`(SELECT sp.price FROM subscription_plans sp JOIN subscriptions s2 ON sp.name = s2.plan_name AND sp.billing_cycle = s2.plan_type WHERE s2.user_id = u.id AND s2.status = 'active' ORDER BY s2.created_at DESC LIMIT 1) AS plan_price`);
+            extras.push(`(SELECT spm.price FROM subscription_plans spm JOIN subscriptions s2 ON spm.name = s2.plan_name WHERE s2.user_id = u.id AND s2.status = 'active' AND spm.billing_cycle = 'monthly' ORDER BY s2.created_at DESC LIMIT 1) AS plan_monthly_price`);
+          }
           const selectExtras = extras.length ? `, ${extras.join(', ')}` : '';
-          const q = `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+          const q = `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.role,
                     ${statusColumn} as status,
                     u.created_at,
                     u.role as access_level,
@@ -1167,8 +1172,12 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
         if (hasSubscriptions) {
           extras.push(`(SELECT s.current_period_end FROM subscriptions s WHERE s.user_id = u.id AND s.status = 'active' ORDER BY s.created_at DESC LIMIT 1) AS next_billing_date`);
         }
+        if (hasSubscriptions && hasSubscriptionPlans) {
+          extras.push(`(SELECT sp.price FROM subscription_plans sp JOIN subscriptions s2 ON sp.name = s2.plan_name AND sp.billing_cycle = s2.plan_type WHERE s2.user_id = u.id AND s2.status = 'active' ORDER BY s2.created_at DESC LIMIT 1) AS plan_price`);
+          extras.push(`(SELECT spm.price FROM subscription_plans spm JOIN subscriptions s2 ON spm.name = s2.plan_name WHERE s2.user_id = u.id AND s2.status = 'active' AND spm.billing_cycle = 'monthly' ORDER BY s2.created_at DESC LIMIT 1) AS plan_monthly_price`);
+        }
         const selectExtras = extras.length ? `, ${extras.join(', ')}` : '';
-        const qq = `SELECT u.id, u.first_name, u.last_name, u.email, u.role,
+        const qq = `SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.role,
                   ${statusColumn} as status,
                   u.created_at,
                   u.role as access_level,

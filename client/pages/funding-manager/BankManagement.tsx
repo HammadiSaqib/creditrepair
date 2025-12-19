@@ -73,6 +73,7 @@ interface Bank {
   states?: string[];
   credit_bureaus?: string[];
   is_active: boolean;
+  is_recommended?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +102,7 @@ const BankManagement: React.FC = () => {
     state: '',
     states: [] as string[],
     credit_bureaus: [] as string[],
+    is_recommended: false,
   });
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [stateSelectOpen, setStateSelectOpen] = useState(false);
@@ -225,6 +227,7 @@ const BankManagement: React.FC = () => {
       state: '',
       states: [],
       credit_bureaus: [],
+      is_recommended: false,
     });
     setSelectedStates([]);
     setEditingBank(null);
@@ -294,6 +297,7 @@ const BankManagement: React.FC = () => {
           state: statesArr[0] || '',
           states: statesArr,
           credit_bureaus: bureaus,
+          is_recommended: Boolean(data?.is_recommended ?? bank?.is_recommended ?? false),
         });
         setSelectedStates(statesArr);
       } else {
@@ -303,6 +307,7 @@ const BankManagement: React.FC = () => {
           state: (bank.states && bank.states[0]) || bank.state || '',
           states: bank.states || (bank.state ? [bank.state] : []),
           credit_bureaus: bank.credit_bureaus || [],
+          is_recommended: Boolean(bank?.is_recommended ?? false),
         });
         setSelectedStates(bank.states || (bank.state ? [bank.state] : []));
       }
@@ -313,6 +318,7 @@ const BankManagement: React.FC = () => {
         state: (bank.states && bank.states[0]) || bank.state || '',
         states: bank.states || (bank.state ? [bank.state] : []),
         credit_bureaus: bank.credit_bureaus || [],
+        is_recommended: Boolean(bank?.is_recommended ?? false),
       });
       setSelectedStates(bank.states || (bank.state ? [bank.state] : []));
     }
@@ -566,21 +572,31 @@ const BankManagement: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Enter bank name"
                   />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Bank Logo URL (Optional)
-                  </label>
-                  <input
-                    type="url"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    value={formData.logo}
-                    onChange={(e) => setFormData({ ...formData, logo: e.target.value })}
-                    placeholder="https://example.com/logo.png"
-                  />
-                </div>
               </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Bank Logo URL (Optional)
+                </label>
+                <input
+                  type="url"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={formData.logo}
+                  onChange={(e) => setFormData({ ...formData, logo: e.target.value })}
+                  placeholder="https://example.com/logo.png"
+                />
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                checked={formData.is_recommended}
+                onChange={(e) => setFormData({ ...formData, is_recommended: e.target.checked })}
+              />
+              <span className="text-sm text-gray-700">Recommended</span>
+            </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
