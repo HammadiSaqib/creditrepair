@@ -1434,7 +1434,7 @@ export default function Login() {
                     <div className="flex items-center space-x-2">
                       <CheckCircle className="h-4 w-4 text-green-600" />
                       <span className="text-muted-foreground">
-                        GDPR Compliant
+                        Privacy Focused
                       </span>
                     </div>
                     <div className="flex items-center space-x-2">
