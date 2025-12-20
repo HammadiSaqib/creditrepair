@@ -118,31 +118,57 @@ export const usePagePermissions = (): PagePermissions => {
         console.log('✅ usePagePermissions - Admin has active subscription, checking plan permissions...');
 
         // 获取订阅计划的详细信息
-        const plansResponse = await superAdminApi.getPlans();
-        console.log('🔍 Plans response:', plansResponse);
-        console.log('🔍 Plans response.data:', plansResponse.data);
-        console.log('🔍 Plans response.data.data:', plansResponse.data?.data);
-        
-        // The API returns { success: true, data: plans[], pagination: {...} }
-        // So we need to access response.data.data to get the actual plans array
-        const plansArray = plansResponse.data?.data || [];
-        console.log('🔍 Final plans array:', plansArray);
-        console.log('🔍 Plans array length:', plansArray.length);
-        console.log('🔍 Plans array type:', typeof plansArray);
-        console.log('🔍 Is plans array?', Array.isArray(plansArray));
-        
-        const userPlan = plansArray.find((plan: any) => plan.name === actualSubscription.plan_name);
+        const limit = 100;
+        const maxPages = 1000;
+        let page = 1;
+        let pages = 1;
+        const allPlans: any[] = [];
+
+        while (page <= pages && page <= maxPages) {
+          const plansResponse = await superAdminApi.getPlans({ page, limit });
+          console.log('🔍 Plans response:', plansResponse);
+          console.log('🔍 Plans response.data:', plansResponse.data);
+          console.log('🔍 Plans response.data.data:', plansResponse.data?.data);
+          
+          const plansArray = plansResponse.data?.data || [];
+          allPlans.push(...(Array.isArray(plansArray) ? plansArray : []));
+
+          const paginationPages = Number((plansResponse.data as any)?.pagination?.pages);
+          if (!Number.isNaN(paginationPages) && paginationPages > 0) {
+            pages = paginationPages;
+          } else {
+            pages = 1;
+          }
+
+          page += 1;
+        }
+
+        const uniquePlans = Array.from(
+          new Map(allPlans.map((p: any) => [String(p?.id ?? ''), p])).values()
+        ).filter((p: any) => String(p?.id ?? '') !== '');
+
+        console.log('🔍 Final plans array:', uniquePlans);
+        console.log('🔍 Plans array length:', uniquePlans.length);
+        console.log('🔍 Plans array type:', typeof uniquePlans);
+        console.log('🔍 Is plans array?', Array.isArray(uniquePlans));
+
+        const subscriptionPlanName = String(actualSubscription.plan_name || '').trim().toLowerCase();
+        const userPlan = uniquePlans.find((plan: any) => String(plan?.name || '').trim().toLowerCase() === subscriptionPlanName);
 
         console.log('🔍 Found user plan:', userPlan?.name, 'with page_permissions:', userPlan?.page_permissions);
 
-        if (userPlan && userPlan.page_permissions && userPlan.page_permissions.length > 0) {
-          // 使用计划中定义的页面权限
-          const permissions = [...userPlan.page_permissions, 'subscription'];
-          console.log('✅ Using plan-defined permissions:', permissions);
-          setAllowedPages(permissions); // 总是允许访问订阅页面
+        if (userPlan) {
+          const planPages: string[] = Array.isArray(userPlan.page_permissions) ? userPlan.page_permissions : [];
+          if (planPages.length > 0) {
+            const permissions = Array.from(new Set([...planPages, 'subscription']));
+            console.log('✅ Using plan-defined permissions:', permissions);
+            setAllowedPages(permissions);
+          } else {
+            console.log('⚠️ Plan has no page permissions defined, granting all pages by default');
+            setAllowedPages(AVAILABLE_PAGES.map(p => p.id));
+          }
         } else {
-          // 如果计划没有定义页面权限，只给予基本权限（dashboard, settings, subscription）
-          console.log('⚠️ Plan has no page permissions defined, granting basic permissions only');
+          console.log('⚠️ Could not find plan in plans list, granting basic permissions only');
           setAllowedPages(['dashboard', 'settings', 'subscription']);
         }
       }
