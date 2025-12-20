@@ -122,29 +122,51 @@ export default function PlanManagement() {
     try {
       setLoading(true);
       console.log('🔄 Loading subscription plans...');
-      const response = await superAdminApi.getPlans();
-      console.log('✅ Plans API response:', response);
-      console.log('📊 Raw response.data:', response.data);
-      // Backend returns { success: true, data: plans[], pagination: {...} }
-      const plansData = response.data?.data || response.data || [];
-      console.log('📊 Plans data extracted:', plansData);
-      console.log('📊 Plans data length:', plansData.length);
-      console.log('📊 Individual plans:', plansData.map((p: any) => ({ id: p.id, name: p.name })));
+      const limit = 100;
+      const maxPages = 1000;
+      let page = 1;
+      let pages = 1;
+      const allPlans: any[] = [];
+
+      while (page <= pages && page <= maxPages) {
+        const response = await superAdminApi.getPlans({ page, limit });
+        console.log('✅ Plans API response:', response);
+        console.log('📊 Raw response.data:', response.data);
+        const plansData = response.data?.data || response.data || [];
+        const batch = Array.isArray(plansData) ? plansData : [];
+        allPlans.push(...batch);
+
+        const paginationPages = Number((response.data as any)?.pagination?.pages);
+        if (!Number.isNaN(paginationPages) && paginationPages > 0) {
+          pages = paginationPages;
+        } else {
+          pages = 1;
+        }
+
+        page += 1;
+      }
+
+      const uniquePlans = Array.from(
+        new Map(allPlans.map((p: any) => [String(p?.id ?? ''), p])).values()
+      ).filter((p: any) => String(p?.id ?? '') !== '');
+
+      console.log('📊 Plans data length:', uniquePlans.length);
+      console.log('📊 Individual plans:', uniquePlans.map((p: any) => ({ id: p.id, name: p.name })));
       
       // Check for duplicates in the data
-      const planIds = plansData.map((p: any) => p.id);
+      const planIds = uniquePlans.map((p: any) => p.id);
       const uniqueIds = [...new Set(planIds)];
       console.log('🔍 Plan IDs:', planIds);
       console.log('🔍 Unique IDs:', uniqueIds);
       console.log('🔍 Has duplicates:', planIds.length !== uniqueIds.length);
       
       // Debug: Log data for inspection
-      if (plansData.length > 0) {
-        console.warn('PLANS DEBUG:', { count: plansData.length, ids: planIds, hasDuplicates: planIds.length !== uniqueIds.length });
+      if (uniquePlans.length > 0) {
+        console.warn('PLANS DEBUG:', { count: uniquePlans.length, ids: planIds, hasDuplicates: planIds.length !== uniqueIds.length });
       }
       
-      setPlans(Array.isArray(plansData) ? plansData : []);
-      console.log('✅ Plans state updated, count:', Array.isArray(plansData) ? plansData.length : 0);
+      setPlans(uniquePlans);
+      console.log('✅ Plans state updated, count:', uniquePlans.length);
     } catch (error) {
       console.error('❌ Error loading plans:', error);
       toast.error('Failed to load subscription plans');
