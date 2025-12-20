@@ -484,23 +484,16 @@ export default function Pricing() {
                      ))}
                    </tr>
                    {/* Feature rows */}
-                   {['Credit Report Analysis', 'Client Portal', 'Progress Tracking', 'API Access', 'Priority Support'].map((feature, index) => (
-                     <tr key={feature} className={index % 2 === 0 ? 'bg-gray-50' : ''}>
-                       <td className="px-6 py-4 font-medium text-gray-900">{feature}</td>
-                       {plans.map((plan) => {
-                         const hasFeature = plan.features.some(f => f.toLowerCase().includes(feature.toLowerCase().split(' ')[0]));
-                         return (
-                           <td key={plan.id} className="px-6 py-4 text-center">
-                             {hasFeature ? (
-                               <Check className="h-5 w-5 text-emerald-600 mx-auto" />
-                             ) : (
-                               <span className="text-gray-400">—</span>
-                             )}
-                           </td>
-                         );
-                       })}
-                     </tr>
-                   ))}
+                  {['Credit Report Analysis', 'Client Portal', 'Progress Tracking', 'Priority Support'].map((feature, index) => (
+                    <tr key={feature} className={index % 2 === 0 ? 'bg-gray-50' : ''}>
+                      <td className="px-6 py-4 font-medium text-gray-900">{feature}</td>
+                      {plans.map((plan) => (
+                        <td key={plan.id} className="px-6 py-4 text-center">
+                          <Check className="h-5 w-5 text-emerald-600 mx-auto" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
                  </tbody>
                </table>
              </div>
@@ -616,7 +609,7 @@ export default function Pricing() {
              <Card className="p-6">
                <h3 className="text-lg font-semibold mb-2">Is there a free trial available?</h3>
                <p className="text-gray-600">
-                 Create a free account to explore the platform for 30 days. Limited access included. Full report access requires a paid plan.
+                 Create a free account to explore the platform for 14 days. Limited access included. Full report access requires a paid plan.
                </p>
              </Card>
 
@@ -631,13 +624,6 @@ export default function Pricing() {
                <h3 className="text-lg font-semibold mb-2">Do you offer refunds?</h3>
                <p className="text-gray-600">
                  All purchases are non-refundable. You may cancel at any time to prevent future charges, and your access will remain available through the end of your current billing period.
-               </p>
-             </Card>
-
-             <Card className="p-6">
-               <h3 className="text-lg font-semibold mb-2">Is my data secure?</h3>
-               <p className="text-gray-600">
-                 Security is our top priority. We use bank-level encryption, regular security audits, and comply with all relevant data protection regulations including GDPR and CCPA.
                </p>
              </Card>
 
