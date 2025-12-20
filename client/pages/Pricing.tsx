@@ -447,15 +447,11 @@ export default function Pricing() {
 
            <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
              <div className="overflow-x-auto">
-               <table className="w-full">
+                 <table className="w-full">
                  <thead className="bg-gradient-to-r from-blue-600 to-emerald-600 text-white">
                    <tr>
                      <th className="px-6 py-4 text-left font-semibold">Features</th>
-                     {plans.filter(plan => 
-                       billingCycle === 'monthly' 
-                         ? plan.billing_cycle === 'monthly' || plan.billing_cycle === 'lifetime'
-                         : plan.billing_cycle === 'yearly' || plan.billing_cycle === 'lifetime'
-                     ).map((plan) => (
+                     {plans.map((plan) => (
                        <th key={plan.id} className="px-6 py-4 text-center font-semibold">
                          {plan.name}
                        </th>
@@ -465,11 +461,7 @@ export default function Pricing() {
                  <tbody className="divide-y divide-gray-200">
                    <tr className="bg-gray-50">
                      <td className="px-6 py-4 font-medium text-gray-900">Price</td>
-                     {plans.filter(plan => 
-                       billingCycle === 'monthly' 
-                         ? plan.billing_cycle === 'monthly' || plan.billing_cycle === 'lifetime'
-                         : plan.billing_cycle === 'yearly' || plan.billing_cycle === 'lifetime'
-                     ).map((plan) => (
+                     {plans.map((plan) => (
                        <td key={plan.id} className="px-6 py-4 text-center font-bold text-2xl">
                          {formatPrice(plan.price, plan.billing_cycle)}
                        </td>
@@ -477,11 +469,7 @@ export default function Pricing() {
                    </tr>
                    <tr>
                      <td className="px-6 py-4 font-medium text-gray-900">Max Users</td>
-                     {plans.filter(plan => 
-                       billingCycle === 'monthly' 
-                         ? plan.billing_cycle === 'monthly' || plan.billing_cycle === 'lifetime'
-                         : plan.billing_cycle === 'yearly' || plan.billing_cycle === 'lifetime'
-                     ).map((plan) => (
+                     {plans.map((plan) => (
                        <td key={plan.id} className="px-6 py-4 text-center">
                          {plan.max_users || 'Unlimited'}
                        </td>
@@ -489,37 +477,17 @@ export default function Pricing() {
                    </tr>
                    <tr className="bg-gray-50">
                      <td className="px-6 py-4 font-medium text-gray-900">Max Clients</td>
-                     {plans.filter(plan => 
-                       billingCycle === 'monthly' 
-                         ? plan.billing_cycle === 'monthly' || plan.billing_cycle === 'lifetime'
-                         : plan.billing_cycle === 'yearly' || plan.billing_cycle === 'lifetime'
-                     ).map((plan) => (
+                     {plans.map((plan) => (
                        <td key={plan.id} className="px-6 py-4 text-center">
                          {plan.max_clients || 'Unlimited'}
                        </td>
                      ))}
                    </tr>
-                   <tr>
-                     <td className="px-6 py-4 font-medium text-gray-900">Max Disputes</td>
-                     {plans.filter(plan => 
-                       billingCycle === 'monthly' 
-                         ? plan.billing_cycle === 'monthly' || plan.billing_cycle === 'lifetime'
-                         : plan.billing_cycle === 'yearly' || plan.billing_cycle === 'lifetime'
-                     ).map((plan) => (
-                       <td key={plan.id} className="px-6 py-4 text-center">
-                         {plan.max_disputes || 'Unlimited'}
-                       </td>
-                     ))}
-                   </tr>
                    {/* Feature rows */}
-                   {['Credit Report Analysis', 'Dispute Letter Generation', 'Client Portal', 'Progress Tracking', 'Email Automation', 'Custom Branding', 'API Access', 'Priority Support'].map((feature, index) => (
+                   {['Credit Report Analysis', 'Client Portal', 'Progress Tracking', 'API Access', 'Priority Support'].map((feature, index) => (
                      <tr key={feature} className={index % 2 === 0 ? 'bg-gray-50' : ''}>
                        <td className="px-6 py-4 font-medium text-gray-900">{feature}</td>
-                       {plans.filter(plan => 
-                         billingCycle === 'monthly' 
-                           ? plan.billing_cycle === 'monthly' || plan.billing_cycle === 'lifetime'
-                           : plan.billing_cycle === 'yearly' || plan.billing_cycle === 'lifetime'
-                       ).map((plan) => {
+                       {plans.map((plan) => {
                          const hasFeature = plan.features.some(f => f.toLowerCase().includes(feature.toLowerCase().split(' ')[0]));
                          return (
                            <td key={plan.id} className="px-6 py-4 text-center">
@@ -662,7 +630,7 @@ export default function Pricing() {
              <Card className="p-6">
                <h3 className="text-lg font-semibold mb-2">Do you offer refunds?</h3>
                <p className="text-gray-600">
-                 If you are not satisfied within the first 30 days, we will provide a full refund. Certain conditions may apply; see our Terms of Service for details.
+                 All purchases are non-refundable. You may cancel at any time to prevent future charges, and your access will remain available through the end of your current billing period.
                </p>
              </Card>
 
@@ -683,37 +651,31 @@ export default function Pricing() {
          </div>
        </section>
 
-       {/* Trust Indicators */}
-       <section className="py-12 bg-white border-t">
-         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-           <div className="text-center mb-8">
-             <p className="text-gray-600 mb-6">Trusted by funding professionals worldwide</p>
-             <div className="flex flex-wrap justify-center items-center gap-8 opacity-60">
-               <div className="flex items-center space-x-2">
-                 <Shield className="h-6 w-6 text-green-600" />
-                 <span className="font-semibold">SOC 2 Compliant</span>
-               </div>
-               <div className="flex items-center space-x-2">
-                 <Shield className="h-6 w-6 text-blue-600" />
-                 <span className="font-semibold">GDPR Compliant</span>
-               </div>
-               <div className="flex items-center space-x-2">
-                 <Shield className="h-6 w-6 text-purple-600" />
-                 <span className="font-semibold">256-bit SSL</span>
-               </div>
-               <div className="flex items-center space-x-2">
-                 <Users className="h-6 w-6 text-orange-600" />
-                 <span className="font-semibold">10,000+ Users</span>
-               </div>
-               <div className="flex items-center space-x-2">
-                 <Zap className="h-6 w-6 text-yellow-600" />
-                 <span className="font-semibold">99.9% Uptime</span>
-               </div>
-             </div>
-             <p className="text-xs text-gray-400 mt-4 italic">Metrics reflect current platform usage and system performance trends and may change over time.</p>
-           </div>
-         </div>
-       </section>
+      {/* Compliance & Transparency */}
+      <section className="py-12 bg-white border-t">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-8">
+            <p className="text-gray-600 mb-6">Transparent product information and responsible marketing</p>
+            <div className="flex flex-wrap justify-center items-center gap-8 opacity-70">
+              <div className="flex items-center space-x-2">
+                <Shield className="h-6 w-6 text-emerald-600" />
+                <span className="font-semibold">No outcome guarantees</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <FileText className="h-6 w-6 text-blue-600" />
+                <span className="font-semibold">Clear plan details</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Users className="h-6 w-6 text-purple-600" />
+                <span className="font-semibold">Results may vary</span>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-4 italic">
+              We provide software tools and informational insights. We do not promise credit improvement, funding approvals, or specific financial outcomes.
+            </p>
+          </div>
+        </div>
+      </section>
 
        {/* Enterprise CTA */}
        <section className="py-16 bg-white">
