@@ -2982,6 +2982,104 @@ export default function CreditReport() {
   };
 
   const clientName = searchParams.get("clientName") || "Client";
+  const reportHistory = Array.isArray((reportData as any)?.reportHistory) ? (reportData as any).reportHistory : [];
+
+  const parseLooseDate = (value: any) => {
+    try {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const s = String(value);
+      const normalized = s.includes(' ') && !s.includes('T') ? s.replace(' ', 'T') : s;
+      const d = new Date(normalized);
+      return Number.isFinite(d.getTime()) ? d : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const formatMonthDay = (value: any) => {
+    const d = parseLooseDate(value);
+    return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A';
+  };
+
+  const formatIsoDate = (value: any) => {
+    const d = parseLooseDate(value);
+    return d ? d.toISOString().slice(0, 10) : 'N/A';
+  };
+
+  const getHistoryDateValue = (row: any) =>
+    row?.created_at || row?.report_date || row?.date || row?.reportDate || row?.reportDateTime || null;
+
+  const getHistoryJson = (row: any) => row?.data || row?.reportData || row?.report_data || null;
+
+  const getReportDateFromJson = (json: any) => {
+    try {
+      if (!json) return null;
+      const root = (json as any)?.reportData || (json as any)?.report_data || json;
+      const direct =
+        (root as any)?.report_date ??
+        (root as any)?.reportDate ??
+        (root as any)?.ReportDate ??
+        (root as any)?.DateReported ??
+        (root as any)?.date ??
+        null;
+      const directParsed = parseLooseDate(direct);
+      if (directParsed) return directParsed;
+
+      const scoreArray = (root as any)?.Score || (root as any)?.reportData?.Score || null;
+      if (Array.isArray(scoreArray) && scoreArray.length > 0) {
+        const dates = scoreArray
+          .map((s: any) => s?.DateReported || s?.DateUpdated || s?.date || s?.Date || null)
+          .map(parseLooseDate)
+          .filter(Boolean) as Date[];
+        if (dates.length > 0) {
+          return dates.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), dates[0]);
+        }
+      }
+
+      const bureauDates = (root as any)?.bureauDates || (root as any)?.BureauDates || null;
+      if (bureauDates) {
+        const dates = [
+          bureauDates?.experian,
+          bureauDates?.transunion,
+          bureauDates?.equifax,
+          bureauDates?.Experian,
+          bureauDates?.TransUnion,
+          bureauDates?.Equifax,
+        ]
+          .map(parseLooseDate)
+          .filter(Boolean) as Date[];
+        if (dates.length > 0) {
+          return dates.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), dates[0]);
+        }
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getHistoryReportDateValue = (row: any) => getReportDateFromJson(getHistoryJson(row)) || getHistoryDateValue(row);
+
+  const getHistoryBureauScore = (row: any, bureau: 'experian' | 'transunion' | 'equifax') => {
+    const direct =
+      row?.[`${bureau}_score`] ??
+      row?.scores?.[bureau] ??
+      row?.data?.scores?.[bureau] ??
+      row?.data?.reportData?.scores?.[bureau] ??
+      null;
+    const num = Number(direct);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const getScoreDelta = (bureau: 'experian' | 'transunion' | 'equifax') => {
+    const current = Number((reportData as any)?.scores?.[bureau]);
+    const previous = reportHistory.length > 1 ? getHistoryBureauScore(reportHistory[1], bureau) : null;
+    if (!Number.isFinite(current)) return null;
+    if (previous === null) return null;
+    return current - previous;
+  };
 
   // Transform API account data to match frontend structure
   const transformApiAccounts = (apiAccounts: any[]) => {
@@ -3657,26 +3755,36 @@ export default function CreditReport() {
                 }
               };
 
-              const oldestRow = rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
               const latestRow = rawHistory.length > 0 ? rawHistory[0] : null;
+              const previousRow = rawHistory.length > 1 ? rawHistory[1] : null;
+              const oldestRow = rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
 
-              let oldestData: any = null;
-              let latestData: any = null;
+              const dataById = new Map<any, any>();
+              const dataByPath = new Map<string, any>();
+              const rowsToFetch = [latestRow, previousRow, oldestRow].filter(Boolean) as any[];
+
               try {
-                if (oldestRow?.report_path) {
-                  oldestData = await fetchReportJson(oldestRow.report_path);
-                }
-                if (latestRow?.report_path && latestRow?.id !== oldestRow?.id) {
-                  latestData = await fetchReportJson(latestRow.report_path);
+                for (const row of rowsToFetch) {
+                  const reportPath = row?.report_path;
+                  if (!reportPath || typeof reportPath !== 'string') continue;
+                  if (dataByPath.has(reportPath)) {
+                    const cached = dataByPath.get(reportPath);
+                    if (row?.id != null && cached) dataById.set(row.id, cached);
+                    continue;
+                  }
+                  const json = await fetchReportJson(reportPath);
+                  if (json) {
+                    dataByPath.set(reportPath, json);
+                    if (row?.id != null) dataById.set(row.id, json);
+                  }
                 }
               } catch (e) {
                 console.warn('Failed to load report JSON for history compare:', e);
               }
 
               transformedData.reportHistory = rawHistory.map((h: any) => {
-                if (oldestRow?.id != null && h?.id === oldestRow.id && oldestData) return { ...h, data: oldestData };
-                if (latestRow?.id != null && h?.id === latestRow.id && latestData) return { ...h, data: latestData };
-                if (oldestRow?.id != null && latestRow?.id === oldestRow.id && h?.id === oldestRow.id && oldestData) return { ...h, data: oldestData };
+                if (h?.id != null && dataById.has(h.id)) return { ...h, data: dataById.get(h.id) };
+                if (typeof h?.report_path === 'string' && dataByPath.has(h.report_path)) return { ...h, data: dataByPath.get(h.report_path) };
                 return h;
               });
             } else {
@@ -8179,8 +8287,7 @@ export default function CreditReport() {
                 Understanding Your Credit • Analysis Tracking • Future Planning
               </p>
               <div className="flex justify-center gap-4 text-sm text-gray-500">
-                <span>Latest Report: {reportData?.bureauDates?.experian || reportData?.bureauDates?.transunion || reportData?.bureauDates?.equifax || 'N/A'}</span>
-                <span>•</span>
+              
                 <span>Status: {(() => {
                   const avgScore = Math.round((reportData.scores.experian + reportData.scores.transunion + reportData.scores.equifax) / 3);
                   if (avgScore >= 800) return 'Excellent Standing';
@@ -8189,8 +8296,20 @@ export default function CreditReport() {
                   if (avgScore >= 580) return 'Fair Standing';
                   return 'Needs Improvement';
                 })()}</span>
-                <span>•</span>
-                <span>Average Score: {Math.round((reportData.scores.experian + reportData.scores.transunion + reportData.scores.equifax) / 3)}</span>
+                {(() => {
+                  const lastRow = reportHistory.length > 0 ? reportHistory[0] : null;
+                  const compareRow = reportHistory.length > 1 ? reportHistory[1] : null;
+                  const lastDate = formatMonthDay(getHistoryReportDateValue(lastRow) || (reportData as any)?.bureauDates?.experian || (reportData as any)?.bureauDates?.transunion || (reportData as any)?.bureauDates?.equifax);
+                  const compareDate = formatMonthDay(getHistoryReportDateValue(compareRow));
+                  return (
+                    <>
+                      <span>•</span>
+                      <span>Last report date: {lastDate}</span>
+                      <span>•</span>
+                      <span>Compared with: {compareDate}</span>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -8199,11 +8318,8 @@ export default function CreditReport() {
           <Card className="border-0 shadow-xl bg-card">
             <CardHeader className="text-center pb-6">
               <CardTitle className="text-2xl font-bold text-foreground mb-2">
-                Your Current Credit Status
+                {clientName}’s Current Credit Status
               </CardTitle>
-              <CardDescription className="text-lg text-muted-foreground">
-                Credit scores typically range from 300 to 850
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -8217,10 +8333,17 @@ export default function CreditReport() {
                         className="h-6 w-auto filter brightness-0 invert"
                       />
                     </div>
-                    <h3 className="text-lg font-semibold text-foreground">
-                      TRANSUNION
-                    </h3>
                     <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.transunion || 'N/A'}</p>
+                    {(() => {
+                      const delta = getScoreDelta('transunion');
+                      const cls = delta === null ? 'text-muted-foreground' : (delta > 0 ? 'text-green-600' : (delta < 0 ? 'text-red-600' : 'text-black dark:text-white'));
+                      const text = delta === null ? '—' : (delta > 0 ? `+${delta}` : `${delta}`);
+                      return (
+                        <div className={`mt-1 text-sm font-semibold ${cls}`}>
+                          {text}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Speedometer with score inside */}
@@ -8283,14 +8406,6 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center space-y-2">
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>300</span>
-                      <span>579</span>
-                      <span>669</span>
-                      <span>739</span>
-                      <span>799</span>
-                      <span>850</span>
-                    </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-red-500">Poor</span>
                       <span className="text-orange-500">Fair</span>
@@ -8313,10 +8428,17 @@ export default function CreditReport() {
                         className="h-6 w-auto filter brightness-0 invert"
                       />
                     </div>
-                    <h3 className="text-lg font-semibold text-foreground">
-                      EXPERIAN
-                    </h3>
                     <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.experian || 'N/A'}</p>
+                    {(() => {
+                      const delta = getScoreDelta('experian');
+                      const cls = delta === null ? 'text-muted-foreground' : (delta > 0 ? 'text-green-600' : (delta < 0 ? 'text-red-600' : 'text-black dark:text-white'));
+                      const text = delta === null ? '—' : (delta > 0 ? `+${delta}` : `${delta}`);
+                      return (
+                        <div className={`mt-1 text-sm font-semibold ${cls}`}>
+                          {text}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Speedometer with score inside */}
@@ -8379,14 +8501,6 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center space-y-2">
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>300</span>
-                      <span>579</span>
-                      <span>669</span>
-                      <span>739</span>
-                      <span>799</span>
-                      <span>850</span>
-                    </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-red-500">Poor</span>
                       <span className="text-orange-500">Fair</span>
@@ -8409,10 +8523,17 @@ export default function CreditReport() {
                         className="h-6 w-auto filter brightness-0 invert"
                       />
                     </div>
-                    <h3 className="text-lg font-semibold text-foreground">
-                      EQUIFAX
-                    </h3>
                     <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.equifax || 'N/A'}</p>
+                    {(() => {
+                      const delta = getScoreDelta('equifax');
+                      const cls = delta === null ? 'text-muted-foreground' : (delta > 0 ? 'text-green-600' : (delta < 0 ? 'text-red-600' : 'text-black dark:text-white'));
+                      const text = delta === null ? '—' : (delta > 0 ? `+${delta}` : `${delta}`);
+                      return (
+                        <div className={`mt-1 text-sm font-semibold ${cls}`}>
+                          {text}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Speedometer with score inside */}
@@ -8475,14 +8596,6 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center space-y-2">
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>300</span>
-                      <span>579</span>
-                      <span>669</span>
-                      <span>739</span>
-                      <span>799</span>
-                      <span>850</span>
-                    </div>
                     <div className="flex justify-between text-xs">
                       <span className="text-red-500">Poor</span>
                       <span className="text-orange-500">Fair</span>
@@ -8495,6 +8608,268 @@ export default function CreditReport() {
                   </div>
                 </div>
               </div>
+              {(() => {
+                const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                const inquiries = Array.isArray(reportData.inquiries) ? reportData.inquiries : [];
+                const collections = Array.isArray(reportData.collections) ? reportData.collections : [];
+                const publicRecords = Array.isArray(reportData.publicRecords) ? reportData.publicRecords : [];
+
+                const allNegativeItems: any[] = [];
+
+                const latePaymentAccounts = accounts.filter((account: any) => 
+                  account.status && (
+                    String(account.status).toLowerCase().includes('late') || 
+                    String(account.status).toLowerCase().includes('delinquent') || 
+                    String(account.status).toLowerCase().includes('default') ||
+                    (account.latePayments && account.latePayments.total > 0)
+                  )
+                );
+
+                latePaymentAccounts.forEach((account: any) => {
+                  const accountDigits = String(account.accountNumber || account.id || '').replace(/\D/g, '');
+                  const accountKey = accountDigits ? (accountDigits.length >= 4 ? accountDigits.slice(-4) : accountDigits) : String(account.accountNumber || account.id || '').toLowerCase();
+                  allNegativeItems.push({
+                    id: account.accountNumber || account.id,
+                    type: 'Late Payment',
+                    creditor: account.creditor,
+                    bureau: account.bureau,
+                    accountNumber: account.accountNumber,
+                    accountDate: account.DateOpened || account.dateOpened || account.opened || account.DateReported || account.dateReported || account.reported,
+                    category: 'late-payment',
+                    accountKey
+                  });
+                });
+
+                const chargeOffAccounts = accounts.filter((account: any) => {
+                  const st = String(account.status || account.AccountStatus || account.AccountCondition || '').toLowerCase();
+                  const ph = String(account.paymentHistory || account.PaymentStatus || account.WorstPayStatus || '').toLowerCase();
+                  return ph.includes('charge') || st.includes('charge') || ph.includes('chargeoff') || ph.includes('charged off') || ph.includes('charge off');
+                }).filter((account: any) => !(latePaymentAccounts as any[]).includes(account));
+
+                chargeOffAccounts.forEach((account: any) => {
+                  const accountDigits = String(account.accountNumber || account.AccountNumber || account.id || '').replace(/\D/g, '');
+                  const accountKey = accountDigits ? (accountDigits.length >= 4 ? accountDigits.slice(-4) : accountDigits) : String(account.accountNumber || account.AccountNumber || account.id || '').toLowerCase();
+                  allNegativeItems.push({
+                    id: account.accountNumber || account.AccountNumber || account.id,
+                    type: 'Charge Off',
+                    creditor: account.creditor || account.CreditorName,
+                    bureau: account.bureau || (account.BureauId === 1 ? 'Experian' : account.BureauId === 2 ? 'TransUnion' : 'Equifax'),
+                    accountNumber: account.accountNumber || account.AccountNumber || account.id,
+                    accountDate: account.DateOpened || account.dateOpened || account.opened || account.DateReported || account.dateReported || account.reported,
+                    category: 'charge-off',
+                    accountKey
+                  });
+                });
+
+                collections.forEach((collection: any) => {
+                  const colDigits = String(collection.accountNumber || collection.id || '').replace(/\D/g, '');
+                  const accountKey = colDigits ? (colDigits.length >= 4 ? colDigits.slice(-4) : colDigits) : String(collection.accountNumber || collection.id || '').toLowerCase();
+                  allNegativeItems.push({
+                    id: collection.id,
+                    type: 'Collection',
+                    creditor: collection.agency || collection.originalCreditor,
+                    bureau: collection.bureau || 'Multiple',
+                    accountNumber: collection.accountNumber || collection.id,
+                    accountDate: collection.dateOpened || collection.dateReported || collection.lastActivity,
+                    category: 'collection',
+                    accountKey
+                  });
+                });
+
+                publicRecords.forEach((record: any) => {
+                  const recDigits = String(record.caseNumber || record.id || '').replace(/\D/g, '');
+                  const accountKey = recDigits ? (recDigits.length >= 4 ? recDigits.slice(-4) : recDigits) : String(record.caseNumber || record.id || '').toLowerCase();
+                  allNegativeItems.push({
+                    id: record.id,
+                    type: record.type || 'Public Record',
+                    creditor: record.creditor || 'Court/Government',
+                    bureau: record.bureau || 'Multiple',
+                    accountNumber: record.caseNumber || record.id,
+                    accountDate: record.filingDate || record.dischargeDate,
+                    category: 'public-record',
+                    accountKey
+                  });
+                });
+
+                const hardInquiries = inquiries.filter((inquiry: any) => inquiry.type === 'Hard');
+                hardInquiries.forEach((inquiry: any) => {
+                  const creditor = inquiry.company || inquiry.creditorName || '';
+                  const date = inquiry.date || inquiry.DateInquiry || '';
+                  const inqKeyRaw = `INQ|HARD|${creditor}|${date}`;
+                  const inqDigits = String(inqKeyRaw || '').replace(/\D/g, '');
+                  const accountKey = inqDigits ? (inqDigits.length >= 4 ? inqDigits.slice(-4) : inqDigits) : String(inqKeyRaw || '').toLowerCase();
+                  allNegativeItems.push({
+                    id: inquiry.id,
+                    type: 'Inquiry',
+                    creditor: inquiry.company || inquiry.creditorName,
+                    bureau: inquiry.bureau,
+                    accountNumber: inquiry.id || `INQ-${inquiry.company}`,
+                    accountDate: inquiry.date || inquiry.DateInquiry,
+                    category: 'hard-inquiry',
+                    accountKey
+                  });
+                });
+
+                const softInquiries = inquiries.filter((inquiry: any) => inquiry.type === 'Soft' || !inquiry.type);
+                softInquiries.forEach((inquiry: any) => {
+                  const creditor = inquiry.company || inquiry.creditorName || '';
+                  const date = inquiry.date || inquiry.DateInquiry || '';
+                  const inqKeyRaw = `INQ|SOFT|${creditor}|${date}`;
+                  const inqDigits = String(inqKeyRaw || '').replace(/\D/g, '');
+                  const accountKey = inqDigits ? (inqDigits.length >= 4 ? inqDigits.slice(-4) : inqDigits) : String(inqKeyRaw || '').toLowerCase();
+                  allNegativeItems.push({
+                    id: inquiry.id,
+                    type: 'Inquiry',
+                    creditor: inquiry.company || inquiry.creditorName,
+                    bureau: inquiry.bureau,
+                    accountNumber: inquiry.id || `INQ-${inquiry.company}`,
+                    accountDate: inquiry.date || inquiry.DateInquiry,
+                    category: 'soft-inquiry',
+                    accountKey
+                  });
+                });
+
+                const extractNegatives = (base: any) => {
+                  const items: any[] = [];
+                  const accountsLocal = (base?.accounts) || (base?.Accounts) || (base?.reportData?.Accounts) || [];
+                  const collectionsRaw = (base?.collections) || (base?.Collections) || (base?.reportData?.Collections) || (base?.reportData?.Accounts) || [];
+                  const inquiriesRaw = (base?.inquiries) || (base?.Inquiries) || (base?.reportData?.Inquiries) || [];
+                  const publicRecordsRaw = base?.publicRecords || base?.PublicRecords || [];
+                  const lateAccounts = Array.isArray(accountsLocal) ? accountsLocal.filter((a: any) => {
+                    const st = (a.status || a.AccountStatus || '').toString().toLowerCase();
+                    const lp = a.latePayments && a.latePayments.total > 0;
+                    return st.includes('late') || st.includes('delinquent') || st.includes('default') || lp;
+                  }) : [];
+                  lateAccounts.forEach((a: any) => {
+                    const digits = String(a.accountNumber || a.AccountNumber || a.id || '').replace(/\D/g, '');
+                    const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(a.accountNumber || a.AccountNumber || a.id || '').toLowerCase();
+                    items.push({
+                      id: a.accountNumber || a.AccountNumber || a.id,
+                      type: 'Late Payment',
+                      creditor: a.creditor || a.CreditorName,
+                      bureau: a.bureau || (a.BureauId === 1 ? 'TransUnion' : a.BureauId === 2 ? 'Experian' : 'Equifax'),
+                      accountNumber: a.accountNumber || a.AccountNumber || a.id,
+                      accountDate: a.DateOpened || a.dateOpened || a.opened || a.DateReported || a.dateReported || a.reported,
+                      category: 'late-payment',
+                      accountKey
+                    });
+                  });
+                  const chargeOffAccountsLocal = Array.isArray(accountsLocal) ? accountsLocal.filter((a: any) => {
+                    const st = (a.status || a.AccountStatus || a.AccountCondition || '').toString().toLowerCase();
+                    const ph = (a.paymentHistory || a.PaymentStatus || a.WorstPayStatus || '').toString().toLowerCase();
+                    return ph.includes('charge') || st.includes('charge') || ph.includes('chargeoff') || ph.includes('charged off') || ph.includes('charge off');
+                  }) : [];
+                  chargeOffAccountsLocal.forEach((a: any) => {
+                    const digits = String(a.accountNumber || a.AccountNumber || a.id || '').replace(/\D/g, '');
+                    const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(a.accountNumber || a.AccountNumber || a.id || '').toLowerCase();
+                    items.push({
+                      id: a.accountNumber || a.AccountNumber || a.id,
+                      type: 'Charge Off',
+                      creditor: a.creditor || a.CreditorName,
+                      bureau: a.bureau || (a.BureauId === 1 ? 'TransUnion' : a.BureauId === 2 ? 'Experian' : 'Equifax'),
+                      accountNumber: a.accountNumber || a.AccountNumber || a.id,
+                      accountDate: a.DateOpened || a.dateOpened || a.opened || a.DateReported || a.dateReported || a.reported,
+                      category: 'charge-off',
+                      accountKey
+                    });
+                  });
+                  if (Array.isArray(collectionsRaw)) {
+                    collectionsRaw.forEach((c: any) => {
+                      const isCollection = (c.PaymentStatus && String(c.PaymentStatus).includes('Collection')) || (c.AccountType && String(c.AccountType).includes('Collection')) || c.type === 'Collection';
+                      if (isCollection) {
+                        const digits = String(c.accountNumber || c.AccountNumber || c.id || '').replace(/\D/g, '');
+                        const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(c.accountNumber || c.AccountNumber || c.id || '').toLowerCase();
+                        items.push({
+                          id: c.id || c.AccountNumber,
+                          type: 'Collection',
+                          creditor: c.agency || c.originalCreditor || c.CreditorName,
+                          bureau: c.bureau || (c.BureauId === 1 ? 'TransUnion' : c.BureauId === 2 ? 'Experian' : 'Equifax') || 'Multiple',
+                          accountNumber: c.accountNumber || c.AccountNumber || c.id,
+                          accountDate: c.dateOpened || c.DateOpened || c.dateReported || c.DateReported || c.lastActivity,
+                          category: 'collection',
+                          accountKey
+                        });
+                      }
+                    });
+                  }
+                  if (Array.isArray(publicRecordsRaw)) {
+                    publicRecordsRaw.forEach((r: any) => {
+                      const digits = String(r.caseNumber || r.id || '').replace(/\D/g, '');
+                      const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(r.caseNumber || r.id || '').toLowerCase();
+                      items.push({
+                        id: r.id,
+                        type: r.type || 'Public Record',
+                        creditor: r.creditor || 'Court/Government',
+                        bureau: r.bureau || 'Multiple',
+                        accountNumber: r.caseNumber || r.id,
+                        accountDate: r.filingDate || r.dischargeDate,
+                        category: 'public-record',
+                        accountKey
+                      });
+                    });
+                  }
+                  if (Array.isArray(inquiriesRaw)) {
+                    inquiriesRaw.forEach((inq: any) => {
+                      const creditor = inq.company || inq.creditorName || inq.CreditorName || '';
+                      const date = inq.date || inq.DateInquiry || '';
+                      const bureau = inq.bureau || (inq.BureauId === 1 ? 'TransUnion' : inq.BureauId === 2 ? 'Experian' : 'Equifax');
+                      const inqKeyRaw = `INQ|${inq.type === 'Hard' || inq.InquiryType === 'I' ? 'HARD' : 'SOFT'}|${creditor}|${date}`;
+                      const digits = String(inqKeyRaw || '').replace(/\D/g, '');
+                      const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(inqKeyRaw || '').toLowerCase();
+                      items.push({
+                        id: inq.id,
+                        type: 'Inquiry',
+                        creditor: creditor,
+                        bureau: bureau,
+                        accountNumber: inq.id || `INQ-${inq.company || inq.creditorName || inq.CreditorName}`,
+                        accountDate: inq.date || inq.DateInquiry,
+                        category: (inq.type === 'Hard' || inq.InquiryType === 'I') ? 'hard-inquiry' : 'soft-inquiry',
+                        accountKey
+                      });
+                    });
+                  }
+                  return items;
+                };
+
+                const history = Array.isArray(reportData.reportHistory) ? reportData.reportHistory : [];
+                const newest: any = history.length > 0 ? history[0] : null;
+                const previous: any = history.length > 1 ? history[1] : (history.length > 0 ? history[history.length - 1] : null);
+                const prevItems = previous ? extractNegatives(previous?.data || previous?.reportData || previous) : [];
+                const keyOf = (it: any) => `${(it.category||'').toLowerCase()}|${(it.type||'').toLowerCase()}|${String((it as any).accountKey || '').toLowerCase()}|${(it.creditor||'').toString().toLowerCase()}`;
+                const prevSet = new Set(prevItems.map(keyOf));
+                const currSet = new Set(allNegativeItems.map(keyOf));
+                const removed = prevItems.filter((it: any) => !currSet.has(keyOf(it)));
+                const added = allNegativeItems.filter((it: any) => !prevSet.has(keyOf(it)));
+
+                if (!newest || allNegativeItems.length === 0) return null;
+                const removedAsOf = formatIsoDate(getHistoryReportDateValue(newest));
+
+                return (
+                  <div className="mt-6 grid grid-cols-1 md:grid-cols-5 gap-3">
+                    <div className="rounded-lg border bg-white p-4">
+                      <div className="text-sm text-gray-600">Previous Report Date</div>
+                      <div className="text-lg font-bold text-gray-800">{(() => { const d = getHistoryReportDateValue(previous) || previous?.created_at || previous?.date || previous?.reportDate || (previous?.bureauDates && (previous.bureauDates.experian || previous.bureauDates.transunion || previous.bureauDates.equifax)); try { return d ? new Date(d).toLocaleDateString('en-US') : 'N/A'; } catch { return 'N/A'; } })()}</div>
+                    </div>
+                    <div className="rounded-lg border bg-white p-4">
+                      <div className="text-sm text-gray-600">Newest Report Date</div>
+                      <div className="text-lg font-bold text-gray-800">{(() => { const d = getHistoryReportDateValue(newest) || newest?.created_at || newest?.date || newest?.reportDate || (newest?.bureauDates && (newest.bureauDates.experian || newest.bureauDates.transunion || newest.bureauDates.equifax)); try { return d ? new Date(d).toLocaleDateString('en-US') : 'N/A'; } catch { return 'N/A'; } })()}</div>
+                    </div>
+                    <div className="rounded-lg border bg-white p-4">
+                      <div className="text-sm text-gray-600">Current Negative Items</div>
+                      <div className="text-lg font-bold text-gray-800">{allNegativeItems.length}</div>
+                    </div>
+                    <div className="rounded-lg border bg-white p-4">
+                      <div className="text-sm text-gray-600">Removed Since Previous</div>
+                      <div className="text-lg font-bold text-green-700">{removed.length}</div>
+                      <div className="mt-1 text-xs text-gray-500">Removed as of: {removedAsOf}</div>
+                    </div>
+                    <div className="rounded-lg border bg-white p-4">
+                      <div className="text-sm text-gray-600">New Since Previous</div>
+                      <div className="text-lg font-bold text-green-700">{added.length}</div>
+                    </div>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
 
@@ -8688,467 +9063,22 @@ export default function CreditReport() {
             </CardContent>
           </Card>
 
-          {/* Credit Analysis Dashboard */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Analysis of Negative Entries */}
-            <Card className="border-0 shadow-lg bg-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground">
-                  <CheckCircle className="h-6 w-6 text-green-600" />
-                  Analysis of Negative Entries
-                </CardTitle>
-                <CardDescription>
-                  Issues on your credit report that need attention
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
-                    <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
-                      <Search className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="text-2xl font-bold text-foreground text-center mb-1">{reportData.inquiries.length}</div>
-                    <div className="text-sm text-muted-foreground font-medium text-center">Inquiries</div>
-                    <div className="mt-2 h-0.5 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  </div>
-                  <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
-                    <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
-                      <Clock className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="text-2xl font-bold text-foreground text-center mb-1">{reportData.accounts.filter(account => account.paymentHistory && account.paymentHistory.includes('Late')).length}</div>
-                    <div className="text-sm text-muted-foreground font-medium text-center">Late Payments</div>
-                    <div className="mt-2 h-0.5 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  </div>
-                  <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
-                    <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
-                      <AlertTriangle className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="text-2xl font-bold text-foreground text-center mb-1">{reportData.collections.length}</div>
-                    <div className="text-sm text-muted-foreground font-medium text-center">Collections</div>
-                    <div className="mt-2 h-0.5 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  </div>
-                  <div className="group bg-card rounded-xl p-4 border border-border shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm">
-                    <div className="w-10 h-10 bg-primary text-primary-foreground rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
-                      <FileText className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="text-2xl font-bold text-foreground text-center mb-1">{reportData.publicRecords?.length || 0}</div>
-                    <div className="text-sm text-muted-foreground font-medium text-center">Public Records</div>
-                    <div className="mt-2 h-0.5 bg-primary rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  </div>
-                </div>
-                <div className={`${reportData.inquiries.length + reportData.collections.length + (reportData.publicRecords?.length || 0) === 0 ? 'bg-green-100' : 'bg-yellow-100'} rounded-lg p-4`}>
-                  <div className={`flex items-center gap-2 ${reportData.inquiries.length + reportData.collections.length + (reportData.publicRecords?.length || 0) === 0 ? 'text-green-800' : 'text-yellow-800'}`}>
-                    <Award className="h-5 w-5" />
-                    <span className="font-semibold">
-                      {reportData.inquiries.length + reportData.collections.length + (reportData.publicRecords?.length || 0) === 0 ? 'Excellent Credit Health' : 'Credit Needs Attention'}
-                    </span>
-                  </div>
-                  <p className={`text-sm ${reportData.inquiries.length + reportData.collections.length + (reportData.publicRecords?.length || 0) === 0 ? 'text-green-700' : 'text-yellow-700'} mt-1`}>
-                    {reportData.inquiries.length + reportData.collections.length + (reportData.publicRecords?.length || 0) === 0 
-                      ? 'Minimal negative entries indicate strong credit management' 
-                      : 'Some negative entries may be impacting your credit score'}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+         
 
-            {/* Credit Utilization Overview */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-blue-50 to-indigo-50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-blue-800">
-                  <PieChart className="h-6 w-6 text-blue-600" />
-                  Credit Utilization Overview
-                </CardTitle>
-                <CardDescription>
-                  Your current credit usage and limits
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center mb-6">
-                  <div className="text-4xl font-bold text-blue-600 mb-2">
-                    {(() => {
-                      const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                      const revolvingAccounts = accounts.filter((account: any) => {
-                        const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                        const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                        const isRevolving = type.includes('revolving') || type.includes('credit card');
-                        const isOpen = status ? status.includes('open') : true;
-                        return isRevolving && isOpen;
-                      });
-                      const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
-                        const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                        return sum + (isNaN(balance) ? 0 : balance);
-                      }, 0);
-                      const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
-                        const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                        return sum + (isNaN(limit) ? 0 : limit);
-                      }, 0);
-                      const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                      const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
-                      return safeUtilization;
-                    })()}%
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    Overall Credit Utilization
-                  </div>
-                  <div className={`text-xs font-medium ${(() => {
-                    const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                    const revolvingAccounts = accounts.filter((account: any) => {
-                      const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                      const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                      const isRevolving = type.includes('revolving') || type.includes('credit card');
-                      const isOpen = status ? status.includes('open') : true;
-                      return isRevolving && isOpen;
-                    });
-                    const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
-                      const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                      return sum + (isNaN(balance) ? 0 : balance);
-                    }, 0);
-                    const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
-                      const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                      return sum + (isNaN(limit) ? 0 : limit);
-                    }, 0);
-                    const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                    const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
-                    return safeUtilization <= 30 ? 'text-green-600' : 'text-red-600';
-                  })()}`}>
-                    {(() => {
-                      const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                      const revolvingAccounts = accounts.filter((account: any) => {
-                        const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                        const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                        const isRevolving = type.includes('revolving') || type.includes('credit card');
-                        const isOpen = status ? status.includes('open') : true;
-                        return isRevolving && isOpen;
-                      });
-                      const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
-                        const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                        return sum + (isNaN(balance) ? 0 : balance);
-                      }, 0);
-                      const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
-                        const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                        return sum + (isNaN(limit) ? 0 : limit);
-                      }, 0);
-                      const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                      const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
-                      return safeUtilization <= 30 ? 'Excellent (Under 30%)' : 'High (Over 30%)';
-                    })()}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="bg-card rounded-lg p-3 border border-border">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm font-medium">
-                        High Utilization Accounts
-                      </span>
-                      <span className={`text-lg font-bold ${(() => {
-                        const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                        const revolvingOpen = accounts.filter((account: any) => {
-                          const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                          const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                          const isRevolving = type.includes('revolving') || type.includes('credit card');
-                          const isOpen = status ? status.includes('open') : true;
-                          return isRevolving && isOpen;
-                        });
-                        const highUtilCount = revolvingOpen.filter((account: any) => {
-                          const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                          const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                          return !isNaN(balance) && !isNaN(limit) && limit > 0 && balance / limit > 0.3;
-                        }).length;
-                        return highUtilCount === 0 ? 'text-green-600' : 'text-red-600';
-                      })()}`}>
-                        {(() => {
-                          const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                          const revolvingOpen = accounts.filter((account: any) => {
-                            const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                            const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                            const isRevolving = type.includes('revolving') || type.includes('credit card');
-                            const isOpen = status ? status.includes('open') : true;
-                            return isRevolving && isOpen;
-                          });
-                          const highUtilCount = revolvingOpen.filter((account: any) => {
-                            const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                            const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                            return !isNaN(balance) && !isNaN(limit) && limit > 0 && balance / limit > 0.3;
-                          }).length;
-                          return highUtilCount;
-                        })()}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className={`${(() => {
-                    const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                    const revolvingAccounts = accounts.filter((account: any) => {
-                      const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                      const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                      const isRevolving = type.includes('revolving') || type.includes('credit card');
-                      const isOpen = status ? status.includes('open') : true;
-                      return isRevolving && isOpen;
-                    });
-                    const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
-                      const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                      return sum + (isNaN(balance) ? 0 : balance);
-                    }, 0);
-                    const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
-                      const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                      return sum + (isNaN(limit) ? 0 : limit);
-                    }, 0);
-                    const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                    const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
-                    return safeUtilization <= 30 ? 'bg-blue-100' : 'bg-red-100';
-                  })()} rounded-lg p-4`}>
-                    <div className={`flex items-center gap-2 ${(() => {
-                      const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                      const revolvingAccounts = accounts.filter((account: any) => {
-                        const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                        const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                        const isRevolving = type.includes('revolving') || type.includes('credit card');
-                        const isOpen = status ? status.includes('open') : true;
-                        return isRevolving && isOpen;
-                      });
-                      const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
-                        const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                        return sum + (isNaN(balance) ? 0 : balance);
-                      }, 0);
-                      const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
-                        const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                        return sum + (isNaN(limit) ? 0 : limit);
-                      }, 0);
-                      const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                      const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
-                      return safeUtilization <= 30 ? 'text-blue-800' : 'text-red-800';
-                    })()}`}>
-                      <Target className="h-5 w-5" />
-                      <span className="font-semibold">
-                        {(() => {
-                          const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                          const revolvingAccounts = accounts.filter((account: any) => {
-                            const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                            const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                            const isRevolving = type.includes('revolving') || type.includes('credit card');
-                            const isOpen = status ? status.includes('open') : true;
-                            return isRevolving && isOpen;
-                          });
-                          const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
-                            const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                            return sum + (isNaN(balance) ? 0 : balance);
-                          }, 0);
-                          const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
-                            const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                            return sum + (isNaN(limit) ? 0 : limit);
-                          }, 0);
-                          const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                          const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
-                          return safeUtilization <= 30 ? 'Optimal Usage' : 'High Usage';
-                        })()}
-                      </span>
-                    </div>
-                    <p className={`text-sm ${(() => {
-                      const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                      const revolvingAccounts = accounts.filter((account: any) => {
-                        const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                        const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                        const isRevolving = type.includes('revolving') || type.includes('credit card');
-                        const isOpen = status ? status.includes('open') : true;
-                        return isRevolving && isOpen;
-                      });
-                      const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
-                        const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                        return sum + (isNaN(balance) ? 0 : balance);
-                      }, 0);
-                      const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
-                        const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                        return sum + (isNaN(limit) ? 0 : limit);
-                      }, 0);
-                      const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                      const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
-                      return safeUtilization <= 30 ? 'text-blue-700' : 'text-red-700';
-                    })()} mt-1`}>
-                      {(() => {
-                        const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
-                        const revolvingAccounts = accounts.filter((account: any) => {
-                          const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
-                          const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
-                          const isRevolving = type.includes('revolving') || type.includes('credit card');
-                          const isOpen = status ? status.includes('open') : true;
-                          return isRevolving && isOpen;
-                        });
-                        const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
-                          const balance = parseFloat(account.CurrentBalance || account.balance || '0');
-                          return sum + (isNaN(balance) ? 0 : balance);
-                        }, 0);
-                        const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
-                          const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
-                          return sum + (isNaN(limit) ? 0 : limit);
-                        }, 0);
-                        const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
-                        const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
-                        return safeUtilization <= 30 
-                          ? 'Your low utilization rate demonstrates excellent credit management' 
-                          : 'Consider paying down balances to improve your credit score';
-                      })()}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Credit History & Account Overview */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Length of Credit History */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-50 to-pink-50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-purple-800">
-                  <Clock className="h-6 w-6 text-purple-600" />
-                  Credit History
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-purple-600 mb-1">
-                    {(() => {
-                      const now = new Date();
-                      const accountAges = reportData.accounts
-                        .filter(account => account.dateOpened)
-                        .map(account => {
-                          const openDate = new Date(account.dateOpened);
-                          const diffTime = Math.abs(now - openDate);
-                          return Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365.25));
-                        });
-                      const avgAge = accountAges.length > 0 ? Math.round(accountAges.reduce((sum, age) => sum + age, 0) / accountAges.length) : 0;
-                      const years = Math.floor(avgAge);
-                      const months = Math.round((avgAge - years) * 12);
-                      return `${years}y ${months}m`;
-                    })()}
-                  </div>
-                  <div className="text-sm text-gray-600">Average Age</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600 mb-1">
-                    {(() => {
-                      const now = new Date();
-                      const oldestAccount = reportData.accounts
-                        .filter(account => account.dateOpened)
-                        .reduce((oldest, account) => {
-                          const openDate = new Date(account.dateOpened);
-                          return !oldest || openDate < new Date(oldest.dateOpened) ? account : oldest;
-                        }, null);
-                      if (!oldestAccount) return '0y 0m';
-                      const openDate = new Date(oldestAccount.dateOpened);
-                      const diffTime = Math.abs(now - openDate);
-                      const totalYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
-                      const years = Math.floor(totalYears);
-                      const months = Math.round((totalYears - years) * 12);
-                      return `${years}y ${months}m`;
-                    })()}
-                  </div>
-                  <div className="text-sm text-gray-600">Oldest Account</div>
-                </div>
-                <div className={`${reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'bg-purple-100' : 'bg-gray-100'} rounded-lg p-3 text-center`}>
-                  <div className={`text-sm font-medium ${reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'text-purple-800' : 'text-gray-800'}`}>
-                    {reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'Strong History' : 'Building History'}
-                  </div>
-                  <div className={`text-xs ${reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'text-purple-700' : 'text-gray-700'}`}>
-                    {reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'Long credit history builds trust' : 'Keep accounts open to build history'}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Recent Inquiries */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-slate-800 dark:to-slate-700">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-orange-800">
-                  <Search className="h-6 w-6 text-orange-600" />
-                  Recent Inquiries
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {reportData.inquiries.slice(0, 3).map((inquiry, index) => (
-                    <div key={index} className="bg-card rounded-lg p-3 border border-border">
-                      <div className="font-medium text-sm">{inquiry.creditorName || 'Unknown Creditor'}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {inquiry.bureau || 'Unknown Bureau'} • {inquiry.date ? new Date(inquiry.date).toLocaleDateString() : 'Unknown Date'}
-                      </div>
-                      <div className="text-xs text-orange-600">Inquiry</div>
-                    </div>
-                  ))}
-                  {reportData.inquiries.length === 0 && (
-                    <div className="bg-card rounded-lg p-3 border border-border text-center">
-                      <div className="text-sm text-muted-foreground">No recent inquiries</div>
-                    </div>
-                  )}
-                  <div className={`${reportData.inquiries.length <= 2 ? 'bg-green-100' : 'bg-orange-100'} rounded-lg p-3 text-center`}>
-                    <div className={`text-sm font-medium ${reportData.inquiries.length <= 2 ? 'text-green-800' : 'text-orange-800'}`}>
-                      {reportData.inquiries.length} Recent {reportData.inquiries.length === 1 ? 'Inquiry' : 'Inquiries'}
-                    </div>
-                    <div className={`text-xs ${reportData.inquiries.length <= 2 ? 'text-green-700' : 'text-orange-700'}`}>
-                      {reportData.inquiries.length <= 2 ? 'Minimal impact on score' : 'May impact credit score'}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Account Summary */}
-            <Card className="border-0 shadow-lg bg-gradient-to-br from-emerald-50 to-teal-50">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-teal-800">
-                  <CreditCard className="h-6 w-6 text-teal-600" />
-                  Account Summary
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="group bg-gradient-to-br from-white to-green-50 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 border border-green-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm text-center">
-                    <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
-                      <CheckCircle className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="text-2xl font-bold text-green-600 mb-1 group-hover:text-green-700 transition-colors">
-                      {reportData.accounts.filter(account => account.status && (account.status.toLowerCase().includes('current') || account.status.toLowerCase().includes('paid') || account.status.toLowerCase().includes('good'))).length}
-                    </div>
-                    <div className="text-xs text-green-600 font-medium">Good Standing</div>
-                    <div className="mt-2 h-0.5 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  </div>
-                  <div className="group bg-gradient-to-br from-white to-red-50 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 border border-red-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm text-center">
-                    <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
-                      <XCircle className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="text-2xl font-bold text-red-600 mb-1 group-hover:text-red-700 transition-colors">
-                      {reportData.accounts.filter(account => account.status && (account.status.toLowerCase().includes('late') || account.status.toLowerCase().includes('delinquent') || account.status.toLowerCase().includes('default'))).length + reportData.collections.length}
-                    </div>
-                    <div className="text-xs text-red-600 font-medium">Bad Accounts</div>
-                    <div className="mt-2 h-0.5 bg-gradient-to-r from-red-400 to-pink-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  </div>
-                </div>
-                <div className={`${reportData.accounts.filter(account => account.status && (account.status.toLowerCase().includes('late') || account.status.toLowerCase().includes('delinquent') || account.status.toLowerCase().includes('default'))).length + reportData.collections.length === 0 ? 'bg-teal-100' : 'bg-yellow-100'} rounded-lg p-3 text-center`}>
-                  <div className={`text-sm font-medium ${reportData.accounts.filter(account => account.status && (account.status.toLowerCase().includes('late') || account.status.toLowerCase().includes('delinquent') || account.status.toLowerCase().includes('default'))).length + reportData.collections.length === 0 ? 'text-teal-800' : 'text-yellow-800'}`}>
-                    {reportData.accounts.filter(account => account.status && (account.status.toLowerCase().includes('late') || account.status.toLowerCase().includes('delinquent') || account.status.toLowerCase().includes('default'))).length + reportData.collections.length === 0 ? 'Perfect Record' : 'Needs Attention'}
-                  </div>
-                  <div className={`text-xs ${reportData.accounts.filter(account => account.status && (account.status.toLowerCase().includes('late') || account.status.toLowerCase().includes('delinquent') || account.status.toLowerCase().includes('default'))).length + reportData.collections.length === 0 ? 'text-teal-700' : 'text-yellow-700'}`}>
-                    {reportData.accounts.filter(account => account.status && (account.status.toLowerCase().includes('late') || account.status.toLowerCase().includes('delinquent') || account.status.toLowerCase().includes('default'))).length + reportData.collections.length === 0 ? 'All accounts in good standing' : 'Some accounts need attention'}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          
 
 
 
 
 
           {/* Comprehensive Negative Items Breakdown */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-green-50 via-emerald-50 to-lime-50">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-2xl font-bold text-red-800">
-                <AlertTriangle className="h-8 w-8 text-red-600" />
+              <CardTitle className="flex items-center gap-2 text-2xl font-bold text-green-800">
+                <AlertTriangle className="h-8 w-8 text-green-600" />
                 Full Breakdown - Negative Items
               </CardTitle>
-              <CardDescription className="text-lg text-red-700">
+              <CardDescription className="text-lg text-green-700">
                 Complete list of all negative items affecting your credit report
               </CardDescription>
             </CardHeader>
@@ -9393,8 +9323,9 @@ export default function CreditReport() {
                   return items;
                 };
                 const history = Array.isArray(reportData.reportHistory) ? reportData.reportHistory : [];
-                const oldest: any = history.length > 0 ? history[history.length - 1] : null;
-                const prevItems = oldest ? extractNegatives(oldest?.data || oldest?.reportData || oldest) : [];
+                const newest: any = history.length > 0 ? history[0] : null;
+                const previous: any = history.length > 1 ? history[1] : (history.length > 0 ? history[history.length - 1] : null);
+                const prevItems = previous ? extractNegatives(previous?.data || previous?.reportData || previous) : [];
                 const keyOf = (it: any) => `${(it.category||'').toLowerCase()}|${(it.type||'').toLowerCase()}|${String((it as any).accountKey || '').toLowerCase()}|${(it.creditor||'').toString().toLowerCase()}`;
                 const prevSet = new Set(prevItems.map(keyOf));
                 const currSet = new Set(allNegativeItems.map(keyOf));
@@ -9406,46 +9337,46 @@ export default function CreditReport() {
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse bg-white rounded-lg shadow-sm">
                         <thead>
-                          <tr className="bg-gradient-to-r from-red-600 to-orange-600 text-white">
-                            <th className="border border-red-300 px-4 py-3 text-left font-semibold">Account Number</th>
-                            <th className="border border-red-300 px-4 py-3 text-left font-semibold">Type of Negative Items</th>
-                            <th className="border border-red-300 px-4 py-3 text-left font-semibold">Account Date</th>
-                            <th className="border border-red-300 px-4 py-3 text-left font-semibold">Creditor</th>
-                            <th className="border border-red-300 px-4 py-3 text-center font-semibold">Experian</th>
-                            <th className="border border-red-300 px-4 py-3 text-center font-semibold">TransUnion</th>
-                            <th className="border border-red-300 px-4 py-3 text-center font-semibold">Equifax</th>
+                          <tr className="bg-gradient-to-r from-green-600 to-emerald-600 text-white">
+                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Account Number</th>
+                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Type of Negative Items</th>
+                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Account Date</th>
+                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Creditor</th>
+                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">Experian</th>
+                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">TransUnion</th>
+                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">Equifax</th>
                           </tr>
                         </thead>
                         <tbody>
                           {allNegativeItems.map((item, index) => (
-                            <tr key={`${item.category}-${item.id}-${index}`} className={`${index % 2 === 0 ? 'bg-red-50' : 'bg-white'} hover:bg-red-100 transition-colors duration-200`}>
-                              <td className="border border-red-200 px-4 py-3 font-medium text-gray-800">
+                            <tr key={`${item.category}-${item.id}-${index}`} className={`${index % 2 === 0 ? 'bg-green-50' : 'bg-white'} hover:bg-green-100 transition-colors duration-200`}>
+                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
                                 {item.accountNumber}
                               </td>
-                              <td className="border border-red-200 px-4 py-3 font-medium text-gray-800">
+                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
                                 {item.type || 'Unknown'}
                               </td>
-                              <td className="border border-red-200 px-4 py-3 font-medium text-gray-800">
+                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
                                 {item.accountDate ? (() => { try { return new Date(item.accountDate).toLocaleDateString('en-US'); } catch { return item.accountDate; } })() : 'N/A'}
                               </td>
-                              <td className="border border-red-200 px-4 py-3 font-medium text-gray-800">
+                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
                                 {item.creditor || 'Unknown'}
                               </td>
-                              <td className="border border-red-200 px-4 py-3 text-center">
+                              <td className="border border-green-200 px-4 py-3 text-center">
                                 {item.bureau === 'Experian' || item.bureau === 'Multiple' ? (
                                   <span className="inline-flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">✓</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
                                 )}
                               </td>
-                              <td className="border border-red-200 px-4 py-3 text-center">
+                              <td className="border border-green-200 px-4 py-3 text-center">
                                 {item.bureau === 'TransUnion' || item.bureau === 'Multiple' ? (
                                   <span className="inline-flex items-center justify-center w-6 h-6 bg-purple-100 text-purple-800 rounded-full text-xs font-bold">✓</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
                                 )}
                               </td>
-                              <td className="border border-red-200 px-4 py-3 text-center">
+                              <td className="border border-green-200 px-4 py-3 text-center">
                                 {item.bureau === 'Equifax' || item.bureau === 'Multiple' ? (
                                   <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-800 rounded-full text-xs font-bold">✓</span>
                                 ) : (
@@ -9457,27 +9388,7 @@ export default function CreditReport() {
                         </tbody>
                       </table>
                     </div>
-                    {oldest && (
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <div className="rounded-lg border bg-white p-4">
-                          <div className="text-sm text-gray-600">Oldest Report Date</div>
-                          <div className="text-lg font-bold text-gray-800">{(() => { const d = oldest?.created_at || oldest?.date || oldest?.reportDate || (oldest?.bureauDates && (oldest.bureauDates.experian || oldest.bureauDates.transunion || oldest.bureauDates.equifax)); try { return d ? new Date(d).toLocaleDateString('en-US') : 'N/A'; } catch { return 'N/A'; } })()}</div>
-                        </div>
-                        <div className="rounded-lg border bg-white p-4">
-                          <div className="text-sm text-gray-600">Current Negative Items</div>
-                          <div className="text-lg font-bold text-gray-800">{allNegativeItems.length}</div>
-                        </div>
-                        <div className="rounded-lg border bg-white p-4">
-                          <div className="text-sm text-gray-600">Removed Since Oldest</div>
-                          <div className="text-lg font-bold text-green-700">{removed.length}</div>
-                        </div>
-                        <div className="rounded-lg border bg-white p-4">
-                          <div className="text-sm text-gray-600">New Since Oldest</div>
-                          <div className="text-lg font-bold text-red-700">{added.length}</div>
-                        </div>
-                      </div>
-                    )}
-                    {oldest && (
+                    {previous && (
                       <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-white rounded-lg border shadow-sm">
                           <div className="px-4 py-3 border-b font-semibold text-green-700">Removed Items</div>
@@ -9510,7 +9421,7 @@ export default function CreditReport() {
                           </div>
                         </div>
                         <div className="bg-white rounded-lg border shadow-sm">
-                          <div className="px-4 py-3 border-b font-semibold text-red-700">New Items</div>
+                          <div className="px-4 py-3 border-b font-semibold text-green-700">New Items</div>
                           <div className="p-4 space-y-2">
                             {added.length === 0 ? (
                               <div className="text-sm text-gray-500">None</div>
@@ -9539,6 +9450,183 @@ export default function CreditReport() {
               })()}
             </CardContent>
           </Card>
+
+          {/* Credit History & Account Overview */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Length of Credit History */}
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-50 to-pink-50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-purple-800">
+                  <Clock className="h-6 w-6 text-purple-600" />
+                  Credit History
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-purple-600 mb-1">
+                    {(() => {
+                      const now = new Date();
+                      const accountAges = reportData.accounts
+                        .filter(account => account.dateOpened)
+                        .map(account => {
+                          const openDate = new Date(account.dateOpened);
+                          const diffTime = Math.abs(now - openDate);
+                          return Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365.25));
+                        });
+                      const avgAge = accountAges.length > 0 ? Math.round(accountAges.reduce((sum, age) => sum + age, 0) / accountAges.length) : 0;
+                      const years = Math.floor(avgAge);
+                      const months = Math.round((avgAge - years) * 12);
+                      return `${years}y ${months}m`;
+                    })()}
+                  </div>
+                  <div className="text-sm text-gray-600">Average Age</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-purple-600 mb-1">
+                    {(() => {
+                      const now = new Date();
+                      const oldestAccount = reportData.accounts
+                        .filter(account => account.dateOpened)
+                        .reduce((oldest, account) => {
+                          const openDate = new Date(account.dateOpened);
+                          return !oldest || openDate < new Date(oldest.dateOpened) ? account : oldest;
+                        }, null);
+                      if (!oldestAccount) return '0y 0m';
+                      const openDate = new Date(oldestAccount.dateOpened);
+                      const diffTime = Math.abs(now - openDate);
+                      const totalYears = diffTime / (1000 * 60 * 60 * 24 * 365.25);
+                      const years = Math.floor(totalYears);
+                      const months = Math.round((totalYears - years) * 12);
+                      return `${years}y ${months}m`;
+                    })()}
+                  </div>
+                  <div className="text-sm text-gray-600">Oldest Account</div>
+                </div>
+                <div className={`${reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'bg-purple-100' : 'bg-gray-100'} rounded-lg p-3 text-center`}>
+                  <div className={`text-sm font-medium ${reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'text-purple-800' : 'text-gray-800'}`}>
+                    {reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'Strong History' : 'Building History'}
+                  </div>
+                  <div className={`text-xs ${reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'text-purple-700' : 'text-gray-700'}`}>
+                    {reportData.accounts.filter(account => account.dateOpened).length > 0 ? 'Long credit history builds trust' : 'Keep accounts open to build history'}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Recent Inquiries */}
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-slate-800 dark:to-slate-700">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-orange-800">
+                  <Search className="h-6 w-6 text-orange-600" />
+                  Recent Inquiries
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {reportData.inquiries.slice(0, 3).map((inquiry, index) => (
+                    <div key={index} className="bg-card rounded-lg p-3 border border-border">
+                      <div className="font-medium text-sm">{inquiry.creditorName || 'Unknown Creditor'}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {inquiry.bureau || 'Unknown Bureau'} • {inquiry.date ? new Date(inquiry.date).toLocaleDateString() : 'Unknown Date'}
+                      </div>
+                      <div className="text-xs text-orange-600">Inquiry</div>
+                    </div>
+                  ))}
+                  {reportData.inquiries.length === 0 && (
+                    <div className="bg-card rounded-lg p-3 border border-border text-center">
+                      <div className="text-sm text-muted-foreground">No recent inquiries</div>
+                    </div>
+                  )}
+                  <div className={`${reportData.inquiries.length <= 2 ? 'bg-green-100' : 'bg-orange-100'} rounded-lg p-3 text-center`}>
+                    <div className={`text-sm font-medium ${reportData.inquiries.length <= 2 ? 'text-green-800' : 'text-orange-800'}`}>
+                      {reportData.inquiries.length} Recent {reportData.inquiries.length === 1 ? 'Inquiry' : 'Inquiries'}
+                    </div>
+                    <div className={`text-xs ${reportData.inquiries.length <= 2 ? 'text-green-700' : 'text-orange-700'}`}>
+                      {reportData.inquiries.length <= 2 ? 'Minimal impact on score' : 'May impact credit score'}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Account Summary */}
+            <Card className="border-0 shadow-lg bg-gradient-to-br from-emerald-50 to-teal-50">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-teal-800">
+                  <CreditCard className="h-6 w-6 text-teal-600" />
+                  Account Summary
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {(() => {
+                  const accounts = Array.isArray((reportData as any)?.accounts) ? (reportData as any).accounts : [];
+                  const collections = Array.isArray((reportData as any)?.collections) ? (reportData as any).collections : [];
+                  const inquiries = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+                  const toText = (v: any) => String(v ?? '').toLowerCase();
+                  const isBadAccount = (acc: any) => {
+                    const status = toText(acc?.status || acc?.AccountStatus || acc?.AccountCondition);
+                    const payment = toText(acc?.paymentHistory || acc?.PaymentStatus || acc?.WorstPayStatus);
+                    const remarks = toText(acc?.Remark || acc?.Remarks);
+                    const combined = `${status} ${payment} ${remarks}`;
+                    const lateCount = Number(acc?.latePayments?.total ?? 0);
+                    return (
+                      lateCount > 0 ||
+                      combined.includes('late') ||
+                      combined.includes('delinquent') ||
+                      combined.includes('default') ||
+                      combined.includes('charge') ||
+                      combined.includes('collection') ||
+                      combined.includes('repossession') ||
+                      combined.includes('foreclosure') ||
+                      combined.includes('bankrupt')
+                    );
+                  };
+                  const goodCount = accounts.filter((acc: any) => !isBadAccount(acc)).length;
+                  const badAccountCount = accounts.filter((acc: any) => isBadAccount(acc)).length;
+                  const hardInquiriesCount = inquiries.filter((inq: any) => {
+                    const t = toText(inq?.type || inq?.InquiryType);
+                    return t === 'hard' || t === 'i';
+                  }).length;
+                  const badTotal = badAccountCount + collections.length + hardInquiriesCount;
+                  const ok = badTotal === 0;
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="group bg-gradient-to-br from-white to-green-50 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 border border-green-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm text-center">
+                          <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                            <CheckCircle className="h-5 w-5 text-white" />
+                          </div>
+                          <div className="text-2xl font-bold text-green-600 mb-1 group-hover:text-green-700 transition-colors">
+                            {goodCount}
+                          </div>
+                          <div className="text-xs text-green-600 font-medium">Good Standing</div>
+                          <div className="mt-2 h-0.5 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        </div>
+                        <div className="group bg-gradient-to-br from-white to-red-50 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 border border-red-200/50 shadow-md hover:shadow-xl transition-all duration-300 hover:scale-105 backdrop-blur-sm text-center">
+                          <div className="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform duration-300">
+                            <XCircle className="h-5 w-5 text-white" />
+                          </div>
+                          <div className="text-2xl font-bold text-red-600 mb-1 group-hover:text-red-700 transition-colors">
+                            {badTotal}
+                          </div>
+                          <div className="text-xs text-red-600 font-medium">Bad Accounts</div>
+                          <div className="mt-2 h-0.5 bg-gradient-to-r from-red-400 to-pink-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                        </div>
+                      </div>
+                      <div className={`${ok ? 'bg-teal-100' : 'bg-yellow-100'} rounded-lg p-3 text-center`}>
+                        <div className={`text-sm font-medium ${ok ? 'text-teal-800' : 'text-yellow-800'}`}>
+                          {ok ? 'Perfect Record' : 'Needs Attention'}
+                        </div>
+                        <div className={`text-xs ${ok ? 'text-teal-700' : 'text-yellow-700'}`}>
+                          {ok ? 'All accounts in good standing' : 'Some accounts need attention'}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          </div>
 
           
         </TabsContent>
