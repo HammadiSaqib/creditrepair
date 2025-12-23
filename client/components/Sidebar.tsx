@@ -140,6 +140,13 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
       badge: null,
       pageKey: "support",
     },
+    {
+      name: "Settings",
+      href: "/settings",
+      icon: Settings,
+      badge: null,
+      pageKey: "settings",
+    },
   ];
 
   const isActive = (href: string) => location.pathname === href;
@@ -370,7 +377,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
       )}
 
       <div
-        className={`${widthClass} ${translateClass} ${visibilityClass} transform transition-transform duration-300 ease-in-out bg-white dark:bg-slate-900 border-r border-border/40 dark:border-slate-700 flex flex-col shadow-lg fixed left-0 top-0 h-screen z-[1000] overflow-y-auto min-w-[16rem] ${className ?? ''}`}
+        className={`${widthClass} ${translateClass} ${visibilityClass} transform transition-transform duration-300 ease-in-out bg-white dark:bg-slate-900 border-r border-border/40 dark:border-slate-700 flex flex-col shadow-lg fixed left-0 top-0 h-screen z-[1000] overflow-hidden min-w-[16rem] min-h-0 ${className ?? ''}`}
       >
       {/* Header */}
       <div className="p-4 border-b border-border/40 dark:border-slate-700">
@@ -426,8 +433,9 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
         </div>
       )}
 
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 scrollbar-track-transparent">
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 scrollbar-track-transparent">
+      <nav className="p-4 space-y-2">
         {filteredNavigation.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
@@ -600,34 +608,45 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
           </div>
         )}
 
-        <div className="flex items-center space-x-3">
-          {!collapsed && (
-            <div className="flex-1">
-              <Link to="/settings" className="w-full">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start hover:bg-gradient-soft"
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  Settings
-                </Button>
-              </Link>
+        {/* Partner Program Upgrade Section (hide on small screens for space) */}
+        {!collapsed && !isSmallScreen && userProfile?.role === 'admin' && !subscriptionStatus.hasActiveSubscription && (
+          <div className="mt-3 p-4 bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 dark:from-purple-900/30 dark:via-indigo-900/30 dark:to-blue-900/30 rounded-xl border-2 border-purple-200 dark:border-purple-600 shadow-lg">
+            <div className="flex items-center space-x-2 mb-3">
+              <div className="p-1 bg-purple-100 dark:bg-purple-800 rounded-full">
+                <Crown className="h-4 w-4 text-purple-600 dark:text-purple-300" />
+              </div>
+              <span className="text-sm font-bold text-purple-700 dark:text-purple-300">
+                Upgrade to Partner Program
+              </span>
             </div>
-          )}
-          {collapsed && (
-            <Link to="/settings" className="w-full">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full hover:bg-gradient-soft"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
-            </Link>
-          )}
-        </div>
+            <div className="space-y-2 mb-3">
+              <div className="flex items-center text-xs text-purple-600 dark:text-purple-400">
+                <DollarSign className="h-3 w-3 mr-1" />
+                <span>20-25% commission rates</span>
+              </div>
+              <div className="flex items-center text-xs text-purple-600 dark:text-purple-400">
+                <Sparkles className="h-3 w-3 mr-1" />
+                <span>Premium marketing materials</span>
+              </div>
+              <div className="flex items-center text-xs text-purple-600 dark:text-purple-400">
+                <Shield className="h-3 w-3 mr-1" />
+                <span>Priority support & training</span>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="w-full bg-gradient-to-r from-purple-500 via-purple-600 to-indigo-600 hover:from-purple-600 hover:via-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all duration-200"
+              onClick={() => navigate('/subscription')}
+            >
+              <Crown className="h-3 w-3 mr-1" />
+              Upgrade Now - Get Premium Benefits
+            </Button>
+          </div>
+        )}
+      </div>
+      </div>
 
+      <div className="border-t border-border/40 dark:border-slate-700 p-4">
         {!collapsed && (
           <div className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gradient-soft transition-colors">
             <Avatar className="h-8 w-8">
@@ -665,43 +684,6 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
-          </div>
-        )}
-
-
-        {/* Partner Program Upgrade Section (hide on small screens for space) */}
-        {!collapsed && !isSmallScreen && userProfile?.role === 'admin' && !subscriptionStatus.hasActiveSubscription && (
-          <div className="mt-3 p-4 bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 dark:from-purple-900/30 dark:via-indigo-900/30 dark:to-blue-900/30 rounded-xl border-2 border-purple-200 dark:border-purple-600 shadow-lg">
-            <div className="flex items-center space-x-2 mb-3">
-              <div className="p-1 bg-purple-100 dark:bg-purple-800 rounded-full">
-                <Crown className="h-4 w-4 text-purple-600 dark:text-purple-300" />
-              </div>
-              <span className="text-sm font-bold text-purple-700 dark:text-purple-300">
-                Upgrade to Partner Program
-              </span>
-            </div>
-            <div className="space-y-2 mb-3">
-              <div className="flex items-center text-xs text-purple-600 dark:text-purple-400">
-                <DollarSign className="h-3 w-3 mr-1" />
-                <span>20-25% commission rates</span>
-              </div>
-              <div className="flex items-center text-xs text-purple-600 dark:text-purple-400">
-                <Sparkles className="h-3 w-3 mr-1" />
-                <span>Premium marketing materials</span>
-              </div>
-              <div className="flex items-center text-xs text-purple-600 dark:text-purple-400">
-                <Shield className="h-3 w-3 mr-1" />
-                <span>Priority support & training</span>
-              </div>
-            </div>
-            <Button
-              size="sm"
-              className="w-full bg-gradient-to-r from-purple-500 via-purple-600 to-indigo-600 hover:from-purple-600 hover:via-purple-700 hover:to-indigo-700 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all duration-200"
-              onClick={() => navigate('/subscription')}
-            >
-              <Crown className="h-3 w-3 mr-1" />
-              Upgrade Now - Get Premium Benefits
-            </Button>
           </div>
         )}
       </div>

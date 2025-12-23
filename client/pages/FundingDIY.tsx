@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -136,17 +136,27 @@ export default function FundingDIY() {
   };
 
   const bureaus = ["all", "Equifax", "Experian", "TransUnion"];
-  const canonicalProductType = (x: any) => {
+  const canonicalProductType = useCallback((x: any) => {
     const t = String(x || '').toLowerCase();
     if (t.includes('sba')) return 'SBA Loan';
     if (t.includes('line')) return 'Line of Credit';
     if (t.includes('credit')) return 'Credit Card';
+    if (t.includes('merchant cash') || t.includes('cash advance') || t === 'mca') return 'Merchant Cash Advance';
+    if (t.includes('sub prime') || t.includes('subprime')) return 'Sub Prime Lenders';
+    if (t.includes('loan') || t.includes('term') || t.includes('installment') || t.includes('mortgage')) return 'Loan';
     return x;
-  };
+  }, []);
   const productTypesFromState: string[] = Array.isArray((location.state as any)?.productTypes)
     ? ((location.state as any).productTypes as string[]).map(canonicalProductType)
-    : ['Credit Card','SBA Loan','Line of Credit'];
-  const allowedFundingTypeSet = useMemo(() => new Set(productTypesFromState), [productTypesFromState]);
+    : ['Credit Card', 'Line of Credit', 'Loan', 'SBA Loan', 'Merchant Cash Advance', 'Sub Prime Lenders'];
+  const allowedFundingTypeSet = useMemo(() => {
+    const set = new Set(productTypesFromState.map(canonicalProductType).filter(Boolean));
+    for (const c of [...(cards || []), ...(allCards || [])]) {
+      const ft = canonicalProductType((c as any)?.funding_type);
+      if (ft) set.add(ft);
+    }
+    return set;
+  }, [productTypesFromState, cards, allCards, canonicalProductType]);
   const fundingTypes = useMemo(() => {
     const source = (cards || []).filter((c) => allowedFundingTypeSet.has(c.funding_type));
     const unique = Array.from(new Set(source.map((c) => c.funding_type).filter(Boolean)));
@@ -408,7 +418,10 @@ export default function FundingDIY() {
           });
           if (!response.ok) throw new Error("Failed to fetch funding cards");
           const data = await response.json();
-          const fetched = (data.cards || []) as FundingCard[];
+          const fetched = (data.cards || []).map((c: FundingCard) => ({
+            ...c,
+            funding_type: String(canonicalProductType(c.funding_type) || c.funding_type || ''),
+          })) as FundingCard[];
           collected = collected.concat(fetched);
           const pages = Number((data?.pagination?.pages ?? 1));
           if (!Number.isFinite(pages) || page >= pages) break;
@@ -432,7 +445,7 @@ export default function FundingDIY() {
       }
     };
     fetchCards();
-  }, [resolvedType]);
+  }, [resolvedType, canonicalProductType]);
 
   useEffect(() => {
     const fetchAllCards = async () => {
@@ -446,7 +459,10 @@ export default function FundingDIY() {
           });
           if (!resp.ok) break;
           const data = await resp.json();
-          const fetched = (data.cards || []) as FundingCard[];
+          const fetched = (data.cards || []).map((c: FundingCard) => ({
+            ...c,
+            funding_type: String(canonicalProductType(c.funding_type) || c.funding_type || ''),
+          })) as FundingCard[];
           collected = collected.concat(fetched);
           const pages = Number((data?.pagination?.pages ?? 1));
           if (!Number.isFinite(pages) || page >= pages) break;
@@ -456,7 +472,7 @@ export default function FundingDIY() {
       } catch {}
     };
     fetchAllCards();
-  }, []);
+  }, [canonicalProductType]);
 
   useEffect(() => {
     const fetchBanks = async () => {
