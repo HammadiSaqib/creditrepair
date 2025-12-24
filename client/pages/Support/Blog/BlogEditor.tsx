@@ -16,7 +16,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Loader2, Upload, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Loader2, Upload, Image as ImageIcon, Bold, Italic, Underline, Heading2, Heading3, List, ListOrdered, Link as LinkIcon, Quote, Code, Minus } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface BlogFormData {
   title: string;
@@ -50,6 +51,12 @@ const BlogEditor = () => {
   });
 
   const title = watch('title');
+  const contentValue = watch('content') || '';
+  const [linkText, setLinkText] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [uploadingContentImage, setUploadingContentImage] = useState(false);
+  const contentRegister = register('content', { required: 'Content is required' });
+  const contentRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     fetchCategories();
@@ -186,6 +193,61 @@ const BlogEditor = () => {
     }
   };
 
+  const insertAtCursor = (before: string, after: string = '', placeholder: string = '') => {
+    const el = contentRef.current;
+    if (!el) return;
+    const start = el.selectionStart || 0;
+    const end = el.selectionEnd || 0;
+    const selected = contentValue.substring(start, end) || placeholder;
+    const newContent = contentValue.substring(0, start) + before + selected + after + contentValue.substring(end);
+    setValue('content', newContent, { shouldValidate: true, shouldDirty: true });
+    requestAnimationFrame(() => {
+      const pos = start + before.length + selected.length + after.length;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  const handleContentImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingContentImage(true);
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        toast.error('Please log in');
+        navigate('/support/login');
+        return;
+      }
+      const res = await fetch('/api/support/blog/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      if (res.ok) {
+        const data = await res.json();
+        insertAtCursor(`<img src="${data.url}" alt="" />`);
+        toast.success('Image inserted');
+      } else {
+        if (res.status === 401 || res.status === 403) {
+          toast.error('Unauthorized access. Please log in again.');
+          navigate('/support/login');
+          return;
+        }
+        const err = await res.json();
+        toast.error(err.error || 'Failed to upload image');
+      }
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast.error('Error uploading image');
+    } finally {
+      setUploadingContentImage(false);
+      e.target.value = '';
+    }
+  };
+
   const onSubmit = async (data: BlogFormData) => {
     setLoading(true);
     try {
@@ -291,15 +353,62 @@ const BlogEditor = () => {
 
                 <div className="space-y-2">
                   <Label htmlFor="content">Content</Label>
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted p-2">
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('<strong>', '</strong>')}><Bold className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('<em>', '</em>')}><Italic className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('<u>', '</u>')}><Underline className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('\n<h2>', '</h2>\n', 'Heading') }><Heading2 className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('\n<h3>', '</h3>\n', 'Subheading') }><Heading3 className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('\n<ul>\n<li>', '</li>\n</ul>\n', 'List item') }><List className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('\n<ol>\n<li>', '</li>\n</ol>\n', 'List item') }><ListOrdered className="h-4 w-4" /></Button>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button type="button" variant="ghost" size="sm"><LinkIcon className="h-4 w-4" /></Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64">
+                        <div className="space-y-2">
+                          <Input placeholder="Link text" value={linkText} onChange={(e) => setLinkText(e.target.value)} />
+                          <Input placeholder="https://example.com" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} />
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              if (!linkUrl) return;
+                              insertAtCursor(`<a href="${linkUrl}" target="_blank" rel="noopener noreferrer">`, '</a>', linkText || 'Link');
+                              setLinkText('');
+                              setLinkUrl('');
+                            }}
+                          >
+                            Insert Link
+                          </Button>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    <div className="relative">
+                      <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleContentImageUpload} accept="image/*" disabled={uploadingContentImage} />
+                      <Button type="button" variant="ghost" size="sm" disabled={uploadingContentImage}>
+                        {uploadingContentImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('\n<pre><code>', '</code></pre>\n', 'code') }><Code className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('\n<blockquote>', '</blockquote>\n', 'Quote') }><Quote className="h-4 w-4" /></Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => insertAtCursor('\n<hr />\n') }><Minus className="h-4 w-4" /></Button>
+                  </div>
                   <Textarea
                     id="content"
                     className="min-h-[400px] font-mono"
                     placeholder="Write your post content here (HTML supported)..."
-                    {...register('content', { required: 'Content is required' })}
+                    {...contentRegister}
+                    ref={(e) => {
+                      contentRegister.ref(e);
+                      contentRef.current = e;
+                    }}
                   />
                   {errors.content && (
                     <p className="text-sm text-red-500">{errors.content.message}</p>
                   )}
+                  <div className="flex items-center justify-end text-xs text-muted-foreground">
+                    <span>{contentValue.trim().split(/\s+/).filter(Boolean).length} words • {contentValue.length} characters</span>
+                  </div>
                 </div>
 
                 <div className="space-y-2">

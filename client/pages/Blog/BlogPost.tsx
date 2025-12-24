@@ -71,11 +71,20 @@ const BlogPost = () => {
   }
 
   const shareUrl = window.location.href;
+  const normalizeContentHTML = (raw: string) => {
+    const hasTags = /<\/?[a-z][\s\S]*>/i.test(raw);
+    if (hasTags) return raw;
+    const paragraphs = raw
+      .split(/\n{2,}/)
+      .map(p => `<p>${p.replace(/\n/g, '<br />')}</p>`)
+      .join('');
+    return paragraphs || '';
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
       <Helmet>
-        <title>{post.seo_title || post.title} | Score Machine Blog</title>
+        <title>{post.seo_title || post.title} | Lend Ready Ai Blog</title>
         <meta name="description" content={post.seo_description || post.excerpt} />
         {post.seo_keywords && <meta name="keywords" content={post.seo_keywords} />}
         
@@ -167,8 +176,8 @@ const BlogPost = () => {
               )}
 
               <div 
-                className="prose prose-lg dark:prose-invert max-w-none prose-headings:font-bold prose-headings:text-slate-900 dark:prose-headings:text-white prose-a:text-teal-600 hover:prose-a:text-teal-700 prose-img:rounded-xl"
-                dangerouslySetInnerHTML={{ __html: post.content }} // Assuming sanitized HTML or text. For a real app, use a parser or Markdown.
+                className="prose prose-lg dark:prose-invert max-w-none prose-headings:font-bold prose-headings:text-slate-900 dark:prose-headings:text-white prose-a:text-teal-600 hover:prose-a:text-teal-700 prose-img:rounded-xl whitespace-pre-line"
+                dangerouslySetInnerHTML={{ __html: normalizeContentHTML(post.content) }}
               />
               
               {/* Tags */}
@@ -213,3 +222,4 @@ const BlogPost = () => {
 };
 
 export default BlogPost;
+

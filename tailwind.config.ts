@@ -63,6 +63,8 @@ export default {
         "light-sea-green": "hsl(var(--light-sea-green))",
         "cyan-blue": "hsl(var(--cyan-blue))",
         "teal-green": "hsl(var(--teal-green))",
+        "brand-purple": "#ff53e8ff",
+        "brand-blue": "#4460ffff",
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -93,5 +95,5 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],
 } satisfies Config;
