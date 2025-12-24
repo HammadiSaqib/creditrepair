@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { createServer } from "./server";
 
-// https://vitejs.dev/config/
+//1 https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
     // Bind to IPv4 to ensure external access over public IP on VPS
