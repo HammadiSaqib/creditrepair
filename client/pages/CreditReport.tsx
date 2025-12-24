@@ -9332,6 +9332,43 @@ export default function CreditReport() {
                 const removed = prevItems.filter((it: any) => !currSet.has(keyOf(it)));
                 const added = allNegativeItems.filter((it: any) => !prevSet.has(keyOf(it)));
                 const stillPresent = allNegativeItems.filter((it: any) => prevSet.has(keyOf(it)));
+                const normalizeBureaus = (b: any): string[] => {
+                  const all = ['Experian', 'TransUnion', 'Equifax'];
+                  if (!b) return [];
+                  if (Array.isArray(b)) {
+                    return Array.from(new Set(b.map((x) => String(x || '').trim()).filter(Boolean)));
+                  }
+                  if (typeof b === 'number') {
+                    const mapped = b === 1 ? 'Experian' : b === 2 ? 'TransUnion' : b === 3 ? 'Equifax' : '';
+                    return mapped ? [mapped] : [];
+                  }
+                  const s = String(b || '').trim();
+                  const t = s.toLowerCase();
+                  if (!s) return [];
+                  if (t === 'multiple') return all;
+                  if (t.includes(',')) {
+                    return Array.from(new Set(s.split(',').map((x) => x.trim()).filter(Boolean)));
+                  }
+                  if (t.includes('|')) {
+                    return Array.from(new Set(s.split('|').map((x) => x.trim()).filter(Boolean)));
+                  }
+                  return [s];
+                };
+                const rows = [
+                  ...allNegativeItems.map((it: any) => ({
+                    ...it,
+                    __status: prevSet.has(keyOf(it)) ? 'present' : 'new',
+                  })),
+                  ...removed.map((it: any) => ({ ...it, __status: 'removed' })),
+                ];
+                const bureauLogoSrc = (bureau: string): string | null => {
+                  const t = String(bureau || '').toLowerCase();
+                  if (!t) return null;
+                  if (t.includes('experian')) return '/Experian_logo.svg.png';
+                  if (t.includes('transunion') || t === 'tu') return '/TransUnion_logo.svg.png';
+                  if (t.includes('equifax') || t === 'eq') return '/Equifax_Logo.svg.png';
+                  return null;
+                };
                 return allNegativeItems.length > 0 ? (
                   <>
                     <div className="overflow-x-auto">
@@ -9342,14 +9379,15 @@ export default function CreditReport() {
                             <th className="border border-green-300 px-4 py-3 text-left font-semibold">Type of Negative Items</th>
                             <th className="border border-green-300 px-4 py-3 text-left font-semibold">Account Date</th>
                             <th className="border border-green-300 px-4 py-3 text-left font-semibold">Creditor</th>
-                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">Experian</th>
-                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">TransUnion</th>
-                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">Equifax</th>
+                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Bureaus</th>
+                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">New</th>
+                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">Still Present</th>
+                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">Removed</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {allNegativeItems.map((item, index) => (
-                            <tr key={`${item.category}-${item.id}-${index}`} className={`${index % 2 === 0 ? 'bg-green-50' : 'bg-white'} hover:bg-green-100 transition-colors duration-200`}>
+                          {rows.map((item: any, index: number) => (
+                            <tr key={`${item.category}-${item.id}-${String(item.__status)}-${index}`} className={`${index % 2 === 0 ? 'bg-green-50' : 'bg-white'} hover:bg-green-100 transition-colors duration-200`}>
                               <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
                                 {item.accountNumber}
                               </td>
@@ -9362,23 +9400,45 @@ export default function CreditReport() {
                               <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
                                 {item.creditor || 'Unknown'}
                               </td>
+                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
+                                {(() => {
+                                  const bureaus = normalizeBureaus(item.bureau);
+                                  const logos = bureaus
+                                    .map((b) => ({ name: b, src: bureauLogoSrc(b) }))
+                                    .filter((x) => Boolean(x.src)) as Array<{ name: string; src: string }>;
+                                  if (logos.length === 0) return 'Unknown';
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      {logos.map((b) => (
+                                        <img
+                                          key={b.name}
+                                          src={b.src}
+                                          alt={b.name}
+                                          title={b.name}
+                                          className="h-5 w-auto object-contain"
+                                        />
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
                               <td className="border border-green-200 px-4 py-3 text-center">
-                                {item.bureau === 'Experian' || item.bureau === 'Multiple' ? (
-                                  <span className="inline-flex items-center justify-center w-6 h-6 bg-blue-100 text-blue-800 rounded-full text-xs font-bold">✓</span>
+                                {item.__status === 'new' ? (
+                                  <span className="inline-flex items-center justify-center px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-bold">New</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
                                 )}
                               </td>
                               <td className="border border-green-200 px-4 py-3 text-center">
-                                {item.bureau === 'TransUnion' || item.bureau === 'Multiple' ? (
-                                  <span className="inline-flex items-center justify-center w-6 h-6 bg-purple-100 text-purple-800 rounded-full text-xs font-bold">✓</span>
+                                {item.__status === 'present' ? (
+                                  <span className="inline-flex items-center justify-center px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold">Present</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
                                 )}
                               </td>
                               <td className="border border-green-200 px-4 py-3 text-center">
-                                {item.bureau === 'Equifax' || item.bureau === 'Multiple' ? (
-                                  <span className="inline-flex items-center justify-center w-6 h-6 bg-green-100 text-green-800 rounded-full text-xs font-bold">✓</span>
+                                {item.__status === 'removed' ? (
+                                  <span className="inline-flex items-center justify-center px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold">Removed</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
                                 )}
