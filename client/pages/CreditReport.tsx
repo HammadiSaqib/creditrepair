@@ -3098,8 +3098,8 @@ export default function CreditReport() {
       // Map BureauId to bureau name
       const getBureauName = (bureauId: number) => {
         switch (bureauId) {
-          case 1: return 'Experian';
-          case 2: return 'TransUnion';
+          case 1: return 'TransUnion';
+          case 2: return 'Experian';
           case 3: return 'Equifax';
           default: return 'Unknown';
         }
@@ -3664,8 +3664,8 @@ export default function CreditReport() {
             scores: scores,
             scoreTypes: scoreTypes,
             bureauDates: {
-              experian: getBureauDate(1),
-              transunion: getBureauDate(2), 
+              experian: getBureauDate(2),
+              transunion: getBureauDate(1),
               equifax: getBureauDate(3)
             },
             previousScores: detailedReport.previousScores, // Keep mock previous scores for now
@@ -3686,7 +3686,7 @@ export default function CreditReport() {
               purpose: inquiry.Industry || 'Unknown Purpose',
               type: inquiry.InquiryType === 'I' ? 'Hard' : 'Soft',
               date: inquiry.DateInquiry || new Date().toISOString().split('T')[0],
-              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Equifax' : 'Experian'
+              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : inquiry.BureauId === 3 ? 'Equifax' : 'Unknown'
             })),
             publicRecords: (data.data.reportData.PublicRecords || []),
             // Keep the original structure for other data
@@ -8653,7 +8653,7 @@ export default function CreditReport() {
                     id: account.accountNumber || account.AccountNumber || account.id,
                     type: 'Charge Off',
                     creditor: account.creditor || account.CreditorName,
-                    bureau: account.bureau || (account.BureauId === 1 ? 'Experian' : account.BureauId === 2 ? 'TransUnion' : 'Equifax'),
+                    bureau: account.bureau || (account.BureauId === 1 ? 'TransUnion' : account.BureauId === 2 ? 'Experian' : account.BureauId === 3 ? 'Equifax' : 'Unknown'),
                     accountNumber: account.accountNumber || account.AccountNumber || account.id,
                     accountDate: account.DateOpened || account.dateOpened || account.opened || account.DateReported || account.dateReported || account.reported,
                     category: 'charge-off',
@@ -8812,7 +8812,14 @@ export default function CreditReport() {
                     inquiriesRaw.forEach((inq: any) => {
                       const creditor = inq.company || inq.creditorName || inq.CreditorName || '';
                       const date = inq.date || inq.DateInquiry || '';
-                      const bureau = inq.bureau || (inq.BureauId === 1 ? 'TransUnion' : inq.BureauId === 2 ? 'Experian' : 'Equifax');
+                      const bureau = (() => {
+                        const raw = inq.bureau;
+                        const asNum = Number(raw);
+                        if (raw !== null && raw !== undefined && String(raw).trim() !== '' && Number.isFinite(asNum)) {
+                          return asNum === 1 ? 'TransUnion' : asNum === 2 ? 'Experian' : asNum === 3 ? 'Equifax' : 'Unknown';
+                        }
+                        return raw || (inq.BureauId === 1 ? 'TransUnion' : inq.BureauId === 2 ? 'Experian' : inq.BureauId === 3 ? 'Equifax' : 'Unknown');
+                      })();
                       const inqKeyRaw = `INQ|${inq.type === 'Hard' || inq.InquiryType === 'I' ? 'HARD' : 'SOFT'}|${creditor}|${date}`;
                       const digits = String(inqKeyRaw || '').replace(/\D/g, '');
                       const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(inqKeyRaw || '').toLowerCase();
@@ -9125,7 +9132,7 @@ export default function CreditReport() {
                     id: account.accountNumber || account.AccountNumber || account.id,
                     type: 'Charge Off',
                     creditor: account.creditor || account.CreditorName,
-                    bureau: account.bureau || (account.BureauId === 1 ? 'Experian' : account.BureauId === 2 ? 'TransUnion' : 'Equifax'),
+                    bureau: account.bureau || (account.BureauId === 1 ? 'TransUnion' : account.BureauId === 2 ? 'Experian' : account.BureauId === 3 ? 'Equifax' : 'Unknown'),
                     accountNumber: account.accountNumber || account.AccountNumber || account.id,
                     accountDate: account.DateOpened || account.dateOpened || account.opened || account.DateReported || account.dateReported || account.reported,
                     category: 'charge-off',
@@ -9222,6 +9229,13 @@ export default function CreditReport() {
                   }
                 };
                 const extractNegatives = (base: any) => {
+                  const bureauNameFromId = (bureauId: any): string => {
+                    const n = Number(bureauId);
+                    if (n === 1) return 'TransUnion';
+                    if (n === 2) return 'Experian';
+                    if (n === 3) return 'Equifax';
+                    return '';
+                  };
                   const items: any[] = [];
                   const accounts = (base?.accounts) || (base?.Accounts) || (base?.reportData?.Accounts) || [];
                   const collectionsRaw = (base?.collections) || (base?.Collections) || (base?.reportData?.Collections) || (base?.reportData?.Accounts) || [];
@@ -9304,7 +9318,11 @@ export default function CreditReport() {
                     inquiriesRaw.forEach((inq: any) => {
                       const creditor = inq.company || inq.creditorName || inq.CreditorName || '';
                       const date = inq.date || inq.DateInquiry || '';
-                      const bureau = inq.bureau || (inq.BureauId === 1 ? 'TransUnion' : inq.BureauId === 2 ? 'Experian' : 'Equifax');
+                      const bureau =
+                        bureauNameFromId(inq.bureau) ||
+                        String(inq.bureau || '').trim() ||
+                        bureauNameFromId(inq.BureauId) ||
+                        'Unknown';
                       const inqKeyRaw = `INQ|${inq.type === 'Hard' || inq.InquiryType === 'I' ? 'HARD' : 'SOFT'}|${creditor}|${date}`;
                       const digits = String(inqKeyRaw || '').replace(/\D/g, '');
                       const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(inqKeyRaw || '').toLowerCase();
@@ -9339,12 +9357,17 @@ export default function CreditReport() {
                     return Array.from(new Set(b.map((x) => String(x || '').trim()).filter(Boolean)));
                   }
                   if (typeof b === 'number') {
-                    const mapped = b === 1 ? 'Experian' : b === 2 ? 'TransUnion' : b === 3 ? 'Equifax' : '';
+                    const mapped = b === 1 ? 'TransUnion' : b === 2 ? 'Experian' : b === 3 ? 'Equifax' : '';
                     return mapped ? [mapped] : [];
                   }
                   const s = String(b || '').trim();
                   const t = s.toLowerCase();
                   if (!s) return [];
+                  if (/^\d+$/.test(s)) {
+                    const n = Number(s);
+                    const mapped = n === 1 ? 'TransUnion' : n === 2 ? 'Experian' : n === 3 ? 'Equifax' : '';
+                    return mapped ? [mapped] : [];
+                  }
                   if (t === 'multiple') return all;
                   if (t.includes(',')) {
                     return Array.from(new Set(s.split(',').map((x) => x.trim()).filter(Boolean)));
@@ -9374,33 +9397,33 @@ export default function CreditReport() {
                     <div className="overflow-x-auto">
                       <table className="w-full border-collapse bg-white rounded-lg shadow-sm">
                         <thead>
-                          <tr className="bg-gradient-to-r from-green-600 to-emerald-600 text-white">
-                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Account Number</th>
-                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Type of Negative Items</th>
-                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Account Date</th>
-                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Creditor</th>
-                            <th className="border border-green-300 px-4 py-3 text-left font-semibold">Bureaus</th>
-                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">New</th>
-                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">Still Present</th>
-                            <th className="border border-green-300 px-4 py-3 text-center font-semibold">Removed</th>
+                          <tr className="bg-gradient-to-r from-red-600 via-yellow-500 to-green-600 text-white">
+                            <th className="border border-white/20 px-4 py-3 text-left font-semibold">Account Number</th>
+                            <th className="border border-white/20 px-4 py-3 text-left font-semibold">Type of Negative Items</th>
+                            <th className="border border-white/20 px-4 py-3 text-left font-semibold">Account Date</th>
+                            <th className="border border-white/20 px-4 py-3 text-left font-semibold">Creditor</th>
+                            <th className="border border-white/20 px-4 py-3 text-left font-semibold">Bureaus</th>
+                            <th className="border border-white/20 px-4 py-3 text-center font-semibold">New</th>
+                            <th className="border border-white/20 px-4 py-3 text-center font-semibold">Still Present</th>
+                            <th className="border border-white/20 px-4 py-3 text-center font-semibold">Removed</th>
                           </tr>
                         </thead>
                         <tbody>
                           {rows.map((item: any, index: number) => (
-                            <tr key={`${item.category}-${item.id}-${String(item.__status)}-${index}`} className={`${index % 2 === 0 ? 'bg-green-50' : 'bg-white'} hover:bg-green-100 transition-colors duration-200`}>
-                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
+                            <tr key={`${item.category}-${item.id}-${String(item.__status)}-${index}`} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-100 transition-colors duration-200`}>
+                              <td className="border border-gray-200 px-4 py-3 font-medium text-gray-800">
                                 {item.accountNumber}
                               </td>
-                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
+                              <td className="border border-gray-200 px-4 py-3 font-medium text-gray-800">
                                 {item.type || 'Unknown'}
                               </td>
-                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
+                              <td className="border border-gray-200 px-4 py-3 font-medium text-gray-800">
                                 {item.accountDate ? (() => { try { return new Date(item.accountDate).toLocaleDateString('en-US'); } catch { return item.accountDate; } })() : 'N/A'}
                               </td>
-                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
+                              <td className="border border-gray-200 px-4 py-3 font-medium text-gray-800">
                                 {item.creditor || 'Unknown'}
                               </td>
-                              <td className="border border-green-200 px-4 py-3 font-medium text-gray-800">
+                              <td className="border border-gray-200 px-4 py-3 font-medium text-gray-800">
                                 {(() => {
                                   const bureaus = normalizeBureaus(item.bureau);
                                   const logos = bureaus
@@ -9422,23 +9445,23 @@ export default function CreditReport() {
                                   );
                                 })()}
                               </td>
-                              <td className="border border-green-200 px-4 py-3 text-center">
+                              <td className="border border-gray-200 px-4 py-3 text-center">
                                 {item.__status === 'new' ? (
-                                  <span className="inline-flex items-center justify-center px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-bold">New</span>
+                                  <span className="inline-flex items-center justify-center px-2.5 py-1 bg-gradient-to-r from-red-600 to-rose-500 text-white rounded-full text-xs font-semibold shadow-sm">New</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
                                 )}
                               </td>
-                              <td className="border border-green-200 px-4 py-3 text-center">
+                              <td className="border border-gray-200 px-4 py-3 text-center">
                                 {item.__status === 'present' ? (
-                                  <span className="inline-flex items-center justify-center px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-bold">Present</span>
+                                  <span className="inline-flex items-center justify-center px-2.5 py-1 bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-full text-xs font-semibold shadow-sm">Present</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
                                 )}
                               </td>
-                              <td className="border border-green-200 px-4 py-3 text-center">
+                              <td className="border border-gray-200 px-4 py-3 text-center">
                                 {item.__status === 'removed' ? (
-                                  <span className="inline-flex items-center justify-center px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold">Removed</span>
+                                  <span className="inline-flex items-center justify-center px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-full text-xs font-semibold shadow-sm">Removed</span>
                                 ) : (
                                   <span className="text-gray-300">-</span>
                                 )}
@@ -9466,7 +9489,7 @@ export default function CreditReport() {
                           </div>
                         </div>
                         <div className="bg-white rounded-lg border shadow-sm">
-                          <div className="px-4 py-3 border-b font-semibold text-yellow-700">Still Present</div>
+                          <div className="px-4 py-3 border-b font-semibold text-amber-700">Still Present</div>
                           <div className="p-4 space-y-2">
                             {stillPresent.length === 0 ? (
                               <div className="text-sm text-gray-500">None</div>
@@ -9481,7 +9504,7 @@ export default function CreditReport() {
                           </div>
                         </div>
                         <div className="bg-white rounded-lg border shadow-sm">
-                          <div className="px-4 py-3 border-b font-semibold text-green-700">New Items</div>
+                          <div className="px-4 py-3 border-b font-semibold text-red-700">New Items</div>
                           <div className="p-4 space-y-2">
                             {added.length === 0 ? (
                               <div className="text-sm text-gray-500">None</div>
