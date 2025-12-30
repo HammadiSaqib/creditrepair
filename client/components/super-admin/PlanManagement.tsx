@@ -53,6 +53,7 @@ interface SubscriptionPlan {
   is_specific?: boolean;
   allowed_admin_emails?: string[];
   restricted_to_current_subscribers?: boolean;
+  allowed_affiliate_ids?: number[];
 }
 
 interface Course {
@@ -62,6 +63,16 @@ interface Course {
   instructor: string;
   difficulty: 'beginner' | 'intermediate' | 'advanced';
   price?: number;
+}
+
+interface Affiliate {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  company_name?: string;
+  status: 'active' | 'inactive' | 'pending' | 'suspended';
+  referral_slug?: string;
 }
 
 interface PlanFormData {
@@ -82,6 +93,7 @@ interface PlanFormData {
   is_specific: boolean;
   allowed_admin_emails: string[];
   restricted_to_current_subscribers: boolean;
+  allowed_affiliate_ids: number[];
 }
 
 const initialFormData: PlanFormData = {
@@ -101,13 +113,15 @@ const initialFormData: PlanFormData = {
   sort_order: 0,
   is_specific: false,
   allowed_admin_emails: [],
-  restricted_to_current_subscribers: false
+  restricted_to_current_subscribers: false,
+  allowed_affiliate_ids: []
 };
 
 export default function PlanManagement() {
   console.log('🚀 PlanManagement component mounted');
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [affiliates, setAffiliates] = useState<Affiliate[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
@@ -188,11 +202,23 @@ export default function PlanManagement() {
     }
   }, []);
 
+  const loadAffiliates = useCallback(async () => {
+    try {
+      const response = await superAdminApi.getAffiliates({ page: 1, limit: 10000 });
+      const list = response.data?.data;
+      setAffiliates(Array.isArray(list) ? list : []);
+    } catch (error) {
+      console.error('❌ Error loading affiliates:', error);
+      setAffiliates([]);
+    }
+  }, []);
+
   useEffect(() => {
     console.log('🔄 useEffect triggered - about to load plans');
     loadPlans();
     loadCourses();
-  }, [loadPlans, loadCourses]);
+    loadAffiliates();
+  }, [loadPlans, loadCourses, loadAffiliates]);
 
   const handleCreatePlan = () => {
     setEditingPlan(null);
@@ -232,7 +258,8 @@ export default function PlanManagement() {
       sort_order: plan.sort_order,
       is_specific: !!plan.is_specific,
       allowed_admin_emails: Array.isArray(plan.allowed_admin_emails) ? plan.allowed_admin_emails : [],
-      restricted_to_current_subscribers: !!plan.restricted_to_current_subscribers
+      restricted_to_current_subscribers: !!plan.restricted_to_current_subscribers,
+      allowed_affiliate_ids: Array.isArray(plan.allowed_affiliate_ids) ? plan.allowed_affiliate_ids : []
     });
     setAllowedEmailsText(Array.isArray(plan.allowed_admin_emails) ? plan.allowed_admin_emails.join(', ') : '');
     setIsDialogOpen(true);
@@ -253,7 +280,8 @@ export default function PlanManagement() {
           pages: formData.page_permissions,
           is_specific: formData.is_specific,
           allowed_admin_emails: normalizedEmails,
-          restricted_to_current_subscribers: formData.restricted_to_current_subscribers
+          restricted_to_current_subscribers: formData.restricted_to_current_subscribers,
+          allowed_affiliate_ids: formData.allowed_affiliate_ids
         }
       };
       if (editingPlan) {
@@ -782,6 +810,78 @@ export default function PlanManagement() {
                     </p>
                   )}
                 </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Users className="h-4 w-4" />
+                <Label>Affiliate Visibility</Label>
+              </div>
+              <div className="space-y-3 max-h-48 overflow-y-auto border rounded-lg p-4">
+                <p className="text-sm text-muted-foreground mb-3">
+                  If you select affiliates, this plan is only visible on their landing pages and for users referred by them.
+                </p>
+                <div className="grid grid-cols-1 gap-3">
+                  {affiliates
+                    .filter(a => a.status === 'active')
+                    .map((affiliate) => (
+                      <div key={affiliate.id} className="flex items-start space-x-2">
+                        <Checkbox
+                          id={`affiliate-${affiliate.id}`}
+                          checked={formData.allowed_affiliate_ids.includes(affiliate.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setFormData(prev => ({
+                                ...prev,
+                                allowed_affiliate_ids: [...prev.allowed_affiliate_ids, affiliate.id]
+                              }));
+                            } else {
+                              setFormData(prev => ({
+                                ...prev,
+                                allowed_affiliate_ids: prev.allowed_affiliate_ids.filter(id => id !== affiliate.id)
+                              }));
+                            }
+                          }}
+                        />
+                        <div className="grid gap-1.5 leading-none flex-1">
+                          <label
+                            htmlFor={`affiliate-${affiliate.id}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                          >
+                            {`${affiliate.first_name} ${affiliate.last_name}`.trim() || affiliate.email}
+                          </label>
+                          <p className="text-xs text-muted-foreground">
+                            {affiliate.company_name || affiliate.email}
+                            {affiliate.referral_slug ? ` • Slug: ${affiliate.referral_slug}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  {affiliates.filter(a => a.status === 'active').length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No active affiliates found.
+                    </p>
+                  )}
+                </div>
+                {formData.allowed_affiliate_ids.length > 0 && (
+                  <div className="pt-2">
+                    <p className="text-sm font-medium mb-2">Selected Affiliates ({formData.allowed_affiliate_ids.length}):</p>
+                    <div className="flex flex-wrap gap-1">
+                      {formData.allowed_affiliate_ids.map((affiliateId) => {
+                        const affiliate = affiliates.find(a => a.id === affiliateId);
+                        const label = affiliate
+                          ? (`${affiliate.first_name} ${affiliate.last_name}`.trim() || affiliate.email)
+                          : `Affiliate #${affiliateId}`;
+                        return (
+                          <Badge key={affiliateId} variant="outline" className="text-xs">
+                            {label}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

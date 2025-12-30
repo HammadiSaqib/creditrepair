@@ -92,12 +92,14 @@ const createPlanSchema = z.object({
       pages: z.array(z.string()).optional(),
       is_specific: z.boolean().optional(),
       allowed_admin_emails: z.array(z.string()).optional(),
-      restricted_to_current_subscribers: z.boolean().optional()
+      restricted_to_current_subscribers: z.boolean().optional(),
+      allowed_affiliate_ids: z.array(z.number()).optional()
     })
   ]).optional(),
   is_specific: z.boolean().optional(),
   allowed_admin_emails: z.array(z.string()).optional(),
   restricted_to_current_subscribers: z.boolean().optional(),
+  allowed_affiliate_ids: z.array(z.number()).optional(),
   assigned_courses: z.array(z.number()).optional(),
   stripe_monthly_price_id: z.string().optional(),
   stripe_yearly_price_id: z.string().optional(),
@@ -514,6 +516,10 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
       const isSpecific = Array.isArray(parsedPerm) ? false : !!parsedPerm?.is_specific;
       const allowedEmails = Array.isArray(parsedPerm) ? [] : Array.isArray(parsedPerm?.allowed_admin_emails) ? parsedPerm.allowed_admin_emails : [];
       const restrictedToSubscribers = Array.isArray(parsedPerm) ? false : !!parsedPerm?.restricted_to_current_subscribers;
+      const allowedAffiliateIdsRaw = Array.isArray(parsedPerm) ? [] : Array.isArray(parsedPerm?.allowed_affiliate_ids) ? parsedPerm.allowed_affiliate_ids : [];
+      const allowedAffiliateIds = Array.isArray(allowedAffiliateIdsRaw)
+        ? allowedAffiliateIdsRaw.map((v: any) => Number(v)).filter((n: any) => Number.isFinite(n))
+        : [];
       return {
         ...plan,
         features: plan.features ? JSON.parse(plan.features) : [],
@@ -521,6 +527,7 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
         is_specific: isSpecific,
         allowed_admin_emails: allowedEmails,
         restricted_to_current_subscribers: restrictedToSubscribers,
+        allowed_affiliate_ids: allowedAffiliateIds,
         assigned_courses: assignedCourses.map((row: any) => row.course_id)
       };
     }));
@@ -528,11 +535,26 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
     const requesterRole = String((req as any)?.user?.role || '').toLowerCase();
     const requesterEmail = String((req as any)?.user?.email || '');
     let activePlanIds: number[] = [];
+    let viewerAffiliateId: number | null = null;
     if (requesterRole !== 'super_admin') {
       try {
         const db2 = getDatabaseAdapter();
         const userId = Number((req as any)?.user?.id);
         if (!isNaN(userId) && userId > 0) {
+          try {
+            const refRow: any = await db2.getQuery(
+              `SELECT affiliate_id 
+               FROM affiliate_referrals 
+               WHERE referred_user_id = ? 
+               ORDER BY created_at ASC 
+               LIMIT 1`,
+              [userId]
+            );
+            if (refRow && refRow.affiliate_id) {
+              const parsed = Number(refRow.affiliate_id);
+              if (!Number.isNaN(parsed)) viewerAffiliateId = parsed;
+            }
+          } catch {}
           const rows = await db2.allQuery(
             `SELECT asub.plan_id 
              FROM admin_subscriptions asub
@@ -563,7 +585,9 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
       ? plansWithFeatures
       : plansWithFeatures.filter(p => (
           (!p.is_specific || (p.allowed_admin_emails && p.allowed_admin_emails.includes(requesterEmail))) &&
-          (!p.restricted_to_current_subscribers || activePlanIds.includes(Number(p.id)))
+          (!p.restricted_to_current_subscribers || activePlanIds.includes(Number(p.id))) &&
+          (!(Array.isArray((p as any).allowed_affiliate_ids) && (p as any).allowed_affiliate_ids.length > 0) ||
+            (viewerAffiliateId !== null && (p as any).allowed_affiliate_ids.includes(viewerAffiliateId)))
         ));
 
     res.json({
@@ -670,7 +694,16 @@ router.post('/plans', authenticateToken, requireSuperAdmin, async (req: Request,
       const restrictedToSubscribers = typeof (planData as any).restricted_to_current_subscribers === 'boolean'
         ? (planData as any).restricted_to_current_subscribers
         : (planData.page_permissions as any)?.restricted_to_current_subscribers || false;
-      return { pages: basePages, is_specific: !!isSpecific, allowed_admin_emails: allowedEmails, restricted_to_current_subscribers: !!restrictedToSubscribers };
+      const allowedAffiliateIds = Array.isArray((planData as any).allowed_affiliate_ids)
+        ? (planData as any).allowed_affiliate_ids
+        : (planData.page_permissions as any)?.allowed_affiliate_ids || [];
+      return {
+        pages: basePages,
+        is_specific: !!isSpecific,
+        allowed_admin_emails: allowedEmails,
+        restricted_to_current_subscribers: !!restrictedToSubscribers,
+        allowed_affiliate_ids: Array.isArray(allowedAffiliateIds) ? allowedAffiliateIds : []
+      };
     })();
 
     const result = await db.executeQuery(
@@ -840,7 +873,10 @@ router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Reque
         allowed_admin_emails: Array.isArray(planData.allowed_admin_emails) ? planData.allowed_admin_emails : (incoming?.allowed_admin_emails ?? currentPerm.allowed_admin_emails ?? []),
         restricted_to_current_subscribers: typeof (planData as any).restricted_to_current_subscribers === 'boolean'
           ? (planData as any).restricted_to_current_subscribers
-          : (incoming?.restricted_to_current_subscribers ?? currentPerm.restricted_to_current_subscribers ?? false)
+          : (incoming?.restricted_to_current_subscribers ?? currentPerm.restricted_to_current_subscribers ?? false),
+        allowed_affiliate_ids: Array.isArray((planData as any).allowed_affiliate_ids)
+          ? (planData as any).allowed_affiliate_ids
+          : (incoming?.allowed_affiliate_ids ?? currentPerm.allowed_affiliate_ids ?? [])
       };
       updateFields.push('page_permissions = ?');
       updateValues.push(JSON.stringify(nextPerm));

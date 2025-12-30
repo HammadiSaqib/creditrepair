@@ -134,6 +134,7 @@ import {
   getClientAnalytics,
   getFinancialInsights,
   getRecentActivities,
+  getGa4Realtime,
 } from "./routes/analytics.js";
 
 // Bank management routes
@@ -499,6 +500,7 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.get("/api/analytics/clients", authenticateToken, getClientAnalytics);
   app.get("/api/analytics/financial", authenticateToken, getFinancialInsights);
   app.get("/api/analytics/activities", authenticateToken, getRecentActivities);
+  app.get("/api/analytics/ga4/realtime", authenticateToken, getGa4Realtime);
 
   // Bank Management
   app.get("/api/banks", authenticateToken, requireRole('admin', 'funding_manager'), getBanks);

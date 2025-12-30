@@ -129,6 +129,12 @@ export default function Analytics() {
   const [selectedPeriod, setSelectedPeriod] = useState("last-30-days");
   const [loading, setLoading] = useState(true);
   const [overviewData, setOverviewData] = useState(overviewStats);
+  const [ga4Realtime, setGa4Realtime] = useState<{
+    active_users: number;
+    top_screens: Array<{ screen: string; active_users: number }>;
+    generated_at: string;
+  } | null>(null);
+  const [ga4RealtimeError, setGa4RealtimeError] = useState<string | null>(null);
   const [revenueData, setRevenueData] = useState({
     monthlySubscriptions: 89500,
     oneTimeServices: 28000,
@@ -312,6 +318,39 @@ export default function Analytics() {
     fetchAnalyticsData();
   }, [selectedPeriod]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchGa4Realtime = async () => {
+      try {
+        const response = await analyticsApi.getGa4Realtime();
+        const payload: any = response?.data;
+
+        if (!payload) return;
+
+        if (payload.success && payload.data) {
+          if (cancelled) return;
+          setGa4Realtime(payload.data);
+          setGa4RealtimeError(null);
+          return;
+        }
+
+        if (cancelled) return;
+        setGa4RealtimeError(payload.error || payload.message || "GA4 realtime unavailable");
+      } catch (error: any) {
+        if (cancelled) return;
+        setGa4RealtimeError(error?.response?.data?.error || error?.message || "GA4 realtime unavailable");
+      }
+    };
+
+    fetchGa4Realtime();
+    const intervalId = window.setInterval(fetchGa4Realtime, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="relative">
@@ -439,6 +478,54 @@ export default function Analytics() {
                 </CardContent>
               </Card>
             </div>
+
+            <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <div className="space-y-1">
+                  <CardTitle className="text-sm font-medium">
+                    Live Visitors (GA4)
+                  </CardTitle>
+                  <CardDescription>
+                    Active users right now
+                  </CardDescription>
+                </div>
+                <Activity className="h-4 w-4 text-ocean-blue" />
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                  <div>
+                    <div className="text-3xl font-bold gradient-text-primary">
+                      {ga4Realtime?.active_users ?? 0}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {ga4RealtimeError ? ga4RealtimeError : "Updates every 15 seconds"}
+                    </p>
+                  </div>
+                  <div className="w-full lg:max-w-md">
+                    <div className="text-sm font-medium mb-2">
+                      Top screens
+                    </div>
+                    <div className="space-y-2">
+                      {(ga4Realtime?.top_screens || []).slice(0, 5).map((row, idx) => (
+                        <div key={`${row.screen}-${idx}`} className="flex items-center justify-between p-2 bg-gradient-light rounded-md">
+                          <div className="text-sm text-muted-foreground truncate max-w-[70%]">
+                            {row.screen}
+                          </div>
+                          <div className="text-sm font-semibold">
+                            {row.active_users}
+                          </div>
+                        </div>
+                      ))}
+                      {!ga4Realtime?.top_screens?.length && (
+                        <div className="text-sm text-muted-foreground">
+                          No realtime screen data available
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
 
             {/* Charts */}
             <div className="grid lg:grid-cols-2 gap-8">

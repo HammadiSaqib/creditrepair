@@ -1,12 +1,12 @@
 import "./global.css";
 
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SuperAdminProtectedRoute from "./components/SuperAdminProtectedRoute";
@@ -15,6 +15,7 @@ import AffiliateProtectedRoute from "./components/AffiliateProtectedRoute";
 import FundingManagerProtectedRoute from "./components/FundingManagerProtectedRoute";
 import ClientProtectedRoute from "./components/ClientProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
+import ReactGA from "react-ga4";
 import Index from "./pages/Index";
 const ReferralLandingPage = React.lazy(() => import("../src/components/ReferralLandingPage"));
 
@@ -139,17 +140,42 @@ const PayslipPublic = React.lazy(() => import("./pages/PayslipPublic"));
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <ErrorBoundary>
-    <HelmetProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-        <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
-        <Routes>
+const gaMeasurementId =
+  import.meta.env.VITE_GA4_MEASUREMENT_ID || "G-7RLXQSK2ZC";
+
+function PageViewTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!gaMeasurementId) return;
+    ReactGA.send({
+      hitType: "pageview",
+      page: `${location.pathname}${location.search}`,
+      title: document.title,
+    });
+  }, [location.pathname, location.search]);
+
+  return null;
+}
+
+const App = () => {
+  useEffect(() => {
+    if (!gaMeasurementId) return;
+    ReactGA.initialize(gaMeasurementId);
+  }, []);
+
+  return (
+    <ErrorBoundary>
+      <HelmetProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <PageViewTracker />
+                <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
+                  <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/features" element={<Features />} />
@@ -997,7 +1023,8 @@ const App = () => (
   </AuthProvider>
       </QueryClientProvider>
     </HelmetProvider>
-  </ErrorBoundary>
-);
+    </ErrorBoundary>
+  );
+};
 
 export default App;

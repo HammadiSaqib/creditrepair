@@ -306,6 +306,8 @@ export const analyticsApi = {
   getClients: () => api.get('/api/analytics/clients'),
   
   getRecentActivities: (limit = 10) => api.get(`/api/analytics/activities?limit=${limit}`),
+
+  getGa4Realtime: () => api.get('/api/analytics/ga4/realtime'),
 };
 
 // Billing API

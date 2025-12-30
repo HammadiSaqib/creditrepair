@@ -18,11 +18,41 @@ router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
     );
 
     let activePlanIds: number[] = [];
+    let contextAffiliateId: number | null = null;
     try {
       const user: any = (req as any).user;
+      try {
+        const refParam = String((req.query as any)?.ref || '').trim();
+        if (refParam) {
+          const commissionService = new CommissionService();
+          const resolved = await commissionService.resolveAffiliateId(refParam);
+          if (resolved) contextAffiliateId = resolved;
+        }
+      } catch {}
       if (user && user.id) {
         let subCheckUserId = Number(user.id);
         const role = String(user.role || '').toLowerCase();
+        if (contextAffiliateId === null) {
+          try {
+            if (role === 'affiliate') {
+              const parsed = Number(subCheckUserId);
+              if (!Number.isNaN(parsed)) contextAffiliateId = parsed;
+            } else {
+              const refRow = await db.getQuery(
+                `SELECT affiliate_id 
+                 FROM affiliate_referrals 
+                 WHERE referred_user_id = ? 
+                 ORDER BY created_at ASC 
+                 LIMIT 1`,
+                [subCheckUserId]
+              );
+              if (refRow && (refRow as any).affiliate_id) {
+                const parsed = Number((refRow as any).affiliate_id);
+                if (!Number.isNaN(parsed)) contextAffiliateId = parsed;
+              }
+            }
+          } catch {}
+        }
         if (role === 'affiliate') {
           try {
             const aff = await db.getQuery('SELECT admin_id FROM affiliates WHERE id = ? LIMIT 1', [subCheckUserId]);
@@ -59,6 +89,12 @@ router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
         const perm = plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
         if (Array.isArray(perm)) return true;
         if (perm?.is_specific) return false;
+        const allowedAffiliateIds = Array.isArray(perm?.allowed_affiliate_ids)
+          ? perm.allowed_affiliate_ids.map((v: any) => Number(v)).filter((n: any) => Number.isFinite(n))
+          : [];
+        if (allowedAffiliateIds.length > 0) {
+          return contextAffiliateId !== null && allowedAffiliateIds.includes(contextAffiliateId);
+        }
         if (perm?.restricted_to_current_subscribers === true) return activePlanIds.includes(Number(plan.id));
         return true;
       } catch { return true; }
@@ -113,6 +149,46 @@ router.get('/plans/:id', optionalAuth, async (req: Request, res: Response) => {
     if (!Array.isArray(perm)) {
       if (perm?.is_specific) {
         return res.status(404).json({ success: false, error: 'Plan not found' });
+      }
+      const allowedAffiliateIds = Array.isArray(perm?.allowed_affiliate_ids)
+        ? perm.allowed_affiliate_ids.map((v: any) => Number(v)).filter((n: any) => Number.isFinite(n))
+        : [];
+      if (allowedAffiliateIds.length > 0) {
+        let contextAffiliateId: number | null = null;
+        try {
+          const refParam = String((req.query as any)?.ref || '').trim();
+          if (refParam) {
+            const commissionService = new CommissionService();
+            const resolved = await commissionService.resolveAffiliateId(refParam);
+            if (resolved) contextAffiliateId = resolved;
+          }
+        } catch {}
+        try {
+          const user: any = (req as any).user;
+          if (contextAffiliateId === null && user && user.id) {
+            const role = String(user.role || '').toLowerCase();
+            if (role === 'affiliate') {
+              const parsed = Number(user.id);
+              if (!Number.isNaN(parsed)) contextAffiliateId = parsed;
+            } else {
+              const refRow = await db.getQuery(
+                `SELECT affiliate_id 
+                 FROM affiliate_referrals 
+                 WHERE referred_user_id = ? 
+                 ORDER BY created_at ASC 
+                 LIMIT 1`,
+                [Number(user.id)]
+              );
+              if (refRow && (refRow as any).affiliate_id) {
+                const parsed = Number((refRow as any).affiliate_id);
+                if (!Number.isNaN(parsed)) contextAffiliateId = parsed;
+              }
+            }
+          }
+        } catch {}
+        if (contextAffiliateId === null || !allowedAffiliateIds.includes(contextAffiliateId)) {
+          return res.status(404).json({ success: false, error: 'Plan not found' });
+        }
       }
       if (perm?.restricted_to_current_subscribers === true) {
         let hasPlan = false;
@@ -218,6 +294,50 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
           return res.status(403).json({ success: false, error: 'This plan is restricted' });
         }
       }
+      if (!Array.isArray(perm)) {
+        const allowedAffiliateIds = Array.isArray(perm?.allowed_affiliate_ids)
+          ? perm.allowed_affiliate_ids.map((v: any) => Number(v)).filter((n: any) => Number.isFinite(n))
+          : [];
+        if (allowedAffiliateIds.length > 0) {
+          const commissionService = new CommissionService();
+          let contextAffiliateId: number | null = null;
+          try {
+            if (affiliateId) {
+              const resolved = await commissionService.resolveAffiliateId(String(affiliateId));
+              if (resolved) contextAffiliateId = resolved;
+            }
+          } catch {}
+          try {
+            if (contextAffiliateId === null && (req.query as any)?.ref) {
+              const resolved = await commissionService.resolveAffiliateId(String((req.query as any).ref));
+              if (resolved) contextAffiliateId = resolved;
+            }
+          } catch {}
+          try {
+            if (contextAffiliateId === null && (req.headers['referer'] || req.headers['origin'])) {
+              const referer = (req.headers['referer'] as string) || (req.headers['origin'] as string);
+              const url = new URL(referer);
+              const refParam = url.searchParams.get('ref');
+              if (refParam) {
+                const resolved = await commissionService.resolveAffiliateId(String(refParam));
+                if (resolved) contextAffiliateId = resolved;
+              }
+            }
+          } catch {}
+          try {
+            if (contextAffiliateId === null) {
+              const hierarchy = await commissionService.getAffiliateHierarchy(Number(userId));
+              if (Array.isArray(hierarchy) && hierarchy.length > 0 && hierarchy[0]?.id) {
+                const parsed = Number(hierarchy[0].id);
+                if (!Number.isNaN(parsed)) contextAffiliateId = parsed;
+              }
+            }
+          } catch {}
+          if (contextAffiliateId === null || !allowedAffiliateIds.includes(contextAffiliateId)) {
+            return res.status(403).json({ success: false, error: 'This plan is restricted' });
+          }
+        }
+      }
     } catch {}
 
     // Check if user exists
@@ -234,7 +354,7 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
     }
 
     // Start transaction
-    await db.query('START TRANSACTION');
+    await db.executeQuery('START TRANSACTION');
 
     try {
       // Update user role to admin
@@ -302,7 +422,7 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
       }
 
       // Commit transaction
-      await db.query('COMMIT');
+      await db.executeQuery('COMMIT');
 
       res.json({
         success: true,
@@ -316,7 +436,7 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
       });
     } catch (error) {
       // Rollback transaction on error
-      await db.query('ROLLBACK');
+      await db.executeQuery('ROLLBACK');
       throw error;
     }
   } catch (error) {

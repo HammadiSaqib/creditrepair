@@ -9,104 +9,78 @@ const securityLogger = new SecurityLogger();
 router.get('/pricing', async (req, res) => {
   try {
     const { ref } = req.query; // Affiliate referral ID
-    let affiliateInfo = null;
+    const refAffiliateId = (() => {
+      const parsed = parseInt(String(ref || ''), 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    })();
 
-    // If referral ID is provided, get affiliate information
-    if (ref) {
-      const affiliateQuery = `
-        SELECT 
-          a.id,
-          a.first_name,
-          a.last_name,
-          a.company_name,
-          a.commission_rate,
-          a.status,
-          u.first_name as admin_first_name,
-          u.last_name as admin_last_name,
-          u.company_name as admin_company_name
-        FROM affiliates a
-        LEFT JOIN users u ON a.admin_id = u.id
-        WHERE a.id = ? AND a.status = 'active'
-      `;
-      
-      const affiliate = await executeQuery(affiliateQuery, [ref]);
-      
-      if (affiliate && affiliate.length > 0) {
-        const affiliateData = affiliate[0];
-        affiliateInfo = {
-          id: affiliateData.id,
-          name: `${affiliateData.first_name} ${affiliateData.last_name}`,
-          companyName: affiliateData.company_name,
-          commissionRate: affiliateData.commission_rate,
-          adminName: `${affiliateData.admin_first_name} ${affiliateData.admin_last_name}`,
-          adminCompany: affiliateData.admin_company_name
-        };
-
-        // Log the referral visit
-        securityLogger.logSecurityEvent('affiliate_referral_visit', {
-          affiliateId: ref,
-          ip: req.ip,
-          userAgent: req.get('User-Agent'),
-          timestamp: new Date().toISOString()
-        });
-      }
+    if (refAffiliateId) {
+      securityLogger.logSecurityEvent('affiliate_referral_visit', {
+        affiliateId: refAffiliateId,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        timestamp: new Date().toISOString()
+      });
     }
 
-    // Get pricing plans (you can customize these based on your needs)
-    const pricingPlans = [
-      {
-        id: 'basic',
-        name: 'Basic Plan',
-        price: 29.99,
-        billingCycle: 'monthly',
-        features: [
-          'Credit Report Analysis',
-          'Basic Dispute Letters',
-          'Email Support',
-          'Monthly Progress Reports'
-        ],
-        popular: false
-      },
-      {
-        id: 'professional',
-        name: 'Professional Plan',
-        price: 59.99,
-        billingCycle: 'monthly',
-        features: [
-          'Everything in Basic',
-          'Advanced Dispute Strategies',
-          'Priority Support',
-          'Weekly Progress Reports',
-          'Credit Monitoring',
-          'Personalized Action Plan'
-        ],
-        popular: true
-      },
-      {
-        id: 'premium',
-        name: 'Premium Plan',
-        price: 99.99,
-        billingCycle: 'monthly',
-        features: [
-          'Everything in Professional',
-          'Dedicated Credit Specialist',
-          '24/7 Phone Support',
-          'Daily Monitoring',
-          'Identity Theft Protection',
-          'Legal Document Review'
-        ],
-        popular: false
-      }
-    ];
+    const planRows = await executeQuery(
+      `SELECT id, name, description, price, billing_cycle, features, page_permissions, sort_order
+       FROM subscription_plans
+       WHERE is_active = 1
+       ORDER BY sort_order ASC, price ASC`,
+      []
+    );
 
-    res.json({
-      success: true,
-      data: {
-        plans: pricingPlans,
-        affiliate: affiliateInfo,
-        referralId: ref || null
-      }
-    });
+    const plans = (Array.isArray(planRows) ? planRows : [])
+      .map((row: any) => {
+        const features = (() => {
+          try {
+            if (Array.isArray(row.features)) return row.features;
+            return JSON.parse(row.features || '[]');
+          } catch {
+            return [];
+          }
+        })();
+
+        const perm = (() => {
+          try {
+            if (!row.page_permissions) return {};
+            if (typeof row.page_permissions === 'object') return row.page_permissions;
+            return JSON.parse(row.page_permissions);
+          } catch {
+            return {};
+          }
+        })() as any;
+
+        const isSpecific = !!perm?.is_specific;
+        const restrictedToSubscribers = !!perm?.restricted_to_current_subscribers;
+        const allowedAffiliateIds = Array.isArray(perm?.allowed_affiliate_ids)
+          ? perm.allowed_affiliate_ids.map((v: any) => Number(v)).filter((n: any) => Number.isFinite(n))
+          : [];
+
+        return {
+          id: Number(row.id),
+          name: String(row.name || ''),
+          description: String(row.description || ''),
+          price: Number(row.price || 0),
+          billingCycle: (String(row.billing_cycle || 'monthly') === 'yearly' ? 'yearly' : 'monthly') as 'monthly' | 'yearly',
+          features: Array.isArray(features) ? features : [],
+          isPopular: String(row.name || '').toLowerCase() === 'professional',
+          _meta: { isSpecific, restrictedToSubscribers, allowedAffiliateIds }
+        };
+      })
+      .filter((p: any) => {
+        const meta = p._meta || {};
+        if (meta.isSpecific) return false;
+        if (meta.restrictedToSubscribers) return false;
+        if (Array.isArray(meta.allowedAffiliateIds) && meta.allowedAffiliateIds.length > 0) {
+          return refAffiliateId !== null && meta.allowedAffiliateIds.includes(refAffiliateId);
+        }
+        return true;
+      })
+      .map(({ _meta, ...rest }: any) => rest);
+
+    res.json({ success: true, data: plans });
 
   } catch (error) {
     console.error('Error fetching pricing with affiliate info:', error);

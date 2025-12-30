@@ -702,6 +702,81 @@ router.post('/create-subscription-checkout', authenticateToken, async (req, res)
       console.log('ℹ️ Affiliate resolution skipped due to parse/validation error');
     }
 
+    try {
+      const perm = (() => {
+        try {
+          return plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
+        } catch {
+          return [];
+        }
+      })();
+      if (!Array.isArray(perm)) {
+        if (perm?.restricted_to_current_subscribers === true) {
+          let subCheckUserId = Number(userId);
+          try {
+            const role = String((req as any)?.user?.role || '').toLowerCase();
+            if (role === 'affiliate') {
+              const aff = await executeQuery<any[]>(
+                'SELECT admin_id FROM affiliates WHERE id = ? LIMIT 1',
+                [subCheckUserId]
+              );
+              if (Array.isArray(aff) && aff[0]?.admin_id) {
+                subCheckUserId = Number(aff[0].admin_id);
+              }
+            }
+          } catch {}
+
+          let hasPlan = false;
+          try {
+            const rowA = await executeQuery<any[]>(
+              `SELECT asub.id
+               FROM admin_subscriptions asub
+               JOIN admin_profiles ap ON ap.id = asub.admin_id
+               WHERE ap.user_id = ? AND asub.plan_id = ? AND asub.status = 'active'
+               LIMIT 1`,
+              [subCheckUserId, planId]
+            );
+            if (Array.isArray(rowA) && rowA.length > 0) hasPlan = true;
+          } catch {}
+          if (!hasPlan) {
+            try {
+              const rowB = await executeQuery<any[]>(
+                `SELECT id FROM admin_subscriptions
+                 WHERE admin_id = ? AND plan_id = ? AND status = 'active'
+                 LIMIT 1`,
+                [subCheckUserId, planId]
+              );
+              if (Array.isArray(rowB) && rowB.length > 0) hasPlan = true;
+            } catch {}
+          }
+          if (!hasPlan) {
+            try {
+              const rowC = await executeQuery<any[]>(
+                `SELECT id FROM subscriptions
+                 WHERE user_id = ? AND status = 'active' AND plan_name = ?
+                 LIMIT 1`,
+                [subCheckUserId, String(plan.name || '')]
+              );
+              if (Array.isArray(rowC) && rowC.length > 0) hasPlan = true;
+            } catch {}
+          }
+
+          if (!hasPlan) {
+            return res.status(403).json({ error: 'This plan is restricted' });
+          }
+        }
+
+        const allowedAffiliateIds = Array.isArray(perm?.allowed_affiliate_ids)
+          ? perm.allowed_affiliate_ids.map((v: any) => Number(v)).filter((n: any) => Number.isFinite(n))
+          : [];
+        if (allowedAffiliateIds.length > 0) {
+          if (resolvedAffiliateId === null || !allowedAffiliateIds.includes(resolvedAffiliateId)) {
+            return res.status(403).json({ error: 'This plan is restricted' });
+          }
+        }
+      }
+    } catch {}
+
     // Get or create Stripe customer
     let user = await executeQuery<any[]>(
       'SELECT * FROM users WHERE id = ?',

@@ -1974,7 +1974,8 @@ export default function School() {
                 );
               })}
             </div>
-          )}
+          );
+        })()}
         </CardContent>
       </Card>
     </TabsContent>
@@ -2166,7 +2167,7 @@ export default function School() {
                                     </Button>
                                   )}
                                 </>
-                              )}
+                              ) : null}
                             </div>
                           </div>
                         </div>

@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { runQuery, getQuery, allQuery, logActivity } from '../database/databaseAdapter.js';
 import { AuthRequest } from '../middleware/securityMiddleware.js';
 import { sanitizeInput } from '../config/security.js';
+import { z } from 'zod';
+import { BetaAnalyticsDataClient } from '@google-analytics/data';
 
 // Enhanced validation schemas
 const analyticsQuerySchema = z.object({
@@ -1077,197 +1079,6 @@ export async function getRecentActivities(req: AuthRequest, res: Response) {
       date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
     }).parse(req.query);
-
-    // TODO: Implement export functionality
-    res.status(501).json({
-      success: false,
-      error: 'Export functionality not yet implemented'
-    });
-    
-  } catch (error) {
-    console.error('Error exporting analytics data:', error);
-    
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid query parameters',
-        details: error.errors.map(err => ({
-          field: err.path.join('.'),
-          message: err.message
-        }))
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-}(),
-      date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
-    }).parse(req.query);
-    
-    const { export_type, format, date_from, date_to } = queryParams;
-    const userId = req.user!.id;
-    
-    // Build date filter
-    let dateFilter = '';
-    let dateParams: string[] = [];
-    
-    if (date_from && date_to) {
-      dateFilter = 'AND DATE(created_at) >= ? AND DATE(created_at) <= ?';
-      dateParams = [date_from, date_to];
-    } else if (date_from) {
-      dateFilter = 'AND DATE(created_at) >= ?';
-      dateParams = [date_from];
-    } else if (date_to) {
-      dateFilter = 'AND DATE(created_at) <= ?';
-      dateParams = [date_to];
-    }
-    
-    let exportData: any = {};
-    
-    // Export clients data
-    if (export_type === 'clients' || export_type === 'all') {
-      const clientsQuery = `
-        SELECT 
-          id, first_name, last_name, email, phone, 
-          address, city, state, zip_code, ssn, date_of_birth,
-          employment_status, annual_income, credit_score, 
-          previous_credit_score, target_score, status,
-          created_at, updated_at
-        FROM clients 
-        WHERE user_id = ? ${dateFilter}
-        ORDER BY created_at DESC
-      `;
-      
-      exportData.clients = await allQuery(clientsQuery, [userId, ...dateParams]);
-    }
-    
-    // Export disputes data
-    if (export_type === 'disputes' || export_type === 'all') {
-      const disputesQuery = `
-        SELECT 
-          d.id, d.client_id, d.bureau, d.account_name, 
-          d.dispute_reason, d.dispute_type, d.status, d.priority,
-          d.filed_date, d.response_date, d.result, d.notes,
-          d.created_at, d.updated_at,
-          c.first_name, c.last_name, c.email
-        FROM disputes d
-        JOIN clients c ON d.client_id = c.id
-        WHERE c.user_id = ? ${dateFilter.replace('created_at', 'd.created_at')}
-        ORDER BY d.created_at DESC
-      `;
-      
-      exportData.disputes = await allQuery(disputesQuery, [userId, ...dateParams]);
-    }
-    
-    // Export activities data
-    if (export_type === 'activities' || export_type === 'all') {
-      const activitiesQuery = `
-        SELECT 
-          id, activity_type, description, metadata,
-          client_id, dispute_id, ip_address, created_at
-        FROM activities 
-        WHERE user_id = ? ${dateFilter}
-        ORDER BY created_at DESC
-        LIMIT 1000
-      `;
-      
-      exportData.activities = await allQuery(activitiesQuery, [userId, ...dateParams]);
-    }
-    
-    // Export financial data
-    if (export_type === 'financial' || export_type === 'all') {
-      const financialQuery = `
-        SELECT 
-          strftime('%Y-%m', created_at) as month,
-          COUNT(*) as new_clients,
-          COUNT(*) * 99 as setup_revenue,
-          COUNT(CASE WHEN status = 'active' THEN 1 END) * 49 as monthly_revenue,
-          COUNT(CASE WHEN status = 'completed' THEN 1 END) * 199 as completion_revenue
-        FROM clients 
-        WHERE user_id = ? ${dateFilter}
-        GROUP BY strftime('%Y-%m', created_at)
-        ORDER BY month DESC
-      `;
-      
-      exportData.financial = await allQuery(financialQuery, [userId, ...dateParams]);
-    }
-    
-    // Log export activity
-    await logActivity(
-      'analytics_data_exported',
-      `Exported analytics data (${export_type}, ${format})`,
-      userId,
-      undefined,
-      undefined,
-      { export_type, format, date_from, date_to },
-      req.ip,
-      req.get('User-Agent')
-    );
-    
-    // Return data based on format
-    if (format === 'json') {
-      res.json({
-        success: true,
-        data: {
-          ...exportData,
-          export_info: {
-            export_type,
-            format,
-            date_range: { from: date_from, to: date_to },
-            exported_at: new Date().toISOString()
-          }
-        }
-      });
-    } else {
-      // CSV format (simplified - would need proper CSV library in production)
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="analytics_export_${new Date().toISOString().split('T')[0]}.csv"`);
-      
-      let csvContent = 'Export Type,Data Type,Count\n';
-      Object.keys(exportData).forEach(key => {
-        csvContent += `${export_type},${key},${exportData[key].length}\n`;
-      });
-      
-      res.send(csvContent);
-    }
-    
-  } catch (error) {
-    console.error('Error exporting analytics data:', error);
-    
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid query parameters',
-        details: error.errors.map(err => ({
-          field: err.path.join('.'),
-          message: err.message
-        }))
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-      message: 'Failed to export analytics data'
-    });
-  }
-}
-
-// Enhanced recent activities with filtering and pagination
-export async function getRecentActivities(req: AuthRequest, res: Response) {
-  try {
-    const queryParams = z.object({
-      limit: z.string().regex(/^\d+$/).transform(Number).refine(n => n <= 100, 'Limit cannot exceed 100').default('20'),
-      offset: z.string().regex(/^\d+$/).transform(Number).default('0'),
-      activity_type: z.string().max(50).optional(),
-      client_id: z.string().regex(/^\d+$/).transform(Number).optional(),
-      dispute_id: z.string().regex(/^\d+$/).transform(Number).optional(),
-      date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
-    }).parse(req.query);
     
     const { limit, offset, activity_type, client_id, dispute_id, date_from, date_to } = queryParams;
      const userId = req.user!.id;
@@ -1409,8 +1220,94 @@ export async function getRecentActivities(req: AuthRequest, res: Response) {
        error: 'Internal server error',
        message: 'Failed to fetch recent activities'
      });
-   }
- }
+  }
+}
+
+function getGa4Credentials():
+  | { client_email: string; private_key: string }
+  | undefined {
+  const json =
+    process.env.GA4_SERVICE_ACCOUNT_JSON ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+  if (json) {
+    try {
+      const parsed = JSON.parse(json);
+      const client_email = String(parsed.client_email || '');
+      const private_key = String(parsed.private_key || '').replace(/\\n/g, '\n');
+      if (client_email && private_key) return { client_email, private_key };
+    } catch {}
+  }
+
+  const client_email =
+    process.env.GA4_CLIENT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
+  const private_key =
+    process.env.GA4_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
+
+  if (client_email && private_key) {
+    return {
+      client_email,
+      private_key: private_key.replace(/\\n/g, '\n'),
+    };
+  }
+
+  return undefined;
+}
+
+export async function getGa4Realtime(req: AuthRequest, res: Response) {
+  try {
+    const propertyId =
+      process.env.GA4_PROPERTY_ID || process.env.GOOGLE_ANALYTICS_PROPERTY_ID;
+
+    if (!propertyId) {
+      return res.status(501).json({
+        success: false,
+        error: 'GA4_PROPERTY_ID not configured',
+      });
+    }
+
+    const credentials = getGa4Credentials();
+    const client = credentials
+      ? new BetaAnalyticsDataClient({ credentials })
+      : new BetaAnalyticsDataClient();
+
+    const [report] = await client.runRealtimeReport({
+      property: `properties/${propertyId}`,
+      metrics: [{ name: 'activeUsers' }],
+      dimensions: [{ name: 'unifiedScreenName' }],
+      orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
+      limit: 10,
+    });
+
+    const activeUsers = Number(
+      report?.totals?.[0]?.metricValues?.[0]?.value ?? 0,
+    );
+
+    const topScreens = (report?.rows || [])
+      .map((row) => {
+        const screen = row.dimensionValues?.[0]?.value || '(unknown)';
+        const users = Number(row.metricValues?.[0]?.value ?? 0);
+        return { screen, active_users: users };
+      })
+      .filter((r) => r.active_users > 0);
+
+    res.json({
+      success: true,
+      data: {
+        active_users: Number.isFinite(activeUsers) ? activeUsers : 0,
+        top_screens: topScreens,
+        generated_at: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching GA4 realtime report:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: 'Failed to fetch GA4 realtime analytics',
+    });
+  }
+}
 
 // Export insights for external reporting
 export async function exportAnalyticsData(req: AuthRequest, res: Response) {
@@ -1421,33 +1318,6 @@ export async function exportAnalyticsData(req: AuthRequest, res: Response) {
       date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       date_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
     }).parse(req.query);
-
-    // TODO: Implement export functionality
-    res.status(501).json({
-      success: false,
-      error: 'Export functionality not yet implemented'
-    });
-    
-  } catch (error) {
-    console.error('Error exporting analytics data:', error);
-    
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid query parameters',
-        details: error.errors.map(err => ({
-          field: err.path.join('.'),
-          message: err.message
-        }))
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
-  }
-}
     
     const { export_type, format, date_from, date_to } = queryParams;
     const userId = req.user!.id;
@@ -1597,83 +1467,3 @@ export async function exportAnalyticsData(req: AuthRequest, res: Response) {
     });
   }
 }
-    
-    const countResult = await getQuery(countQuery, params);
-    const total = countResult?.total || 0;
-    
-    // Process activities (parse metadata JSON)
-    const processedActivities = activities.map(activity => ({
-      ...activity,
-      metadata: activity.metadata ? JSON.parse(activity.metadata) : null,
-      client_name: activity.first_name && activity.last_name 
-        ? `${activity.first_name} ${activity.last_name}` 
-        : null
-    }));
-    
-    // Get activity type summary
-    const activitySummaryQuery = `
-      SELECT 
-        activity_type,
-        COUNT(*) as count,
-        MAX(created_at) as last_occurrence
-      FROM activities
-      WHERE user_id = ? ${whereClause.replace('a.', '')}
-      GROUP BY activity_type
-      ORDER BY count DESC
-      LIMIT 10
-    `;
-    
-    const activitySummary = await allQuery(activitySummaryQuery, params);
-    
-    res.json({
-      success: true,
-      data: {
-        activities: processedActivities,
-        pagination: {
-          limit,
-          offset,
-          total,
-          has_next: offset + limit < total,
-          has_prev: offset > 0
-        },
-        activity_summary: activitySummary,
-        filters: {
-          activity_type,
-          client_id,
-          dispute_id,
-          date_from,
-          date_to
-        },
-        generated_at: new Date().toISOString()
-      }
-    });
-    
-  } catch (error) {
-    console.error('Error fetching recent activities:', error);
-    
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid query parameters',
-        details: error.errors.map(err => ({
-          field: err.path.join('.'),
-          message: err.message
-        }))
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-      message: 'Failed to fetch recent activities'
-    });
-  }
-}
-
-// Export insights for external reporting
-export async function exportAnalyticsData(req: AuthRequest, res: Response) {
-  try {
-    const queryParams = z.object({
-      export_type: z.enum(['clients', 'disputes', 'activities', 'financial', 'all']).default('all'),
-      format: z.enum(['json', 'csv']).default('json'),
-      date_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional

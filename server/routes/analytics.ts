@@ -1,6 +1,38 @@
 import { Response } from "express";
 import { runQuery, getQuery, allQuery } from "../database/databaseAdapter.js";
 import { AuthRequest } from "../middleware/authMiddleware.js";
+import { BetaAnalyticsDataClient } from "@google-analytics/data";
+
+function getGa4Credentials():
+  | { client_email: string; private_key: string }
+  | undefined {
+  const json =
+    process.env.GA4_SERVICE_ACCOUNT_JSON ||
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+  if (json) {
+    try {
+      const parsed = JSON.parse(json);
+      const client_email = String(parsed.client_email || "");
+      const private_key = String(parsed.private_key || "").replace(/\\n/g, "\n");
+      if (client_email && private_key) return { client_email, private_key };
+    } catch {}
+  }
+
+  const client_email =
+    process.env.GA4_CLIENT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
+  const private_key =
+    process.env.GA4_PRIVATE_KEY || process.env.GOOGLE_PRIVATE_KEY;
+
+  if (client_email && private_key) {
+    return {
+      client_email,
+      private_key: private_key.replace(/\\n/g, "\n"),
+    };
+  }
+
+  return undefined;
+}
 
 // Get dashboard overview analytics
 export async function getDashboardAnalytics(req: AuthRequest, res: Response) {
@@ -522,5 +554,60 @@ export async function getRecentActivities(req: AuthRequest, res: Response) {
   } catch (error) {
     console.error("Error fetching recent activities:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function getGa4Realtime(req: AuthRequest, res: Response) {
+  try {
+    const propertyId =
+      process.env.GA4_PROPERTY_ID || process.env.GOOGLE_ANALYTICS_PROPERTY_ID;
+
+    if (!propertyId) {
+      return res.status(501).json({
+        success: false,
+        error: "GA4_PROPERTY_ID not configured",
+      });
+    }
+
+    const credentials = getGa4Credentials();
+    const client = credentials
+      ? new BetaAnalyticsDataClient({ credentials })
+      : new BetaAnalyticsDataClient();
+
+    const [report] = await client.runRealtimeReport({
+      property: `properties/${propertyId}`,
+      metrics: [{ name: "activeUsers" }],
+      dimensions: [{ name: "unifiedScreenName" }],
+      orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+      limit: 10,
+    });
+
+    const activeUsers = Number(
+      report?.totals?.[0]?.metricValues?.[0]?.value ?? 0,
+    );
+
+    const topScreens = (report?.rows || [])
+      .map((row) => {
+        const screen = row.dimensionValues?.[0]?.value || "(unknown)";
+        const users = Number(row.metricValues?.[0]?.value ?? 0);
+        return { screen, active_users: users };
+      })
+      .filter((r) => r.active_users > 0);
+
+    res.json({
+      success: true,
+      data: {
+        active_users: Number.isFinite(activeUsers) ? activeUsers : 0,
+        top_screens: topScreens,
+        generated_at: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching GA4 realtime report:", error);
+    res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: "Failed to fetch GA4 realtime analytics",
+    });
   }
 }

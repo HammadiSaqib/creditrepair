@@ -9409,7 +9409,12 @@ export default function CreditReport() {
                           </tr>
                         </thead>
                         <tbody>
-                          {rows.map((item: any, index: number) => (
+                          {rows.map((item: any, index: number) => {
+                            const isNew = item.__status === 'new';
+                            const isPresent = item.__status === 'present';
+                            const isRemoved = item.__status === 'removed';
+
+                            return (
                             <tr key={`${item.category}-${item.id}-${String(item.__status)}-${index}`} className={`${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'} hover:bg-gray-100 transition-colors duration-200`}>
                               <td className="border border-gray-200 px-4 py-3 font-medium text-gray-800">
                                 {item.accountNumber}
@@ -9445,29 +9450,18 @@ export default function CreditReport() {
                                   );
                                 })()}
                               </td>
-                              <td className="border border-gray-200 px-4 py-3 text-center">
-                                {item.__status === 'new' ? (
-                                  <span className="inline-flex items-center justify-center px-2.5 py-1 bg-gradient-to-r from-red-600 to-rose-500 text-white rounded-full text-xs font-semibold shadow-sm">New</span>
-                                ) : (
-                                  <span className="text-gray-300">-</span>
-                                )}
+                              <td className={`border border-gray-200 px-4 py-3 text-center font-semibold ${isNew ? 'bg-red-600 text-white' : 'bg-white text-gray-300'}`}>
+                                {isNew ? 'New' : '-'}
                               </td>
-                              <td className="border border-gray-200 px-4 py-3 text-center">
-                                {item.__status === 'present' ? (
-                                  <span className="inline-flex items-center justify-center px-2.5 py-1 bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-full text-xs font-semibold shadow-sm">Present</span>
-                                ) : (
-                                  <span className="text-gray-300">-</span>
-                                )}
+                              <td className={`border border-gray-200 px-4 py-3 text-center font-semibold ${isPresent ? 'bg-yellow-500 text-white' : 'bg-white text-gray-300'}`}>
+                                {isPresent ? 'Present' : '-'}
                               </td>
-                              <td className="border border-gray-200 px-4 py-3 text-center">
-                                {item.__status === 'removed' ? (
-                                  <span className="inline-flex items-center justify-center px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-full text-xs font-semibold shadow-sm">Removed</span>
-                                ) : (
-                                  <span className="text-gray-300">-</span>
-                                )}
+                              <td className={`border border-gray-200 px-4 py-3 text-center font-semibold ${isRemoved ? 'bg-emerald-600 text-white' : 'bg-white text-gray-300'}`}>
+                                {isRemoved ? 'Removed' : '-'}
                               </td>
                             </tr>
-                          ))}
+                          );
+                          })}
                         </tbody>
                       </table>
                     </div>
