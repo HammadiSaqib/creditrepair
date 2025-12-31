@@ -141,7 +141,7 @@ const PayslipPublic = React.lazy(() => import("./pages/PayslipPublic"));
 const queryClient = new QueryClient();
 
 const gaMeasurementId =
-  import.meta.env.VITE_GA4_MEASUREMENT_ID || "G-7RLXQSK2ZC";
+  import.meta.env.VITE_GA4_MEASUREMENT_ID || "G-E0ZK4BKGC0";
 
 function PageViewTracker() {
   const location = useLocation();
@@ -161,7 +161,12 @@ function PageViewTracker() {
 const App = () => {
   useEffect(() => {
     if (!gaMeasurementId) return;
-    ReactGA.initialize(gaMeasurementId);
+    ReactGA.initialize([
+      {
+        trackingId: gaMeasurementId,
+        gtagOptions: { send_page_view: false },
+      },
+    ]);
   }, []);
 
   return (

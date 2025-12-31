@@ -8175,15 +8175,17 @@ export default function CreditReport() {
                 <div className="space-y-6">
                   {(() => {
                     const formatCurrency = (n: number) => `$${Math.round(n).toLocaleString()}`;
+                    const formatCurrency2 = (n: number) =>
+                      `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                     const formatPercent = (n: number) => `${Math.round(n)}%`;
                     const limit = Number(selectedPaydownAccount.limit || 0);
                     const balance = Number(selectedPaydownAccount.balance || 0);
                     const util = limit > 0 ? (balance / limit) * 100 : 0;
                     const targetBal = Math.round(limit * (selectedTarget / 100));
                     const payment = Math.max(0, Math.round(balance - targetBal));
-                    const weekly = Math.round(payment / 52);
-                    const daily = Math.round(payment / 365);
-                    const monthly = Math.round(payment / 12);
+                    const weekly = payment / 52;
+                    const daily = payment / 365;
+                    const monthly = payment / 12;
                     const yearly = payment;
                     return (
                       <>
@@ -8232,15 +8234,15 @@ export default function CreditReport() {
                           <div className="grid grid-cols-4 gap-3">
                             <div className="rounded-md bg-slate-50 border p-3">
                               <div className="text-xs text-muted-foreground">Daily (365 days)</div>
-                              <div className="font-semibold text-teal-700">{formatCurrency(daily)}</div>
+                              <div className="font-semibold text-teal-700">{formatCurrency2(daily)}</div>
                             </div>
                             <div className="rounded-md bg-slate-50 border p-3">
                               <div className="text-xs text-muted-foreground">Weekly (52 weeks)</div>
-                              <div className="font-semibold text-emerald-700">{formatCurrency(weekly)}</div>
+                              <div className="font-semibold text-emerald-700">{formatCurrency2(weekly)}</div>
                             </div>
                             <div className="rounded-md bg-slate-50 border p-3">
                               <div className="text-xs text-muted-foreground">Monthly (12 months)</div>
-                              <div className="font-semibold text-indigo-700">{formatCurrency(monthly)}</div>
+                              <div className="font-semibold text-indigo-700">{formatCurrency2(monthly)}</div>
                             </div>
                             <div className="rounded-md bg-slate-50 border p-3">
                               <div className="text-xs text-muted-foreground">Yearly (total)</div>
@@ -8255,7 +8257,7 @@ export default function CreditReport() {
                           <ol className="list-decimal list-inside space-y-1 text-sm">
                             <li>Choose your target utilization ({selectedTarget}%).</li>
                             <li>Set your schedule: daily, weekly or monthly payments.</li>
-                            <li>Pay {formatCurrency(daily)} per day, {formatCurrency(weekly)} per week or {formatCurrency(monthly)} per month until {formatCurrency(payment)} is completed.</li>
+                            <li>Pay {formatCurrency2(daily)} per day, {formatCurrency2(weekly)} per week or {formatCurrency2(monthly)} per month until {formatCurrency(payment)} is completed.</li>
                             <li>Keep new charges low to maintain target utilization.</li>
                           </ol>
                         </div>
@@ -9936,6 +9938,12 @@ export default function CreditReport() {
                         </div>
                       </div>
                       
+                      {activeTab === 'credit-repair' && (
+                        <div className="mb-4">
+                          <div className="font-bold text-lg text-gray-800 dark:text-white">{accountGroup.creditor}</div>
+                        </div>
+                      )}
+
                       <div className={`grid grid-cols-1 ${activeTab === 'credit-repair' ? 'lg:grid-cols-4' : 'lg:grid-cols-4'} gap-6`}>
                         {/* Account Info Column */}
                         {activeTab !== 'credit-repair' && (
