@@ -430,20 +430,21 @@ const updateAdminProfileSchema = z.object({
 
 
 const createAdminSubscriptionSchema = z.object({
-  admin_id: z.number().positive(),
-  plan_id: z.number().positive(),
-  status: z.enum(['active', 'inactive', 'cancelled', 'expired', 'pending']).default('pending'),
-  start_date: z.string(),
-  end_date: z.string().optional(),
-  auto_renew: z.boolean().default(true),
-  payment_method: z.string().optional(),
-  billing_address: z.string().optional(),
-  payment_amount: z.number().positive().optional(),
-  currency: z.string().length(3).default('USD'),
-  trial_end_date: z.string().optional()
+  user_id: z.coerce.number().int().positive(),
+  plan_id: z.coerce.number().int().positive(),
+  plan_name: z.string().min(1).optional(),
+  plan_type: z.enum(['monthly', 'yearly', 'lifetime']).optional(),
+  status: z
+    .enum(['active', 'inactive', 'cancelled', 'expired', 'pending', 'canceled', 'past_due', 'unpaid', 'incomplete'])
+    .default('pending'),
+  current_period_start: z.coerce.date().optional(),
+  current_period_end: z.coerce.date().optional(),
+  cancel_at_period_end: z.coerce.boolean().optional(),
+  stripe_subscription_id: z.string().optional(),
+  stripe_customer_id: z.string().optional()
 });
 
-const updateAdminSubscriptionSchema = createAdminSubscriptionSchema.partial().omit({ admin_id: true, plan_id: true });
+const updateAdminSubscriptionSchema = createAdminSubscriptionSchema.partial().omit({ user_id: true, plan_id: true });
 
 const systemSettingSchema = z.object({
   setting_key: z.string().min(1).max(255),
@@ -847,7 +848,8 @@ router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Reque
         && key !== 'assigned_courses' 
         && key !== 'is_specific' 
         && key !== 'allowed_admin_emails'
-        && key !== 'restricted_to_current_subscribers') {
+        && key !== 'restricted_to_current_subscribers'
+        && key !== 'allowed_affiliate_ids') {
         if (key === 'features') {
           updateFields.push(`${key} = ?`);
           updateValues.push(JSON.stringify(value));
@@ -858,7 +860,7 @@ router.put('/plans/:id', authenticateToken, requireSuperAdmin, async (req: Reque
       }
     });
 
-    if (planData.page_permissions !== undefined || planData.is_specific !== undefined || planData.allowed_admin_emails !== undefined || (planData as any).restricted_to_current_subscribers !== undefined) {
+    if (planData.page_permissions !== undefined || planData.is_specific !== undefined || planData.allowed_admin_emails !== undefined || (planData as any).restricted_to_current_subscribers !== undefined || (planData as any).allowed_affiliate_ids !== undefined) {
       let currentPerm: any = {};
       try {
         const parsed = existingPlan.page_permissions ? JSON.parse(existingPlan.page_permissions) : [];
@@ -2271,12 +2273,12 @@ router.post('/subscriptions', authenticateToken, requireSuperAdmin, async (req: 
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         subscriptionData.user_id,
-        subscriptionData.plan_name || 'Professional',
+        subscriptionData.plan_name || plan.name || 'Professional',
         subscriptionData.plan_type || 'monthly',
         subscriptionData.status,
         subscriptionData.current_period_start || new Date(),
         subscriptionData.current_period_end || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        subscriptionData.cancel_at_period_end || 0
+        subscriptionData.cancel_at_period_end ?? false
       ]
     );
 

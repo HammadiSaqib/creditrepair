@@ -2579,7 +2579,7 @@ export async function getSchoolStatistics(req: Request, res: Response) {
       data: {
         courses: {
           ...courseStats,
-          average_price: parseFloat(courseStats.average_price || 0).toFixed(2)
+          average_price: parseFloat(String(courseStats.average_price || 0)).toFixed(2)
         },
         enrollments: enrollmentStats,
         content: contentStats,
@@ -2587,7 +2587,7 @@ export async function getSchoolStatistics(req: Request, res: Response) {
         top_categories: topCategories,
         instructors: {
           ...instructorStats,
-          avg_courses_per_instructor: parseFloat(instructorStats.avg_courses_per_instructor || 0).toFixed(1)
+          avg_courses_per_instructor: parseFloat(String(instructorStats.avg_courses_per_instructor || 0)).toFixed(1)
         }
       }
     });

@@ -272,7 +272,7 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
     const db = getDatabaseAdapter();
     
     // Get the plan details
-    const plan = await db.query(
+    const plan = await db.allQuery(
       'SELECT * FROM subscription_plans WHERE id = ? AND is_active = true',
       [planId]
     );
@@ -287,7 +287,7 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
     try {
       const perm = plan[0].page_permissions ? JSON.parse(plan[0].page_permissions) : [];
       if (!Array.isArray(perm) && perm?.is_specific) {
-        const users = await db.query('SELECT email FROM users WHERE id = ?', [userId]);
+        const users = await db.allQuery('SELECT email FROM users WHERE id = ?', [userId]);
         const userEmail = users?.[0]?.email || '';
         const allowed = Array.isArray(perm?.allowed_admin_emails) ? perm.allowed_admin_emails : [];
         if (!userEmail || !allowed.includes(String(userEmail))) {
@@ -341,7 +341,7 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
     } catch {}
 
     // Check if user exists
-    const user = await db.query(
+    const user = await db.allQuery(
       'SELECT * FROM users WHERE id = ?',
       [userId]
     );
@@ -358,13 +358,13 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
 
     try {
       // Update user role to admin
-      await db.query(
+      await db.executeQuery(
         'UPDATE users SET role = ? WHERE id = ?',
         ['admin', userId]
       );
 
       // Create admin subscription record
-      await db.query(
+      await db.executeQuery(
         `INSERT INTO admin_subscriptions (admin_id, plan_id, status, start_date, end_date, 
          auto_renew, payment_method, payment_amount, currency, created_by, updated_by) 
          VALUES (?, ?, 'active', NOW(), DATE_ADD(NOW(), INTERVAL 1 MONTH), true, ?, ?, 'USD', ?, ?)`,
