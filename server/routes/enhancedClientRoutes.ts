@@ -7,7 +7,7 @@ import { sanitizeInput, validatePasswordStrength } from '../config/security.js';
 import { validateClientQuota } from '../utils/planValidation.js';
 
 // Enhanced validation schemas with comprehensive rules
-const clientSchema = z.object({
+const clientObjectSchema = z.object({
   first_name: z.string()
     .min(1, 'First name is required')
     .max(50, 'First name must be less than 50 characters')
@@ -87,18 +87,20 @@ const clientSchema = z.object({
   notes: z.string()
     .max(2000, 'Notes must be less than 2000 characters')
     .optional()
-}).refine((data) => {
-  // Ensure target score is higher than current score if both are provided
-  if (data.credit_score && data.target_score) {
-    return data.target_score >= data.credit_score;
-  }
-  return true;
-}, {
-  message: 'Target score must be greater than or equal to current credit score',
-  path: ['target_score']
 });
 
-const updateClientSchema = clientSchema.partial();
+const validateTargetScore = (data: any, ctx: z.RefinementCtx) => {
+  if (data?.credit_score && data?.target_score && data.target_score < data.credit_score) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Target score must be greater than or equal to current credit score',
+      path: ['target_score'],
+    });
+  }
+};
+
+const clientSchema = clientObjectSchema.superRefine(validateTargetScore);
+const updateClientSchema = clientObjectSchema.partial().superRefine(validateTargetScore);
 
 // Query parameter validation
 const clientQuerySchema = z.object({

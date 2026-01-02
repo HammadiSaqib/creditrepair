@@ -101,6 +101,9 @@ const Docs = React.lazy(() => import("./pages/Docs"));
 const Sitemap = React.lazy(() => import("./pages/Sitemap"));
 const Contact = React.lazy(() => import("./pages/Contact"));
 const HowItWorks = React.lazy(() => import("./pages/HowItWorks"));
+const FundingCalculator = React.lazy(() => import("./pages/FundingCalculator"));
+const MortgageCalculator = React.lazy(() => import("./pages/MortgageCalculator"));
+const CarLoanCalculator = React.lazy(() => import("./pages/CarLoanCalculator"));
 const FundingManagerLogin = React.lazy(() => import("./pages/FundingManagerLogin"));
 const FundingManagerDashboard = React.lazy(() => import("./pages/funding-manager/FundingManagerDashboard"));
 const BankManagement = React.lazy(() => import("./pages/funding-manager/BankManagement"));
@@ -187,6 +190,9 @@ const App = () => {
           <Route path="/blog" element={<BlogIndex />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/how-it-works" element={<HowItWorks />} />
+          <Route path="/funding-calculator" element={<FundingCalculator />} />
+          <Route path="/mortgage-calculator" element={<MortgageCalculator />} />
+          <Route path="/car-loan-calculator" element={<CarLoanCalculator />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
           <Route path="/refund-policy" element={<Refund />} />

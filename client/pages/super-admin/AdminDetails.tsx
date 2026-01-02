@@ -1,10 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import SuperAdminLayout from '../../components/SuperAdminLayout';
 import { useParams } from 'react-router-dom';
-import { superAdminApi } from '../../lib/api';
+import { api, superAdminApi } from '../../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
+import { Download } from 'lucide-react';
+
+function toCsv(filename: string, headers: string[], rows: Array<Record<string, any>>) {
+  const lines = [headers.join(',')].concat(
+    (rows || []).map((r) => headers.map((h) => JSON.stringify(r?.[h] ?? '')).join(','))
+  );
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function AdminDetails() {
   const { id } = useParams();
@@ -14,6 +29,57 @@ export default function AdminDetails() {
   const [clients, setClients] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingAgreement, setDownloadingAgreement] = useState(false);
+
+  const exportTransactions = () => {
+    const headers = ['Date', 'Status', 'Amount', 'Method', 'Plan'];
+    const rows = transactions.map((t) => ({
+      Date: t.created_at ? new Date(t.created_at).toISOString().slice(0, 10) : '',
+      Status: t.status ?? '',
+      Amount: typeof t.amount === 'number' ? Number(t.amount).toFixed(2) : '',
+      Method: t.payment_method ?? '',
+      Plan: t.plan_name ?? '',
+    }));
+    toCsv(`admin_${adminId}_transactions.csv`, headers, rows);
+  };
+
+  const exportClients = () => {
+    const headers = ['Name', 'Email', 'Status', 'Created'];
+    const rows = clients.map((c) => ({
+      Name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+      Email: c.email ?? '',
+      Status: c.status ?? '',
+      Created: c.created_at ? new Date(c.created_at).toISOString().slice(0, 10) : '',
+    }));
+    toCsv(`admin_${adminId}_clients.csv`, headers, rows);
+  };
+
+  const exportActivityLogs = () => {
+    const headers = ['Time', 'Type', 'Description', 'IP'];
+    const rows = activities.map((a) => ({
+      Time: a.created_at ? new Date(a.created_at).toISOString() : '',
+      Type: a.activity_type ?? '',
+      Description: a.description ?? '',
+      IP: a.ip_address ?? '',
+    }));
+    toCsv(`admin_${adminId}_activity_logs.csv`, headers, rows);
+  };
+
+  const downloadAgreementPdf = async () => {
+    try {
+      setDownloadingAgreement(true);
+      const resp = await api.get(`/api/super-admin/admins/${adminId}/agreement.pdf`, { responseType: 'blob' });
+      const blob = new Blob([resp.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `admin_${adminId}_agreement.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloadingAgreement(false);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -52,6 +118,10 @@ export default function AdminDetails() {
                   <div className="text-sm text-gray-600">{admin.email}</div>
                 </div>
                 <div className="flex gap-3">
+                  <Button variant="outline" onClick={downloadAgreementPdf} disabled={downloadingAgreement || !adminId}>
+                    <Download className="h-4 w-4 mr-1" />
+                    {downloadingAgreement ? 'Downloading…' : 'Agreement PDF'}
+                  </Button>
                   <Badge variant="outline">{admin.role}</Badge>
                   {admin.plan_name && <Badge variant="secondary">{admin.plan_name} {admin.plan_type ? `(${admin.plan_type})` : ''}</Badge>}
                 </div>
@@ -64,8 +134,12 @@ export default function AdminDetails() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle>Transactions</CardTitle>
+              <Button variant="outline" onClick={exportTransactions} disabled={transactions.length === 0}>
+                <Download className="h-4 w-4 mr-1" />
+                Export
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -99,8 +173,12 @@ export default function AdminDetails() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle>Clients</CardTitle>
+              <Button variant="outline" onClick={exportClients} disabled={clients.length === 0}>
+                <Download className="h-4 w-4 mr-1" />
+                Export
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -133,8 +211,12 @@ export default function AdminDetails() {
         </div>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle>Activity Logs</CardTitle>
+            <Button variant="outline" onClick={exportActivityLogs} disabled={activities.length === 0}>
+              <Download className="h-4 w-4 mr-1" />
+              Export
+            </Button>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">

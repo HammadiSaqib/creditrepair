@@ -292,7 +292,7 @@ export async function getFundingRequest(req: AuthRequest, res: Response) {
       LEFT JOIN users r ON fr.reviewer_id = r.id
       WHERE fr.id = ?
     `;
-    let params = [id];
+    let params: any[] = [id];
     
     // Non-funding managers can only see their own requests
     if (req.user!.role !== 'funding_manager') {
@@ -391,7 +391,7 @@ export async function updateFundingRequest(req: AuthRequest, res: Response) {
     
     // Check if request exists and user has permission
     let checkQuery = 'SELECT * FROM funding_requests WHERE id = ?';
-    let checkParams = [id];
+    let checkParams: any[] = [id];
     
     if (req.user!.role !== 'funding_manager') {
       checkQuery += ' AND user_id = ?';
@@ -466,7 +466,7 @@ export async function deleteFundingRequest(req: AuthRequest, res: Response) {
     
     // Check if request exists and user has permission
     let checkQuery = 'SELECT * FROM funding_requests WHERE id = ?';
-    let checkParams = [id];
+    let checkParams: any[] = [id];
     
     if (req.user!.role !== 'funding_manager') {
       checkQuery += ' AND user_id = ?';
@@ -800,7 +800,7 @@ export async function sendStatusUpdateEmail(req: AuthRequest, res: Response) {
     }
     
     // Create email transporter
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: parseInt(process.env.SMTP_PORT || '587'),
       secure: false,

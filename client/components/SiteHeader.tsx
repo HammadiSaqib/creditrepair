@@ -1,10 +1,19 @@
-import { NavLink, Link } from "react-router-dom";
+import { NavLink, Link, useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
-import { DollarSign, Menu } from "lucide-react";
+import { DollarSign, Menu, ChevronDown, Calculator } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export default function SiteHeader() {
+  const location = useLocation();
+  const calculatorLinks = [
+    { label: "Funding Calculator", to: "/funding-calculator" },
+    { label: "Mortgage Calculator", to: "/mortgage-calculator" },
+    { label: "Car Loan Calculator", to: "/car-loan-calculator" },
+  ];
+  const calculatorsActive = calculatorLinks.some((l) => location.pathname === l.to);
+
   return (
     <header className="relative z-50 border-b bg-white/95 backdrop-blur-sm sticky top-0">
       <div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -60,18 +69,31 @@ export default function SiteHeader() {
           >
             Pricing
           </NavLink>
-          <NavLink
-            to="/join-affiliate"
-            className={({ isActive }) =>
-              cn(
-                "text-sea-green hover:text-sea-green/80 transition-colors font-semibold flex items-center gap-1",
-                isActive && "text-sea-green"
-              )
-            }
-          >
-            <DollarSign className="h-4 w-4" />
-            Earn with Us
-          </NavLink>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "text-muted-foreground hover:text-ocean-blue transition-colors font-medium inline-flex items-center gap-1",
+                  calculatorsActive && "text-ocean-blue font-semibold"
+                )}
+              >
+                Calculators
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              {calculatorLinks.map((item) => (
+                <DropdownMenuItem key={item.to} asChild>
+                  <Link to={item.to} className="w-full cursor-pointer flex items-center gap-2">
+                    <Calculator className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
           <NavLink
             to="/blog"
             className={({ isActive }) =>
@@ -97,9 +119,7 @@ export default function SiteHeader() {
         </nav>
         {/* Desktop CTAs */}
         <div className="hidden md:flex items-center space-x-3">
-          <Button variant="ghost" className="hover:text-ocean-blue" asChild>
-            <Link to="/login">Sign In</Link>
-          </Button>
+          
           <Button
             variant="outline"
             className="border-sea-green text-sea-green hover:bg-sea-green hover:text-white hidden lg:flex"
@@ -176,6 +196,23 @@ export default function SiteHeader() {
                   >
                     Pricing
                   </NavLink>
+                  <div className="pt-2">
+                    <div className="px-3 py-1 text-xs font-semibold text-slate-500">Calculators</div>
+                    {calculatorLinks.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        className={({ isActive }) =>
+                          cn(
+                            "block px-3 py-2 rounded-md hover:bg-slate-100",
+                            isActive && "bg-slate-100 font-semibold"
+                          )
+                        }
+                      >
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
                   <NavLink
                     to="/blog"
                     className={({ isActive }) =>
@@ -198,23 +235,11 @@ export default function SiteHeader() {
                   >
                     Contact
                   </NavLink>
-                  <NavLink
-                    to="/join-affiliate"
-                    className={({ isActive }) =>
-                      cn(
-                        "block px-3 py-2 rounded-md hover:bg-slate-100 text-sea-green",
-                        isActive && "bg-slate-100 font-semibold text-sea-green"
-                      )
-                    }
-                  >
-                    Earn with Us
-                  </NavLink>
+                 
                 </div>
 
                 <div className="grid gap-3 pt-4">
-                  <Button variant="ghost" asChild>
-                    <Link to="/login">Sign In</Link>
-                  </Button>
+                  
                   <Button variant="outline" asChild>
                     <Link to="/join-affiliate">Join Affiliate</Link>
                   </Button>

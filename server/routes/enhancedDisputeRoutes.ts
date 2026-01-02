@@ -6,7 +6,7 @@ import { AuthRequest } from '../middleware/securityMiddleware.js';
 import { sanitizeInput } from '../config/security.js';
 
 // Enhanced validation schemas
-const disputeSchema = z.object({
+const disputeObjectSchema = z.object({
   client_id: z.number()
     .int('Client ID must be an integer')
     .positive('Client ID must be positive'),
@@ -67,22 +67,32 @@ const disputeSchema = z.object({
   documents: z.array(z.string().url('Invalid document URL'))
     .max(10, 'Cannot attach more than 10 documents')
     .optional()
-}).refine((data) => {
-  // If response_date is provided, filed_date must also be provided
-  if (data.response_date && !data.filed_date) {
-    return false;
-  }
-  // Response date must be after filed date
-  if (data.response_date && data.filed_date) {
-    return new Date(data.response_date) >= new Date(data.filed_date);
-  }
-  return true;
-}, {
-  message: 'Response date must be after filed date',
-  path: ['response_date']
 });
 
-const updateDisputeSchema = disputeSchema.partial();
+const validateDisputeDates = (data: any, ctx: z.RefinementCtx) => {
+  if (data?.response_date && !data?.filed_date) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Filed date is required when response date is provided',
+      path: ['filed_date'],
+    });
+    return;
+  }
+  if (data?.response_date && data?.filed_date) {
+    const response = new Date(String(data.response_date));
+    const filed = new Date(String(data.filed_date));
+    if (response < filed) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Response date must be after filed date',
+        path: ['response_date'],
+      });
+    }
+  }
+};
+
+const disputeSchema = disputeObjectSchema.superRefine(validateDisputeDates);
+const updateDisputeSchema = disputeObjectSchema.partial().superRefine(validateDisputeDates);
 
 // Query parameter validation
 const disputeQuerySchema = z.object({

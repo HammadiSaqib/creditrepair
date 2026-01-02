@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import PDFDocument from 'pdfkit';
 import { getDatabaseAdapter } from '../database/databaseAdapter.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { SubscriptionPlan, AdminProfile, AdminSubscription, UserActivity, SystemSettings, AdminNotification } from '../database/superAdminSchema.js';
@@ -1311,6 +1312,141 @@ router.get('/admins/:id', authenticateToken, requireAdmin, async (req: Request, 
   }
 });
 
+router.get('/admins/:id/agreement.pdf', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminId = parseInt(req.params.id);
+    const db = getDatabaseAdapter();
+    const dbType = db.getType();
+
+    const adminUser = await db.getQuery(
+      `SELECT id, first_name, last_name, email FROM users WHERE id = ? AND role = 'admin'`,
+      [adminId]
+    );
+    if (!adminUser) {
+      return res.status(404).json({ success: false, error: 'Admin profile not found' });
+    }
+
+    let contract: any = null;
+    if (dbType === 'mysql') {
+      contract = await db.getQuery(
+        `SELECT c.*, t.content AS template_content
+         FROM contracts c
+         LEFT JOIN contract_templates t ON c.template_id = t.id
+         WHERE c.user_id = ?
+         ORDER BY c.created_at DESC
+         LIMIT 1`,
+        [adminId]
+      );
+    } else {
+      contract = await db.getQuery(
+        `SELECT c.*, t.content_text AS template_content_text, t.content_html AS template_content_html
+         FROM contracts c
+         LEFT JOIN contract_templates t ON c.template_id = t.id
+         WHERE c.admin_id = ?
+         ORDER BY c.created_at DESC
+         LIMIT 1`,
+        [adminId]
+      );
+    }
+
+    if (!contract) {
+      return res.status(404).json({ success: false, error: 'No contract found for admin' });
+    }
+
+    const contentRaw =
+      dbType === 'mysql'
+        ? (contract.template_content ?? contract.body ?? '')
+        : (contract.template_content_html ?? contract.template_content_text ?? contract.body ?? '');
+    const contentText = String(contentRaw || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<\/li>/gi, '\n')
+      .replace(/<li>/gi, '• ')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    const signatureRow = await db.getQuery(
+      `SELECT * FROM contract_signatures WHERE contract_id = ? ORDER BY signed_at DESC LIMIT 1`,
+      [contract.id]
+    );
+
+    let signatureText: string | null = null;
+    let signatureImageUrl: string | null = null;
+    let signatureIp: string | null = null;
+    let signatureSignedAt: string | null = null;
+
+    if (signatureRow) {
+      signatureIp = signatureRow.ip_address ?? null;
+      signatureSignedAt = signatureRow.signed_at ?? null;
+      if (dbType === 'mysql') {
+        try {
+          const parsed = signatureRow.signature_data ? JSON.parse(signatureRow.signature_data) : {};
+          signatureText = parsed?.signature_text ?? null;
+          signatureImageUrl = parsed?.signature_image_url ?? null;
+        } catch {
+          signatureText = null;
+          signatureImageUrl = null;
+        }
+      } else {
+        signatureText = signatureRow.signature_text ?? null;
+        signatureImageUrl = signatureRow.signature_image_url ?? null;
+      }
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="admin-${adminId}-agreement.pdf"`);
+
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    doc.pipe(res);
+
+    const adminName = [adminUser.first_name, adminUser.last_name].filter(Boolean).join(' ').trim();
+
+    doc.fontSize(20).text('Admin Agreement', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(11);
+    doc.text(`Admin: ${adminName || adminUser.email || `#${adminId}`}`);
+    if (adminUser.email) doc.text(`Email: ${adminUser.email}`);
+    doc.text(`Contract Title: ${contract.title || 'Admin Onboarding Agreement'}`);
+    doc.text(`Status: ${contract.status || ''}`);
+    if (contract.created_at) doc.text(`Created: ${new Date(contract.created_at).toISOString()}`);
+    if (contract.signed_at) doc.text(`Contract Signed At: ${new Date(contract.signed_at).toISOString()}`);
+    if (signatureSignedAt) doc.text(`Signature Signed At: ${new Date(signatureSignedAt).toISOString()}`);
+    if (signatureIp) doc.text(`IP: ${signatureIp}`);
+    doc.moveDown(1);
+
+    doc.fontSize(14).text('Agreement');
+    doc.moveDown(0.5);
+    doc.fontSize(11).text(contentText || '(No agreement content found)', { align: 'left' });
+    doc.moveDown(1);
+
+    doc.fontSize(14).text('Signature');
+    doc.moveDown(0.5);
+    doc.fontSize(11);
+    if (signatureText) doc.text(`Typed Signature: ${signatureText}`);
+    if (signatureImageUrl) {
+      const match = String(signatureImageUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (match?.[2]) {
+        const buf = Buffer.from(match[2], 'base64');
+        const y = doc.y;
+        doc.image(buf, doc.x, y, { fit: [300, 120] });
+        doc.moveDown(6);
+      } else {
+        doc.text(`Signature Image URL: ${signatureImageUrl}`);
+      }
+    }
+    if (!signatureText && !signatureImageUrl) {
+      doc.text('No signature on file.');
+    }
+
+    doc.end();
+  } catch (error: any) {
+    console.error('Error generating admin agreement PDF:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate agreement PDF' });
+  }
+});
+
 // Create admin profile
 router.post('/admins', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
@@ -2522,7 +2658,7 @@ router.get('/analytics/stripe-revenue', authenticateToken, requireSuperAdmin, as
     if (!secret) {
       return res.status(500).json({ success: false, error: 'Stripe not configured' });
     }
-    const stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+    const stripe = new Stripe(secret);
 
     const { from, to, group_by } = req.query as any;
     const fromDate = from ? new Date(String(from)) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -2620,7 +2756,7 @@ router.get('/analytics/stripe-payments', authenticateToken, requireSuperAdmin, a
     if (!secret) {
       return res.status(500).json({ success: false, error: 'Stripe not configured' });
     }
-    const stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+    const stripe = new Stripe(secret);
 
     const { from, to } = req.query as any;
     const fromDate = from ? new Date(String(from)) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -3595,7 +3731,7 @@ router.get('/billing/transactions', authenticateToken, requireSuperAdmin, async 
         const cfg = await db.getQuery('SELECT stripe_secret_key FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1');
         const secret = (cfg && cfg.stripe_secret_key) ? String(cfg.stripe_secret_key) : process.env.STRIPE_SECRET_KEY || '';
         if (secret) {
-          stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+          stripe = new Stripe(secret);
         }
       } catch {}
       if (stripe) {
@@ -3714,7 +3850,7 @@ router.get('/billing/stripe/transactions', authenticateToken, requireSuperAdmin,
       const cfg = await db.getQuery('SELECT stripe_secret_key FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1');
       const secret = (cfg && cfg.stripe_secret_key) ? String(cfg.stripe_secret_key) : process.env.STRIPE_SECRET_KEY || '';
       if (secret) {
-        stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+        stripe = new Stripe(secret);
       }
     } catch {}
     if (!stripe) {

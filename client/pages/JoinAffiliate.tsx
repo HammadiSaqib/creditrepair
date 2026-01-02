@@ -10,7 +10,7 @@ import { Badge } from '../components/ui/badge';
 import { Loader2, Users, DollarSign, TrendingUp, CheckCircle, ArrowRight, Sparkles, CreditCard, Shield, Award, Star, Building2, Handshake, Layers, Info, HelpCircle, BarChart3 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import SiteHeader from '@/components/SiteHeader';
-import Footer from '../components/Footer';
+import Footer from '@/components/Footer';
 
 interface FormData {
   email: string;
@@ -24,8 +24,6 @@ interface VerificationData {
   email: string;
   code: string;
 }
-
-import Footer from '@/components/Footer';
 
 const JoinAffiliate: React.FC = () => {
   const navigate = useNavigate();

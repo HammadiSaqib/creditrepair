@@ -410,7 +410,7 @@ router.post('/purchase/:planId', async (req: Request, res: Response) => {
         await commissionService.processPurchase({
           userId,
           planId: parseInt(planId),
-          amount: plan.price,
+          amount: plan[0].price,
           transactionId,
           affiliateId: resolvedAffiliateId,
           paymentMethod

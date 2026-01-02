@@ -564,7 +564,7 @@ export const superAdminApi = {
   deleteAdminProfile: (id: string | number) => api.delete(`/api/super-admin/admins/${id}`),
   getUserSubscriptions: (params?: { page?: number; limit?: number }) =>
     api.get('/api/super-admin/user-subscriptions', { params }),
-  getBillingTransactions: (params?: { page?: number; limit?: number }) =>
+  getBillingTransactions: (params?: { page?: number; limit?: number; user_id?: string | number; status?: string; plan_type?: string; search?: string }) =>
     api.get('/api/super-admin/billing-transactions', { params }),
   importAdminsCSV: (file: File) => {
     const form = new FormData();

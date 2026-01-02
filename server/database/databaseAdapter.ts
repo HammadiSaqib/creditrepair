@@ -201,3 +201,84 @@ export async function allQuery(query: string, params?: any[]): Promise<any[]> {
   const adapter = getDatabaseAdapter();
   return adapter.allQuery(query, params);
 }
+
+export type TransactionQuery = { sql: string; params?: any[] };
+
+export async function runTransaction(queries: TransactionQuery[]): Promise<any[]> {
+  if (!Array.isArray(queries) || queries.length === 0) return [];
+  const adapter = getDatabaseAdapter();
+  const results: any[] = [];
+  try {
+    await adapter.executeQuery('BEGIN');
+    for (const q of queries) {
+      const sql = q?.sql;
+      if (!sql) continue;
+      const res = await adapter.executeQuery(sql, Array.isArray(q.params) ? q.params : []);
+      results.push(res);
+    }
+    await adapter.executeQuery('COMMIT');
+    return results;
+  } catch (error) {
+    try {
+      await adapter.executeQuery('ROLLBACK');
+    } catch {}
+    throw error;
+  }
+}
+
+export async function logActivity(
+  activityType: string,
+  description: string,
+  userId?: number,
+  clientId?: number,
+  disputeId?: number,
+  metadata?: any,
+  ipAddress?: string,
+  userAgent?: string
+): Promise<void> {
+  try {
+    await runQuery(
+      `INSERT INTO activities (user_id, client_id, dispute_id, activity_type, description, metadata, ip_address, user_agent, created_by) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId ?? null,
+        clientId ?? null,
+        disputeId ?? null,
+        activityType,
+        description,
+        metadata ? JSON.stringify(metadata) : null,
+        ipAddress ?? null,
+        userAgent ?? null,
+        userId ?? null,
+      ]
+    );
+  } catch {}
+}
+
+export async function logAudit(
+  tableName: string,
+  recordId: number,
+  action: 'INSERT' | 'UPDATE' | 'DELETE',
+  oldValues?: any,
+  newValues?: any,
+  changedBy?: number,
+  ipAddress?: string,
+  userAgent?: string
+): Promise<void> {
+  try {
+    await runQuery(
+      `INSERT INTO audit_logs (table_name, record_id, action, old_values, new_values, changed_by, ip_address, user_agent) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        tableName,
+        recordId,
+        action,
+        oldValues ? JSON.stringify(oldValues) : null,
+        newValues ? JSON.stringify(newValues) : null,
+        changedBy ?? null,
+        ipAddress ?? null,
+        userAgent ?? null,
+      ]
+    );
+  } catch {}
+}
