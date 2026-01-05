@@ -108,6 +108,11 @@ const HowItWorks = React.lazy(() => import("./pages/HowItWorks"));
 const FundingCalculator = React.lazy(() => import("./pages/FundingCalculator"));
 const MortgageCalculator = React.lazy(() => import("./pages/MortgageCalculator"));
 const CarLoanCalculator = React.lazy(() => import("./pages/CarLoanCalculator"));
+const BusinessFunding = React.lazy(() => import("./pages/BusinessFunding"));
+const CreditReadiness = React.lazy(() => import("./pages/CreditReadiness"));
+const LoanPreparation = React.lazy(() => import("./pages/LoanPreparation"));
+const ZeroPercentInterestCreditCards = React.lazy(() => import("./pages/ZeroPercentInterestCreditCards"));
+const TaxProfessionalsFunding = React.lazy(() => import("./pages/TaxProfessionalsFunding"));
 const FundingManagerLogin = React.lazy(() => import("./pages/FundingManagerLogin"));
 const FundingManagerDashboard = React.lazy(() => import("./pages/funding-manager/FundingManagerDashboard"));
 const BankManagement = React.lazy(() => import("./pages/funding-manager/BankManagement"));
@@ -196,6 +201,11 @@ const App = () => {
           <Route path="/blog" element={<BlogIndex />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/how-it-works" element={<HowItWorks />} />
+          <Route path="/business-funding" element={<BusinessFunding />} />
+          <Route path="/credit-readiness" element={<CreditReadiness />} />
+          <Route path="/loan-preparation" element={<LoanPreparation />} />
+          <Route path="/0-percent-interest-credit-cards" element={<ZeroPercentInterestCreditCards />} />
+          <Route path="/tax-professionals-funding" element={<TaxProfessionalsFunding />} />
           <Route path="/funding-calculator" element={<FundingCalculator />} />
           <Route path="/mortgage-calculator" element={<MortgageCalculator />} />
           <Route path="/car-loan-calculator" element={<CarLoanCalculator />} />
