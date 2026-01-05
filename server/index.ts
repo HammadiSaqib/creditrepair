@@ -22,6 +22,7 @@ import blogRoutes from "./routes/blog.js";
 import newsletterRoutes from "./routes/newsletter.js";
 import profileUploadRoutes from "./routes/profileUpload.js";
 import communityRoutes from "./routes/community.js";
+import featureRequestsRoutes from "./routes/featureRequests.js";
 import groupRoutes from "./routes/groups.js";
 import superAdminRoutes from "./routes/superAdmin.js";
 import supportBlogRoutes from "./routes/supportBlog.js";
@@ -56,6 +57,7 @@ import contractsRoutes from "./routes/contracts.js";
 import contractsAdminRoutes from "./routes/contractsAdmin.js";
 import employeesRoutes from "./routes/employees.js";
 import debtPayoffRoutes from "./routes/debtPayoff.js";
+import shopRoutes from "./routes/shop.js";
 
 import { reminderService } from "./services/reminderService.js";
 
@@ -299,6 +301,11 @@ export async function createServer() {
   app.use("/api/community", communityRoutes);
 
   // =============================================================================
+  // FEATURE REQUESTS ROUTES (Admin-only)
+  // =============================================================================
+  app.use("/api/feature-requests", authenticateToken, requireSignedAdminContract, requireRole('super_admin'), featureRequestsRoutes);
+
+  // =============================================================================
   // GROUP ROUTES
   // =============================================================================
   app.use("/api/groups", groupRoutes);
@@ -380,6 +387,7 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // PUBLIC PRICING ROUTES
   // =============================================================================
   app.use("/api/pricing", pricingRoutes);
+  app.use("/api/shop", shopRoutes);
 
   // =============================================================================
   // BILLING AND STRIPE ROUTES

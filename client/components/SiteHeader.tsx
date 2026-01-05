@@ -69,6 +69,17 @@ export default function SiteHeader() {
           >
             Pricing
           </NavLink>
+          <NavLink
+            to="/shop"
+            className={({ isActive }) =>
+              cn(
+                "text-muted-foreground hover:text-ocean-blue transition-colors font-medium",
+                isActive && "text-ocean-blue font-semibold"
+              )
+            }
+          >
+            Shop
+          </NavLink>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
@@ -195,6 +206,17 @@ export default function SiteHeader() {
                     }
                   >
                     Pricing
+                  </NavLink>
+                  <NavLink
+                    to="/shop"
+                    className={({ isActive }) =>
+                      cn(
+                        "block px-3 py-2 rounded-md hover:bg-slate-100",
+                        isActive && "bg-slate-100 font-semibold"
+                      )
+                    }
+                  >
+                    Shop
                   </NavLink>
                   <div className="pt-2">
                     <div className="px-3 py-1 text-xs font-semibold text-slate-500">Calculators</div>

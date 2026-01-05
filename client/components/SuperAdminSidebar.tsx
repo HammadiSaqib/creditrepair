@@ -67,6 +67,12 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       badge: null,
     },
     {
+      name: "Shop Management",
+      href: "/super-admin/shop-management",
+      icon: Package,
+      badge: null,
+    },
+    {
       name: "School Management",
       href: "/super-admin/school-management",
       icon: GraduationCap,
@@ -81,6 +87,12 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
     {
       name: "Reports",
       href: "/super-admin/reports",
+      icon: FileText,
+      badge: null,
+    },
+    {
+      name: "Feature Requests",
+      href: "/admin/feature-requests",
       icon: FileText,
       badge: null,
     },

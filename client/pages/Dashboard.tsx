@@ -201,7 +201,7 @@ export default function Dashboard() {
     ssnLast4: "",
   });
   const [showDashboardPassword, setShowDashboardPassword] = useState(false);
-  const creditReportRegisterUrl = "https://myfreescorenow.com/enroll/?AID=adrwealthadvisorsllc&PID=78140";
+  const creditReportRegisterUrl = "https://member.myscoreiq.com/get-fico-max.aspx?offercode=432135JQ";
 
   useEffect(() => {
     fetchDashboardData();

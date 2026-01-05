@@ -136,6 +136,14 @@ export default function FundingDIY() {
   };
 
   const bureaus = ["all", "Equifax", "Experian", "TransUnion"];
+  const compareUpTo = useMemo(() => {
+    const raw = (location.state as any)?.bureauSlotCounts;
+    const total = Math.max(
+      0,
+      Number(raw?.Experian || 0) + Number(raw?.Equifax || 0) + Number(raw?.TransUnion || 0),
+    );
+    return total > 0 ? total : 3;
+  }, [location.state]);
   const canonicalProductType = useCallback((x: any) => {
     const t = String(x || '').toLowerCase();
     if (t.includes('sba')) return 'SBA Loan';
@@ -631,37 +639,62 @@ export default function FundingDIY() {
       Equifax: Number(ib?.Equifax || 0),
       TransUnion: Number(ib?.TransUnion || 0),
     };
-    const total = Math.max(0, (counts.Experian || 0) + (counts.Equifax || 0) + (counts.TransUnion || 0));
-    const bureaus = ['Experian','Equifax','TransUnion'];
-    const weights = bureaus.map((b) => ({ b, w: total > 0 ? (counts[b] || 0) / total : 1 / 3 }));
-    const baseSlots = weights.map(({ b, w }) => ({ b, s: Math.floor(w * 3) }));
-    let allocated = baseSlots.reduce((sum, x) => sum + x.s, 0);
-    const remainders = weights.map(({ b, w }) => ({ b, r: (w * 3) - Math.floor(w * 3) })).sort((a, b) => b.r - a.r);
-    while (allocated < 3) {
-      const next = remainders.shift();
-      if (!next) break;
-      const t = baseSlots.find((x) => x.b === next.b);
-      if (t) { t.s += 1; allocated += 1; }
-    }
-    if (allocated > 3) {
-      baseSlots.sort((a, b) => a.s - b.s);
-      while (allocated > 3) {
-        baseSlots[baseSlots.length - 1].s -= 1;
-        allocated -= 1;
-      }
-    }
     const targets: Array<{ type: CardType; bureau?: string }> = [];
-    baseSlots.forEach(({ b, s }) => {
-      if (s <= 0) return;
-      if (isBoth) {
-        const businessSlots = Math.ceil(s / 2);
-        const personalSlots = s - businessSlots;
-        for (let i = 0; i < businessSlots; i++) targets.push({ type: 'business', bureau: b });
-        for (let i = 0; i < personalSlots; i++) targets.push({ type: 'personal', bureau: b });
-      } else if (resolvedType) {
-        for (let i = 0; i < s; i++) targets.push({ type: resolvedType, bureau: b });
+    const routingRaw = (location.state as any)?.bureauSlotCounts;
+    const routingCounts: Record<string, number> = {
+      Experian: Number(routingRaw?.Experian || 0),
+      Equifax: Number(routingRaw?.Equifax || 0),
+      TransUnion: Number(routingRaw?.TransUnion || 0),
+    };
+    const routingTotal = Math.max(0, (routingCounts.Experian || 0) + (routingCounts.Equifax || 0) + (routingCounts.TransUnion || 0));
+    const desiredBureauOrder = ['Experian', 'Equifax', 'TransUnion'];
+
+    if (routingTotal > 0) {
+      desiredBureauOrder.forEach((b) => {
+        const s = Math.max(0, Math.floor(Number(routingCounts[b] || 0)));
+        if (s <= 0) return;
+        if (isBoth) {
+          const businessSlots = Math.ceil(s / 2);
+          const personalSlots = s - businessSlots;
+          for (let i = 0; i < businessSlots; i++) targets.push({ type: 'business', bureau: b });
+          for (let i = 0; i < personalSlots; i++) targets.push({ type: 'personal', bureau: b });
+        } else if (resolvedType) {
+          for (let i = 0; i < s; i++) targets.push({ type: resolvedType, bureau: b });
+        }
+      });
+    } else {
+      const total = Math.max(0, (counts.Experian || 0) + (counts.Equifax || 0) + (counts.TransUnion || 0));
+      const weights = desiredBureauOrder.map((b) => ({ b, w: total > 0 ? (counts[b] || 0) / total : 1 / 3 }));
+      const baseSlots = weights.map(({ b, w }) => ({ b, s: Math.floor(w * 3) }));
+      let allocated = baseSlots.reduce((sum, x) => sum + x.s, 0);
+      const remainders = weights
+        .map(({ b, w }) => ({ b, r: (w * 3) - Math.floor(w * 3) }))
+        .sort((a, b) => b.r - a.r);
+      while (allocated < 3) {
+        const next = remainders.shift();
+        if (!next) break;
+        const t = baseSlots.find((x) => x.b === next.b);
+        if (t) { t.s += 1; allocated += 1; }
       }
-    });
+      if (allocated > 3) {
+        baseSlots.sort((a, b) => a.s - b.s);
+        while (allocated > 3) {
+          baseSlots[baseSlots.length - 1].s -= 1;
+          allocated -= 1;
+        }
+      }
+      baseSlots.forEach(({ b, s }) => {
+        if (s <= 0) return;
+        if (isBoth) {
+          const businessSlots = Math.ceil(s / 2);
+          const personalSlots = s - businessSlots;
+          for (let i = 0; i < businessSlots; i++) targets.push({ type: 'business', bureau: b });
+          for (let i = 0; i < personalSlots; i++) targets.push({ type: 'personal', bureau: b });
+        } else if (resolvedType) {
+          for (let i = 0; i < s; i++) targets.push({ type: resolvedType, bureau: b });
+        }
+      });
+    }
     const pickedCardIds = new Set<number>();
     const pickFor = (t: { type: CardType; bureau?: string }) => {
       let pool = sourceCards.filter((c) => c.card_type === t.type && allowedFundingTypeSet.has(c.funding_type));
@@ -1000,7 +1033,7 @@ export default function FundingDIY() {
                   {isBusiness ? <Building2 className="h-6 w-6 text-white" /> : <User className="h-6 w-6 text-white" />}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold gradient-text-primary">{isBoth ? "Personal + Business" : (isBusiness ? "Business" : "Personal")} DIY Funding: Compare up to 3 options</h3>
+                  <h3 className="text-xl font-bold gradient-text-primary">{isBoth ? "Personal + Business" : (isBusiness ? "Business" : "Personal")} DIY Funding: Compare up to {compareUpTo} options</h3>
                   <p className="text-sm text-emerald-700 font-medium">Select a bank, review eligibility, add cards to compare.</p>
                 </div>
               </CardTitle>
@@ -1029,7 +1062,7 @@ export default function FundingDIY() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {slotForms.map((slot, idx) => (
                   <div key={idx} className="p-4 rounded-lg border bg-white">
                     <div className="space-y-3">

@@ -49,7 +49,7 @@ import { TrialCreditReportWrapper, TrialScoreWrapper, TrialSensitiveWrapper } fr
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { shouldShowField, tabConfig } from "@/utils/fieldCategorization";
-import { calculateUtilization as calculateAccountUtilization } from "../utils/utilizationCalculator.js";
+import { calculateAccountUtilization } from "../utils/utilizationCalculator.js";
 import {
   FileText,
   Search,
@@ -1297,6 +1297,8 @@ export default function CreditReport() {
   const [lawEngineAutoMode, setLawEngineAutoMode] = useState(false);
   const [lawEngineNoticeOpen, setLawEngineNoticeOpen] = useState(false);
   const [pendingLawEngineTab, setPendingLawEngineTab] = useState<string | null>(null);
+  const [fundingAuditNoticeOpen, setFundingAuditNoticeOpen] = useState(false);
+  const [pendingFundingAuditTab, setPendingFundingAuditTab] = useState<string | null>(null);
   const creditReportTabs = ['overview', 'personal', 'inquiries', 'public', 'accounts'] as const;
   type CreditReportTab = (typeof creditReportTabs)[number];
   const isLawEngineView = lawEngineAutoMode && (creditReportTabs as readonly string[]).includes(activeTab);
@@ -1316,6 +1318,25 @@ export default function CreditReport() {
     setLawEngineAutoMode(true);
     if (pendingLawEngineTab) setActiveTab(pendingLawEngineTab);
     setPendingLawEngineTab(null);
+  };
+
+  const requestOpenFundingAudit = () => {
+    setPendingFundingAuditTab('funding');
+    setFundingAuditNoticeOpen(true);
+  };
+
+  const acknowledgeFundingAuditNotice = () => {
+    setFundingAuditNoticeOpen(false);
+    if (pendingFundingAuditTab) setActiveTab(pendingFundingAuditTab);
+    setPendingFundingAuditTab(null);
+  };
+
+  const handleActiveTabChange = (nextTab: string) => {
+    if (nextTab === 'funding') {
+      requestOpenFundingAudit();
+      return;
+    }
+    setActiveTab(nextTab);
   };
 
   useEffect(() => {
@@ -1811,11 +1832,34 @@ export default function CreditReport() {
       Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
       TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
     };
+    const maxPullsPerBureau = 4;
+    const headroomByBureau: Record<'Experian' | 'Equifax' | 'TransUnion', number> = {
+      Experian: Math.max(0, maxPullsPerBureau - Number(ib.Experian || 0)),
+      Equifax: Math.max(0, maxPullsPerBureau - Number(ib.Equifax || 0)),
+      TransUnion: Math.max(0, maxPullsPerBureau - Number(ib.TransUnion || 0)),
+    };
+    const maxSuggestedSlots = 4;
+    const maxSlotsPerBureau = 2;
+    const preferredOrder: Array<keyof typeof headroomByBureau> = ['Experian', 'Equifax', 'TransUnion'];
+    const bureauSlotCounts: Record<'Experian' | 'Equifax' | 'TransUnion', number> = {
+      Experian: 0,
+      Equifax: 0,
+      TransUnion: 0,
+    };
+    let remaining = maxSuggestedSlots;
+    for (const bureau of preferredOrder) {
+      if (remaining <= 0) break;
+      const headroom = headroomByBureau[bureau];
+      const alloc = Math.max(0, Math.min(maxSlotsPerBureau, Number(headroom || 0), remaining));
+      bureauSlotCounts[bureau] = alloc;
+      remaining -= alloc;
+    }
     navigate(`/funding/diy/${goal}`, {
       state: {
         clientId: clientId ? Number(clientId) : undefined,
         productTypes: selectedProductTypes,
         inquiriesByBureau: ib,
+        bureauSlotCounts,
         goal,
       },
     });
@@ -4037,6 +4081,7 @@ export default function CreditReport() {
             <p>
               Please independently review and verify all information before using it in any communication, dispute, or decision.
             </p>
+            <p>This content is provided for educational purposes only.</p>
             <p>
               Score Machine does not provide legal advice, and we do not assume responsibility for outcomes resulting from the use
               of Law Engine outputs.
@@ -4044,6 +4089,31 @@ export default function CreditReport() {
           </div>
           <div className="mt-6 flex justify-end">
             <Button onClick={acknowledgeLawEngineNotice}>Acknowledge &amp; Activate</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fundingAuditNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingAuditNoticeOpen(open);
+          if (!open) setPendingFundingAuditTab(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Audit Notice</DialogTitle>
+            <DialogDescription>
+              This tab provides automated educational estimates and general information.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>This content is provided for educational purposes only and is not financial, credit, or legal advice.</p>
+            <p>Results are estimates and are not a guarantee of approval, limits, rates, or terms from any lender.</p>
+            <p>Please verify all details independently and consult qualified professionals for decisions.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingAuditNotice}>Acknowledge &amp; Continue</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -4107,7 +4177,7 @@ export default function CreditReport() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleActiveTabChange}>
         {/* Grouped Navigation: Work Area + Credit Report */}
         <div className="w-full mb-8 space-y-6 hidden">
           {/* Work Area */}
@@ -4275,7 +4345,7 @@ export default function CreditReport() {
                 </button>
                 <div className="ml-3 hidden lg:block">
                   <div className={`text-sm font-semibold ${lawEngineAutoMode ? 'text-purple-600' : 'text-muted-foreground'}`}>
-                    Run Law Engine
+                    Automated Credit Analysis
                   </div>
                   <div className="text-xs text-muted-foreground">Automated Analysis</div>
                 </div>
@@ -4320,7 +4390,7 @@ export default function CreditReport() {
               {/* Funding */}
               <div className="flex items-center">
                 <button
-                  onClick={() => setActiveTab('funding')}
+                  onClick={requestOpenFundingAudit}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'funding'
                       ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg scale-110'
@@ -9848,7 +9918,7 @@ export default function CreditReport() {
                     balance: account.CurrentBalance || account.balance || 0,
                     limit: account.CreditLimit || account.creditLimit || account.limit || 0,
                     status: account.AccountStatus || account.status || 'Unknown',
-                    utilization: account.utilization || (calculateAccountUtilization(account)?.utilization ?? 0),
+                    utilization: typeof account.utilization === 'number' ? account.utilization : (calculateAccountUtilization(account) ?? 0),
                     opened: account.DateOpened || account.dateOpened || account.opened,
                     paymentHistory: account.PaymentStatus || account.paymentHistory || 'N/A',
                     designator: account.AccountDesignator || account.designator || 'N/A',
@@ -9877,6 +9947,33 @@ export default function CreditReport() {
               };
 
               const groupedAccounts = groupAccountsForComparison();
+              const isNegativeAccountGroup = (group: any) => {
+                const bureaus = Object.values(group?.bureaus || {}) as any[];
+                return bureaus.some((b) => {
+                  const statusText = String(b?.status ?? '').toLowerCase();
+                  const paymentText = String(b?.paymentHistory ?? '').toLowerCase();
+                  const remarkText = String(b?.remark ?? '').toLowerCase();
+                  const conditionText = String(b?.accountCondition ?? '').toLowerCase();
+                  const worst = b?.worstStatus ?? '';
+                  const worstNum = typeof worst === 'number' ? worst : parseInt(String(worst), 10);
+                  const pastDueNum = parseFloat(String(b?.pastDue ?? '0'));
+                  const historyText = String(b?.payStatusHistory ?? '').toLowerCase();
+
+                  if (pastDueNum > 0) return true;
+                  if (Number.isFinite(worstNum) && worstNum > 0) return true;
+                  if (/[1-9]/.test(historyText)) return true;
+
+                  const combined = `${statusText} ${paymentText} ${remarkText} ${conditionText}`;
+                  return /(charge\s*off|charged\s*off|collection|delinq|delinquen|late|past\s*due|repos|foreclos|bankrupt|lien|judg)/.test(combined);
+                });
+              };
+              const sortedAccounts = [...groupedAccounts].sort((a: any, b: any) => {
+                const negDiff = Number(isNegativeAccountGroup(b)) - Number(isNegativeAccountGroup(a));
+                if (negDiff !== 0) return negDiff;
+                const creditorDiff = String(a?.creditor ?? '').localeCompare(String(b?.creditor ?? ''));
+                if (creditorDiff !== 0) return creditorDiff;
+                return String(a?.accountNumber ?? '').localeCompare(String(b?.accountNumber ?? ''));
+              });
 
               if (groupedAccounts.length === 0) {
                 return (
@@ -9913,7 +10010,7 @@ export default function CreditReport() {
                   </div>
 
                   {/* Account comparison rows */}
-                  {groupedAccounts.map((accountGroup, index) => {
+                  {sortedAccounts.map((accountGroup, index) => {
                     const accountKey = `${accountGroup.creditor}_${accountGroup.accountNumber}`;
                     const activeTab = getActiveTab(accountKey);
                     
@@ -13668,7 +13765,7 @@ export default function CreditReport() {
                     balance: account.CurrentBalance || account.balance || 0,
                     limit: account.CreditLimit || account.creditLimit || account.limit || 0,
                     status: account.AccountStatus || account.status || 'Unknown',
-                    utilization: account.utilization || (calculateAccountUtilization(account)?.utilization ?? 0),
+                    utilization: typeof account.utilization === 'number' ? account.utilization : (calculateAccountUtilization(account) ?? 0),
                     opened: account.DateOpened || account.dateOpened || account.opened,
                     paymentHistory: account.PaymentStatus || account.paymentHistory || 'N/A',
                     designator: account.AccountDesignator || account.designator || 'N/A',
@@ -17606,13 +17703,7 @@ export default function CreditReport() {
                         Business Profile
                       </h4>
                       <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <div className="text-gray-600">EIN Status</div>
-                          <div className="font-bold text-green-600 flex items-center gap-1">
-                            <CheckCircle className="h-4 w-4" />
-                            Verified
-                          </div>
-                        </div>
+                        
                         <div>
                           <div className="text-gray-600">Credit Age</div>
                           <div className="font-bold text-gray-800">{scoringModelData.userProfile.creditAge}</div>
@@ -18623,22 +18714,7 @@ export default function CreditReport() {
                 <Card 
                   className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-green-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-green-50"
                   onClick={() => {
-                    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
-                    const infer = (inq: any) => {
-                      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
-                      if (b) return String(b);
-                      const id = inq?.BureauId;
-                      if (id === 1) return 'TransUnion';
-                      if (id === 2) return 'Equifax';
-                      if (id === 3) return 'Experian';
-                      return '';
-                    };
-                    const ib = {
-                      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
-                      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
-                      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
-                    };
-                    navigate(`/funding/diy/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined, productTypes: selectedProductTypes, inquiriesByBureau: ib, goal: fundingType } });
+                    performGoToDiyFunding((fundingType as any) || 'both');
                     setShowFundingModal(false);
                   }}
                 >
@@ -18672,8 +18748,9 @@ export default function CreditReport() {
                     <Button 
                       variant="outline" 
                       className="w-full border-2 border-green-500 text-green-600 hover:bg-green-500 hover:text-white font-semibold py-4 rounded-xl transition-all duration-300 text-lg hover:shadow-lg"
-                      onClick={() => {
-                        navigate(`/funding/diy/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined } });
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        performGoToDiyFunding((fundingType as any) || 'both');
                         setShowFundingModal(false);
                       }}
                     >

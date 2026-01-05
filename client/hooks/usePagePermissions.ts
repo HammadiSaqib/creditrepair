@@ -28,7 +28,8 @@ export const AVAILABLE_PAGES = [
   { id: 'automation', name: 'Automation', path: '/automation' },
   { id: 'settings', name: 'Settings', path: '/settings' },
   { id: 'support', name: 'Support', path: '/support' },
-  { id: 'subscription', name: 'Subscription', path: '/subscription' }
+  { id: 'subscription', name: 'Subscription', path: '/subscription' },
+  { id: 'feature-requests', name: 'Feature Requests', path: '/admin/feature-requests' }
 ];
 
 // 根据路径获取页面ID

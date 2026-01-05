@@ -302,6 +302,62 @@ export async function createSuperAdminTables(): Promise<void> {
       INDEX idx_invitations_status (status),
       INDEX idx_invitations_type (type),
       FOREIGN KEY (sent_by) REFERENCES users(id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS shop_products (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT NOT NULL,
+      price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      thumbnail_url TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_by INT NOT NULL,
+      updated_by INT NOT NULL,
+      INDEX idx_shop_products_name (name),
+      INDEX idx_shop_products_price (price),
+      FOREIGN KEY (created_by) REFERENCES users(id),
+      FOREIGN KEY (updated_by) REFERENCES users(id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS shop_product_files (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      product_id INT NOT NULL,
+      url TEXT NOT NULL,
+      type ENUM('image','video','pdf','zip','other') NOT NULL DEFAULT 'other',
+      source ENUM('upload','link') NOT NULL DEFAULT 'upload',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_shop_product_files_product_id (product_id),
+      INDEX idx_shop_product_files_type (type),
+      FOREIGN KEY (product_id) REFERENCES shop_products(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS shop_purchases (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      product_id INT NOT NULL,
+      purchaser_name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      cookie_id VARCHAR(255) NOT NULL,
+      status ENUM('pending','succeeded','failed') NOT NULL DEFAULT 'pending',
+      stripe_session_id VARCHAR(255),
+      stripe_payment_intent_id VARCHAR(255),
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_shop_purchases_product_id (product_id),
+      INDEX idx_shop_purchases_email (email),
+      INDEX idx_shop_purchases_cookie (cookie_id),
+      INDEX idx_shop_purchases_status (status),
+      FOREIGN KEY (product_id) REFERENCES shop_products(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS shop_verification_codes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      purchase_id INT NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      code VARCHAR(16) NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_shop_verification_purchase (purchase_id),
+      INDEX idx_shop_verification_email (email),
+      INDEX idx_shop_verification_code (code),
+      FOREIGN KEY (purchase_id) REFERENCES shop_purchases(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
   ];
   

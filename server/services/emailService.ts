@@ -421,17 +421,19 @@ class EmailService {
       console.log('EMAIL_SECURE:', process.env.EMAIL_SECURE);
       console.log('EMAIL_USER:', process.env.EMAIL_USER);
       console.log('EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? '***SET***' : 'NOT SET');
-      
+      const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
+      const port = parseInt(process.env.EMAIL_PORT || '587', 10);
+      const secure = (process.env.EMAIL_SECURE === 'true') || port === 465;
+      const user = process.env.EMAIL_USER || '';
+      const pass = process.env.EMAIL_PASSWORD || '';
+
       this.transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASSWORD,
-        },
-        tls: {
-          rejectUnauthorized: false
-        }
-      });
+        host,
+        port,
+        secure,
+        auth: user && pass ? { user, pass } : undefined,
+        tls: { rejectUnauthorized: false }
+      } as any);
     }
     return this.transporter;
   }
@@ -457,6 +459,39 @@ class EmailService {
       return true;
     } catch (error) {
       console.error('❌ Error sending email:', error);
+      try {
+        if (process.env.NODE_ENV !== 'production') {
+          const testAccount = await nodemailer.createTestAccount();
+          const ethTransporter = nodemailer.createTransport({
+            host: 'smtp.ethereal.email',
+            port: 587,
+            secure: false,
+            auth: {
+              user: testAccount.user,
+              pass: testAccount.pass,
+            },
+          });
+          const mailOptions = {
+            from: `"${process.env.EMAIL_FROM_NAME || 'Score Machine'}" <${process.env.EMAIL_FROM_ADDRESS || process.env.EMAIL_USER || testAccount.user}>`,
+            to: options.to,
+            subject: options.subject,
+            html: options.html,
+            text: options.text,
+            attachments: options.attachments?.map(att => ({
+              filename: att.filename,
+              content: att.content,
+              contentType: att.contentType || 'application/pdf'
+            }))
+          };
+          const result = await ethTransporter.sendMail(mailOptions);
+          const previewUrl = nodemailer.getTestMessageUrl(result);
+          console.log('📧 Dev fallback (Ethereal) email sent:', result.messageId);
+          if (previewUrl) console.log('🔗 Preview URL:', previewUrl);
+          return true;
+        }
+      } catch (fallbackError) {
+        console.error('❌ Dev email fallback failed:', fallbackError);
+      }
       return false;
     }
   }

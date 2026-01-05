@@ -984,6 +984,52 @@ async function createMySQLTables(): Promise<void> {
       FOREIGN KEY (group_id) REFERENCES \`groups\`(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Feature Requests table (admin-only)
+    `CREATE TABLE IF NOT EXISTS feature_requests (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      content TEXT NOT NULL,
+      image_url VARCHAR(500) NULL,
+      status ENUM('open', 'closed') NOT NULL DEFAULT 'open',
+      votes_count INT NOT NULL DEFAULT 0,
+      comments_count INT NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_user_id (user_id),
+      INDEX idx_status (status),
+      INDEX idx_created_at (created_at),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Feature Request Votes table
+    `CREATE TABLE IF NOT EXISTS feature_request_votes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      request_id INT NOT NULL,
+      user_id INT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_request_id (request_id),
+      INDEX idx_user_id (user_id),
+      UNIQUE KEY unique_request_user_vote (request_id, user_id),
+      FOREIGN KEY (request_id) REFERENCES feature_requests(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Feature Request Comments table
+    `CREATE TABLE IF NOT EXISTS feature_request_comments (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      request_id INT NOT NULL,
+      user_id INT NOT NULL,
+      content TEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_request_id (request_id),
+      INDEX idx_user_id (user_id),
+      INDEX idx_created_at (created_at),
+      FOREIGN KEY (request_id) REFERENCES feature_requests(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     
     // Courses table
     `CREATE TABLE IF NOT EXISTS courses (

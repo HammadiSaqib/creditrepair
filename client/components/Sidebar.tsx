@@ -83,6 +83,14 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
       pageKey: "reports",
     },
     {
+      name: "Feature Requests",
+      href: "/admin/feature-requests",
+      icon: MessageSquare,
+      badge: null,
+      adminOnly: true,
+      pageKey: "feature-requests",
+    },
+    {
       name: "AI Coach",
       href: "/ai-coach",
       icon: Sparkles,

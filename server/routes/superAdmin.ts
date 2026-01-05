@@ -9,12 +9,45 @@ import { authenticateToken } from '../middleware/authMiddleware.js';
 import { SubscriptionPlan, AdminProfile, AdminSubscription, UserActivity, SystemSettings, AdminNotification } from '../database/superAdminSchema.js';
 import { getWebSocketService } from '../services/websocketService.js';
 import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { validateClientQuota, checkUserPlanLimits } from '../utils/planValidation.js';
 import { PLATFORMS } from '../services/scrapers/index.js';
 import { AdminNotificationService } from '../services/adminNotificationService';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+const shopStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const uploadDir = path.resolve(process.cwd(), 'uploads/shop');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, 'shop-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const shopUpload = multer({
+  storage: shopStorage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'image/jpeg','image/jpg','image/png','image/gif','image/webp',
+      'video/mp4','video/quicktime','video/x-msvideo','video/x-matroska',
+      'application/pdf','application/zip'
+    ];
+    if (allowed.includes(file.mimetype) || file.originalname.toLowerCase().endsWith('.zip')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type'));
+    }
+  }
+});
 
 // Middleware functions - must be defined before use
 const requireSuperAdmin = async (req: any, res: Response, next: any) => {
@@ -384,16 +417,16 @@ router.post('/support-users/:id/login', authenticateToken, requireSuperAdmin, as
       last_login: new Date().toISOString(),
     };
 
-    console.log('✅ Login as support user successful for ID:', userId);
-    res.json({
-      message: 'Login as support user successful',
-      token,
-      user: supportData
-    });
-  } catch (error) {
-    console.error('❌ Error logging in as support user:', error);
-    res.status(500).json({ error: 'Failed to login as support user' });
-  }
+  console.log('✅ Login as support user successful for ID:', userId);
+  res.json({
+    message: 'Login as support user successful',
+    token,
+    user: supportData
+  });
+} catch (error) {
+  console.error('❌ Error logging in as support user:', error);
+  res.status(500).json({ error: 'Failed to login as support user' });
+}
 });
 
 const updatePlanSchema = createPlanSchema.partial();
@@ -682,6 +715,204 @@ router.get('/plans/:id', authenticateToken, requireAdmin, async (req: Request, r
   }
 });
 
+router.get('/shop/products', authenticateToken, requireSuperAdmin, async (_req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const products = await db.allQuery(
+      `SELECT id, name, description, price, thumbnail_url, created_at, updated_at FROM shop_products ORDER BY created_at DESC`
+    );
+    const result: any[] = [];
+    for (const p of products) {
+      const files = await db.allQuery(
+        `SELECT id, url, type, source, created_at FROM shop_product_files WHERE product_id = ? ORDER BY created_at ASC`,
+        [p.id]
+      );
+      result.push({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        price: Number(p.price),
+        thumbnail_url: p.thumbnail_url || null,
+        files: files.map((f: any) => ({
+          id: f.id,
+          url: f.url,
+          type: f.type,
+          source: f.source
+        })),
+        created_at: p.created_at,
+        updated_at: p.updated_at
+      });
+    }
+    res.json({ products: result });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || 'Failed to fetch products' });
+  }
+});
+
+const shopFileSchema = z.object({
+  url: z.string().min(1),
+  type: z.enum(['image','video','pdf','zip','other']),
+  source: z.enum(['upload','link'])
+});
+
+const createProductSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  price: z.coerce.number(),
+  thumbnail_url: z.string().nullable().optional(),
+  files: z.array(shopFileSchema).optional()
+});
+
+router.post('/shop/products', authenticateToken, requireSuperAdmin, async (req: any, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const validated = createProductSchema.parse(req.body);
+    const userId = req.user?.id || 1;
+    const insertPrice = typeof validated.price === 'number' ? validated.price : 0;
+    const insertDesc = typeof validated.description === 'string' ? validated.description : '';
+    const insert = await db.executeQuery(
+      `INSERT INTO shop_products (name, description, price, thumbnail_url, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)`,
+      [validated.name, insertDesc, insertPrice, validated.thumbnail_url || null, userId, userId]
+    );
+    const productId = insert.insertId || insert.lastID;
+    if (Array.isArray(validated.files) && validated.files.length > 0) {
+      for (const f of validated.files.slice(0, 5)) {
+        await db.executeQuery(
+          `INSERT INTO shop_product_files (product_id, url, type, source) VALUES (?, ?, ?, ?)`,
+          [productId, f.url, f.type, f.source]
+        );
+      }
+    }
+    const product = await db.getQuery(
+      `SELECT id, name, description, price, thumbnail_url, created_at, updated_at FROM shop_products WHERE id = ?`,
+      [productId]
+    );
+    const files = await db.allQuery(
+      `SELECT id, url, type, source, created_at FROM shop_product_files WHERE product_id = ? ORDER BY created_at ASC`,
+      [productId]
+    );
+    res.status(201).json({
+      product: {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: Number(product.price),
+        thumbnail_url: product.thumbnail_url || null,
+        files: files.map((f: any) => ({ id: f.id, url: f.url, type: f.type, source: f.source })),
+        created_at: product.created_at,
+        updated_at: product.updated_at
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || 'Failed to create product' });
+  }
+});
+
+const updateProductSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional(),
+  price: z.coerce.number().optional(),
+  thumbnail_url: z.string().nullable().optional(),
+  files: z.array(shopFileSchema).optional()
+});
+
+router.put('/shop/products/:id', authenticateToken, requireSuperAdmin, async (req: any, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const id = parseInt(req.params.id);
+    const validated = updateProductSchema.parse(req.body);
+    const fields: string[] = [];
+    const values: any[] = [];
+    if (validated.name !== undefined) { fields.push('name = ?'); values.push(validated.name); }
+    if (validated.description !== undefined) { fields.push('description = ?'); values.push(validated.description); }
+    if (validated.price !== undefined) { fields.push('price = ?'); values.push(validated.price); }
+    if (validated.thumbnail_url !== undefined) { fields.push('thumbnail_url = ?'); values.push(validated.thumbnail_url); }
+    const hasFieldUpdates = fields.length > 0;
+    const userId = req.user?.id || 1;
+    if (hasFieldUpdates) {
+      values.push(userId, id);
+      await db.executeQuery(
+        `UPDATE shop_products SET ${fields.join(', ')}, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        values
+      );
+    }
+    if (validated.files !== undefined) {
+      await db.executeQuery(`DELETE FROM shop_product_files WHERE product_id = ?`, [id]);
+      for (const f of (validated.files || []).slice(0, 5)) {
+        await db.executeQuery(
+          `INSERT INTO shop_product_files (product_id, url, type, source) VALUES (?, ?, ?, ?)`,
+          [id, f.url, f.type, f.source]
+        );
+      }
+    }
+    const product = await db.getQuery(`SELECT id, name, description, price, thumbnail_url, created_at, updated_at FROM shop_products WHERE id = ?`, [id]);
+    const files = await db.allQuery(`SELECT id, url, type, source, created_at FROM shop_product_files WHERE product_id = ? ORDER BY created_at ASC`, [id]);
+    res.json({
+      product: {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: Number(product.price),
+        thumbnail_url: product.thumbnail_url || null,
+        files: files.map((f: any) => ({ id: f.id, url: f.url, type: f.type, source: f.source })),
+        created_at: product.created_at,
+        updated_at: product.updated_at
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || 'Failed to update product' });
+  }
+});
+
+router.delete('/shop/products/:id', authenticateToken, requireSuperAdmin, async (req: any, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const id = parseInt(req.params.id);
+    await db.executeQuery(`DELETE FROM shop_products WHERE id = ?`, [id]);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || 'Failed to delete product' });
+  }
+});
+
+router.post('/shop/uploads', authenticateToken, requireSuperAdmin, shopUpload.array('files', 5), async (req: any, res: Response) => {
+  try {
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+    const urls = files.map((f) => `/uploads/shop/${f.filename}`);
+    res.json({ urls });
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message || 'Failed to upload files' });
+  }
+});
+
+router.get('/shop/url-meta', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const schema = z.object({ url: z.string().url() });
+    const { url } = schema.parse(req.query);
+    const resp = await axios.get(url, { timeout: 5000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const html = String(resp.data || '');
+    const $ = cheerio.load(html);
+    let image = $('meta[property="og:image"]').attr('content') || $('meta[name="twitter:image"]').attr('content') || '';
+    if (!image) {
+      const firstImg = $('img').first().attr('src') || '';
+      image = firstImg || '';
+    }
+    if (image) {
+      try {
+        const resolved = new URL(image, url).href;
+        return res.json({ image: resolved });
+      } catch {
+        return res.json({ image });
+      }
+    }
+    res.json({ image: null });
+  } catch (error: any) {
+    res.status(200).json({ image: null });
+  }
+});
 // Create subscription plan
 router.post('/plans', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {

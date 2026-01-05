@@ -145,7 +145,7 @@ const ClientLogin = () => {
               Client Portal
             </CardTitle>
             <CardDescription className="text-gray-600">
-              Access your funding dashboard
+              Access Professional Dashboard
             </CardDescription>
           </CardHeader>
 
@@ -244,9 +244,6 @@ const ClientLogin = () => {
 
             <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="text-center">
-                <p className="text-xs text-gray-500 mb-2">
-                  Are you a funding professional?
-                </p>
                 <Link 
                   to="/login" 
                   className="text-sm text-blue-600 hover:text-blue-700 hover:underline"

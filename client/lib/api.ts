@@ -538,6 +538,21 @@ export const pricingApi = {
     api.post('/api/pricing/subscribe', data),
 };
 
+export const shopApi = {
+  getProducts: () => api.get('/api/shop/products'),
+  createCheckout: (data: { product_id: number; purchaser_name: string; email: string; cookie_id: string }) =>
+    api.post('/api/shop/checkout', data),
+  finalize: (session_id: string) => api.post('/api/shop/finalize', { session_id }),
+  requestCode: (data: { product_id: number; email: string }) =>
+    api.post('/api/shop/request-code', data),
+  verifyCode: (data: { product_id: number; email: string; code: string; cookie_id: string }) =>
+    api.post('/api/shop/verify-code', data),
+  successRequestCode: (data: { session_id: string; email: string }) =>
+    api.post('/api/shop/success-request-code', data),
+  successVerifyCode: (data: { session_id: string; email: string; code: string; cookie_id: string }) =>
+    api.post('/api/shop/success-verify-code', data),
+};
+
 // Super Admin API
 export const superAdminApi = {
   getUsers: (params?: { page?: number; limit?: number; search?: string }) =>
@@ -651,6 +666,15 @@ export const superAdminApi = {
   },
   uploadCreditReport: (data: { admin_id: number; client_id: number; platform: string; report_json: any; experian_score?: number; equifax_score?: number; transunion_score?: number; credit_score?: number; report_date?: string; notes?: string }) =>
     api.post('/api/super-admin/credit-reports/upload', data),
+  getShopProducts: () => api.get('/api/super-admin/shop/products'),
+  uploadShopFiles: (form: FormData) =>
+    api.post('/api/super-admin/shop/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  fetchShopUrlMeta: (url: string) => api.get('/api/super-admin/shop/url-meta', { params: { url } }),
+  createShopProduct: (data: { name: string; description?: string; price: number; thumbnail_url?: string | null; files?: Array<{ url: string; type: 'image' | 'video' | 'pdf' | 'zip' | 'other'; source: 'upload' | 'link' }> }) =>
+    api.post('/api/super-admin/shop/products', data),
+  updateShopProduct: (id: number, data: { name?: string; description?: string; price?: number; thumbnail_url?: string | null; files?: Array<{ url: string; type: 'image' | 'video' | 'pdf' | 'zip' | 'other'; source: 'upload' | 'link' }> }) =>
+    api.put(`/api/super-admin/shop/products/${id}`, data),
+  deleteShopProduct: (id: number) => api.delete(`/api/super-admin/shop/products/${id}`),
 };
 
 // Affiliate API module
@@ -894,6 +918,21 @@ export const employeesApi = {
   }) => api.put(`/api/employees/${id}`, data),
   deactivateEmployee: (id: string | number) => api.delete(`/api/employees/${id}`),
   toggleEmployeeStatus: (id: string | number) => api.post(`/api/employees/${id}/toggle-status`),
+};
+
+export const featureRequestsApi = {
+  getRequests: (params?: { page?: number; limit?: number }) =>
+    api.get('/api/feature-requests', { params }),
+  createRequest: (data: FormData) =>
+    api.post('/api/feature-requests', data, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  toggleVote: (requestId: number) =>
+    api.post(`/api/feature-requests/${requestId}/vote`),
+  getComments: (requestId: number) =>
+    api.get(`/api/feature-requests/${requestId}/comments`),
+  addComment: (requestId: number, content: string) =>
+    api.post(`/api/feature-requests/${requestId}/comments`, { content }),
+  approveRequest: (requestId: number) =>
+    api.post(`/api/feature-requests/${requestId}/approve`),
 };
 
 export default api;

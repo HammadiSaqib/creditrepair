@@ -22,6 +22,7 @@ const ReferralLandingPage = React.lazy(() => import("../src/components/ReferralL
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const Clients = React.lazy(() => import("./pages/Clients"));
 const Employees = React.lazy(() => import("./pages/Employees"));
+const AdminFeatureRequests = React.lazy(() => import("./pages/AdminFeatureRequests"));
 const ClientProfile = React.lazy(() => import("./pages/ClientProfile"));
 const FundingRequests = React.lazy(() => import("./pages/funding-manager/FundingRequests"));
 const Reports = React.lazy(() => import("./pages/Reports"));
@@ -40,6 +41,8 @@ const Settings = React.lazy(() => import("./pages/Settings"));
 const AffiliateSettings = React.lazy(() => import("./pages/AffiliateSettings"));
 const Support = React.lazy(() => import("./pages/Support"));
 const Pricing = React.lazy(() => import("./pages/Pricing"));
+const Shop = React.lazy(() => import("./pages/Shop"));
+const ShopSuccess = React.lazy(() => import("./pages/ShopSuccess"));
 const Features = React.lazy(() => import("./pages/Features"));
 const Subscription = React.lazy(() => import("./pages/Subscription"));
 const BillingSuccess = React.lazy(() => import("./pages/BillingSuccess"));
@@ -65,6 +68,7 @@ const SuperAdminAdminImport = React.lazy(() => import("./pages/super-admin/Super
 const SuperAdminAffiliateImport = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliateImport"));
 const SuperAdminClientImport = React.lazy(() => import("./pages/super-admin/SuperAdminClientImport"));
 const SuperAdminCreditReportUpload = React.lazy(() => import("./pages/super-admin/SuperAdminCreditReportUpload"));
+const ShopManagement = React.lazy(() => import("./pages/super-admin/ShopManagement"));
 const Login = React.lazy(() => import("./pages/Login"));
 const Register = React.lazy(() => import("./pages/Register"));
 const SuperAdminLogin = React.lazy(() => import("./pages/SuperAdminLogin"));
@@ -186,6 +190,8 @@ const App = () => {
                   <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/pricing" element={<Pricing />} />
+          <Route path="/shop" element={<Shop />} />
+          <Route path="/shop/success" element={<ShopSuccess />} />
           <Route path="/features" element={<Features />} />
           <Route path="/blog" element={<BlogIndex />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
@@ -399,6 +405,16 @@ const App = () => {
             }
           />
           <Route
+            path="/admin/feature-requests"
+            element={
+              <SuperAdminProtectedRoute>
+                <ProtectedRoute pageId="feature-requests">
+                  <AdminFeatureRequests />
+                </ProtectedRoute>
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
             path="/support"
             element={
               <ProtectedRoute pageId="support">
@@ -536,6 +552,14 @@ const App = () => {
             element={
               <SuperAdminProtectedRoute>
                 <SuperAdminReports />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/shop-management"
+            element={
+              <SuperAdminProtectedRoute>
+                <ShopManagement />
               </SuperAdminProtectedRoute>
             }
           />
