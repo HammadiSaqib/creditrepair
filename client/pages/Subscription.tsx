@@ -40,6 +40,9 @@ interface SubscriptionPlan {
   price: number;
   billing_cycle: 'monthly' | 'yearly';
   features: string[];
+  max_users?: number | null;
+  max_clients?: number | null;
+  max_disputes?: number | null;
   popular?: boolean;
   description?: string;
   icon?: React.ReactNode;
@@ -108,6 +111,9 @@ const SubscriptionContent: React.FC = () => {
       billing_cycle: 'monthly',
       description: 'Perfect for individuals getting started',
       icon: <Users className="h-6 w-6" />,
+      max_users: 2,
+      max_clients: 50,
+      max_disputes: 500,
       features: [
         'Up to 10 clients',
         'Basic dispute letters',
@@ -124,6 +130,9 @@ const SubscriptionContent: React.FC = () => {
       popular: true,
       description: 'Ideal for growing businesses',
       icon: <TrendingUp className="h-6 w-6" />,
+      max_users: 5,
+      max_clients: 200,
+      max_disputes: 2000,
       features: [
         'Up to 50 clients',
         'Advanced dispute letters',
@@ -141,6 +150,9 @@ const SubscriptionContent: React.FC = () => {
       billing_cycle: 'monthly',
       description: 'For large organizations',
       icon: <Crown className="h-6 w-6" />,
+      max_users: null,
+      max_clients: null,
+      max_disputes: null,
       features: [
         'Unlimited clients',
         'All dispute templates',
@@ -177,16 +189,28 @@ const SubscriptionContent: React.FC = () => {
       console.log('🔄 Fetching subscription plans for dashboard...');
       let databasePlans: SubscriptionPlan[] = [];
       try {
-        const adminResp = await superAdminApi.getPlans({ page: 1, limit: 100 });
+        const adminResp = await superAdminApi.getPlans({ page: 1, limit: 100, is_active: true });
         console.log('📡 Admin Plans API Response:', adminResp);
         const plansData = adminResp.data?.data || [];
-        if (Array.isArray(plansData) && plansData.length > 0) {
-          databasePlans = plansData.map((dbPlan: any) => ({
+        const activePlansData = Array.isArray(plansData)
+          ? plansData.filter(
+              (dbPlan: any) =>
+                dbPlan?.is_active !== false &&
+                dbPlan?.is_active !== 0 &&
+                dbPlan?.is_active !== '0' &&
+                dbPlan?.is_active !== 'false'
+            )
+          : [];
+        if (activePlansData.length > 0) {
+          databasePlans = activePlansData.map((dbPlan: any) => ({
             id: String(dbPlan.id),
             name: dbPlan.name,
             price: parseFloat(dbPlan.price),
             billing_cycle: dbPlan.billing_cycle,
             features: Array.isArray(dbPlan.features) ? dbPlan.features : [],
+            max_users: dbPlan.max_users == null ? null : Number(dbPlan.max_users),
+            max_clients: dbPlan.max_clients == null ? null : Number(dbPlan.max_clients),
+            max_disputes: dbPlan.max_disputes == null ? null : Number(dbPlan.max_disputes),
             description: dbPlan.description || `${dbPlan.name} subscription plan`,
             icon: dbPlan.name === 'Starter' ? <Users className="h-6 w-6" /> :
                   dbPlan.name === 'Professional' ? <TrendingUp className="h-6 w-6" /> :
@@ -210,6 +234,9 @@ const SubscriptionContent: React.FC = () => {
               price: parseFloat(dbPlan.price),
               billing_cycle: dbPlan.billing_cycle,
               features: Array.isArray(dbPlan.features) ? dbPlan.features : [],
+              max_users: dbPlan.max_users == null ? null : Number(dbPlan.max_users),
+              max_clients: dbPlan.max_clients == null ? null : Number(dbPlan.max_clients),
+              max_disputes: dbPlan.max_disputes == null ? null : Number(dbPlan.max_disputes),
               description: dbPlan.description || `${dbPlan.name} subscription plan`,
               icon: dbPlan.name === 'Starter' ? <Users className="h-6 w-6" /> :
                     dbPlan.name === 'Professional' ? <TrendingUp className="h-6 w-6" /> :
@@ -744,6 +771,17 @@ const SubscriptionContent: React.FC = () => {
                         </li>
                       ))}
                     </ul>
+
+                    <div className="border-t pt-4 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600 dark:text-gray-300">Max Users:</span>
+                        <span className="font-medium text-gray-900 dark:text-white">{plan.max_users ?? 'Unlimited'}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600 dark:text-gray-300">Max Clients:</span>
+                        <span className="font-medium text-gray-900 dark:text-white">{plan.max_clients ?? 'Unlimited'}</span>
+                      </div>
+                    </div>
                     
                     <div className="pt-4">
                       {isCurrentPlan ? (

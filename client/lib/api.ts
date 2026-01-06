@@ -560,7 +560,7 @@ export const superAdminApi = {
   getUser: (id: string) => api.get(`/api/super-admin/users/${id}`),
   updateUser: (id: string, data: any) => api.put(`/api/super-admin/users/${id}`, data),
   deleteUser: (id: string) => api.delete(`/api/super-admin/users/${id}`),
-  getPlans: (params?: { page?: number; limit?: number }) =>
+  getPlans: (params?: { page?: number; limit?: number; search?: string; is_active?: boolean | string }) =>
     api.get('/api/super-admin/plans', { params }),
   createPlan: (data: any) => api.post('/api/super-admin/plans', data),
   updatePlan: (id: string, data: any) => api.put(`/api/super-admin/plans/${id}`, data),

@@ -36,7 +36,6 @@ interface PricingPlan {
   features: string[];
   max_users?: number;
   max_clients?: number;
-  max_disputes?: number;
   sort_order?: number;
 }
 
@@ -605,6 +604,17 @@ const ReferralLandingPage: React.FC = () => {
                           }`}>{feature}</span>
                         </div>
                       ))}
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-6 mb-8 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Max Users:</span>
+                        <span className="font-semibold text-slate-900">{plan.max_users ?? 'Unlimited'}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-slate-500">Max Clients:</span>
+                        <span className="font-semibold text-slate-900">{plan.max_clients ?? 'Unlimited'}</span>
+                      </div>
                     </div>
                     
                     <Button 

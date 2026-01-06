@@ -498,6 +498,7 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
   try {
     const { page = 1, limit = 10, search, is_active } = req.query;
     const offset = (Number(page) - 1) * Number(limit);
+    const requesterRole = String((req as any)?.user?.role || '').toLowerCase();
 
     let whereClause = 'WHERE 1=1';
     const params: any[] = [];
@@ -511,6 +512,9 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
     if (is_active !== undefined) {
       whereClause += ' AND is_active = ?';
       params.push(is_active === 'true');
+    } else if (requesterRole !== 'super_admin') {
+      whereClause += ' AND is_active = ?';
+      params.push(true);
     }
 
     const db = getDatabaseAdapter();
@@ -567,7 +571,6 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
       };
     }));
 
-    const requesterRole = String((req as any)?.user?.role || '').toLowerCase();
     const requesterEmail = String((req as any)?.user?.email || '');
     let activePlanIds: number[] = [];
     let viewerAffiliateId: number | null = null;

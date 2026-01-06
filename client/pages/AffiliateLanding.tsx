@@ -14,6 +14,9 @@ interface PricingPlan {
   price: number;
   billingCycle: 'monthly' | 'yearly';
   features: string[];
+  maxUsers?: number | null;
+  maxClients?: number | null;
+  maxDisputes?: number | null;
   isPopular?: boolean;
   commissionRate?: number;
 }
@@ -325,6 +328,17 @@ const AffiliateLanding: React.FC = () => {
                       </li>
                     ))}
                   </ul>
+
+                  <div className="border-t pt-4 mb-8 space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Max Users:</span>
+                      <span className="font-medium text-gray-900">{plan.maxUsers ?? 'Unlimited'}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Max Clients:</span>
+                      <span className="font-medium text-gray-900">{plan.maxClients ?? 'Unlimited'}</span>
+                    </div>
+                  </div>
                   
                   <Button 
                     onClick={() => handlePlanSelect(plan.id)}

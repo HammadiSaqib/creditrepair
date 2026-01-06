@@ -24,7 +24,7 @@ router.get('/pricing', async (req, res) => {
     }
 
     const planRows = await executeQuery(
-      `SELECT id, name, description, price, billing_cycle, features, page_permissions, sort_order
+      `SELECT id, name, description, price, billing_cycle, features, page_permissions, sort_order, max_users, max_clients, max_disputes
        FROM subscription_plans
        WHERE is_active = 1
        ORDER BY sort_order ASC, price ASC`,
@@ -65,6 +65,9 @@ router.get('/pricing', async (req, res) => {
           price: Number(row.price || 0),
           billingCycle: (String(row.billing_cycle || 'monthly') === 'yearly' ? 'yearly' : 'monthly') as 'monthly' | 'yearly',
           features: Array.isArray(features) ? features : [],
+          maxUsers: row.max_users == null ? null : Number(row.max_users),
+          maxClients: row.max_clients == null ? null : Number(row.max_clients),
+          maxDisputes: row.max_disputes == null ? null : Number(row.max_disputes),
           isPopular: String(row.name || '').toLowerCase() === 'professional',
           _meta: { isSpecific, restrictedToSubscribers, allowedAffiliateIds }
         };
