@@ -417,11 +417,9 @@ const App = () => {
           <Route
             path="/admin/feature-requests"
             element={
-              <SuperAdminProtectedRoute>
-                <ProtectedRoute pageId="feature-requests">
-                  <AdminFeatureRequests />
-                </ProtectedRoute>
-              </SuperAdminProtectedRoute>
+              <ProtectedRoute pageId="feature-requests">
+                <AdminFeatureRequests />
+              </ProtectedRoute>
             }
           />
           <Route

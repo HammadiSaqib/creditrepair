@@ -161,7 +161,7 @@ export const usePagePermissions = (): PagePermissions => {
         if (userPlan) {
           const planPages: string[] = Array.isArray(userPlan.page_permissions) ? userPlan.page_permissions : [];
           if (planPages.length > 0) {
-            const permissions = Array.from(new Set([...planPages, 'subscription']));
+            const permissions = Array.from(new Set([...planPages, 'subscription', 'feature-requests']));
             console.log('✅ Using plan-defined permissions:', permissions);
             setAllowedPages(permissions);
           } else {
@@ -170,7 +170,7 @@ export const usePagePermissions = (): PagePermissions => {
           }
         } else {
           console.log('⚠️ Could not find plan in plans list, granting basic permissions only');
-          setAllowedPages(['dashboard', 'settings', 'subscription']);
+          setAllowedPages(['dashboard', 'settings', 'subscription', 'feature-requests']);
         }
       }
 

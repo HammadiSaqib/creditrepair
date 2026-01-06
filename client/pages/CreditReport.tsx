@@ -51,6 +51,7 @@ import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { shouldShowField, tabConfig } from "@/utils/fieldCategorization";
 import { calculateAccountUtilization } from "../utils/utilizationCalculator.js";
 import {
+  Gauge,
   FileText,
   Search,
   Download,
@@ -115,7 +116,6 @@ import {
   Banknote,
   ScrollText,
   Lock,
-  Gauge,
   BadgeCheck,
   Settings,
   Gavel,
@@ -3340,6 +3340,30 @@ export default function CreditReport() {
             });
             console.log('🔍 DEBUG: Extracted scores from API:', scores);
             console.log('🔍 DEBUG: Extracted score types from API:', scoreTypes);
+          } else if (data.data.reportData.Scores && Array.isArray(data.data.reportData.Scores)) {
+            const scoreData = data.data.reportData.Scores;
+            scoreData.forEach((score: any) => {
+              if (score.BureauId === 1) {
+                scores.transunion = score.Score;
+                scoreTypes.transunion = score.ScoreType || "FICO";
+              }
+              if (score.BureauId === 2) {
+                scores.experian = score.Score;
+                scoreTypes.experian = score.ScoreType || "FICO";
+              }
+              if (score.BureauId === 3) {
+                scores.equifax = score.Score;
+                scoreTypes.equifax = score.ScoreType || "FICO";
+              }
+            });
+            console.log('🔍 DEBUG: Extracted scores from API (Scores fallback):', scores);
+            console.log('🔍 DEBUG: Extracted score types from API (Scores fallback):', scoreTypes);
+          } else if (data.data.scores && typeof data.data.scores === 'object') {
+            const s = data.data.scores as any;
+            scores.experian = String(s.experian ?? scores.experian);
+            scores.equifax = String(s.equifax ?? scores.equifax);
+            scores.transunion = String(s.transunion ?? scores.transunion);
+            console.log('🔍 DEBUG: Extracted scores from API (scores object fallback):', scores);
           } else {
             console.log('🔍 DEBUG: Using fallback scores:', scores);
             console.log('🔍 DEBUG: Using fallback score types:', scoreTypes);
@@ -3392,16 +3416,22 @@ export default function CreditReport() {
               }));
           };
 
-          // Transform collections from accounts with negative indicators
+          // Transform true collection accounts (not just late payments)
           const transformApiCollections = (accounts) => {
             return accounts
-              .filter(account => 
-                account.AccountStatus === 'Closed' && 
-                account.CurrentBalance > 0 ||
-                account.PaymentStatus?.includes('Late') ||
-                account.WorstPayStatus?.includes('Late') ||
-                account.AmountPastDue > 0
-              )
+              .filter(account => {
+                const paymentStatus = String(account.PaymentStatus || '').toLowerCase();
+                const accountType = String(account.AccountType || account.AccountTypeDescription || account.CreditType || '').toLowerCase();
+                const condition = String(account.AccountCondition || account.AccountStatus || '').toLowerCase();
+                const isCollectionLike =
+                  paymentStatus.includes('collection') ||
+                  accountType.includes('collection') ||
+                  condition.includes('collection');
+                const hasBalance =
+                  Number(account.CurrentBalance || 0) > 0 ||
+                  Number(account.AmountPastDue || 0) > 0;
+                return isCollectionLike && hasBalance;
+              })
               .map((account, index) => ({
                 id: index + 1,
                 agency: account.CreditorName || 'Unknown Agency',
@@ -3423,9 +3453,11 @@ export default function CreditReport() {
 
           // Extract bureau-specific dates from Score array
           const getBureauDate = (bureauId) => {
-            const scoreEntry = data.data.reportData.Score?.find(s => s.BureauId === bureauId);
-            if (scoreEntry?.DateScore) {
-              return new Date(scoreEntry.DateScore).toLocaleDateString('en-US', {
+            const scoreArray = data.data.reportData.Score || data.data.reportData.Scores;
+            const scoreEntry = Array.isArray(scoreArray) ? scoreArray.find((s: any) => s.BureauId === bureauId) : null;
+            const ds = scoreEntry?.DateScore || scoreEntry?.DateReported || scoreEntry?.DateUpdated || null;
+            if (ds) {
+              return new Date(ds).toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric'
@@ -3478,19 +3510,31 @@ export default function CreditReport() {
               if (!utilizationByBureau[bureauId]) return;
 
               // Revolving accounts (credit cards, lines of credit)
+              const at = String(account.AccountType || '').toLowerCase();
+              const ad = String(account.AccountTypeDescription || '').toLowerCase();
+              const ct = String(account.CreditType || '').toLowerCase();
+              const ind = String(account.Industry || '').toLowerCase();
               if (
-                account.CreditType === 'Revolving Account' ||
-                account.AccountTypeDescription === 'Revolving Account' ||
-                String(account.CreditType || '').toLowerCase().includes('credit card') ||
-                String(account.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
-                String(account.AccountType || '').toLowerCase().includes('credit card')
+                at.includes('revolving') ||
+                ad.includes('revolving') ||
+                ct.includes('revolving') ||
+                at.includes('credit card') ||
+                ad.includes('credit card') ||
+                ct.includes('credit card') ||
+                ad.includes('charge account') ||
+                ad.includes('flexible spending credit card') ||
+                ind.includes('bank credit cards')
               ) {
                 // All revolving accounts
                 utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
                 utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
                 
                 // Open revolving accounts only
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].openRevolvingBalance += currentBalance;
                   utilizationByBureau[bureauId].openRevolvingLimit += creditLimit || highBalance;
                 }
@@ -3499,14 +3543,22 @@ export default function CreditReport() {
               // Real estate debt (mortgages)
               if (account.AccountType === 'Mortgage' || account.Industry?.includes('Real Estate') || 
                   account.CreditorName?.toLowerCase().includes('mortgage')) {
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].realEstateDebt += currentBalance;
                 }
               }
               
               // Installment debt (auto loans, personal loans, etc.)
               if (account.CreditType === 'Installment Account' || account.AccountTypeDescription === 'Installment Account') {
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].installmentDebt += currentBalance;
                 }
               }
@@ -3603,42 +3655,75 @@ export default function CreditReport() {
 
               // Check accounts for this bureau
               const bureauAccounts = apiData.reportData?.Accounts?.filter((acc: any) => acc.BureauId === bureauId) || [];
-              
-              const openRevolvingAccounts = bureauAccounts.filter((acc: any) => 
-                (
-                  acc.CreditType === 'Revolving Account' ||
-                  acc.AccountTypeDescription === 'Revolving Account' ||
-                  String(acc.CreditType || '').toLowerCase().includes('credit card') ||
-                  String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
-                  String(acc.AccountType || '').toLowerCase().includes('credit card')
-                ) &&
-                (acc.AccountStatus === 'Open' || acc.AccountStatus === 'Current')
-              );
-              
-              criteria[bureauId].minFiveOpenRevolving = openRevolvingAccounts.length >= 5;
+              const openPrimaryRevolving = bureauAccounts.filter((acc: any) => {
+                const at = String(acc.AccountType || '').toLowerCase();
+                const ad = String(acc.AccountTypeDescription || '').toLowerCase();
+                const ct = String(acc.CreditType || '').toLowerCase();
+                const ind = String(acc.Industry || '').toLowerCase();
+                const isRevolving =
+                  at.includes('revolving') ||
+                  ad.includes('revolving') ||
+                  ct.includes('revolving') ||
+                  at.includes('credit card') ||
+                  ad.includes('credit card') ||
+                  ct.includes('credit card') ||
+                  ad.includes('charge account') ||
+                  ad.includes('flexible spending credit card') ||
+                  ind.includes('bank credit cards');
+                const isOpen =
+                  acc.AccountStatus === 'Open' ||
+                  acc.AccountStatus === 'Current' ||
+                  acc.AccountCondition === 'Open';
+                const designator = String(acc.AccountDesignator || '').toLowerCase();
+                const isPrimary = !designator.includes('authorized');
+                return isRevolving && isOpen && isPrimary;
+              });
+              const withGoodHistory = openPrimaryRevolving.filter((acc: any) => {
+                if (!acc.DateOpened) return false;
+                const opened = new Date(acc.DateOpened);
+                if (isNaN(opened.getTime())) return false;
+                const months = Math.floor((Date.now() - opened.getTime()) / (1000 * 60 * 60 * 24 * 30));
+                const payHist = String(acc.PayStatusHistory || '').toUpperCase();
+                const recent = payHist.slice(-24);
+                const negInHist = /[DLB]/.test(recent);
+                const negStatus =
+                  String(acc.PaymentStatus || '').toLowerCase().includes('late') ||
+                  String(acc.WorstPayStatus || '').toLowerCase().includes('late') ||
+                  (parseFloat(acc.AmountPastDue) || 0) > 0;
+                return months >= 24 && !negInHist && !negStatus;
+              });
+              criteria[bureauId].minFiveOpenRevolving = withGoodHistory.length >= 5;
 
               // Check for 3+ year old credit card with $5K+ limit
-              const qualifyingCard = openRevolvingAccounts.find((acc: any) => {
+              const qualifyingCards = openPrimaryRevolving.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
-                const yearsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
+                const yearsOld = (Date.now() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
                 const creditLimit = parseFloat(acc.CreditLimit) || 0;
                 return yearsOld >= 3 && creditLimit >= 5000;
               });
-              criteria[bureauId].creditCard3YearsOld5KLimit = !!qualifyingCard;
+              criteria[bureauId].creditCard3YearsOld5KLimit = qualifyingCards.length >= 3;
 
               // Check unsecured accounts opened in past 12 months
               const recentUnsecuredAccounts = bureauAccounts.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
                 const monthsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
-                return monthsOld <= 12 && (
-                  acc.CreditType === 'Revolving Account' ||
-                  acc.AccountTypeDescription === 'Revolving Account' ||
-                  String(acc.CreditType || '').toLowerCase().includes('credit card') ||
-                  String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
-                  String(acc.AccountType || '').toLowerCase().includes('credit card')
-                );
+                const at = String(acc.AccountType || '').toLowerCase();
+                const ad = String(acc.AccountTypeDescription || '').toLowerCase();
+                const ct = String(acc.CreditType || '').toLowerCase();
+                const ind = String(acc.Industry || '').toLowerCase();
+                const isRevolving =
+                  at.includes('revolving') ||
+                  ad.includes('revolving') ||
+                  ct.includes('revolving') ||
+                  at.includes('credit card') ||
+                  ad.includes('credit card') ||
+                  ct.includes('credit card') ||
+                  ad.includes('charge account') ||
+                  ad.includes('flexible spending credit card') ||
+                  ind.includes('bank credit cards');
+                return monthsOld <= 12 && isRevolving;
               });
               criteria[bureauId].maxFourUnsecuredIn12Months = recentUnsecuredAccounts.length <= 4;
 
@@ -8388,297 +8473,211 @@ export default function CreditReport() {
 
           {/* Credit Score Overview - Enhanced with Speedometer Style */}
           <Card className="border-0 shadow-xl bg-card">
-            <CardHeader className="text-center pb-6">
-              <CardTitle className="text-2xl font-bold text-foreground mb-2">
-                {clientName}’s Current Credit Status
+            <CardHeader className="text-center pb-10 pt-8 relative">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 opacity-50"></div>
+              <CardTitle className="text-3xl font-bold text-slate-900 dark:text-white mb-2 flex items-center justify-center gap-3">
+                <Gauge className="w-8 h-8 text-blue-600" />
+                {clientName}’s Credit Status
               </CardTitle>
+              <CardDescription className="text-lg">
+                Real-time analysis of your credit standing across all bureaus
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* TransUnion Enhanced with Speedometer */}
-                <div className="bg-card rounded-2xl p-6 border border-border">
-                  <div className="text-center mb-4">
-                    <div className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md mx-auto mb-3 w-fit">
-                      <img 
-                        src="/TransUnion_logo.svg.png" 
-                        alt="TransUnion" 
-                        className="h-6 w-auto filter brightness-0 invert"
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.transunion || 'N/A'}</p>
-                    {(() => {
-                      const delta = getScoreDelta('transunion');
-                      const cls = delta === null ? 'text-muted-foreground' : (delta > 0 ? 'text-green-600' : (delta < 0 ? 'text-red-600' : 'text-black dark:text-white'));
-                      const text = delta === null ? '—' : (delta > 0 ? `+${delta}` : `${delta}`);
-                      return (
-                        <div className={`mt-1 text-sm font-semibold ${cls}`}>
-                          {text}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 px-4">
+                {[
+                  { id: 'transunion', name: 'TransUnion', logo: '/TransUnion_logo.svg.png' },
+                  { id: 'experian', name: 'Experian', logo: '/Experian_logo.svg.png' },
+                  { id: 'equifax', name: 'Equifax', logo: '/Equifax_Logo.svg.png' }
+                ].map((bureau) => {
+                  const score = reportData.scores[bureau.id] || 0;
+                  const date = reportData?.bureauDates?.[bureau.id] || 'N/A';
+                  const delta = getScoreDelta(bureau.id);
+                  
+                  // Gauge Config
+                  const radius = 80;
+                  const center = 100;
+                  const startAngle = 135;
+                  const endAngle = 405;
+                  const totalAngle = 270;
+                  const minScore = 300;
+                  const maxScore = 850;
+                  
+                  // Ranges definition
+                  const ranges = [
+                    { min: 300, max: 579, color: '#ef4444', label: 'Poor' },      // Red
+                    { min: 580, max: 669, color: '#f97316', label: 'Fair' },      // Orange
+                    { min: 670, max: 739, color: '#eab308', label: 'Good' },      // Yellow
+                    { min: 740, max: 799, color: '#22c55e', label: 'Very Good' }, // Green
+                    { min: 800, max: 850, color: '#15803d', label: 'Excellent' }  // Dark Green
+                  ];
+
+                  // Find current range color
+                  const currentRange = ranges.find(r => score >= r.min && score <= r.max) || ranges[0];
+
+                  // Math Helpers
+                  const getCoords = (angleInDegrees: number, r: number = radius) => {
+                    const angleInRadians = (angleInDegrees * Math.PI) / 180.0;
+                    return {
+                      x: center + (r * Math.cos(angleInRadians)),
+                      y: center + (r * Math.sin(angleInRadians))
+                    };
+                  };
+                  
+                  const describeArc = (start: number, end: number, r: number = radius) => {
+                    const startPos = getCoords(start, r);
+                    const endPos = getCoords(end, r);
+                    const largeArcFlag = end - start <= 180 ? "0" : "1";
+                    return [
+                      "M", startPos.x, startPos.y, 
+                      "A", r, r, 0, largeArcFlag, 1, endPos.x, endPos.y
+                    ].join(" ");
+                  };
+
+                  const valueToAngle = (val: number) => {
+                    const ratio = Math.min(Math.max((val - minScore) / (maxScore - minScore), 0), 1);
+                    return startAngle + (ratio * totalAngle);
+                  };
+
+                  const currentAngle = valueToAngle(score);
+                  // Needle tip on the arc
+                  const needleTip = getCoords(currentAngle, radius);
+
+                  // Generate Ticks (Outside the arc)
+                  const ticks = [300, 400, 500, 600, 700, 800, 850].map(val => {
+                    const angle = valueToAngle(val);
+                    const inner = getCoords(angle, radius + 5);
+                    const outer = getCoords(angle, radius + 10);
+                    return { x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y, val };
+                  });
+
+                  // Generate Labels (Outside the ticks)
+                  const labels = [300, 400, 500, 580, 670, 740, 800, 850].map(val => {
+                     const angle = valueToAngle(val);
+                     const pos = getCoords(angle, radius + 25);
+                     return { x: pos.x, y: pos.y, val, angle };
+                  });
+
+                  return (
+                    <div key={bureau.id} className="relative bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-xl border border-slate-100 dark:border-slate-700 hover:shadow-2xl transition-all duration-500 group">
+                      {/* Bureau Logo & Date */}
+                      <div className="flex justify-between items-center mb-4">
+                        <div className="bg-slate-50 dark:bg-slate-900 p-2 rounded-xl">
+                          <img 
+                            src={bureau.logo} 
+                            alt={bureau.name} 
+                            className="h-5 w-auto dark:filter dark:brightness-0 dark:invert opacity-80 group-hover:opacity-100 transition-opacity"
+                          />
                         </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Speedometer with score inside */}
-                  <div className="flex justify-center mb-4">
-                    <div className="relative w-40 h-20">
-                      <svg className="w-40 h-20" viewBox="0 0 160 80">
-                        {/* Background arc */}
-                        <path
-                          d="M 20 70 A 50 50 0 0 1 140 70"
-                          fill="none"
-                          stroke="#e5e7eb"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                        />
-                        {/* Progress arc */}
-                        <path
-                          d="M 20 70 A 50 50 0 0 1 140 70"
-                          fill="none"
-                          stroke="url(#transunionProgressGradient)"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                          strokeDasharray={`${((reportData.scores.transunion - 300) / 550) * 188.5} 188.5`}
-                          className="transition-all duration-1000 ease-out"
-                        />
-                        {/* Gradient definition */}
-                        <defs>
-                          <linearGradient id="transunionProgressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stopColor="#ef4444" />
-                            <stop offset="20%" stopColor="#f97316" />
-                            <stop offset="40%" stopColor="#eab308" />
-                            <stop offset="60%" stopColor="#84cc16" />
-                            <stop offset="80%" stopColor="#22c55e" />
-                            <stop offset="100%" stopColor="#3b82f6" />
-                          </linearGradient>
-                        </defs>
-                        {/* Score markers */}
-                        <circle cx="20" cy="70" r="3" fill="#94a3b8" />
-                        <circle cx="80" cy="25" r="3" fill="#94a3b8" />
-                        <circle cx="140" cy="70" r="3" fill="#94a3b8" />
-                        {/* Score number in center */}
-                        <text x="80" y="60" textAnchor="middle" className="fill-blue-700 text-3xl font-bold">
-                          {reportData.scores.transunion}
-                        </text>
-                        <text x="80" y="75" textAnchor="middle" className="fill-blue-600 text-xs font-medium">
-                          {(() => {
-                            const score = reportData.scores.transunion;
-                            if (score >= 800) return 'Excellent';
-                            if (score >= 740) return 'Very Good';
-                            if (score >= 670) return 'Good';
-                            if (score >= 580) return 'Fair';
-                            return 'Poor';
-                          })()}
-                        </text>
-                      </svg>
-                      {/* Score labels */}
-                      <div className="absolute -bottom-2 left-0 text-xs text-red-500 font-medium">300</div>
-                      <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-xs text-yellow-500 font-medium"></div>
-                      <div className="absolute -bottom-2 right-0 text-xs text-blue-500 font-medium">850</div>
-                    </div>
-                  </div>
-
-                  <div className="text-center space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-red-500">Poor</span>
-                      <span className="text-orange-500">Fair</span>
-                      <span className="text-yellow-500">Good</span>
-                      <span className="text-green-500 font-semibold">
-                        Very Good
-                      </span>
-                      <span className="text-blue-500">Excellent</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Experian Enhanced with Speedometer */}
-                <div className="bg-card rounded-2xl p-6 border border-border">
-                  <div className="text-center mb-4">
-                    <div className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md mx-auto mb-3 w-fit">
-                      <img 
-                        src="/Experian_logo.svg.png" 
-                        alt="Experian" 
-                        className="h-6 w-auto filter brightness-0 invert"
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.experian || 'N/A'}</p>
-                    {(() => {
-                      const delta = getScoreDelta('experian');
-                      const cls = delta === null ? 'text-muted-foreground' : (delta > 0 ? 'text-green-600' : (delta < 0 ? 'text-red-600' : 'text-black dark:text-white'));
-                      const text = delta === null ? '—' : (delta > 0 ? `+${delta}` : `${delta}`);
-                      return (
-                        <div className={`mt-1 text-sm font-semibold ${cls}`}>
-                          {text}
+                        <div className="text-xs font-medium text-slate-400 bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded-lg">
+                          {date}
                         </div>
-                      );
-                    })()}
-                  </div>
+                      </div>
 
-                  {/* Speedometer with score inside */}
-                  <div className="flex justify-center mb-4">
-                    <div className="relative w-40 h-20">
-                      <svg className="w-40 h-20" viewBox="0 0 160 80">
-                        {/* Background arc */}
-                        <path
-                          d="M 20 70 A 50 50 0 0 1 140 70"
-                          fill="none"
-                          stroke="#e5e7eb"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                        />
-                        {/* Progress arc */}
-                        <path
-                          d="M 20 70 A 50 50 0 0 1 140 70"
-                          fill="none"
-                          stroke="url(#experianProgressGradient)"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                          strokeDasharray={`${((reportData.scores.experian - 300) / 550) * 188.5} 188.5`}
-                          className="transition-all duration-1000 ease-out"
-                        />
-                        {/* Gradient definition */}
-                        <defs>
-                          <linearGradient id="experianProgressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stopColor="#ef4444" />
-                            <stop offset="20%" stopColor="#f97316" />
-                            <stop offset="40%" stopColor="#eab308" />
-                            <stop offset="60%" stopColor="#84cc16" />
-                            <stop offset="80%" stopColor="#22c55e" />
-                            <stop offset="100%" stopColor="#10b981" />
-                          </linearGradient>
-                        </defs>
-                        {/* Score markers */}
-                        <circle cx="20" cy="70" r="3" fill="#94a3b8" />
-                        <circle cx="80" cy="25" r="3" fill="#94a3b8" />
-                        <circle cx="140" cy="70" r="3" fill="#94a3b8" />
-                        {/* Score number in center */}
-                        <text x="80" y="60" textAnchor="middle" className="fill-current text-foreground text-3xl font-bold dark:fill-white">
-                          {reportData.scores.experian}
-                        </text>
-                        <text x="80" y="75" textAnchor="middle" className="fill-current text-muted-foreground text-xs font-medium">
-                          {(() => {
-                            const score = reportData.scores.experian;
-                            if (score >= 800) return 'Excellent';
-                            if (score >= 740) return 'Very Good';
-                            if (score >= 670) return 'Good';
-                            if (score >= 580) return 'Fair';
-                            return 'Poor';
-                          })()}
-                        </text>
-                      </svg>
-                      {/* Score labels */}
-                      <div className="absolute -bottom-2 left-0 text-xs text-red-500 font-medium">300</div>
-                      <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-xs text-yellow-500 font-medium"></div>
-                      <div className="absolute -bottom-2 right-0 text-xs text-green-500 font-medium">850</div>
-                    </div>
-                  </div>
+                      {/* Speedometer SVG */}
+                      <div className="flex justify-center -my-2 relative">
+                        <svg width="280" height="220" viewBox="0 0 260 200" className="overflow-visible">
+                          <defs>
+                            <linearGradient id={`grad-${bureau.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stopColor="#ef4444" />
+                              <stop offset="25%" stopColor="#f97316" />
+                              <stop offset="50%" stopColor="#eab308" />
+                              <stop offset="75%" stopColor="#22c55e" />
+                              <stop offset="100%" stopColor="#15803d" />
+                            </linearGradient>
+                            <filter id="glow-gauge" x="-20%" y="-20%" width="140%" height="140%">
+                              <feGaussianBlur stdDeviation="3" result="blur" />
+                              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                            </filter>
+                          </defs>
 
-                  <div className="text-center space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-red-500">Poor</span>
-                      <span className="text-orange-500">Fair</span>
-                      <span className="text-yellow-500">Good</span>
-                      <span className="text-green-500 font-semibold">
-                        Very Good
-                      </span>
-                      <span className="text-blue-500">Excellent</span>
-                    </div>
-                  </div>
-                </div>
+                          {/* Group with translation to center the gauge in the new viewBox */}
+                          <g transform="translate(30, 30)">
+                            {/* Ticks */}
+                            {ticks.map((tick, i) => (
+                              <line 
+                                key={i}
+                                x1={tick.x1} y1={tick.y1}
+                                x2={tick.x2} y2={tick.y2}
+                                stroke="#94a3b8"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                              />
+                            ))}
 
-                {/* Equifax Enhanced with Speedometer */}
-                <div className="bg-card rounded-2xl p-6 border border-border">
-                  <div className="text-center mb-4">
-                    <div className="p-2 bg-primary text-primary-foreground rounded-lg shadow-md mx-auto mb-3 w-fit">
-                      <img 
-                        src="/Equifax_Logo.svg.png" 
-                        alt="Equifax" 
-                        className="h-6 w-auto filter brightness-0 invert"
-                      />
-                    </div>
-                    <p className="text-sm text-muted-foreground">{reportData?.bureauDates?.equifax || 'N/A'}</p>
-                    {(() => {
-                      const delta = getScoreDelta('equifax');
-                      const cls = delta === null ? 'text-muted-foreground' : (delta > 0 ? 'text-green-600' : (delta < 0 ? 'text-red-600' : 'text-black dark:text-white'));
-                      const text = delta === null ? '—' : (delta > 0 ? `+${delta}` : `${delta}`);
-                      return (
-                        <div className={`mt-1 text-sm font-semibold ${cls}`}>
-                          {text}
+                            {/* Labels - No Rotation for better readability */}
+                            {labels.map((label, i) => (
+                              <text
+                                key={i}
+                                x={label.x} y={label.y}
+                                textAnchor="middle"
+                                dominantBaseline="middle"
+                                className="text-[11px] fill-slate-500 font-bold dark:fill-slate-400"
+                              >
+                                {label.val}
+                              </text>
+                            ))}
+
+                            {/* Gradient Arc */}
+                            <path
+                              d={describeArc(startAngle, endAngle)}
+                              fill="none"
+                              stroke={`url(#grad-${bureau.id})`}
+                              strokeWidth="8"
+                              strokeLinecap="round"
+                              className="opacity-90"
+                            />
+
+                            {/* Needle */}
+                            <line
+                              x1={center} y1={center}
+                              x2={needleTip.x} y2={needleTip.y}
+                              stroke="#cbd5e1"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              className="dark:stroke-slate-600"
+                            />
+                            
+                            {/* Tip Circle (Knob) */}
+                            <circle 
+                              cx={needleTip.x} cy={needleTip.y} 
+                              r="6" 
+                              fill="white" 
+                              stroke={currentRange.color}
+                              strokeWidth="3"
+                              className="drop-shadow-md"
+                            />
+                          </g>
+                        </svg>
+                        
+                        {/* Score Display Overlay (Bottom Center) */}
+                        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 text-center">
+                          <div className="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white">
+                            {score}
+                          </div>
+                          <div className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                            {currentRange.label}
+                          </div>
                         </div>
-                      );
-                    })()}
-                  </div>
+                      </div>
 
-                  {/* Speedometer with score inside */}
-                  <div className="flex justify-center mb-4">
-                    <div className="relative w-40 h-20">
-                      <svg className="w-40 h-20" viewBox="0 0 160 80">
-                        {/* Background arc */}
-                        <path
-                          d="M 20 70 A 50 50 0 0 1 140 70"
-                          fill="none"
-                          stroke="#e5e7eb"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                        />
-                        {/* Progress arc */}
-                        <path
-                          d="M 20 70 A 50 50 0 0 1 140 70"
-                          fill="none"
-                          stroke="url(#equifaxProgressGradient)"
-                          strokeWidth="10"
-                          strokeLinecap="round"
-                          strokeDasharray={`${((reportData.scores.equifax - 300) / 550) * 188.5} 188.5`}
-                          className="transition-all duration-1000 ease-out"
-                        />
-                        {/* Gradient definition */}
-                        <defs>
-                          <linearGradient id="equifaxProgressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                            <stop offset="0%" stopColor="#ef4444" />
-                            <stop offset="20%" stopColor="#f97316" />
-                            <stop offset="40%" stopColor="#eab308" />
-                            <stop offset="60%" stopColor="#84cc16" />
-                            <stop offset="80%" stopColor="#22c55e" />
-                            <stop offset="100%" stopColor="#9333ea" />
-                          </linearGradient>
-                        </defs>
-                        {/* Score markers */}
-                        <circle cx="20" cy="70" r="3" fill="#94a3b8" />
-                        <circle cx="80" cy="25" r="3" fill="#94a3b8" />
-                        <circle cx="140" cy="70" r="3" fill="#94a3b8" />
-                        {/* Score number in center */}
-                        <text x="80" y="60" textAnchor="middle" className="fill-current text-foreground text-3xl font-bold dark:fill-white">
-                          {reportData.scores.equifax}
-                        </text>
-                        <text x="80" y="75" textAnchor="middle" className="fill-current text-muted-foreground text-xs font-medium">
-                          {(() => {
-                            const score = reportData.scores.equifax;
-                            if (score >= 800) return 'Excellent';
-                            if (score >= 740) return 'Very Good';
-                            if (score >= 670) return 'Good';
-                            if (score >= 580) return 'Fair';
-                            return 'Poor';
-                          })()}
-                        </text>
-                      </svg>
-                      {/* Score labels */}
-                      <div className="absolute -bottom-2 left-0 text-xs text-red-500 font-medium">300</div>
-                      <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-xs text-yellow-500 font-medium"></div>
-                      <div className="absolute -bottom-2 right-0 text-xs text-purple-500 font-medium">850</div>
+                      {/* Footer Delta */}
+                      <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                        <span className="text-xs text-slate-400 font-medium">Monthly Change</span>
+                        {(() => {
+                           const cls = delta === null ? 'text-slate-400' : (delta > 0 ? 'text-green-500' : (delta < 0 ? 'text-red-500' : 'text-slate-500'));
+                           const icon = delta === null ? null : (delta > 0 ? <TrendingUp className="w-3 h-3" /> : (delta < 0 ? <TrendingDown className="w-3 h-3" /> : null));
+                           return (
+                             <div className={`flex items-center gap-1 text-sm font-bold ${cls}`}>
+                               {icon}
+                               {delta === null ? '—' : (delta > 0 ? `+${delta}` : delta)}
+                             </div>
+                           );
+                        })()}
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="text-center space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-red-500">Poor</span>
-                      <span className="text-orange-500">Fair</span>
-                      <span className="text-yellow-500">Good</span>
-                      <span className="text-green-500 font-semibold">
-                        Very Good
-                      </span>
-                      <span className="text-blue-500">Excellent</span>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
               {(() => {
                 const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
@@ -8846,7 +8845,9 @@ export default function CreditReport() {
                     });
                   });
                   if (Array.isArray(collectionsRaw)) {
+                    const lateAccountIds = new Set(lateAccounts.map((a: any) => String(a.accountNumber || a.AccountNumber || a.id || '')));
                     collectionsRaw.forEach((c: any) => {
+                      if (lateAccountIds.has(String(c.accountNumber || c.AccountNumber || c.id || ''))) return;
                       const isCollection = (c.PaymentStatus && String(c.PaymentStatus).includes('Collection')) || (c.AccountType && String(c.AccountType).includes('Collection')) || c.type === 'Collection';
                       if (isCollection) {
                         const digits = String(c.accountNumber || c.AccountNumber || c.id || '').replace(/\D/g, '');
@@ -9167,21 +9168,30 @@ export default function CreditReport() {
                 const allNegativeItems = [];
                 
                 // Add late payment accounts
-                const latePaymentAccounts = reportData.accounts.filter(account => 
-                  account.status && (
-                    account.status.toLowerCase().includes('late') || 
-                    account.status.toLowerCase().includes('delinquent') || 
-                    account.status.toLowerCase().includes('default') ||
-                    (account.latePayments && account.latePayments.total > 0)
-                  )
-                );
+                const latePaymentAccounts = reportData.accounts.filter(account => {
+                  const status = account.status || account.AccountStatus;
+                  return status && (
+                    status.toLowerCase().includes('late') || 
+                    status.toLowerCase().includes('delinquent') || 
+                    status.toLowerCase().includes('default') ||
+                    (account.latePayments && account.latePayments.total > 0) ||
+                    (account.WorstPayStatus && account.WorstPayStatus.toLowerCase().includes('late'))
+                  );
+                });
                 
                 latePaymentAccounts.forEach(account => {
                   const accountDigits = String(account.accountNumber || account.id || '').replace(/\D/g, '');
                   const accountKey = accountDigits ? (accountDigits.length >= 4 ? accountDigits.slice(-4) : accountDigits) : String(account.accountNumber || account.id || '').toLowerCase();
+                  const lateTypeRaw =
+                    account.WorstPayStatus ||
+                    account.PaymentStatus ||
+                    account.status ||
+                    account.AccountStatus ||
+                    'Late Payment';
+                  const lateType = String(lateTypeRaw).trim() || 'Late Payment';
                   allNegativeItems.push({
                     id: account.accountNumber || account.id,
-                    type: 'Late Payment',
+                    type: lateType,
                     creditor: account.creditor,
                     bureau: account.bureau,
                     accountNumber: account.accountNumber,
@@ -9214,7 +9224,9 @@ export default function CreditReport() {
                 
                 // Add collections
                 if (reportData.collections) {
+                  const latePaymentIds = new Set(latePaymentAccounts.map(a => String(a.accountNumber || a.id || '')));
                   reportData.collections.forEach(collection => {
+                    if (latePaymentIds.has(String(collection.accountNumber || collection.id || ''))) return;
                     const colDigits = String(collection.accountNumber || collection.id || '').replace(/\D/g, '');
                     const accountKey = colDigits ? (colDigits.length >= 4 ? colDigits.slice(-4) : colDigits) : String(collection.accountNumber || collection.id || '').toLowerCase();
                     allNegativeItems.push({
@@ -9316,14 +9328,22 @@ export default function CreditReport() {
                   const lateAccounts = Array.isArray(accounts) ? accounts.filter((a: any) => {
                     const st = (a.status || a.AccountStatus || '').toString().toLowerCase();
                     const lp = a.latePayments && a.latePayments.total > 0;
-                    return st.includes('late') || st.includes('delinquent') || st.includes('default') || lp;
+                    const wp = (a.WorstPayStatus || '').toString().toLowerCase();
+                    return st.includes('late') || st.includes('delinquent') || st.includes('default') || lp || wp.includes('late');
                   }) : [];
                   lateAccounts.forEach((a: any) => {
                     const digits = String(a.accountNumber || a.AccountNumber || a.id || '').replace(/\D/g, '');
                     const accountKey = digits ? (digits.length >= 4 ? digits.slice(-4) : digits) : String(a.accountNumber || a.AccountNumber || a.id || '').toLowerCase();
+                    const lateTypeRaw =
+                      a.WorstPayStatus ||
+                      a.PaymentStatus ||
+                      a.status ||
+                      a.AccountStatus ||
+                      'Late Payment';
+                    const lateType = String(lateTypeRaw).trim() || 'Late Payment';
                     items.push({
                     id: a.accountNumber || a.AccountNumber || a.id,
-                    type: 'Late Payment',
+                    type: lateType,
                     creditor: a.creditor || a.CreditorName,
                     bureau: a.bureau || (a.BureauId === 1 ? 'TransUnion' : a.BureauId === 2 ? 'Experian' : 'Equifax'),
                     accountNumber: a.accountNumber || a.AccountNumber || a.id,
@@ -9331,6 +9351,8 @@ export default function CreditReport() {
                     category: 'late-payment',
                     accountKey
                   });
+                  });
+
                   const chargeOffAccountsLocal = Array.isArray(accounts) ? accounts.filter((a: any) => {
                     const st = (a.status || a.AccountStatus || a.AccountCondition || '').toString().toLowerCase();
                     const ph = (a.paymentHistory || a.PaymentStatus || a.WorstPayStatus || '').toString().toLowerCase();
@@ -9348,7 +9370,6 @@ export default function CreditReport() {
                     accountDate: a.DateOpened || a.dateOpened || a.opened || a.DateReported || a.dateReported || a.reported,
                     category: 'charge-off',
                     accountKey
-                  });
                   });
                   });
                   if (Array.isArray(collectionsRaw)) {
