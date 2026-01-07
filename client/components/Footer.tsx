@@ -114,8 +114,8 @@ const Footer: React.FC = () => {
             </p>
             <div className="flex items-center gap-4">
               {[
-                { icon: Facebook, href: "https://www.facebook.com/smarthustlersuniversity", label: "Facebook" },
-                { icon: Instagram, href: "https://www.instagram.com/smarthustlersuniversity", label: "Instagram" },
+                { icon: Facebook, href: "https://www.facebook.com/profile.php?id=61581433227215", label: "Facebook" },
+                { icon: Instagram, href: "https://www.instagram.com/the_scoremachine/", label: "Instagram" },
                 { icon: TikTok, href: "https://www.tiktok.com/@smarthustlersuniversity", label: "TikTok" },
                 { icon: Youtube, href: "https://www.youtube.com/@Smarthustlersuniversity", label: "YouTube" },
               ].map((social, i) => (

@@ -119,7 +119,7 @@ const BlogIndex = () => {
                       onClick={() => setActiveCategory(cat.slug)}
                     >
                       {cat.name}
-                      <Badge variant="secondary" className="ml-2 bg-slate-100 dark:bg-slate-800 text-xs">
+                      <Badge variant="secondary" className="text-black ml-2 bg-slate-200 dark:bg-slate-800 text-xs">
                         {cat.post_count}
                       </Badge>
                     </Button>

@@ -33,7 +33,7 @@ export default function HowItWorks() {
                   Start Your Journey <ArrowRight className="h-4 w-4" />
                 </a>
               </Button>
-              <Button size="lg" variant="outline" className="border-ocean-blue text-ocean-blue hover:bg-ocean-blue/5" asChild>
+              <Button size="lg" variant="outline" className="border-ocean-blue text-ocean-blue" asChild>
                 <a href="/pricing">View Pricing Plans</a>
               </Button>
             </div>
@@ -44,7 +44,7 @@ export default function HowItWorks() {
             {[
               { icon: Users, title: "Smart Onboarding", desc: "Streamlined client setup with intelligent goal configuration" },
               { icon: Brain, title: "AI Guidance", desc: "Machine learning organizes and highlights key areas of focus for your review" },
-              { icon: FileText, title: "Automated Disputes", desc: "Generate compliant letters with one-click automation" },
+              { icon: Sparkles, title: "AI-Assisted Insights", desc: "Smart suggestions and credit insights powered by AI" },
               { icon: BarChart3, title: "Real-time Analytics", desc: "Track progress with detailed insights and reporting" }
             ].map((feature, index) => (
               <Card key={index} className="group hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 border-0 shadow-lg bg-white/80 backdrop-blur-sm">
@@ -90,7 +90,7 @@ export default function HowItWorks() {
                   icon: Target,
                   title: "Choose Your Plan",
                   subtitle: "Flexible pricing options",
-                  description: "Select from our transparent pricing starting at $24.99 per pull, or choose unlimited access for maximum value.",
+                  description: "Select from our transparent pricing starting at $197.00 per pull, or choose unlimited access for maximum value.",
                   color: "from-emerald-500 to-emerald-600"
                 },
                 {
@@ -117,7 +117,7 @@ export default function HowItWorks() {
                     
                     <CardHeader className="text-center pb-6 relative">
                       {/* Step Number */}
-                      <div className="absolute -top-4 -right-4 w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center shadow-lg">
+                      <div className="absolute top-3 right-3 w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center shadow-lg">
                         <span className="text-lg font-bold text-gray-700">{step.step}</span>
                       </div>
                       
@@ -171,7 +171,7 @@ export default function HowItWorks() {
                       Start Free Today <ArrowRight className="h-4 w-4" />
                     </a>
                   </Button>
-                  <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 backdrop-blur-sm" asChild>
+                  <Button size="lg" variant="outline" className="border-white/30 text-black hover:bg-white/10 backdrop-blur-sm" asChild>
                     <a href="/contact">Schedule a Demo</a>
                   </Button>
                 </div>

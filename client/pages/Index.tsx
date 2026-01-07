@@ -43,9 +43,66 @@ gsap.registerPlugin(ScrollTrigger);
 import FallingMoney from "@/components/ui/FallingMoney";
 import Footer from "@/components/Footer";
 
+const VideoThumbnail = ({ src, alt, className }: { src: string; alt?: string; className?: string }) => {
+  const [thumb, setThumb] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    if (typeof window === "undefined") return;
+    const video = document.createElement("video");
+    const onSeeked = () => {
+      const canvas = document.createElement("canvas");
+      const w = video.videoWidth || 720;
+      const h = video.videoHeight || 1280;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        setFailed(true);
+        return;
+      }
+      ctx.drawImage(video, 0, 0, w, h);
+      const url = canvas.toDataURL("image/jpeg");
+      if (mounted) setThumb(url);
+      video.pause();
+    };
+    const onMeta = () => {
+      try {
+        video.currentTime = 0.1;
+      } catch {
+        setFailed(true);
+      }
+    };
+    const onError = () => setFailed(true);
+    video.src = src;
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.addEventListener("loadedmetadata", onMeta);
+    video.addEventListener("seeked", onSeeked);
+    video.addEventListener("error", onError);
+    video.load();
+    return () => {
+      mounted = false;
+      video.removeEventListener("loadedmetadata", onMeta);
+      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("error", onError);
+      video.src = "";
+    };
+  }, [src]);
+  if (thumb) {
+    return <img src={thumb} alt={alt || ""} className={`w-full h-full object-cover ${className || ""}`} />;
+  }
+  if (failed) {
+    return <div className={`w-full h-full ${className || ""} bg-gradient-to-b from-slate-900 to-slate-800`} />;
+  }
+  return <div className={`w-full h-full ${className || ""} bg-slate-900`} />;
+};
+
 export default function Index() {
   const [loading, setLoading] = useState(true);
   const [videoPlaying, setVideoPlaying] = useState(false);
+  const [activeTestimonialVideo, setActiveTestimonialVideo] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
   const featuresRef = useRef<HTMLDivElement>(null);
@@ -801,8 +858,8 @@ export default function Index() {
                     {!videoPlaying ? (
                        <div className="absolute inset-0 cursor-pointer group" onClick={() => setVideoPlaying(true)}>
                           <img 
-                            src="https://img.youtube.com/vi/6bE9svjqp80/maxresdefault.jpg" 
-                            alt="The Score Machine Pro Walkthrough" 
+                            src="https://img.youtube.com/vi/4KwPYMarpbo/maxresdefault.jpg" 
+                            alt="Score Machine Pro Full Walkthrough (2025)" 
                             className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-500"
                           />
                           <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/0 transition-colors">
@@ -815,8 +872,8 @@ export default function Index() {
                        <iframe 
                          width="100%" 
                          height="100%" 
-                         src="https://www.youtube.com/embed/6bE9svjqp80?autoplay=1&rel=0" 
-                         title="The Score Machine Pro Full Walkthrough" 
+                         src="https://www.youtube.com/embed/4KwPYMarpbo?autoplay=1&rel=0" 
+                         title="Score Machine Pro Full Walkthrough (2025)" 
                          frameBorder="0" 
                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                          allowFullScreen
@@ -840,42 +897,91 @@ export default function Index() {
       </section>
 
       {/* --- TESTIMONIALS --- */}
-      <section ref={testimonialsRef} className="py-24 relative z-10 bg-white">
-        <div className="container mx-auto px-4">
+      <section ref={testimonialsRef} className="py-24 relative z-10 bg-slate-50 overflow-hidden">
+        {/* Decorative Background Elements */}
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-teal-500/5 rounded-full blur-[100px] pointer-events-none -translate-y-1/2 translate-x-1/2" />
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[100px] pointer-events-none translate-y-1/2 -translate-x-1/2" />
+
+        <div className="container mx-auto px-4 relative z-10">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold mb-4 text-slate-900">Trusted by Industry Professionals</h2>
+            <h2 className="text-3xl lg:text-4xl font-bold mb-4 text-slate-900 tracking-tight">
+              Trusted by Industry Leaders
+            </h2>
+            <p className="text-slate-600 text-lg max-w-2xl mx-auto">
+              See what top professionals are saying about their experience with Score Machine Pro.
+            </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { quote: "Score Machine has helped us work more efficiently and stay organized when reviewing client files.", author: "Sarah Rodriguez", role: "Credit Solutions Inc.", initials: "SR", color: "bg-blue-600" },
-              { quote: "The structured analysis tools have streamlined our workflow significantly.", author: "Michael Chen", role: "Elite Funding Group", initials: "MC", color: "bg-emerald-600" },
-              { quote: "The white-label option makes it easy to provide a professional experience for our clients.", author: "David Johnson", role: "Financial Freedom LLC", initials: "DJ", color: "bg-indigo-600" },
+              { name: "Angel Nickens", src: "/testimonials/Angel_Nickens.mp4", role: "Credit Repair Specialist" },
+              { name: "Christie Morse", src: "/testimonials/Christie_Morse.mp4", role: "Financial Consultant" },
+              { name: "Deonte Lynn", src: "/testimonials/Deonte_Lynn.mp4", role: "Funding Expert" },
+              { name: "Mina Jackson", src: "/testimonials/Mina_Jackson.MOV", role: "Business Strategist" },
             ].map((t, i) => (
-              <Card key={i} className="testimonial-card border border-slate-100 bg-slate-50 p-8 hover:border-teal-500/30 transition-all duration-300 shadow-sm">
-                <div className="flex gap-1 mb-4">
-                  {[...Array(5)].map((_, j) => (
-                    <Star key={j} className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                  ))}
-                </div>
-                <p className="text-lg text-slate-600 italic mb-6 leading-relaxed">"{t.quote}"</p>
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-full ${t.color} flex items-center justify-center text-white font-bold shadow-md`}>
-                    {t.initials}
+              <div 
+                key={i} 
+                className="group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer"
+                onClick={() => setActiveTestimonialVideo(t.src)}
+              >
+                {/* Video Thumbnail (muted loop or static) */}
+                <div className="relative aspect-[9/16] bg-slate-900">
+                  <VideoThumbnail 
+                    src={t.src} 
+                    alt={t.name} 
+                    className="opacity-90 group-hover:opacity-100 transition-opacity duration-500"
+                  />
+                  
+                  {/* Play Button Overlay */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
+                    <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300 backdrop-blur-sm">
+                      <Play className="w-6 h-6 text-teal-600 fill-current ml-1" />
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-bold text-slate-900">{t.author}</div>
-                    <div className="text-sm text-slate-500">{t.role}</div>
-                  </div>
+
+                  {/* Gradient Overlay */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
                 </div>
-              </Card>
+
+                {/* Card Content */}
+                <div className="absolute bottom-0 left-0 right-0 p-5 text-white pointer-events-none">
+                   <h3 className="font-bold text-lg leading-tight mb-1">{t.name}</h3>
+                   <p className="text-sm text-teal-200 font-medium opacity-90">{t.role}</p>
+                </div>
+              </div>
             ))}
           </div>
           
-          <p className="text-center text-xs text-slate-500 mt-12 italic">
+          <p className="text-center text-xs text-slate-500 mt-12 italic opacity-70">
             Disclosure: Individual experiences vary. These testimonials reflect personal opinions and workflow benefits, not guaranteed results.
           </p>
         </div>
+
+        {/* Video Modal */}
+        {activeTestimonialVideo && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setActiveTestimonialVideo(null)}>
+            <div className="relative w-full max-w-sm sm:max-w-md md:max-w-3xl max-h-[90vh] bg-black rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <button 
+                onClick={() => setActiveTestimonialVideo(null)}
+                className="absolute top-4 right-4 z-10 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+              <video 
+                src={activeTestimonialVideo}
+                className="w-full h-full max-h-[85vh] object-contain mx-auto"
+                controls
+                autoPlay
+                controlsList="nodownload"
+                onContextMenu={(e) => e.preventDefault()}
+                playsInline
+                disablePictureInPicture
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* --- ABOUT THE PLATFORM --- */}
@@ -900,7 +1006,7 @@ export default function Index() {
                  <Button asChild size="lg" className="bg-teal-600 hover:bg-teal-700 text-white rounded-full px-8">
                     <Link to="/signup">Create Free Account</Link>
                  </Button>
-                 <Button variant="outline" size="lg" className="border-slate-300 text-slate-700 hover:bg-slate-100 rounded-full px-8" onClick={scrollToHowItWorks}>
+                 <Button variant="outline" size="lg" className="border-slate-300 text-slate-700 hover:bg-teal-600 rounded-full px-8" onClick={scrollToHowItWorks}>
                     Watch Demo
                  </Button>
               </div>
@@ -919,7 +1025,6 @@ export default function Index() {
         
         <div className="container mx-auto px-4 text-center relative z-10">
           <div className="affiliate-anim inline-flex items-center gap-2 px-6 py-3 rounded-full bg-white/10 backdrop-blur-md border border-white/10 mb-8">
-            <DollarSign className="h-5 w-5 text-teal-400" />
             <span className="font-bold">AFFILIATE PROGRAM</span>
           </div>
           
@@ -935,7 +1040,7 @@ export default function Index() {
             {[
               { title: "Up to 30% Commission", desc: "Up to 30% commission on active subscriber referrals.", icon: DollarSign },
               { title: "Real-Time Analytics", desc: "Track clicks, conversions, and payouts.", icon: BarChart3 },
-              { title: "Marketing Materials Included", desc: "Access banners, content, and email templates. Resources available in partner portal.", icon: Target },
+              { title: "SmartLink Included", desc: "Easy, profitable traffic monetization. Turn clicks into commissions.", icon: MousePointer2 },
             ].map((item, i) => (
               <div key={i} className="bg-white/5 backdrop-blur-sm border border-white/5 p-8 rounded-2xl hover:bg-white/10 transition-colors text-left">
                 <div className="w-12 h-12 bg-teal-500 rounded-xl flex items-center justify-center text-white mb-4">
@@ -948,7 +1053,7 @@ export default function Index() {
           </div>
 
           <div className="mt-10 affiliate-anim">
-            <Button asChild variant="outline" className="border-teal-500/30 text-teal-300 hover:bg-teal-900/30 hover:text-teal-200">
+            <Button asChild variant="outline" className="border-teal-500/30 text-black hover:bg-teal-900/30 hover:text-teal-200">
               <Link to="/affiliate/login">Access Affiliate Portal & Materials</Link>
             </Button>
           </div>

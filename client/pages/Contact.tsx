@@ -66,11 +66,6 @@ export default function Contact() {
         
         <div className="container mx-auto px-4 relative z-10">
           <div className="text-center text-white max-w-4xl mx-auto">
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-4 py-2 mb-6">
-              <MessageSquare className="h-4 w-4" />
-              <span className="text-sm font-medium">24/7 Support Available</span>
-            </div>
             
             {/* Main Heading */}
             <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
@@ -86,10 +81,6 @@ export default function Contact() {
             
             {/* Trust Indicators */}
             <div className="flex flex-wrap justify-center items-center gap-8 mb-8 text-white/80">
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                <span className="text-sm">10,000+ clients served*</span>
-              </div>
               <div className="flex items-center gap-2">
                 <Shield className="h-5 w-5" />
                 <span className="text-sm">Enterprise Security</span>
@@ -109,7 +100,7 @@ export default function Contact() {
                 Contact Us
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
-              <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 font-semibold px-8 py-3 rounded-xl backdrop-blur-sm">
+              <Button size="lg" variant="outline" className="border-white/30 text-black hover:bg-white/10 font-semibold px-8 py-3 rounded-xl backdrop-blur-sm">
                 Schedule Demo
               </Button>
             </div>
@@ -137,52 +128,41 @@ export default function Contact() {
                 
                 <div className="space-y-6">
                   <div className="group flex items-center gap-4 p-4 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <div className="w-12 h-12 flex-none rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
                       <Mail className="h-6 w-6 text-white" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">Email Support</p>
-                      <p className="text-sm text-gray-600">thescoremachineofficial@gmail.com</p>
-                      <p className="text-xs text-green-600 font-medium">Fast response times</p>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900 leading-tight">Email Support</p>
+                      <p className="text-sm text-gray-600 leading-tight">thescoremachineofficial@gmail.com</p>
+                      <p className="text-xs text-green-600 font-medium leading-tight">Fast response times</p>
                     </div>
                   </div>
                   
                   <div className="group flex items-center gap-4 p-4 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <div className="w-12 h-12 flex-none rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center">
                       <Phone className="h-6 w-6 text-white" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">Phone Support</p>
-                      <p className="text-sm text-gray-600">(475) 259-8768</p>
-                      <p className="text-xs text-green-600 font-medium">Available 9am-6pm PST</p>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900 leading-tight">Phone Support</p>
+                      <p className="text-sm text-gray-600 leading-tight">(475) 259-8768</p>
+                      <p className="text-xs text-green-600 font-medium leading-tight">Available 9am-6pm PST</p>
                     </div>
                   </div>
                   
                   <div className="group flex items-center gap-4 p-4 rounded-xl hover:bg-gray-50 transition-colors cursor-pointer">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <div className="w-12 h-12 flex-none rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
                       <MessageSquare className="h-6 w-6 text-white" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">Live Chat</p>
-                      <p className="text-sm text-gray-600">Instant messaging</p>
-                      <p className="text-xs text-green-600 font-medium">Online now</p>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900 leading-tight">Live Chat</p>
+                      <p className="text-sm text-gray-600 leading-tight">Instant messaging</p>
+                      <p className="text-xs text-green-600 font-medium leading-tight">Online now</p>
                     </div>
                   </div>
                 </div>
               </div>
               
-              {/* Global Support Badge */}
-              <div className="bg-gradient-to-r from-ocean-blue/10 to-sea-green/10 rounded-2xl border border-ocean-blue/20 p-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-ocean-blue to-sea-green flex items-center justify-center">
-                    <Globe className="h-5 w-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">Global Support</p>
-                    <p className="text-sm text-gray-600">US, Canada, UK, Australia</p>
-                  </div>
-                </div>
-              </div>
+              {/* Global Support Badge - removed per request */}
               
               {/* Trust Indicators */}
               <div className="bg-white rounded-2xl border border-gray-200/50 p-6 shadow-lg">
@@ -191,10 +171,6 @@ export default function Contact() {
                   <div className="flex items-center gap-3">
                     <Star className="h-4 w-4 text-yellow-500" />
                     <span className="text-sm text-gray-600">High Customer Satisfaction*</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Shield className="h-4 w-4 text-green-500" />
-                    <span className="text-sm text-gray-600">SOC 2 Compliant</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <Zap className="h-4 w-4 text-blue-500" />
@@ -389,89 +365,6 @@ export default function Contact() {
                   </Tabs>
                 </CardContent>
               </Card>
-
-              {/* Office Info */}
-              <div className="grid md:grid-cols-3 gap-6">
-                <Card className="group hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-white to-gray-50/50 backdrop-blur-sm">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-gradient-to-r from-ocean-blue/10 to-sea-green/10 group-hover:from-ocean-blue/20 group-hover:to-sea-green/20 transition-all duration-300">
-                        <Building2 className="h-5 w-5 text-ocean-blue" />
-                      </div>
-                      <span className="bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-                        Headquarters
-                      </span>
-                    </CardTitle>
-                    <CardDescription className="text-gray-600 font-medium">San Francisco, CA</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-gray-600 leading-relaxed">
-                      123 Market St, Suite 400<br/>
-                      San Francisco, CA 94103
-                    </p>
-                  </CardContent>
-                </Card>
-                
-                <Card className="group hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-white to-gray-50/50 backdrop-blur-sm">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-gradient-to-r from-ocean-blue/10 to-sea-green/10 group-hover:from-ocean-blue/20 group-hover:to-sea-green/20 transition-all duration-300">
-                        <Clock className="h-5 w-5 text-ocean-blue" />
-                      </div>
-                      <span className="bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-                        Response Times
-                      </span>
-                    </CardTitle>
-                    <CardDescription className="text-gray-600 font-medium">We're here to help</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="text-sm text-gray-600 space-y-2">
-                      <li className="flex justify-between">
-                        <span>Support:</span> 
-                        <span className="font-semibold text-ocean-blue">Fast response*</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span>Sales:</span> 
-                        <span className="font-semibold text-ocean-blue">Priority*</span>
-                      </li>
-                      <li className="flex justify-between">
-                        <span>Partnerships:</span> 
-                        <span className="font-semibold text-ocean-blue">Promptly*</span>
-                      </li>
-                    </ul>
-                  </CardContent>
-                </Card>
-                
-                <Card className="group hover:shadow-xl transition-all duration-300 border-0 bg-gradient-to-br from-white to-gray-50/50 backdrop-blur-sm">
-                  <CardHeader className="pb-4">
-                    <CardTitle className="text-lg flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-gradient-to-r from-ocean-blue/10 to-sea-green/10 group-hover:from-ocean-blue/20 group-hover:to-sea-green/20 transition-all duration-300">
-                        <HelpCircle className="h-5 w-5 text-ocean-blue" />
-                      </div>
-                      <span className="bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
-                        Help Center
-                      </span>
-                    </CardTitle>
-                    <CardDescription className="text-gray-600 font-medium">Self-serve resources</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-col gap-3">
-                      <a href="/support" className="text-ocean-blue hover:text-sea-green transition-colors duration-200 text-sm font-medium flex items-center gap-2">
-                        <ArrowRight className="h-3 w-3" />
-                        Knowledge Base
-                      </a>
-                      <a href="/support" className="text-ocean-blue hover:text-sea-green transition-colors duration-200 text-sm font-medium flex items-center gap-2">
-                        <ArrowRight className="h-3 w-3" />
-                        Community Forum
-                      </a>
-                      <a href="/support" className="text-ocean-blue hover:text-sea-green transition-colors duration-200 text-sm font-medium flex items-center gap-2">
-                        <ArrowRight className="h-3 w-3" />
-                        Status Page
-                      </a>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
             </div>
           </div>
         </div>
@@ -529,9 +422,6 @@ export default function Contact() {
                 </AccordionItem>
                 
                 <AccordionItem value="item-4" className="border border-gray-200 rounded-xl px-6 bg-white/80 backdrop-blur-sm shadow-sm hover:shadow-md transition-all duration-200">
-                  <AccordionTrigger className="text-left font-semibold text-gray-800 hover:text-ocean-blue py-6">
-                    What security measures do you have?
-                  </AccordionTrigger>
                   <AccordionContent className="text-gray-600 pb-6 leading-relaxed">
                     We're SOC 2 compliant with enterprise-grade security including 256-bit encryption, regular security audits, and strict data privacy controls to protect your sensitive information.
                   </AccordionContent>
@@ -579,16 +469,6 @@ export default function Contact() {
                         <div>
                           <p className="font-medium text-gray-800">Fast Response</p>
                           <p className="text-sm text-gray-600">Prompt assistance</p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                        <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                          <Shield className="h-4 w-4 text-purple-600" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-800">Secure & Private</p>
-                          <p className="text-sm text-gray-600">SOC 2 compliant</p>
                         </div>
                       </div>
                     </div>

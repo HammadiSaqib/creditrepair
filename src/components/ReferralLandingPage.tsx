@@ -244,15 +244,15 @@ const ReferralLandingPage: React.FC = () => {
       </Helmet>
 
       <Dialog open={demoOpen} onOpenChange={setDemoOpen}>
-        <DialogContent className="!h-[190vh] !w-[95vw] sm:!w-[80vw] !max-w-none p-0 overflow-hidden flex flex-col">
-          <DialogHeader className="px-6 pt-6">
+        <DialogContent className="w-[98vw] sm:w-[96vw] lg:w-[92vw] xl:w-[88vw] 2xl:w-[85vw] max-w-none m-0 p-0 overflow-hidden bg-white rounded-xl">
+          <DialogHeader className="px-4 py-3 border-b border-slate-100 hidden sm:flex">
             <DialogTitle>Score Machine Demo</DialogTitle>
           </DialogHeader>
-          <div className="px-6 pb-6 flex-1 min-h-0">
+          <div className="w-full bg-black h-[88dvh] sm:h-auto sm:aspect-video sm:max-h-[92vh]">
             {demoOpen && (
               <iframe
-                className="h-full w-full rounded-lg"
-                src="https://www.youtube.com/embed/6bE9svjqp80?autoplay=1&rel=0"
+                className="w-full h-full"
+                src="https://www.youtube.com/embed/4KwPYMarpbo?autoplay=1&rel=0"
                 title="Score Machine Pro Full Walkthrough"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
@@ -359,7 +359,7 @@ const ReferralLandingPage: React.FC = () => {
 
               <h1 className="text-5xl lg:text-7xl font-bold leading-[1.1] tracking-tight text-slate-900">
                 <span className="block">Professional</span>
-                <span className="block bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 bg-clip-text text-transparent">
+                <span className="pb- 3block bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 bg-clip-text text-transparent">
                   Credit Intelligence
                 </span>
                 <span className="block text-4xl lg:text-5xl mt-2 text-slate-700">Platform</span>
@@ -648,19 +648,19 @@ const ReferralLandingPage: React.FC = () => {
             
             <div className="cta-content mb-8 inline-flex items-center justify-center gap-2 px-4 py-1.5 rounded-full bg-slate-900/50 border border-slate-800 backdrop-blur-md">
               <Sparkles className="w-4 h-4 text-emerald-400 animate-pulse" />
-              <span className="text-sm font-medium bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">
+              <span className="text-sm font-medium text-white">
                 Exclusive Invitation
               </span>
             </div>
 
             <h2 className="cta-content text-5xl md:text-7xl font-bold mb-8 tracking-tight text-white leading-tight">
               Start Your Journey <br />
-              <span className="bg-gradient-to-r from-teal-400 via-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+              <span className="text-white">
                 With Score Machine
               </span>
             </h2>
             
-            <p className="cta-content text-xl md:text-2xl text-slate-400 mb-12 max-w-3xl mx-auto leading-relaxed font-light">
+            <p className="cta-content text-xl md:text-2xl text-slate-200 mb-12 max-w-3xl mx-auto leading-relaxed font-light">
               Join <span className="text-white font-medium">{affiliate.firstName}</span> and others who are working to improve their credit management using Score Machine tools. Outcomes vary and are not guaranteed.
             </p>
 
@@ -673,20 +673,6 @@ const ReferralLandingPage: React.FC = () => {
                 Get Started Now
                 <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
               </Button>
-              
-              <div className="flex items-center gap-4 text-sm text-slate-500">
-                <div className="flex -space-x-3">
-                  {[...Array(4)].map((_, i) => (
-                    <div key={i} className="w-10 h-10 rounded-full border-2 border-black bg-slate-800 flex items-center justify-center overflow-hidden">
-                       <Users className="w-5 h-5 text-slate-400" />
-                    </div>
-                  ))}
-                </div>
-                <div className="text-left">
-                  <p className="text-white font-medium">Thousands of Users</p>
-                  <p>Number updated periodically</p>
-                </div>
-              </div>
             </div>
 
           </div>

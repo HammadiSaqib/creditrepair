@@ -137,7 +137,6 @@ export default function SiteHeader() {
             asChild
           >
             <Link to="/join-affiliate">
-              <DollarSign className="mr-2 h-4 w-4" />
               Join Affiliate
             </Link>
           </Button>
@@ -145,7 +144,7 @@ export default function SiteHeader() {
             className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 shadow-lg"
             asChild
           >
-            <Link to="/login">Get Started Free</Link>
+            <Link to="/login">Sign in</Link>
           </Button>
         </div>
 
@@ -266,7 +265,7 @@ export default function SiteHeader() {
                     <Link to="/join-affiliate">Join Affiliate</Link>
                   </Button>
                   <Button className="bg-gradient-to-r from-ocean-blue to-sea-green" asChild>
-                    <Link to="/login">Get Started Free</Link>
+                    <Link to="/login">Sign inp</Link>
                   </Button>
                 </div>
               </div>

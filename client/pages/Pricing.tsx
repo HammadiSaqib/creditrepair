@@ -70,6 +70,45 @@ export default function Pricing() {
 
   // WebSocket functionality removed to eliminate connection errors
 
+  const fallbackPlans: PricingPlan[] = [
+    {
+      id: 1,
+      name: 'Starter',
+      description: 'Solo professionals getting started',
+      price: 49,
+      billing_cycle: 'monthly',
+      features: ['Progress Report + Timeline', 'Client Summary PDF', 'AI Credit Analysis', 'Underwriting Overview'],
+      max_users: 1,
+      max_clients: 25,
+      max_disputes: 50,
+      sort_order: 1,
+    },
+    {
+      id: 2,
+      name: 'Professional',
+      description: 'Growing teams needing more capacity',
+      price: 147,
+      billing_cycle: 'monthly',
+      features: ['Progress Report + Timeline', 'Client Summary PDF', 'AI Credit Analysis', 'Underwriting Overview'],
+      max_users: 5,
+      max_clients: 250,
+      max_disputes: 500,
+      sort_order: 2,
+    },
+    {
+      id: 3,
+      name: 'Enterprise',
+      description: 'Agencies requiring scale and support',
+      price: 297,
+      billing_cycle: 'monthly',
+      features: ['Progress Report + Timeline', 'Client Summary PDF', 'AI Credit Analysis', 'Underwriting Overview'],
+      max_users: null,
+      max_clients: null,
+      max_disputes: null,
+      sort_order: 3,
+    },
+  ];
+
   // Load pricing plans from API with retry logic
   const loadPlans = async (isRetry = false) => {
     try {
@@ -90,7 +129,11 @@ export default function Pricing() {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Invalid content type: ${contentType || 'unknown'}; received: ${text.slice(0, 60)}...`);
+      }
       const data = await response.json();
       
       if (data.success && Array.isArray(data.data)) {
@@ -112,6 +155,9 @@ export default function Pricing() {
       
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       setError(errorMessage);
+      // Fallback: show predefined plans so page remains functional
+      setPlans(fallbackPlans);
+      setPopularPlanId(getPopularPlan(fallbackPlans));
       
       // Implement retry logic
       if (retryCount < maxRetries && !errorMessage.includes('timeout')) {
@@ -123,7 +169,7 @@ export default function Pricing() {
           loadPlans(true);
         }, delay);
       } else {
-        toast.error('Unable to load pricing plans. Please refresh the page.');
+        toast.error('Unable to load live pricing plans. Showing defaults.');
       }
     } finally {
       setLoading(false);
@@ -628,10 +674,10 @@ export default function Pricing() {
              </Card>
 
              <Card className="p-6">
-               <h3 className="text-lg font-semibold mb-2">What kind of support do you provide?</h3>
-               <p className="text-gray-600">
-                 We offer 24/7 email support for all plans, with priority support and phone access for higher-tier plans. Our team typically responds within 2-4 hours.
-               </p>
+              <h3 className="text-lg font-semibold mb-2">What kind of support do you provide?</h3>
+              <p className="text-gray-600">
+                We provide support between 11:00 AM and 8:00 PM. Email support is available for all plans, with priority support and phone access for higher-tier plans. Our team typically responds within 2–4 hours during support hours.
+              </p>
              </Card>
            </div>
          </div>
@@ -662,34 +708,6 @@ export default function Pricing() {
           </div>
         </div>
       </section>
-
-       {/* Enterprise CTA */}
-       <section className="py-16 bg-white">
-         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-           <Card className="max-w-4xl mx-auto bg-gradient-to-r from-blue-600/5 to-emerald-600/5 border-blue-600/20">
-             <CardContent className="p-12">
-               <div className="flex justify-center mb-6">
-                 <div className="w-20 h-20 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-2xl flex items-center justify-center">
-                   <Shield className="h-10 w-10 text-white" />
-                 </div>
-               </div>
-               <h3 className="text-3xl font-bold mb-4 text-center">Need an Enterprise Solution?</h3>
-               <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto text-center">
-                 Custom pricing, dedicated support, advanced integrations, and white-label options 
-                 for large organizations and franchise networks.
-               </p>
-               <div className="text-center">
-                 <Button 
-                   size="lg"
-                   className="bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 shadow-xl text-lg px-8 py-6"
-                 >
-                   Contact Sales
-                 </Button>
-               </div>
-             </CardContent>
-           </Card>
-         </div>
-       </section>
        
        <div className="py-8 bg-gray-50 text-center px-4">
          <p className="text-xs text-gray-500 max-w-4xl mx-auto leading-relaxed">

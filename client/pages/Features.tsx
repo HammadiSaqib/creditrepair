@@ -23,7 +23,7 @@ export default function Features() {
               <span className="text-sm font-medium text-ocean-blue">Elite Credit Strategy Toolkit</span>
             </div>
             
-            <h1 className="text-5xl lg:text-6xl font-bold tracking-tight bg-gradient-to-r from-gray-900 via-ocean-blue to-sea-green bg-clip-text text-transparent mb-6">
+            <h1 className="pb-5 text-5xl lg:text-6xl font-bold tracking-tight leading-snug bg-gradient-to-r from-gray-900 via-ocean-blue to-sea-green bg-clip-text text-transparent mb-6">
               Advanced Tools for Smarter Credit Understanding
             </h1>
             
@@ -37,7 +37,7 @@ export default function Features() {
                   <Sparkles className="h-4 w-4" /> Create a Free Account
                 </Link>
               </Button>
-              <Button size="lg" variant="outline" className="border-ocean-blue text-ocean-blue hover:bg-ocean-blue/5" asChild>
+              <Button size="lg" variant="outline" className="border-ocean-blue text-ocean-blue bg-transparent hover:bg-transparent hover:text-ocean-blue hover:border-ocean-blue transition-colors" asChild>
                 <Link to="/pricing" className="flex items-center gap-2">
                   <ArrowRight className="h-4 w-4" /> View Pricing Plans
                 </Link>
@@ -48,11 +48,11 @@ export default function Features() {
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100">
               <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                 <div className="text-center md:text-left">
-                  <div className="text-3xl font-bold text-gray-900 mb-2">Included Toolkit (Comparable value: $572 — internal estimate only)</div>
+                  <div className="text-3xl font-bold text-gray-900 mb-2">Included Toolkit (Comparable value: $197 — internal estimate only)</div>
                   <div className="text-gray-600 text-sm">Comparable values are internal estimates based on similar tools. They do not represent retail pricing or discounts.</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-sea-green mb-2">Starting at $147</div>
+                  <div className="text-3xl font-bold text-sea-green mb-2">Starting at $197</div>
                   <div className="text-gray-600">Monthly subscription</div>
                 </div>
                 <div className="flex items-center gap-2 text-ocean-blue">
@@ -110,12 +110,12 @@ export default function Features() {
                 features: ["General indicator overview", "High-level criteria review", "Not a prediction or guarantee"]
               }
             ].map((feature, index) => (
-              <Card key={index} className="group hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-3 border-0 shadow-lg overflow-hidden relative">
+              <Card key={index} className="group hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-3 border-0 shadow-lg overflow-hidden relative h-full">
                 <div className={`absolute inset-0 bg-gradient-to-br ${feature.color} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
                 
                 <CardHeader className="pb-6 relative">
                   {/* Value Badge */}
-                  <div className="absolute -top-3 -right-3">
+                  <div className="absolute top-3 right-3">
                     <Badge className={`bg-gradient-to-r ${feature.color} text-white shadow-lg`}>
                       {feature.value}
                     </Badge>
@@ -127,15 +127,15 @@ export default function Features() {
                   </div>
                   
                   <CardTitle className="text-xl font-bold text-gray-900 mb-3">{feature.title}</CardTitle>
-                  <CardDescription className="text-gray-600 leading-relaxed">{feature.description}</CardDescription>
+                  <CardDescription className="text-gray-600 leading-relaxed break-words min-w-0 max-h-24 overflow-hidden">{feature.description}</CardDescription>
                 </CardHeader>
                 
-                <CardContent className="pt-0">
+                <CardContent className="pt-0 mt-auto">
                   <div className="space-y-2">
                     {feature.features.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-sm text-gray-600">
+                      <div key={idx} className="flex items-center gap-2 text-sm text-gray-600 break-words">
                         <CheckCircle className="h-4 w-4 text-sea-green" />
-                        <span>{item}</span>
+                        <span className="min-w-0">{item}</span>
                       </div>
                     ))}
                   </div>
@@ -156,22 +156,24 @@ export default function Features() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto items-stretch">
             {[
               { icon: Zap, title: "Lightning Fast Processing", desc: "Get results in seconds, not hours" },
               { icon: Lock, title: "Enterprise-Grade Security", desc: "Your data is protected with enterprise encryption" },
               { icon: Users, title: "Multi-Client Management", desc: "Handle unlimited clients with ease" },
-              { icon: Globe, title: "White Label Ready", desc: "Brand the platform as your own" },
+              { icon: Sparkles, title: "AI-Assisted Insights", desc: "Smart suggestions and credit insights powered by AI" },
               { icon: BarChart3, title: "Advanced Analytics", desc: "Deep insights and performance metrics" },
               { icon: Target, title: "Goal Tracking", desc: "Personal tracking features within the platform for general organizational use" }
             ].map((feature, index) => (
-              <Card key={index} className="group hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 border-0 shadow-md bg-white/80 backdrop-blur-sm">
-                <CardHeader className="text-center pb-4">
-                  <div className="mx-auto w-12 h-12 bg-gradient-to-br from-ocean-blue to-sea-green rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <Card key={index} className="group hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 border border-slate-200 shadow-md bg-white rounded-2xl overflow-hidden h-full flex">
+                <CardHeader className="text-center pb-4 flex flex-col items-center gap-2 flex-1">
+                  <div className="mx-auto w-12 h-12 bg-gradient-to-br from-ocean-blue to-sea-green rounded-xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform duration-300">
                     <feature.icon className="h-6 w-6 text-white" />
                   </div>
-                  <CardTitle className="text-lg font-semibold text-gray-900">{feature.title}</CardTitle>
-                  <CardDescription className="text-gray-600">{feature.desc}</CardDescription>
+                  <CardTitle className="text-lg font-semibold text-gray-900 break-words min-w-0">{feature.title}</CardTitle>
+                  <CardDescription className="text-gray-600 text-sm leading-snug break-words min-w-0 max-h-12 overflow-hidden">
+                    {feature.desc}
+                  </CardDescription>
                 </CardHeader>
               </Card>
             ))}
@@ -195,7 +197,7 @@ export default function Features() {
                   </div>
                   
                   <h3 className="text-3xl lg:text-4xl font-bold mb-4">
-                    Included Toolkit (Comparable value: $572 — internal estimate only)
+                    Included Toolkit (Comparable value: $197 — internal estimate only)
                   </h3>
                   <p className="text-xl text-white/90 leading-relaxed max-w-3xl mx-auto mb-6">
                     Comparable values are internal estimates based on similar tools. They do not represent retail pricing or discounts.
@@ -208,7 +210,7 @@ export default function Features() {
                       Get Started Free <ArrowRight className="h-4 w-4" />
                     </Link>
                   </Button>
-                  <Button size="lg" variant="outline" className="border-white/30 text-white hover:bg-white/10 backdrop-blur-sm" asChild>
+                  <Button size="lg" variant="outline" className="border-white/30 text-black hover:bg-white/10 backdrop-blur-sm" asChild>
                     <Link to="/pricing">View All Plans</Link>
                   </Button>
                 </div>
