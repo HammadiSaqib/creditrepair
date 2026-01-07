@@ -19,6 +19,7 @@ router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
 
     let activePlanIds: number[] = [];
     let contextAffiliateId: number | null = null;
+    const requesterEmail = String(((req as any).user as any)?.email || '');
     try {
       const user: any = (req as any).user;
       try {
@@ -63,18 +64,18 @@ router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
           `SELECT asub.plan_id 
            FROM admin_subscriptions asub
            JOIN admin_profiles ap ON ap.id = asub.admin_id
-           WHERE ap.user_id = ? AND asub.status = 'active'`,
+           WHERE ap.user_id = ? AND LOWER(TRIM(asub.status)) = 'active'`,
           [subCheckUserId]
         );
         const rowsDirect = await db.allQuery(
-          `SELECT plan_id FROM admin_subscriptions WHERE admin_id = ? AND status = 'active'`,
+          `SELECT plan_id FROM admin_subscriptions WHERE admin_id = ? AND LOWER(TRIM(status)) = 'active'`,
           [subCheckUserId]
         );
         const rowsSubs = await db.allQuery(
           `SELECT sp.id as plan_id
            FROM subscriptions s
            LEFT JOIN subscription_plans sp ON sp.name = s.plan_name
-           WHERE s.user_id = ? AND s.status = 'active'`,
+           WHERE s.user_id = ? AND LOWER(TRIM(s.status)) = 'active'`,
           [subCheckUserId]
         );
         const idsA = Array.isArray(rows) ? rows.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
@@ -87,15 +88,23 @@ router.get('/plans', optionalAuth, async (req: Request, res: Response) => {
     const filtered = plans.filter((plan: any) => {
       try {
         const perm = plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
+        const planId = Number(plan.id);
+        const hasThisPlan = Number.isFinite(planId) && activePlanIds.includes(planId);
+
         if (Array.isArray(perm)) return true;
-        if (perm?.is_specific) return false;
+
+        if (perm?.is_specific) {
+          const allowedEmails = Array.isArray(perm?.allowed_admin_emails) ? perm.allowed_admin_emails : [];
+          return hasThisPlan || (requesterEmail && allowedEmails.includes(requesterEmail));
+        }
+
         const allowedAffiliateIds = Array.isArray(perm?.allowed_affiliate_ids)
           ? perm.allowed_affiliate_ids.map((v: any) => Number(v)).filter((n: any) => Number.isFinite(n))
           : [];
         if (allowedAffiliateIds.length > 0) {
-          return contextAffiliateId !== null && allowedAffiliateIds.includes(contextAffiliateId);
+          return hasThisPlan || (contextAffiliateId !== null && allowedAffiliateIds.includes(contextAffiliateId));
         }
-        if (perm?.restricted_to_current_subscribers === true) return activePlanIds.includes(Number(plan.id));
+        if (perm?.restricted_to_current_subscribers === true) return hasThisPlan;
         return true;
       } catch { return true; }
     });
@@ -191,7 +200,7 @@ router.get('/plans/:id', optionalAuth, async (req: Request, res: Response) => {
         }
       }
       if (perm?.restricted_to_current_subscribers === true) {
-        let hasPlan = false;
+        let activePlanIds: number[] = [];
         try {
           const user: any = (req as any).user;
           if (user && user.id) {
@@ -203,37 +212,31 @@ router.get('/plans/:id', optionalAuth, async (req: Request, res: Response) => {
                 if (aff && aff.admin_id) subCheckUserId = Number(aff.admin_id);
               } catch {}
             }
-            let row = await db.getQuery(
-              `SELECT asub.id 
+            const rows = await db.allQuery(
+              `SELECT asub.plan_id 
                FROM admin_subscriptions asub
                JOIN admin_profiles ap ON ap.id = asub.admin_id
-               WHERE ap.user_id = ? AND asub.plan_id = ? AND asub.status = 'active' 
-               LIMIT 1`,
-              [subCheckUserId, planId]
+               WHERE ap.user_id = ? AND LOWER(TRIM(asub.status)) = 'active'`,
+              [subCheckUserId]
             );
-            if (!row) {
-              row = await db.getQuery(
-                `SELECT id FROM admin_subscriptions WHERE admin_id = ? AND plan_id = ? AND status = 'active' LIMIT 1`,
-                [subCheckUserId, planId]
-              );
-            }
-            if (!row) {
-              const planRow = await db.getQuery(
-                `SELECT name FROM subscription_plans WHERE id = ?`,
-                [planId]
-              );
-              if (planRow && planRow.name) {
-                const rowSub = await db.getQuery(
-                  `SELECT s.id FROM subscriptions s WHERE s.user_id = ? AND s.status = 'active' AND s.plan_name = ? LIMIT 1`,
-                  [subCheckUserId, planRow.name]
-                );
-                if (rowSub) row = rowSub;
-              }
-            }
-            hasPlan = !!row;
+            const rowsDirect = await db.allQuery(
+              `SELECT plan_id FROM admin_subscriptions WHERE admin_id = ? AND LOWER(TRIM(status)) = 'active'`,
+              [subCheckUserId]
+            );
+            const rowsSubs = await db.allQuery(
+              `SELECT sp.id as plan_id
+               FROM subscriptions s
+               LEFT JOIN subscription_plans sp ON sp.name = s.plan_name
+               WHERE s.user_id = ? AND LOWER(TRIM(s.status)) = 'active'`,
+              [subCheckUserId]
+            );
+            const idsA = Array.isArray(rows) ? rows.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+            const idsB = Array.isArray(rowsDirect) ? rowsDirect.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+            const idsC = Array.isArray(rowsSubs) ? rowsSubs.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
+            activePlanIds = Array.from(new Set([...idsA, ...idsB, ...idsC]));
           }
         } catch {}
-        if (!hasPlan) {
+        if (!activePlanIds.includes(planId)) {
           return res.status(404).json({ success: false, error: 'Plan not found' });
         }
       }

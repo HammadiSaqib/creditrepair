@@ -504,16 +504,16 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
     const params: any[] = [];
 
     if (search) {
-      whereClause += ' AND (name LIKE ? OR description LIKE ?)';
+      whereClause += ' AND (sp.name LIKE ? OR sp.description LIKE ?)';
       const searchTerm = `%${search}%`;
       params.push(searchTerm, searchTerm);
     }
 
     if (is_active !== undefined) {
-      whereClause += ' AND is_active = ?';
+      whereClause += ' AND sp.is_active = ?';
       params.push(is_active === 'true');
     } else if (requesterRole !== 'super_admin') {
-      whereClause += ' AND is_active = ?';
+      whereClause += ' AND sp.is_active = ?';
       params.push(true);
     }
 
@@ -522,7 +522,7 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
     
     // Get total count
     const countResult = await db.getQuery(
-      `SELECT COUNT(*) as total FROM subscription_plans ${whereClause}`,
+      `SELECT COUNT(*) as total FROM subscription_plans sp ${whereClause}`,
       params
     );
 
@@ -547,6 +547,14 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
         'SELECT course_id FROM plan_course_associations WHERE plan_id = ?',
         [plan.id]
       );
+      const parsedFeatures = (() => {
+        try {
+          if (Array.isArray((plan as any).features)) return (plan as any).features;
+          return plan.features ? JSON.parse(plan.features) : [];
+        } catch {
+          return [];
+        }
+      })();
       let parsedPerm: any = [];
       try {
         parsedPerm = plan.page_permissions ? JSON.parse(plan.page_permissions) : [];
@@ -561,7 +569,7 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
         : [];
       return {
         ...plan,
-        features: plan.features ? JSON.parse(plan.features) : [],
+        features: parsedFeatures,
         page_permissions: permPages,
         is_specific: isSpecific,
         allowed_admin_emails: allowedEmails,
@@ -597,18 +605,18 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
             `SELECT asub.plan_id 
              FROM admin_subscriptions asub
              JOIN admin_profiles ap ON ap.id = asub.admin_id
-             WHERE ap.user_id = ? AND asub.status = 'active'`,
+             WHERE ap.user_id = ? AND LOWER(TRIM(asub.status)) = 'active'`,
             [userId]
           );
           const rowsDirect = await db2.allQuery(
-            `SELECT plan_id FROM admin_subscriptions WHERE admin_id = ? AND status = 'active'`,
+            `SELECT plan_id FROM admin_subscriptions WHERE admin_id = ? AND LOWER(TRIM(status)) = 'active'`,
             [userId]
           );
           const rowsSubs = await db2.allQuery(
             `SELECT sp.id as plan_id
              FROM subscriptions s
              LEFT JOIN subscription_plans sp ON sp.name = s.plan_name
-             WHERE s.user_id = ? AND s.status = 'active'`,
+             WHERE s.user_id = ? AND LOWER(TRIM(s.status)) = 'active'`,
             [userId]
           );
           const idsA = Array.isArray(rows) ? rows.map((r: any) => Number(r.plan_id)).filter((id: any) => !isNaN(id)) : [];
@@ -621,12 +629,19 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
 
     const filteredPlans = requesterRole === 'super_admin'
       ? plansWithFeatures
-      : plansWithFeatures.filter(p => (
-          (!p.is_specific || (p.allowed_admin_emails && p.allowed_admin_emails.includes(requesterEmail))) &&
-          (!p.restricted_to_current_subscribers || activePlanIds.includes(Number(p.id))) &&
-          (!(Array.isArray((p as any).allowed_affiliate_ids) && (p as any).allowed_affiliate_ids.length > 0) ||
-            (viewerAffiliateId !== null && (p as any).allowed_affiliate_ids.includes(viewerAffiliateId)))
-        ));
+      : plansWithFeatures.filter(p => {
+          const planId = Number((p as any).id);
+          const hasThisPlan = Number.isFinite(planId) && activePlanIds.includes(planId);
+          if (hasThisPlan) return true;
+
+          const allowedBySpecific =
+            !p.is_specific || (p.allowed_admin_emails && p.allowed_admin_emails.includes(requesterEmail));
+          const allowedByAffiliateRestriction =
+            !(Array.isArray((p as any).allowed_affiliate_ids) && (p as any).allowed_affiliate_ids.length > 0) ||
+            (viewerAffiliateId !== null && (p as any).allowed_affiliate_ids.includes(viewerAffiliateId));
+          const allowedBySubscriberRestriction = !p.restricted_to_current_subscribers;
+          return allowedBySpecific && allowedBySubscriberRestriction && allowedByAffiliateRestriction;
+        });
 
     res.json({
       success: true,
@@ -634,8 +649,11 @@ router.get('/plans', authenticateToken, requireAdmin, async (req: Request, res: 
       pagination: {
         page: Number(page),
         limit: Number(limit),
-        total: countResult?.total || 0,
-        pages: Math.ceil((countResult?.total || 0) / Number(limit))
+        total: requesterRole === 'super_admin' ? (countResult?.total || 0) : filteredPlans.length,
+        pages:
+          requesterRole === 'super_admin'
+            ? Math.ceil((countResult?.total || 0) / Number(limit))
+            : Math.ceil(filteredPlans.length / Number(limit))
       }
     });
   } catch (error) {
@@ -671,33 +689,32 @@ router.get('/plans/:id', authenticateToken, requireAdmin, async (req: Request, r
       try {
         const userId = Number((req as any)?.user?.id);
         if (!isNaN(userId) && userId > 0) {
-          let hasPlan = false;
           let row = await db.getQuery(
             `SELECT asub.id 
              FROM admin_subscriptions asub
              JOIN admin_profiles ap ON ap.id = asub.admin_id
-             WHERE ap.user_id = ? AND asub.plan_id = ? AND asub.status = 'active' 
+             WHERE ap.user_id = ? AND LOWER(TRIM(asub.status)) = 'active' 
              LIMIT 1`,
-            [userId, planId]
+            [userId]
           );
           if (!row) {
             row = await db.getQuery(
-              `SELECT id FROM admin_subscriptions WHERE admin_id = ? AND plan_id = ? AND status = 'active' LIMIT 1`,
-              [userId, planId]
+              `SELECT id FROM admin_subscriptions WHERE admin_id = ? AND LOWER(TRIM(status)) = 'active' LIMIT 1`,
+              [userId]
             );
           }
           if (!row) {
             const rowSub = await db.getQuery(
               `SELECT s.id 
                FROM subscriptions s
-               WHERE s.user_id = ? AND s.status = 'active' AND s.plan_name = ?
+               WHERE s.user_id = ? AND LOWER(TRIM(s.status)) = 'active'
                LIMIT 1`,
-              [userId, plan.name]
+              [userId]
             );
             if (rowSub) row = rowSub;
           }
-          hasPlan = !!row;
-          if (!hasPlan) {
+          const hasAnyActiveSubscription = !!row;
+          if (!hasAnyActiveSubscription) {
             return res.status(404).json({ success: false, error: 'Subscription plan not found' });
           }
         }

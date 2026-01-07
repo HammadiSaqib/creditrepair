@@ -64,7 +64,7 @@ export function useSubscriptionStatus(): SubscriptionStatus {
           console.log('🔍 useSubscriptionStatus - Status type:', typeof subscription.status);
           // Business rule: prioritize explicit status. If status is 'active', treat as active
           // regardless of current_period_end value to avoid false negatives.
-          const normalizedStatus = String(subscription.status || '').toLowerCase();
+          const normalizedStatus = String(subscription.status || '').trim().toLowerCase();
           const isActive = normalizedStatus === 'active' || normalizedStatus === 'exempt';
           console.log('🔍 useSubscriptionStatus - Is active calculation:', isActive);
           console.log('🔍 useSubscriptionStatus - Status comparison:', subscription.status, '===', 'active', '=', subscription.status === 'active');
@@ -97,7 +97,7 @@ export function useSubscriptionStatus(): SubscriptionStatus {
         if (subscriptionResponse.data && subscriptionResponse.data.subscription) {
           const subscription = subscriptionResponse.data.subscription;
           console.log('🔍 useSubscriptionStatus - Affiliate subscription data:', subscription);
-          const normalizedStatus = String(subscription.status || '').toLowerCase();
+          const normalizedStatus = String(subscription.status || '').trim().toLowerCase();
           const isActive = normalizedStatus === 'active' || normalizedStatus === 'exempt';
           console.log('🔍 useSubscriptionStatus - Affiliate is active:', isActive);
           setSubscriptionStatus({
@@ -125,7 +125,7 @@ export function useSubscriptionStatus(): SubscriptionStatus {
 
         if (subscriptionResponse.data && subscriptionResponse.data.subscription) {
           const subscription = subscriptionResponse.data.subscription;
-          const normalizedStatus = String(subscription.status || '').toLowerCase();
+          const normalizedStatus = String(subscription.status || '').trim().toLowerCase();
           const isActive = normalizedStatus === 'active' || normalizedStatus === 'exempt';
           console.log('🔍 useSubscriptionStatus - Non-admin subscription found, is active:', isActive);
           setSubscriptionStatus({

@@ -726,42 +726,42 @@ router.post('/create-subscription-checkout', authenticateToken, async (req, res)
             }
           } catch {}
 
-          let hasPlan = false;
+          let hasAnyActiveSubscription = false;
           try {
             const rowA = await executeQuery<any[]>(
               `SELECT asub.id
                FROM admin_subscriptions asub
                JOIN admin_profiles ap ON ap.id = asub.admin_id
-               WHERE ap.user_id = ? AND asub.plan_id = ? AND asub.status = 'active'
+               WHERE ap.user_id = ? AND LOWER(TRIM(asub.status)) = 'active'
                LIMIT 1`,
-              [subCheckUserId, planId]
+              [subCheckUserId]
             );
-            if (Array.isArray(rowA) && rowA.length > 0) hasPlan = true;
+            if (Array.isArray(rowA) && rowA.length > 0) hasAnyActiveSubscription = true;
           } catch {}
-          if (!hasPlan) {
+          if (!hasAnyActiveSubscription) {
             try {
               const rowB = await executeQuery<any[]>(
                 `SELECT id FROM admin_subscriptions
-                 WHERE admin_id = ? AND plan_id = ? AND status = 'active'
+                 WHERE admin_id = ? AND LOWER(TRIM(status)) = 'active'
                  LIMIT 1`,
-                [subCheckUserId, planId]
+                [subCheckUserId]
               );
-              if (Array.isArray(rowB) && rowB.length > 0) hasPlan = true;
+              if (Array.isArray(rowB) && rowB.length > 0) hasAnyActiveSubscription = true;
             } catch {}
           }
-          if (!hasPlan) {
+          if (!hasAnyActiveSubscription) {
             try {
               const rowC = await executeQuery<any[]>(
                 `SELECT id FROM subscriptions
-                 WHERE user_id = ? AND status = 'active' AND plan_name = ?
+                 WHERE user_id = ? AND LOWER(TRIM(status)) = 'active'
                  LIMIT 1`,
-                [subCheckUserId, String(plan.name || '')]
+                [subCheckUserId]
               );
-              if (Array.isArray(rowC) && rowC.length > 0) hasPlan = true;
+              if (Array.isArray(rowC) && rowC.length > 0) hasAnyActiveSubscription = true;
             } catch {}
           }
 
-          if (!hasPlan) {
+          if (!hasAnyActiveSubscription) {
             return res.status(403).json({ error: 'This plan is restricted' });
           }
         }

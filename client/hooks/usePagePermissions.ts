@@ -47,6 +47,7 @@ export const usePagePermissions = (): PagePermissions => {
   const [allowedPages, setAllowedPages] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [currentRole, setCurrentRole] = useState<string | null>(null);
 
   const fetchPermissions = async () => {
     try {
@@ -59,6 +60,7 @@ export const usePagePermissions = (): PagePermissions => {
       const profileResponse = await authApi.getProfile();
       const user = profileResponse.data?.user || profileResponse.data; // 兼容旧结构
       const userRole = user?.role;
+      setCurrentRole(userRole || null);
       const permissions: string[] = Array.isArray(user?.permissions) ? user.permissions : [];
       const isExempt = !!user?.is_subscription_exempt || (Array.isArray(permissions) && (permissions.includes('subscription_exempt') || permissions.includes('no_subscription_required')));
 
@@ -104,7 +106,8 @@ export const usePagePermissions = (): PagePermissions => {
         console.log('   - subscription status:', actualSubscription?.status);
         
         // If user has no subscription or inactive subscription, allow dashboard regardless of email verification
-        if (!actualSubscription || (actualSubscription.status !== 'active' && actualSubscription.status !== 'exempt')) {
+        const normalizedSubStatus = String(actualSubscription?.status || '').trim().toLowerCase();
+        if (!actualSubscription || (normalizedSubStatus !== 'active' && normalizedSubStatus !== 'exempt')) {
           console.log('⚠️ Admin user has no active subscription, checking email verification status...');
           console.log('🔍 Subscription data:', actualSubscription);
           console.log('🔍 User email verified:', user?.email_verified);
@@ -161,7 +164,9 @@ export const usePagePermissions = (): PagePermissions => {
         if (userPlan) {
           const planPages: string[] = Array.isArray(userPlan.page_permissions) ? userPlan.page_permissions : [];
           if (planPages.length > 0) {
-            const permissions = Array.from(new Set([...planPages, 'subscription', 'feature-requests']));
+            const permissions = Array.from(
+              new Set(['dashboard', 'settings', 'subscription', 'feature-requests', ...planPages])
+            );
             console.log('✅ Using plan-defined permissions:', permissions);
             setAllowedPages(permissions);
           } else {
@@ -191,7 +196,9 @@ export const usePagePermissions = (): PagePermissions => {
       // Get user profile to determine fallback permissions
       try {
         const profileResponse = await authApi.getProfile();
-        const userRole = profileResponse.data?.role;
+        const user = profileResponse.data?.user || profileResponse.data;
+        const userRole = user?.role;
+        setCurrentRole(userRole || null);
         
         if (userRole === 'super_admin') {
           // Super admin gets all permissions even on error
@@ -219,6 +226,9 @@ export const usePagePermissions = (): PagePermissions => {
   }, []);
 
   const hasPermission = (pageId: string): boolean => {
+    if (currentRole === 'admin' && (pageId === 'dashboard' || pageId === 'subscription' || pageId === 'settings')) {
+      return true;
+    }
     const hasAccess = allowedPages.includes(pageId);
     console.log(`🔍 hasPermission("${pageId}"):`, hasAccess, '| allowedPages:', allowedPages);
     return hasAccess;
