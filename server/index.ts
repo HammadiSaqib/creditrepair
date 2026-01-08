@@ -58,6 +58,7 @@ import contractsAdminRoutes from "./routes/contractsAdmin.js";
 import employeesRoutes from "./routes/employees.js";
 import debtPayoffRoutes from "./routes/debtPayoff.js";
 import shopRoutes from "./routes/shop.js";
+import testimonialsRoutes, { publicTestimonialsRoutes } from "./routes/testimonials.js";
 
 import { reminderService } from "./services/reminderService.js";
 
@@ -194,6 +195,8 @@ export async function createServer() {
 
   // Serve static files from uploads directory
   app.use('/uploads', express.static('uploads'));
+  // Serve testimonials videos from client/public/testimonials
+  app.use('/testimonials', express.static(path.resolve(process.cwd(), 'client', 'public', 'testimonials')));
 
   // Health check
   app.get("/api/ping", (_req, res) => {
@@ -299,6 +302,8 @@ export async function createServer() {
   // COMMUNITY ROUTES
   // =============================================================================
   app.use("/api/community", communityRoutes);
+  // Public testimonials route for landing page
+  app.use("/api/testimonials", publicTestimonialsRoutes);
 
   // =============================================================================
   // FEATURE REQUESTS ROUTES (Admin-only)
@@ -372,6 +377,8 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // SUPPORT DASHBOARD ROUTES
   // =============================================================================
   app.use("/api/support/dashboard", supportDashboardRoutes);
+  // Support-only testimonials management
+  app.use("/api/support/testimonials", testimonialsRoutes);
 
   // =============================================================================
   // SUPPORT SETTINGS ROUTES

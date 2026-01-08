@@ -512,6 +512,18 @@ async function createTables() {
     )
   `);
 
+  // Testimonials table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS testimonials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video TEXT NOT NULL,
+      client_name TEXT NOT NULL,
+      client_role TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Support metrics table
   await runQuery(`
     CREATE TABLE IF NOT EXISTS support_metrics (

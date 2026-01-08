@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
+import { createPortal } from "react-dom";
 import SiteHeader from "@/components/SiteHeader";
 import { useEffect, useState, useRef } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +22,8 @@ import {
   Zap,
   CheckCircle,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
   BarChart3,
   Target,
   Award,
@@ -37,6 +40,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { Helmet } from "react-helmet-async";
+import { api } from "@/lib/api";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -103,6 +107,8 @@ export default function Index() {
   const [loading, setLoading] = useState(true);
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [activeTestimonialVideo, setActiveTestimonialVideo] = useState<string | null>(null);
+  const [testimonials, setTestimonials] = useState<Array<{ id: number; video: string; client_name: string; client_role?: string | null }>>([]);
+  const [testimonialPage, setTestimonialPage] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
   const featuresRef = useRef<HTMLDivElement>(null);
@@ -117,6 +123,52 @@ export default function Index() {
     const t = setTimeout(() => setLoading(false), 1000);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const resp = await api.get("/api/testimonials");
+        const rows = (resp?.data?.data ?? resp?.data ?? []) as Array<{ id: number; video: string; client_name: string; client_role?: string | null }>;
+        if (mounted) setTestimonials(rows);
+      } catch {
+        if (mounted) setTestimonials([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const [pageSize, setPageSize] = useState<number>(4);
+  const totalPages = Math.max(1, Math.ceil(testimonials.length / pageSize));
+  const currentTestimonials = testimonials.slice(testimonialPage * pageSize, testimonialPage * pageSize + pageSize);
+  const canPrev = testimonialPage > 0;
+  const canNext = testimonialPage < totalPages - 1;
+  const prevTestimonialsPage = () => setTestimonialPage((p) => Math.max(0, p - 1));
+  const nextTestimonialsPage = () => setTestimonialPage((p) => Math.min(totalPages - 1, p + 1));
+
+  useEffect(() => {
+    const computePageSize = () => {
+      if (typeof window === "undefined") return;
+      const w = window.innerWidth;
+      if (w < 640) {
+        setPageSize(1);
+      } else if (w < 1024) {
+        setPageSize(2);
+      } else {
+        setPageSize(4);
+      }
+    };
+    computePageSize();
+    window.addEventListener("resize", computePageSize);
+    return () => window.removeEventListener("resize", computePageSize);
+  }, []);
+
+  useEffect(() => {
+    const newTotalPages = Math.max(1, Math.ceil(testimonials.length / pageSize));
+    setTestimonialPage((p) => Math.min(p, newTotalPages - 1));
+  }, [pageSize, testimonials.length]);
 
   const scrollToHowItWorks = () => {
     if (howItWorksRef.current) {
@@ -912,76 +964,92 @@ export default function Index() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { name: "Angel Nickens", src: "/testimonials/Angel_Nickens.mp4", role: "Credit Repair Specialist" },
-              { name: "Christie Morse", src: "/testimonials/Christie_Morse.mp4", role: "Financial Consultant" },
-              { name: "Deonte Lynn", src: "/testimonials/Deonte_Lynn.mp4", role: "Funding Expert" },
-              { name: "Mina Jackson", src: "/testimonials/Mina_Jackson.MOV", role: "Business Strategist" },
-            ].map((t, i) => (
-              <div 
-                key={i} 
-                className="group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer"
-                onClick={() => setActiveTestimonialVideo(t.src)}
-              >
-                {/* Video Thumbnail (muted loop or static) */}
-                <div className="relative aspect-[9/16] bg-slate-900">
-                  <VideoThumbnail 
-                    src={t.src} 
-                    alt={t.name} 
-                    className="opacity-90 group-hover:opacity-100 transition-opacity duration-500"
-                  />
-                  
-                  {/* Play Button Overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
-                    <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300 backdrop-blur-sm">
-                      <Play className="w-6 h-6 text-teal-600 fill-current ml-1" />
+          <div className="flex flex-wrap justify-center gap-6">
+            {currentTestimonials.map((t) => {
+              const src = `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
+              return (
+                <div
+                  key={t.id}
+                  className="testimonial-card group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer w-[280px] sm:w-[300px] lg:w-[320px]"
+                  onClick={() => setActiveTestimonialVideo(src)}
+                >
+                  <div className="relative aspect-[9/16] bg-slate-900">
+                    <VideoThumbnail
+                      src={src}
+                      alt={t.client_name}
+                      className="opacity-90 group-hover:opacity-100 transition-opacity duration-500"
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
+                      <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300 backdrop-blur-sm">
+                        <Play className="w-6 h-6 text-teal-600 fill-current ml-1" />
+                      </div>
                     </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
                   </div>
-
-                  {/* Gradient Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 right-0 p-5 text-white pointer-events-none">
+                    <h3 className="font-bold text-lg leading-tight mb-1">{t.client_name}</h3>
+                    <p className="text-sm text-teal-200 font-medium opacity-90">{t.client_role || ""}</p>
+                  </div>
                 </div>
-
-                {/* Card Content */}
-                <div className="absolute bottom-0 left-0 right-0 p-5 text-white pointer-events-none">
-                   <h3 className="font-bold text-lg leading-tight mb-1">{t.name}</h3>
-                   <p className="text-sm text-teal-200 font-medium opacity-90">{t.role}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
           
           <p className="text-center text-xs text-slate-500 mt-12 italic opacity-70">
             Disclosure: Individual experiences vary. These testimonials reflect personal opinions and workflow benefits, not guaranteed results.
           </p>
         </div>
+            {totalPages > 1 && (
+              <div className="mt-6 flex items-center justify-center gap-3">
+                <Button
+                  variant="outline"
+                  className="rounded-full border-slate-300 text-slate-700 hover:bg-slate-100"
+                  onClick={prevTestimonialsPage}
+                  disabled={!canPrev}
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </Button>
+                <span className="text-sm text-slate-500">
+                  Page {Math.min(testimonialPage + 1, totalPages)} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  className="rounded-full border-slate-300 text-slate-700 hover:bg-slate-100"
+                  onClick={nextTestimonialsPage}
+                  disabled={!canNext}
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </Button>
+              </div>
+            )}
 
         {/* Video Modal */}
-        {activeTestimonialVideo && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setActiveTestimonialVideo(null)}>
-            <div className="relative w-full max-w-sm sm:max-w-md md:max-w-3xl max-h-[90vh] bg-black rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-              <button 
-                onClick={() => setActiveTestimonialVideo(null)}
-                className="absolute top-4 right-4 z-10 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
-              <video 
-                src={activeTestimonialVideo}
-                className="w-full h-full max-h-[85vh] object-contain mx-auto"
-                controls
-                autoPlay
-                controlsList="nodownload"
-                onContextMenu={(e) => e.preventDefault()}
-                playsInline
-                disablePictureInPicture
-              >
-                Your browser does not support the video tag.
-              </video>
-            </div>
-          </div>
-        )}
+        {activeTestimonialVideo &&
+          createPortal(
+            <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setActiveTestimonialVideo(null)}>
+              <div className="relative w-full max-w-sm sm:max-w-md md:max-w-3xl max-h-[90vh] bg-black rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => setActiveTestimonialVideo(null)}
+                  className="absolute top-4 right-4 z-10 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <video
+                  src={activeTestimonialVideo}
+                  className="w-full h-full max-h-[85vh] object-contain mx-auto"
+                  controls
+                  autoPlay
+                  controlsList="nodownload"
+                  onContextMenu={(e) => e.preventDefault()}
+                  playsInline
+                  disablePictureInPicture
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            </div>,
+            document.body
+          )}
       </section>
 
       {/* --- ABOUT THE PLATFORM --- */}

@@ -82,6 +82,7 @@ const SupportKnowledgeBase = React.lazy(() => import("./pages/SupportKnowledgeBa
 const SupportReports = React.lazy(() => import("./pages/SupportReports"));
 const SupportEscalations = React.lazy(() => import("./pages/SupportEscalations"));
 const SupportSettings = React.lazy(() => import("./pages/SupportSettings"));
+const SupportTestimonials = React.lazy(() => import("./pages/SupportTestimonials"));
 const BlogManagement = React.lazy(() => import("./pages/Support/Blog/BlogManagement"));
 const BlogEditor = React.lazy(() => import("./pages/Support/Blog/BlogEditor"));
 const BlogCategories = React.lazy(() => import("./pages/Support/Blog/BlogCategories"));
@@ -680,6 +681,14 @@ const App = () => {
             element={
               <SupportProtectedRoute>
                 <SupportReports />
+              </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/support/testimonials"
+            element={
+              <SupportProtectedRoute>
+                <SupportTestimonials />
               </SupportProtectedRoute>
             }
           />

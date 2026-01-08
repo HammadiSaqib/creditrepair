@@ -23,6 +23,7 @@ import {
   HelpCircle,
   UserCog,
   Newspaper,
+  Video,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -77,6 +78,12 @@ export default function SupportSidebar({ className }: SupportSidebarProps) {
       name: "Blog Management",
       href: "/support/blog",
       icon: Newspaper,
+      badge: null,
+    },
+    {
+      name: "Testimonials",
+      href: "/support/testimonials",
+      icon: Video,
       badge: null,
     },
     {
@@ -145,7 +152,7 @@ export default function SupportSidebar({ className }: SupportSidebarProps) {
         <div className="flex items-center justify-between">
           {!collapsed && (
             <Link to="/support/dashboard" className="flex items-center space-x-2">
-               <img src="/image.png" alt="Score Machine" className="w-20 h-14" />
+              <img src="/image.png" alt="Score Machine" className="w-20 h-14" loading="lazy" />
               <span className="text-lg font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent">
                 Support Portal
               </span>

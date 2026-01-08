@@ -1749,6 +1749,18 @@ async function createMySQLTables(): Promise<void> {
       FOREIGN KEY (tag_id) REFERENCES blog_tags(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
+    // Testimonials table
+    `CREATE TABLE IF NOT EXISTS testimonials (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      video VARCHAR(500) NOT NULL,
+      client_name VARCHAR(255) NOT NULL,
+      client_role VARCHAR(255) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_client_name (client_name),
+      INDEX idx_created_at (created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
     // Newsletter subscribers table
     `CREATE TABLE IF NOT EXISTS newsletter_subscribers (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1782,6 +1794,21 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  stripe_customer_id column already exists');
     } else {
       console.log('⚠️  Error adding stripe_customer_id column:', error.message);
+    }
+  }
+
+  // Ensure testimonials table has 'video' column for cross-DB compatibility
+  try {
+    await executeQuery(`
+      ALTER TABLE testimonials 
+      ADD COLUMN video VARCHAR(500) NOT NULL
+    `);
+    console.log('✅ Added video column to testimonials table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  video column already exists on testimonials');
+    } else {
+      console.log('⚠️  Error adding video column to testimonials:', error.message);
     }
   }
 

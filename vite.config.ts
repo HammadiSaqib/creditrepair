@@ -1,6 +1,7 @@
 import { defineConfig, Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import fs from "fs";
 import { createServer } from "./server";
 
 //1 https://vitejs.dev/config/
@@ -10,6 +11,7 @@ export default defineConfig(({ mode }) => ({
     host: "0.0.0.0",
     port: 3001,
   },
+  publicDir: path.resolve(__dirname, "client", "public"),
   build: {
     outDir: "dist/spa",
   },
@@ -39,6 +41,31 @@ function expressPlugin(): Plugin {
             } else {
               next();
             }
+          });
+          
+          // Serve root /public assets during dev (e.g., /image.png)
+          const rootPublicDir = path.resolve(__dirname, "public");
+          server.middlewares.use((req, res, next) => {
+            try {
+              const url = req.url?.split("?")[0] || "/";
+              const rel = decodeURIComponent(url).replace(/^\/+/, "");
+              if (!rel) return next();
+              const filePath = path.join(rootPublicDir, rel);
+              if (filePath.startsWith(rootPublicDir) && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                const ext = path.extname(filePath).toLowerCase();
+                const type =
+                  ext === ".png" ? "image/png" :
+                  ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" :
+                  ext === ".gif" ? "image/gif" :
+                  ext === ".svg" ? "image/svg+xml" :
+                  ext === ".ico" ? "image/x-icon" :
+                  "application/octet-stream";
+                res.setHeader("Content-Type", type);
+                fs.createReadStream(filePath).pipe(res);
+                return;
+              }
+            } catch {}
+            next();
           });
           
           // Attach WebSocket service to Vite's HTTP server
