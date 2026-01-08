@@ -29,6 +29,23 @@ function expressPlugin(): Plugin {
     name: "express-plugin",
     apply: "serve", // Only apply during development (serve mode)
     configureServer(server) {
+      // Ensure key assets from root /public are available under client/public for dev
+      try {
+        const rootPublicDir = path.resolve(__dirname, "public");
+        const clientPublicDir = path.resolve(__dirname, "client", "public");
+        const filesToSync = ["image.png", "company-logo.svg", "site-image.png", "favicon.ico", "favicon1.ico"];
+        for (const fname of filesToSync) {
+          const src = path.join(rootPublicDir, fname);
+          const dest = path.join(clientPublicDir, fname);
+          if (fs.existsSync(src)) {
+            try {
+              fs.mkdirSync(clientPublicDir, { recursive: true });
+              fs.copyFileSync(src, dest);
+            } catch {}
+          }
+        }
+      } catch {}
+
       // Use return so the configuration is async
       return createServer()
         .then(({ app, httpServer, websocketService }) => {
