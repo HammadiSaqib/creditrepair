@@ -169,6 +169,106 @@ export default function Index() {
     const newTotalPages = Math.max(1, Math.ceil(testimonials.length / pageSize));
     setTestimonialPage((p) => Math.min(p, newTotalPages - 1));
   }, [pageSize, testimonials.length]);
+  const toEmbedUrl = (raw: string | null | undefined) => {
+    try {
+      const u = (raw || '').trim();
+      if (!u) return null;
+      if (/youtu\.be\//i.test(u)) {
+        const id = u.split('youtu.be/')[1]?.split(/[?&]/)[0];
+        if (id) return `https://www.youtube.com/embed/${id}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      }
+      const ytWatch = u.match(/youtube\.com\/watch\?v=([^&]+)/i);
+      if (ytWatch) return `https://www.youtube.com/embed/${ytWatch[1]}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      const ytEmbed = u.match(/youtube\.com\/embed\/([^?&]+)/i);
+      if (ytEmbed) return `https://www.youtube.com/embed/${ytEmbed[1]}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      const ytShorts = u.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/i);
+      if (ytShorts) return `https://www.youtube.com/embed/${ytShorts[1]}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      const vimeo = u.match(/vimeo\.com\/(\d+)/i);
+      if (vimeo) return `https://player.vimeo.com/video/${vimeo[1]}?title=0&byline=0&portrait=0&dnt=1`;
+      const driveFile = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+      if (driveFile) return `https://drive.google.com/file/d/${driveFile[1]}/preview`;
+      const driveOpen = u.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/i);
+      if (driveOpen) return `https://drive.google.com/file/d/${driveOpen[1]}/preview`;
+      const driveUc = u.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/i);
+      if (driveUc) return `https://drive.google.com/file/d/${driveUc[1]}/preview`;
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const isDriveUrl = (raw: string | null | undefined) => {
+    try {
+      const u = new URL((raw || '').trim());
+      return /(^|\.)drive\.google\.com$/i.test(u.hostname);
+    } catch {
+      return /drive\.google\.com/i.test((raw || '').trim());
+    }
+  };
+
+  const getDriveFileId = (raw: string | null | undefined) => {
+    const u = (raw || '').trim();
+    if (!u) return null;
+    const fileMatch = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+    if (fileMatch) return fileMatch[1];
+    const openMatch = u.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/i);
+    if (openMatch) return openMatch[1];
+    const ucMatch = u.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/i);
+    if (ucMatch) return ucMatch[1];
+    return null;
+  };
+
+  const toDriveDirectUrl = (raw: string | null | undefined) => {
+    const id = getDriveFileId(raw);
+    return id ? `/api/proxy/drive/file/${id}` : null;
+  };
+
+  const DrivePreview = ({ url, title }: { url: string; title?: string }) => {
+    const [fallback, setFallback] = useState(false);
+    const direct = toDriveDirectUrl(url);
+    if (!direct) {
+      return <div className="w-full h-full bg-slate-900" />;
+    }
+    return fallback ? (
+      <div className="w-full h-full bg-slate-900" />
+    ) : (
+      <video
+        src={direct}
+        className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-all duration-700 ease-out"
+        muted
+        loop
+        playsInline
+        onError={() => setFallback(true)}
+      />
+    );
+  };
+
+  const DrivePlayer = ({ url }: { url: string }) => {
+    const [fallback, setFallback] = useState(false);
+    const direct = toDriveDirectUrl(url);
+    if (!direct || fallback) {
+      return (
+        <div className="w-[80vw] h-[80vh] max-w-full max-h-full rounded-2xl shadow-2xl bg-black flex items-center justify-center text-white/70">
+          <span>Unable to load video from Drive</span>
+        </div>
+      );
+    }
+    return (
+      <video
+        src={direct}
+        className="w-full h-full max-h-[85vh] object-contain mx-auto rounded-2xl shadow-2xl bg-black"
+        controls
+        autoPlay
+        controlsList="nodownload"
+        onContextMenu={(e) => e.preventDefault()}
+        playsInline
+        disablePictureInPicture
+        onError={() => setFallback(true)}
+      >
+        Your browser does not support the video tag.
+      </video>
+    );
+  };
 
   const scrollToHowItWorks = () => {
     if (howItWorksRef.current) {
@@ -966,7 +1066,9 @@ export default function Index() {
 
           <div className="flex flex-wrap justify-center gap-6">
             {currentTestimonials.map((t) => {
-              const src = `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
+              const src = /^https?:\/\//i.test(t.video) ? t.video : `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
+              const isDrive = isDriveUrl(src);
+              const embed = isDrive ? null : toEmbedUrl(src);
               return (
                 <div
                   key={t.id}
@@ -974,11 +1076,25 @@ export default function Index() {
                   onClick={() => setActiveTestimonialVideo(src)}
                 >
                   <div className="relative aspect-[9/16] bg-slate-900">
-                    <VideoThumbnail
-                      src={src}
-                      alt={t.client_name}
-                      className="opacity-90 group-hover:opacity-100 transition-opacity duration-500"
-                    />
+                    {isDrive ? (
+                      <DrivePreview url={src} title={t.client_name} />
+                    ) : embed ? (
+                      <div className="relative w-full h-full overflow-hidden">
+                        <iframe
+                          src={embed}
+                          className="w-full h-full opacity-90 group-hover:opacity-100 transition-opacity duration-500 bg-black"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          title={t.client_name}
+                        />
+                      </div>
+                    ) : (
+                      <VideoThumbnail
+                        src={src}
+                        alt={t.client_name}
+                        className="opacity-90 group-hover:opacity-100 transition-opacity duration-500"
+                      />
+                    )}
                     <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
                       <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300 backdrop-blur-sm">
                         <Play className="w-6 h-6 text-teal-600 fill-current ml-1" />
@@ -1027,25 +1143,59 @@ export default function Index() {
         {activeTestimonialVideo &&
           createPortal(
             <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setActiveTestimonialVideo(null)}>
-              <div className="relative w-full max-w-sm sm:max-w-md md:max-w-3xl max-h-[90vh] bg-black rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="relative w-full h-full max-w-7xl max-h-[90vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => setActiveTestimonialVideo(null)}
                   className="absolute top-4 right-4 z-10 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
-                <video
-                  src={activeTestimonialVideo}
-                  className="w-full h-full max-h-[85vh] object-contain mx-auto"
-                  controls
-                  autoPlay
-                  controlsList="nodownload"
-                  onContextMenu={(e) => e.preventDefault()}
-                  playsInline
-                  disablePictureInPicture
-                >
-                  Your browser does not support the video tag.
-                </video>
+                {(() => {
+                  const src = activeTestimonialVideo || '';
+                  if (isDriveUrl(src)) {
+                    return <DrivePlayer url={src} />;
+                  }
+                  const embed = toEmbedUrl(src);
+                  if (embed) {
+                    const isYouTube = /youtube\.com/i.test(embed);
+                    if (isYouTube) {
+                      return (
+                        <div className="relative h-[85vh] aspect-[9/16] mx-auto bg-black rounded-2xl overflow-hidden shadow-2xl">
+                          <iframe
+                            src={embed}
+                            className="absolute inset-0 w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                            title="Testimonial"
+                          />
+                        </div>
+                      );
+                    }
+                    return (
+                      <iframe
+                        src={embed}
+                        className="w-[80vw] h-[80vh] max-w-full max-h-full rounded-2xl shadow-2xl bg-black"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        title="Testimonial"
+                      />
+                    );
+                  }
+                  return (
+                    <video
+                      src={src}
+                      className="w-full h-full max-h-[85vh] object-contain mx-auto rounded-2xl shadow-2xl bg-black"
+                      controls
+                      autoPlay
+                      controlsList="nodownload"
+                      onContextMenu={(e) => e.preventDefault()}
+                      playsInline
+                      disablePictureInPicture
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                  );
+                })()}
               </div>
             </div>,
             document.body

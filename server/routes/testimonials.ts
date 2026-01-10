@@ -70,16 +70,23 @@ supportRouter.post('/', upload.single('video'), async (req, res) => {
   try {
     const client_name = (req.body?.client_name || '').toString().trim();
     const client_role = (req.body?.client_role || '').toString().trim() || null;
+    const file_url = (req.body?.file_url || '').toString().trim() || '';
 
     if (!client_name) {
       return res.status(400).json({ success: false, error: 'Client name is required' });
     }
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: 'Video file is required' });
+    if (!req.file && !file_url) {
+      return res.status(400).json({ success: false, error: 'Video source is required' });
     }
 
-    // Store Windows-style path with "public\\testimonials\\<filename>" as requested
-    const storedPath = path.join('public', 'testimonials', req.file.filename);
+    let storedPath: string | null = null;
+    let storedUrl: string | null = null;
+    if (req.file) {
+      storedPath = path.join('public', 'testimonials', req.file.filename);
+      storedUrl = storedPath.replace(/\\/g, '/');
+    } else if (file_url) {
+      storedUrl = file_url;
+    }
 
     const cols = await getTestimonialColumnNames();
     const hasVideo = cols.includes('video');
@@ -105,18 +112,17 @@ supportRouter.post('/', upload.single('video'), async (req, res) => {
     const placeholders: string[] = [];
     const params: any[] = [];
 
-    const storedUrl = storedPath.replace(/\\/g, '/');
     const uploaderId = (req as any)?.user?.id || null;
 
     if (hasVideo || !hasFilePath) {
       insertCols.push('video');
       placeholders.push('?');
-      params.push(storedPath);
+      params.push(storedPath ?? storedUrl ?? '');
     }
     if (hasFilePath) {
       insertCols.push('file_path');
       placeholders.push('?');
-      params.push(storedPath);
+      params.push(storedPath ?? '');
     }
     if (hasFileUrl) {
       insertCols.push('file_url');
@@ -152,11 +158,7 @@ supportRouter.post('/', upload.single('video'), async (req, res) => {
       uploaderId,
       storedPath,
       storedUrl,
-      file: {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: (req.file as any).size
-      }
+      hasFile: !!req.file
     });
     await runQuery(sql, params);
 
@@ -182,6 +184,7 @@ supportRouter.put('/:id', upload.single('video'), async (req, res) => {
     const id = Number((req.params as any).id);
     const client_name = (req.body?.client_name || '').toString().trim();
     const client_role = (req.body?.client_role || '').toString().trim() || null;
+    const file_url = (req.body?.file_url || '').toString().trim() || '';
     if (!id) {
       return res.status(400).json({ success: false, error: 'Invalid input' });
     }
@@ -210,6 +213,16 @@ supportRouter.put('/:id', upload.single('video'), async (req, res) => {
         const filePath = path.resolve(process.cwd(), 'client', rel);
         try { if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); } } catch {}
       }
+    } else if (file_url) {
+      const oldRows = await allQuery(`SELECT video, file_path FROM testimonials WHERE id = ?`, [id]);
+      const old = oldRows && oldRows[0];
+      if (old) {
+        const p = (old.file_path || old.video || '').toString();
+        const rel = p.replace(/\\/g, '/').replace(/^public\//, '');
+        const filePath = path.resolve(process.cwd(), 'client', rel);
+        try { if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); } } catch {}
+      }
+      storedUrl = file_url;
     }
     const setParts: string[] = [];
     const params: any[] = [];
@@ -219,6 +232,10 @@ supportRouter.put('/:id', upload.single('video'), async (req, res) => {
       if (hasVideo || !hasFilePath) { setParts.push('video = ?'); params.push(storedPath); }
       if (hasFilePath) { setParts.push('file_path = ?'); params.push(storedPath); }
       if (hasFileUrl) { setParts.push('file_url = ?'); params.push(storedUrl); }
+    } else if (storedUrl) {
+      if (hasVideo || !hasFilePath) { setParts.push('video = ?'); params.push(storedUrl); }
+      if (hasFileUrl) { setParts.push('file_url = ?'); params.push(storedUrl); }
+      if (hasFilePath) { setParts.push('file_path = ?'); params.push(''); }
     }
     setParts.push('updated_at = CURRENT_TIMESTAMP');
     const sql = `UPDATE testimonials SET ${setParts.join(', ')} WHERE id = ?`;
@@ -280,9 +297,12 @@ supportRouter.delete('/:id', async (req, res) => {
 supportRouter.get('/', async (_req, res) => {
   try {
     const cols = await getTestimonialColumnNames();
-    const videoExpr = cols.includes('video')
+    const baseVideo = cols.includes('video')
       ? 'video'
-      : (cols.includes('file_path') ? 'file_path AS video' : 'NULL AS video');
+      : (cols.includes('file_path') ? 'file_path' : 'NULL');
+    const videoExpr = cols.includes('file_url')
+      ? `COALESCE(file_url, ${baseVideo}) AS video`
+      : `${baseVideo} AS video`;
     const roleExpr = cols.includes('client_role') ? 'client_role' : 'NULL AS client_role';
     const rows = await allQuery(
       `SELECT id, ${videoExpr}, client_name, ${roleExpr}, created_at FROM testimonials ORDER BY id DESC`
@@ -308,9 +328,12 @@ supportRouter.get('/', async (_req, res) => {
 publicRouter.get('/', async (_req, res) => {
   try {
     const cols = await getTestimonialColumnNames();
-    const videoExpr = cols.includes('video')
+    const baseVideo = cols.includes('video')
       ? 'video'
-      : (cols.includes('file_path') ? 'file_path AS video' : 'NULL AS video');
+      : (cols.includes('file_path') ? 'file_path' : 'NULL');
+    const videoExpr = cols.includes('file_url')
+      ? `COALESCE(file_url, ${baseVideo}) AS video`
+      : `${baseVideo} AS video`;
     const roleExpr = cols.includes('client_role') ? 'client_role' : 'NULL AS client_role';
     const rows = await allQuery(
       `SELECT id, ${videoExpr}, client_name, ${roleExpr} FROM testimonials ORDER BY id DESC`

@@ -30,6 +30,35 @@ export default function SupportTestimonials() {
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState("");
   const [editVideoFile, setEditVideoFile] = useState<File | null>(null);
+  const [isVideoUrlAdd, setIsVideoUrlAdd] = useState(true);
+  const [videoUrlAdd, setVideoUrlAdd] = useState("");
+  const [editIsVideoUrl, setEditIsVideoUrl] = useState(true);
+  const [editVideoUrl, setEditVideoUrl] = useState("");
+  const toEmbedUrl = (raw: string | null | undefined) => {
+    try {
+      const u = (raw || '').trim();
+      if (!u) return null;
+      if (/youtu\.be\//i.test(u)) {
+        const id = u.split('youtu.be/')[1]?.split(/[?&]/)[0];
+        if (id) return `https://www.youtube.com/embed/${id}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      }
+      const ytWatch = u.match(/youtube\.com\/watch\?v=([^&]+)/i);
+      if (ytWatch) return `https://www.youtube.com/embed/${ytWatch[1]}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      const ytEmbed = u.match(/youtube\.com\/embed\/([^?&]+)/i);
+      if (ytEmbed) return `https://www.youtube.com/embed/${ytEmbed[1]}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      const vimeo = u.match(/vimeo\.com\/(\d+)/i);
+      if (vimeo) return `https://player.vimeo.com/video/${vimeo[1]}?title=0&byline=0&portrait=0&dnt=1`;
+      const driveFile = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+      if (driveFile) return `https://drive.google.com/file/d/${driveFile[1]}/preview`;
+      const driveOpen = u.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/i);
+      if (driveOpen) return `https://drive.google.com/file/d/${driveOpen[1]}/preview`;
+      const driveUc = u.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/i);
+      if (driveUc) return `https://drive.google.com/file/d/${driveUc[1]}/preview`;
+      return null;
+    } catch {
+      return null;
+    }
+  };
 
   const loadTestimonials = async () => {
     try {
@@ -54,6 +83,9 @@ export default function SupportTestimonials() {
     setEditId(t.id);
     setEditName(t.client_name);
     setEditRole(t.client_role || "");
+    const isUrl = /^https?:\/\//i.test(t.video);
+    setEditIsVideoUrl(isUrl);
+    setEditVideoUrl(isUrl ? t.video : "");
     setEditOpen(true);
   };
 
@@ -61,15 +93,24 @@ export default function SupportTestimonials() {
     if (!editId || !editName.trim()) return;
     setSubmitting(true);
     try {
-      const form = new FormData();
-      form.append("client_name", editName.trim());
-      form.append("client_role", editRole.trim() || "");
-      if (editVideoFile) form.append("video", editVideoFile);
-      await api.put(`/api/support/testimonials/${editId}`, form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      if (editIsVideoUrl) {
+        await api.put(`/api/support/testimonials/${editId}`, {
+          client_name: editName.trim(),
+          client_role: editRole.trim() || "",
+          file_url: editVideoUrl.trim()
+        });
+      } else {
+        const form = new FormData();
+        form.append("client_name", editName.trim());
+        form.append("client_role", editRole.trim() || "");
+        if (editVideoFile) form.append("video", editVideoFile);
+        await api.put(`/api/support/testimonials/${editId}`, form, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      }
       setEditOpen(false);
       setEditVideoFile(null);
+      setEditVideoUrl("");
       await loadTestimonials();
     } catch {}
     finally {
@@ -91,23 +132,34 @@ export default function SupportTestimonials() {
   };
 
   const handleAdd = async () => {
-    if (!clientName.trim() || !videoFile) return;
+    if (!clientName.trim()) return;
+    if (isVideoUrlAdd && !videoUrlAdd.trim()) return;
+    if (!isVideoUrlAdd && !videoFile) return;
     setSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.append("client_name", clientName.trim());
-      if (clientRole.trim()) formData.append("client_role", clientRole.trim());
-      formData.append("video", videoFile);
-      await api.post("/api/support/testimonials", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      if (isVideoUrlAdd) {
+        await api.post("/api/support/testimonials", {
+          client_name: clientName.trim(),
+          client_role: clientRole.trim() || "",
+          file_url: videoUrlAdd.trim()
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("client_name", clientName.trim());
+        if (clientRole.trim()) formData.append("client_role", clientRole.trim());
+        if (videoFile) formData.append("video", videoFile);
+        await api.post("/api/support/testimonials", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+      }
       setOpen(false);
       setClientName("");
       setClientRole("");
       setVideoFile(null);
+      setVideoUrlAdd("");
+      setIsVideoUrlAdd(true);
       await loadTestimonials();
     } catch {
-      // silently fail for now
     } finally {
       setSubmitting(false);
     }
@@ -220,7 +272,8 @@ export default function SupportTestimonials() {
           >
             <AnimatePresence mode="popLayout">
               {testimonials.map((t) => {
-                const src = `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
+                const src = /^https?:\/\//i.test(t.video) ? t.video : `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
+                const embed = toEmbedUrl(src);
                 return (
                   <motion.div
                     key={t.id}
@@ -236,13 +289,23 @@ export default function SupportTestimonials() {
                       className="relative aspect-[9/16] bg-slate-900 cursor-pointer overflow-hidden" 
                       onClick={() => openPlayer(src)}
                     >
-                      <video 
-                        src={src} 
-                        className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700 ease-out" 
-                        muted 
-                        loop 
-                        playsInline 
-                      />
+                      {embed ? (
+                        <iframe
+                          src={embed}
+                          className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-all duration-700 ease-out bg-black"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          title={`Testimonial ${t.id}`}
+                        />
+                      ) : (
+                        <video 
+                          src={src} 
+                          className="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700 ease-out" 
+                          muted 
+                          loop 
+                          playsInline 
+                        />
+                      )}
                       
                       {/* Gradient Overlay */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity duration-300" />
@@ -322,7 +385,17 @@ export default function SupportTestimonials() {
                     <span className="sr-only">Close</span>
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </Button>
-                <video src={playerSrc} controls autoPlay className="max-w-full max-h-full rounded-lg shadow-2xl" />
+                {toEmbedUrl(playerSrc) ? (
+                  <iframe
+                    src={toEmbedUrl(playerSrc)!}
+                    className="w-[80vw] h-[80vh] max-w-full max-h-full rounded-lg shadow-2xl bg-black"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    title="Video player"
+                  />
+                ) : (
+                  <video src={playerSrc} controls autoPlay className="max-w-full max-h-full rounded-lg shadow-2xl" />
+                )}
               </div>
             ) : null}
           </DialogContent>
@@ -371,70 +444,119 @@ export default function SupportTestimonials() {
                         />
                       </div>
                     </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs font-semibold uppercase text-slate-500 tracking-wider">Video Content</Label>
-                    <input 
-                      id={isEdit ? "editVideoInput" : "addVideoInput"} 
-                      type="file" 
-                      accept="video/*" 
-                      className="hidden" 
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] || null;
-                        isEdit ? setEditVideoFile(file) : setVideoFile(file);
-                      }} 
-                    />
-                    <div
-                      className={`
-                        border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300
-                        ${(isEdit ? editVideoFile : videoFile) 
-                          ? "border-teal-500 bg-teal-50/30" 
-                          : "border-slate-200 hover:border-teal-400 hover:bg-slate-50"}
-                      `}
-                      onClick={() => document.getElementById(isEdit ? "editVideoInput" : "addVideoInput")?.click()}
-                      onDragOver={(e) => { e.preventDefault(); }}
-                      onDrop={(e) => { 
-                        e.preventDefault(); 
-                        const f = e.dataTransfer.files?.[0]; 
-                        if (f && f.type.startsWith("video/")) {
-                          isEdit ? setEditVideoFile(f) : setVideoFile(f);
-                        }
-                      }}
-                    >
-                      {(() => {
-                         const file = isEdit ? editVideoFile : videoFile;
-                         const current = isEdit ? testimonials.find((x) => x.id === editId) : null;
-                         const currentSrc = current ? `/${current.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}` : null;
-                         // Logic: if new file selected, show its preview. Else if editing and has existing, show existing. Else show placeholder.
-                         const previewSrc = file ? URL.createObjectURL(file) : (isEdit ? currentSrc : null);
-
-                         if (previewSrc) {
-                           return (
-                             <div className="w-full space-y-3">
-                               <video src={previewSrc} className="w-full h-48 object-cover rounded-lg shadow-sm bg-black" controls />
-                               <p className="text-xs text-teal-600 font-medium flex items-center justify-center gap-1">
-                                 <Sparkles className="w-3 h-3" />
-                                 {file ? "New video selected" : "Current video | Drag and drop to replace this video or click to upload"}
-                               </p>
-                             </div>
-                           );
-                         }
-
-                         return (
-                           <div className="py-4 space-y-3">
-                             <div className="w-12 h-12 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center mx-auto">
-                               <Upload className="w-6 h-6" />
-                             </div>
-                             <div>
-                               <p className="text-sm font-medium text-slate-700">Click to upload video</p>
-                               <p className="text-xs text-slate-500 mt-1">or drag and drop MP4, WebM</p>
-                             </div>
-                           </div>
-                         );
-                      })()}
+                    <div className="space-y-2 col-span-2">
+                      <Label className="text-xs font-semibold uppercase text-slate-500 tracking-wider">Video Source</Label>
+                      <div className="flex gap-3">
+                        <Button 
+                          type="button"
+                          variant={(isEdit ? editIsVideoUrl : isVideoUrlAdd) ? "default" : "outline"} 
+                          onClick={() => isEdit ? setEditIsVideoUrl(true) : setIsVideoUrlAdd(true)}
+                          className={(isEdit ? editIsVideoUrl : isVideoUrlAdd) ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
+                        >
+                          Video URL
+                        </Button>
+                        <Button 
+                          type="button"
+                          variant={(isEdit ? editIsVideoUrl : isVideoUrlAdd) ? "outline" : "default"} 
+                          onClick={() => isEdit ? setEditIsVideoUrl(false) : setIsVideoUrlAdd(false)}
+                          className={!(isEdit ? editIsVideoUrl : isVideoUrlAdd) ? "bg-teal-600 text-white hover:bg-teal-700" : ""}
+                        >
+                          Upload Video
+                        </Button>
+                      </div>
                     </div>
                   </div>
+
+                  {(isEdit ? editIsVideoUrl : isVideoUrlAdd) ? (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold uppercase text-slate-500 tracking-wider">Video URL</Label>
+                      <Input
+                        value={isEdit ? editVideoUrl : videoUrlAdd}
+                        onChange={(e) => isEdit ? setEditVideoUrl(e.target.value) : setVideoUrlAdd(e.target.value)}
+                        placeholder="https://example.com/video.mp4"
+                        className="bg-slate-50 border-slate-200 focus:bg-white transition-colors"
+                      />
+                      {(isEdit ? editVideoUrl : videoUrlAdd) ? (
+                        <div className="w-full space-y-3">
+                          {toEmbedUrl(isEdit ? editVideoUrl : videoUrlAdd) ? (
+                            <iframe
+                              src={toEmbedUrl(isEdit ? editVideoUrl : videoUrlAdd)!}
+                              className="w-full h-48 rounded-lg shadow-sm bg-black"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              allowFullScreen
+                              title="Video preview"
+                            />
+                          ) : (
+                            <video
+                              src={(isEdit ? editVideoUrl : videoUrlAdd)}
+                              className="w-full h-48 object-cover rounded-lg shadow-sm bg-black"
+                              controls
+                            />
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold uppercase text-slate-500 tracking-wider">Video Content</Label>
+                      <input 
+                        id={isEdit ? "editVideoInput" : "addVideoInput"} 
+                        type="file" 
+                        accept="video/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          isEdit ? setEditVideoFile(file) : setVideoFile(file);
+                        }} 
+                      />
+                      <div
+                        className={`
+                          border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300
+                          ${(isEdit ? editVideoFile : videoFile) 
+                            ? "border-teal-500 bg-teal-50/30" 
+                            : "border-slate-200 hover:border-teal-400 hover:bg-slate-50"}
+                        `}
+                        onClick={() => document.getElementById(isEdit ? "editVideoInput" : "addVideoInput")?.click()}
+                        onDragOver={(e) => { e.preventDefault(); }}
+                        onDrop={(e) => { 
+                          e.preventDefault(); 
+                          const f = e.dataTransfer.files?.[0]; 
+                          if (f && f.type.startsWith("video/")) {
+                            isEdit ? setEditVideoFile(f) : setVideoFile(f);
+                          }
+                        }}
+                      >
+                        {(() => {
+                           const file = isEdit ? editVideoFile : videoFile;
+                           const current = isEdit ? testimonials.find((x) => x.id === editId) : null;
+                           const currentSrc = current ? (/^https?:\/\//i.test(current.video) ? current.video : `/${current.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`) : null;
+                           const previewSrc = file ? URL.createObjectURL(file) : (isEdit ? currentSrc : null);
+                           if (previewSrc) {
+                             return (
+                               <div className="w-full space-y-3">
+                                 <video src={previewSrc} className="w-full h-48 object-cover rounded-lg shadow-sm bg-black" controls />
+                                 <p className="text-xs text-teal-600 font-medium flex items-center justify-center gap-1">
+                                   <Sparkles className="w-3 h-3" />
+                                   {file ? "New video selected" : "Current video | Drag and drop to replace this video or click to upload"}
+                                 </p>
+                               </div>
+                             );
+                           }
+                           return (
+                             <div className="py-4 space-y-3">
+                               <div className="w-12 h-12 rounded-full bg-teal-100 text-teal-600 flex items-center justify-center mx-auto">
+                                 <Upload className="w-6 h-6" />
+                               </div>
+                               <div>
+                                 <p className="text-sm font-medium text-slate-700">Click to upload video</p>
+                                 <p className="text-xs text-slate-500 mt-1">or drag and drop MP4, WebM</p>
+                               </div>
+                             </div>
+                           );
+                        })()}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -444,7 +566,11 @@ export default function SupportTestimonials() {
                 </Button>
                 <Button 
                   onClick={action} 
-                  disabled={submitting || (!isEdit && (!clientName.trim() || !videoFile)) || (isEdit && !editName.trim())} 
+                  disabled={
+                    submitting || 
+                    (!isEdit && (!clientName.trim() || (isVideoUrlAdd ? !videoUrlAdd.trim() : !videoFile))) ||
+                    (isEdit && (!editName.trim() || (editIsVideoUrl ? !editVideoUrl.trim() : false)))
+                  } 
                   className="bg-teal-600 hover:bg-teal-700 text-white shadow-lg shadow-teal-500/20"
                 >
                   {submitting ? (

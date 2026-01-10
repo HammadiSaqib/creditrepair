@@ -52,6 +52,7 @@ import { initializeWebSocketService } from "./services/websocketService.js";
 import creditReportScraperRoutes from "./routes/creditreportscraper.js";
 import scraperLogsRoutes from "./routes/scraperLogs.js";
 import aiRoutes from "./routes/ai.js";
+import proxyRoutes from "./routes/proxy.js";
 import warMachineRoutes from "./routes/warMachine.js";
 import contractsRoutes from "./routes/contracts.js";
 import contractsAdminRoutes from "./routes/contractsAdmin.js";
@@ -179,6 +180,7 @@ export async function createServer() {
       'http://localhost:3002',
       'http://localhost:8080',
       'http://localhost:3001',
+      'https://api.thescoremachine.com',
       'https://thescoremachine.com',
       'https://www.thescoremachine.com'
     ],
@@ -395,6 +397,8 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // =============================================================================
   app.use("/api/pricing", pricingRoutes);
   app.use("/api/shop", shopRoutes);
+  // Proxy routes (e.g., Google Drive streaming)
+  app.use("/api/proxy", proxyRoutes);
 
   // =============================================================================
   // BILLING AND STRIPE ROUTES
