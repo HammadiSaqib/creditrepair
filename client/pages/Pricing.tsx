@@ -3,13 +3,14 @@ import { Helmet } from 'react-helmet-async';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, Zap, Users, FileText, Shield } from 'lucide-react';
+import { Check, Zap, Users, FileText, Shield, Play } from 'lucide-react';
 import { toast } from 'sonner';
 // WebSocket removed to eliminate connection errors
 import { Link, useNavigate } from 'react-router-dom';
 import SiteHeader from '@/components/SiteHeader';
 import { pricingApi } from '@/lib/api';
 import Footer from '@/components/Footer';
+import { api } from '@/lib/api';
 
 interface PricingPlan {
   id: number;
@@ -67,6 +68,8 @@ export default function Pricing() {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [purchasing, setPurchasing] = useState<number | null>(null);
   const maxRetries = 3;
+  const [testimonials, setTestimonials] = useState<Array<{ id: number; video: string; client_name: string; client_role?: string | null }>>([]);
+  const [activeTestimonialVideo, setActiveTestimonialVideo] = useState<string | null>(null);
 
   // WebSocket functionality removed to eliminate connection errors
 
@@ -185,6 +188,177 @@ export default function Pricing() {
   useEffect(() => {
     loadPlans();
   }, []);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const resp = await api.get("/api/testimonials");
+        const rows = (resp?.data?.data ?? resp?.data ?? []) as Array<{ id: number; video: string; client_name: string; client_role?: string | null }>;
+        if (mounted) setTestimonials(rows);
+      } catch {
+        if (mounted) setTestimonials([]);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const VideoThumbnail = ({ src, alt, className }: { src: string; alt?: string; className?: string }) => {
+    const [thumb, setThumb] = useState<string | null>(null);
+    const [failed, setFailed] = useState(false);
+    useEffect(() => {
+      let mounted = true;
+      const video = document.createElement("video");
+      const onSeeked = () => {
+        const canvas = document.createElement("canvas");
+        const w = video.videoWidth || 720;
+        const h = video.videoHeight || 1280;
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          setFailed(true);
+          return;
+        }
+        ctx.drawImage(video, 0, 0, w, h);
+        const url = canvas.toDataURL("image/jpeg");
+        if (mounted) setThumb(url);
+        video.pause();
+      };
+      const onMeta = () => {
+        try {
+          video.currentTime = 0.1;
+        } catch {
+          setFailed(true);
+        }
+      };
+      const onError = () => setFailed(true);
+      video.src = src;
+      video.preload = "metadata";
+      video.muted = true;
+      video.playsInline = true;
+      video.addEventListener("loadedmetadata", onMeta);
+      video.addEventListener("seeked", onSeeked);
+      video.addEventListener("error", onError);
+      video.load();
+      return () => {
+        mounted = false;
+        video.removeEventListener("loadedmetadata", onMeta);
+        video.removeEventListener("seeked", onSeeked);
+        video.removeEventListener("error", onError);
+        video.src = "";
+      };
+    }, [src]);
+    if (thumb) {
+      return <img src={thumb} alt={alt || ""} className={`w-full h-full object-cover ${className || ""}`} />;
+    }
+    if (failed) {
+      return <div className={`w-full h-full ${className || ""} bg-gradient-to-b from-slate-900 to-slate-800`} />;
+    }
+    return <div className={`w-full h-full ${className || ""} bg-slate-900`} />;
+  };
+
+  const toEmbedUrl = (raw: string | null | undefined) => {
+    try {
+      const u = (raw || '').trim();
+      if (!u) return null;
+      if (/youtu\.be\//i.test(u)) {
+        const id = u.split('youtu.be/')[1]?.split(/[?&]/)[0];
+        if (id) return `https://www.youtube.com/embed/${id}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      }
+      const ytWatch = u.match(/youtube\.com\/watch\?v=([^&]+)/i);
+      if (ytWatch) return `https://www.youtube.com/embed/${ytWatch[1]}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      const ytEmbed = u.match(/youtube\.com\/embed\/([^?&]+)/i);
+      if (ytEmbed) return `https://www.youtube.com/embed/${ytEmbed[1]}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      const ytShorts = u.match(/youtube\.com\/shorts\/([A-Za-z0-9_-]+)/i);
+      if (ytShorts) return `https://www.youtube.com/embed/${ytShorts[1]}?modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&color=white`;
+      const vimeo = u.match(/vimeo\.com\/(\d+)/i);
+      if (vimeo) return `https://player.vimeo.com/video/${vimeo[1]}?title=0&byline=0&portrait=0&dnt=1`;
+      const driveFile = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+      if (driveFile) return `https://drive.google.com/file/d/${driveFile[1]}/preview`;
+      const driveOpen = u.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/i);
+      if (driveOpen) return `https://drive.google.com/file/d/${driveOpen[1]}/preview`;
+      const driveUc = u.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/i);
+      if (driveUc) return `https://drive.google.com/file/d/${driveUc[1]}/preview`;
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const isDriveUrl = (raw: string | null | undefined) => {
+    try {
+      const u = new URL((raw || '').trim());
+      return /(^|\.)drive\.google\.com$/i.test(u.hostname);
+    } catch {
+      return /drive\.google\.com/i.test((raw || '').trim());
+    }
+  };
+
+  const getDriveFileId = (raw: string | null | undefined) => {
+    const u = (raw || '').trim();
+    if (!u) return null;
+    const fileMatch = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+    if (fileMatch) return fileMatch[1];
+    const openMatch = u.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/i);
+    if (openMatch) return openMatch[1];
+    const ucMatch = u.match(/drive\.google\.com\/uc\?id=([a-zA-Z0-9_-]+)/i);
+    if (ucMatch) return ucMatch[1];
+    return null;
+  };
+
+  const toDriveDirectUrl = (raw: string | null | undefined) => {
+    const id = getDriveFileId(raw);
+    return id ? `/api/proxy/drive/file/${id}` : null;
+  };
+
+  const DrivePreview = ({ url, title }: { url: string; title?: string }) => {
+    const [fallback, setFallback] = useState(false);
+    const direct = toDriveDirectUrl(url);
+    if (!direct) {
+      return <div className="w-full h-full bg-slate-900" />;
+    }
+    return fallback ? (
+      <div className="w-full h-full bg-slate-900" />
+    ) : (
+      <video
+        src={direct}
+        className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-all duration-700 ease-out"
+        muted
+        loop
+        playsInline
+        onError={() => setFallback(true)}
+      />
+    );
+  };
+
+  const DrivePlayer = ({ url }: { url: string }) => {
+    const [fallback, setFallback] = useState(false);
+    const direct = toDriveDirectUrl(url);
+    if (!direct || fallback) {
+      return (
+        <div className="w-[80vw] h-[80vh] max-w-full max-h-full rounded-2xl shadow-2xl bg-black flex items-center justify-center text-white/70">
+          <span>Unable to load video from Drive</span>
+        </div>
+      );
+    }
+    return (
+      <video
+        src={direct}
+        className="w-full h-full max-h-[85vh] object-contain mx-auto rounded-2xl shadow-2xl bg-black"
+        controls
+        autoPlay
+        controlsList="nodownload"
+        onContextMenu={(e) => e.preventDefault()}
+        playsInline
+        disablePictureInPicture
+        onError={() => setFallback(true)}
+      >
+        Your browser does not support the video tag.
+      </video>
+    );
+  };
 
   const handleSelectPlan = (plan: PricingPlan) => {
     // Redirect to registration page with selected plan
@@ -547,92 +721,115 @@ export default function Pricing() {
          </div>
        </section>
 
-       {/* Testimonials */}
-       <section className="py-16 bg-white">
-         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-           <div className="text-center mb-12">
-             <h2 className="text-4xl font-bold mb-4">What Our Customers Say</h2>
-             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-               Join thousands of funding professionals who trust Score Machine.
-             </p>
-           </div>
-
-           <div className="grid md:grid-cols-3 gap-8">
-             <Card className="p-6">
-               <div className="flex items-center mb-4">
-                 <div className="flex text-yellow-400">
-                   {[...Array(5)].map((_, i) => (
-                     <svg key={i} className="w-5 h-5 fill-current" viewBox="0 0 20 20">
-                       <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z"/>
-                     </svg>
-                   ))}
-                 </div>
-               </div>
-               <blockquote className="text-gray-700 mb-4">
-                 "Score Machine helps streamline credit review workflows and client management, according to our users."
-               </blockquote>
-               <div className="flex items-center">
-                 <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold">
-                   S
-                 </div>
-                 <div className="ml-3">
-                   <p className="font-semibold text-gray-900">Sarah Johnson</p>
-                   <p className="text-sm text-gray-600">CEO, Credit Solutions Inc.</p>
-                 </div>
-               </div>
-             </Card>
-
-             <Card className="p-6">
-               <div className="flex items-center mb-4">
-                 <div className="flex text-yellow-400">
-                   {[...Array(5)].map((_, i) => (
-                     <svg key={i} className="w-5 h-5 fill-current" viewBox="0 0 20 20">
-                       <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z"/>
-                     </svg>
-                   ))}
-                 </div>
-               </div>
-               <blockquote className="text-gray-700 mb-4">
-                 "The automation features help us stay organized. Our team can focus on what matters most - supporting our clients."
-               </blockquote>
-               <div className="flex items-center">
-                 <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold">
-                   M
-                 </div>
-                 <div className="ml-3">
-                   <p className="font-semibold text-gray-900">Michael Rodriguez</p>
-                   <p className="text-sm text-gray-600">Founder, Funding Experts</p>
-                 </div>
-               </div>
-             </Card>
-
-             <Card className="p-6">
-               <div className="flex items-center mb-4">
-                 <div className="flex text-yellow-400">
-                   {[...Array(5)].map((_, i) => (
-                     <svg key={i} className="w-5 h-5 fill-current" viewBox="0 0 20 20">
-                       <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z"/>
-                     </svg>
-                   ))}
-                 </div>
-               </div>
-               <blockquote className="text-gray-700 mb-4">
-                 "Professional, reliable, and incredibly user-friendly. Score Machine has the tools we need to manage our business efficiently."
-               </blockquote>
-               <div className="flex items-center">
-                 <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-emerald-600 rounded-full flex items-center justify-center text-white font-bold">
-                   L
-                 </div>
-                 <div className="ml-3">
-                   <p className="font-semibold text-gray-900">Lisa Chen</p>
-                   <p className="text-sm text-gray-600">Director, Premier Credit Services</p>
-                 </div>
-               </div>
-             </Card>
-           </div>
-           <p className="text-xs text-gray-400 mt-6 text-center italic">Results may vary. Testimonials reflect individual experiences and are not guarantees of similar outcomes.</p>
-         </div>
-       </section>
+      <section className="py-16 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-bold mb-4">Trusted by Industry Leaders</h2>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              See what top professionals are saying about their experience with Score Machine Pro.
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-6">
+            {testimonials.map((t) => {
+              const src = /^https?:\/\//i.test(t.video) ? t.video : `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
+              const isDrive = isDriveUrl(src);
+              const embed = isDrive ? null : toEmbedUrl(src);
+              return (
+                <div
+                  key={t.id}
+                  className="group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer w-[280px] sm:w-[300px] lg:w-[320px]"
+                  onClick={() => setActiveTestimonialVideo(src)}
+                >
+                  <div className="relative aspect-[9/16] bg-slate-900">
+                    {isDrive ? (
+                      <DrivePreview url={src} title={t.client_name} />
+                    ) : embed ? (
+                      <div className="relative w-full h-full overflow-hidden">
+                        <iframe
+                          src={embed}
+                          className="w-full h-full opacity-90 group-hover:opacity-100 transition-opacity duration-500 bg-black"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          title={t.client_name}
+                        />
+                      </div>
+                    ) : (
+                      <VideoThumbnail
+                        src={src}
+                        alt={t.client_name}
+                        className="opacity-90 group-hover:opacity-100 transition-opacity duration-500"
+                      />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
+                      <div className="w-16 h-16 bg-white/90 rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform duration-300 backdrop-blur-sm">
+                        <Play className="w-6 h-6 text-teal-600 fill-current ml-1" />
+                      </div>
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 p-5 text-white pointer-events-none">
+                    <h3 className="font-bold text-lg leading-tight mb-1">{t.client_name}</h3>
+                    <p className="text-sm text-teal-200 font-medium opacity-90">{t.client_role || ""}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-gray-400 mt-6 text-center italic">Disclosure: Individual experiences vary. These testimonials reflect personal opinions and workflow benefits, not guaranteed results.</p>
+        </div>
+        {activeTestimonialVideo &&
+          (() => {
+            const src = activeTestimonialVideo || '';
+            return (
+              <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setActiveTestimonialVideo(null)}>
+                <div className="relative w-full h-full max-w-7xl max-h-[90vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => setActiveTestimonialVideo(null)}
+                    className="absolute top-4 right-4 z-10 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                  </button>
+                  {isDriveUrl(src) ? (
+                    <DrivePlayer url={src} />
+                  ) : toEmbedUrl(src) ? (
+                    /youtube\.com/i.test(toEmbedUrl(src)!) ? (
+                      <div className="relative h-[85vh] aspect-[9/16] mx-auto bg-black rounded-2xl overflow-hidden shadow-2xl">
+                        <iframe
+                          src={toEmbedUrl(src)!}
+                          className="absolute inset-0 w-full h-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          title="Testimonial"
+                        />
+                      </div>
+                    ) : (
+                      <iframe
+                        src={toEmbedUrl(src)!}
+                        className="w-[80vw] h-[80vh] max-w-full max-h-full rounded-2xl shadow-2xl bg-black"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        title="Testimonial"
+                      />
+                    )
+                  ) : (
+                    <video
+                      src={src}
+                      className="w-full h-full max-h-[85vh] object-contain mx-auto rounded-2xl shadow-2xl bg-black"
+                      controls
+                      autoPlay
+                      controlsList="nodownload"
+                      onContextMenu={(e) => e.preventDefault()}
+                      playsInline
+                      disablePictureInPicture
+                    >
+                      Your browser does not support the video tag.
+                    </video>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+      </section>
 
        {/* FAQ Section */}
        <section className="py-16 bg-gray-50/50">
