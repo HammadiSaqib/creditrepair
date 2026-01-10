@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet-async';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Check, Zap, Users, FileText, Shield, Play } from 'lucide-react';
+import { Check, Zap, Users, FileText, Shield, Play, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 // WebSocket removed to eliminate connection errors
 import { Link, useNavigate } from 'react-router-dom';
@@ -70,6 +70,8 @@ export default function Pricing() {
   const maxRetries = 3;
   const [testimonials, setTestimonials] = useState<Array<{ id: number; video: string; client_name: string; client_role?: string | null }>>([]);
   const [activeTestimonialVideo, setActiveTestimonialVideo] = useState<string | null>(null);
+  const [testimonialPage, setTestimonialPage] = useState(0);
+  const [pageSize, setPageSize] = useState<number>(4);
 
   // WebSocket functionality removed to eliminate connection errors
 
@@ -188,6 +190,32 @@ export default function Pricing() {
   useEffect(() => {
     loadPlans();
   }, []);
+  useEffect(() => {
+    const computePageSize = () => {
+      if (typeof window === "undefined") return;
+      const w = window.innerWidth;
+      if (w < 640) {
+        setPageSize(1);
+      } else if (w < 1024) {
+        setPageSize(2);
+      } else {
+        setPageSize(4);
+      }
+    };
+    computePageSize();
+    window.addEventListener("resize", computePageSize);
+    return () => window.removeEventListener("resize", computePageSize);
+  }, []);
+  useEffect(() => {
+    const newTotalPages = Math.max(1, Math.ceil(testimonials.length / pageSize));
+    setTestimonialPage((p) => Math.min(p, newTotalPages - 1));
+  }, [pageSize, testimonials.length]);
+  const totalPages = Math.max(1, Math.ceil(testimonials.length / pageSize));
+  const currentTestimonials = testimonials.slice(testimonialPage * pageSize, testimonialPage * pageSize + pageSize);
+  const canPrev = testimonialPage > 0;
+  const canNext = testimonialPage < totalPages - 1;
+  const prevTestimonialsPage = () => setTestimonialPage((p) => Math.max(0, p - 1));
+  const nextTestimonialsPage = () => setTestimonialPage((p) => Math.min(totalPages - 1, p + 1));
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -730,7 +758,7 @@ export default function Pricing() {
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-6">
-            {testimonials.map((t) => {
+            {currentTestimonials.map((t) => {
               const src = /^https?:\/\//i.test(t.video) ? t.video : `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
               const isDrive = isDriveUrl(src);
               const embed = isDrive ? null : toEmbedUrl(src);
@@ -775,6 +803,29 @@ export default function Pricing() {
               );
             })}
           </div>
+          {totalPages > 1 && (
+            <div className="mt-6 flex items-center justify-center gap-3">
+              <Button
+                variant="outline"
+                className="rounded-full border-slate-300 text-slate-700 hover:bg-slate-100"
+                onClick={prevTestimonialsPage}
+                disabled={!canPrev}
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+              <span className="text-sm text-slate-500">
+                Page {Math.min(testimonialPage + 1, totalPages)} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                className="rounded-full border-slate-300 text-slate-700 hover:bg-slate-100"
+                onClick={nextTestimonialsPage}
+                disabled={!canNext}
+              >
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
+          )}
           <p className="text-xs text-gray-400 mt-6 text-center italic">Disclosure: Individual experiences vary. These testimonials reflect personal opinions and workflow benefits, not guaranteed results.</p>
         </div>
         {activeTestimonialVideo &&
