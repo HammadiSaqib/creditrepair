@@ -61,9 +61,6 @@ export async function initializeStripe() {
   }
 }
 
-// Initialize Stripe on startup
-initializeStripe().catch(console.error);
-
 // Get billing history for authenticated user
 router.get('/history', authenticateToken, async (req, res) => {
   try {
