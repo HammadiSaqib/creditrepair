@@ -590,12 +590,7 @@ export default function Dashboard() {
   };
 
   const handleViewProfile = (clientId: number) => {
-    // TODO: Navigate to client profile page
-    console.log("View profile for client:", clientId);
-    toast({
-      title: "Feature Coming Soon",
-      description: `Client profile page for ID: ${clientId} will be available soon.`,
-    });
+    navigate(`/clients/${clientId}`);
   };
 
   const handleEditClient = (clientId: number) => {
@@ -1444,12 +1439,6 @@ export default function Dashboard() {
                                   <DropdownMenuItem
                                     onClick={() => handleEditClient(client.id)}
                                   >
-                                    <Edit className="h-4 w-4 mr-2" />
-                                    Edit Client
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => handleViewReports(client.id)}
-                                  >
                                     <FileText className="h-4 w-4 mr-2" />
                                     View Reports
                                   </DropdownMenuItem>
@@ -1479,7 +1468,7 @@ export default function Dashboard() {
             <CardContent className="space-y-3">
               <Button
                 onClick={handleAddClient}
-                className="w-full justify-start gradient-primary hover:opacity-90"
+                className="w-full justify-start gradient-primary hover:black"
               >
                 <UserPlus className="h-4 w-4 mr-2" />
                 Add New Client
@@ -1487,7 +1476,7 @@ export default function Dashboard() {
               <Button
                   onClick={handleCreditReports}
                   variant="outline"
-                  className="w-full justify-start border-ocean-blue/30 text-ocean-blue hover:bg-gradient-soft"
+                  className="w-full justify-start border-ocean-blue/30 text-ocean-blue hover:black"
                 >
                   <FileText className="h-4 w-4 mr-2" />
                   Credit Reports
@@ -1495,7 +1484,7 @@ export default function Dashboard() {
               <Button
                   onClick={handleSettings}
                   variant="outline"
-                  className="w-full justify-start border-sea-green/30 text-sea-green hover:bg-gradient-soft"
+                  className="w-full justify-start border-sea-green/30 text-sea-green hover:black"
                 >
                   <Settings className="h-4 w-4 mr-2" />
                   Settings
@@ -1507,7 +1496,7 @@ export default function Dashboard() {
                   <Button
                     onClick={handleAffiliateProAccess}
                     variant="outline"
-                    className="w-full justify-start border-purple-500/30 text-purple-600 hover:bg-purple-50 hover:border-purple-500 dark:text-purple-400 dark:hover:bg-purple-900/20 dark:border-purple-600/30"
+                    className="w-full justify-start border-purple-500/30 text-purple-600"
                   >
                     <Crown className="h-4 w-4 mr-2" />
                     {affiliateVerificationStatus === 'active' 

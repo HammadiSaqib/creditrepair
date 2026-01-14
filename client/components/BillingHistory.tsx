@@ -328,7 +328,12 @@ const BillingHistory: React.FC = () => {
                 If you have questions about your billing or need to update your payment method,
                 please contact our support team.
               </p>
-              <Button variant="outline" size="sm" className="text-blue-600 border-blue-300">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-blue-600 border-blue-300"
+                onClick={() => window.open('/support#contact', '_self')}
+              >
                 Contact Support
               </Button>
             </div>

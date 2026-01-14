@@ -287,8 +287,8 @@ export default function Settings() {
     try {
       setSaving(true);
       const response = await authApi.updateProfile(profileData);
-
-      if (response.error) {
+      const ok = response && typeof response.status === "number" && response.status >= 200 && response.status < 300;
+      if (!ok) {
         toast({
           title: "Error",
           description: "Failed to save profile changes",
@@ -296,14 +296,12 @@ export default function Settings() {
         });
         return;
       }
-
-      // Refresh the global auth context to update all components
-      await refreshProfile();
-
-      toast({
-        title: "Success",
-        description: "Profile updated successfully",
-      });
+      try {
+        await refreshProfile();
+      } catch (e: any) {
+        // Even if refresh fails, the profile update was successful
+      }
+      toast({ title: "Success", description: "Profile updated successfully" });
     } catch (error) {
       console.error("Error saving profile:", error);
       toast({
@@ -638,7 +636,7 @@ export default function Settings() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="border-ocean-blue/30 text-ocean-blue hover:bg-gradient-soft"
+                      className="border-ocean-blue/30 text-ocean-blue hover:black"
                       onClick={() => document.getElementById('avatar-upload')?.click()}
                       disabled={uploadingImage}
                     >
@@ -809,7 +807,7 @@ export default function Settings() {
                       <Label htmlFor="zipCode">ZIP Code</Label>
                       <Input
                         id="zipCode"
-                        defaultValue={userProfile?.zipCode || ""}
+                        defaultValue={userProfile?.zip_code || ""}
                         className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
                       />
                     </div>
@@ -873,6 +871,10 @@ export default function Settings() {
                         const lastName = (document.getElementById('lastName') as HTMLInputElement)?.value;
                         const company = (document.getElementById('company') as HTMLInputElement)?.value;
                         const phone = (document.getElementById('phone') as HTMLInputElement)?.value;
+                        const address = (document.getElementById('address') as HTMLInputElement)?.value;
+                        const city = (document.getElementById('city') as HTMLInputElement)?.value;
+                        const state = (document.getElementById('state') as HTMLInputElement)?.value;
+                        const zipCode = (document.getElementById('zipCode') as HTMLInputElement)?.value;
                         const emailVal = (document.getElementById('email') as HTMLInputElement)?.value;
 
                         if (firstName && lastName) {
@@ -881,6 +883,10 @@ export default function Settings() {
                             last_name: lastName,
                             company_name: company || undefined,
                             phone: phone || undefined,
+                            address: address || undefined,
+                            city: city || undefined,
+                            state: state || undefined,
+                            zip_code: zipCode || undefined,
                           };
 
                           const emailChanged = emailVal && emailVal !== (userProfile?.email || '');

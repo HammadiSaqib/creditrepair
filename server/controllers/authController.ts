@@ -1100,6 +1100,10 @@ export class AuthController {
           last_name: affiliate.last_name,
           company_name: affiliate.company_name,
           phone: affiliate.phone,
+          address: affiliate.address,
+          city: affiliate.city,
+          state: affiliate.state,
+          zip_code: affiliate.zip_code,
           role: 'affiliate',
           avatar: affiliate.avatar,
           admin_id: affiliate.admin_id,
@@ -1214,6 +1218,9 @@ export class AuthController {
   // Update user profile
   static async updateProfile(req: AuthRequest, res: Response) {
     try {
+      if (!req.user || !req.user.id) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
       // Filter out empty strings from the request body
       const filteredBody = Object.fromEntries(
         Object.entries(req.body).filter(([key, value]) => value !== '' && value !== null && value !== undefined)
@@ -1289,6 +1296,72 @@ export class AuthController {
         }
       }
 
+      // Handle affiliate profile updates separately (use affiliates table)
+      if (req.user!.role === 'affiliate') {
+        const allowedAffiliateKeys = [
+          'first_name',
+          'last_name',
+          'company_name',
+          'phone',
+          'address',
+          'city',
+          'state',
+          'zip_code',
+          'credit_repair_url',
+          'avatar'
+        ];
+        const affiliateUpdates: Record<string, any> = {};
+        for (const [k, v] of Object.entries(profileUpdates)) {
+          if (allowedAffiliateKeys.includes(k)) affiliateUpdates[k] = v;
+        }
+        // Password change for affiliates
+        if (new_password) {
+          const currentAffiliate = await getAffiliateById(req.user!.id);
+          if (!currentAffiliate) {
+            return res.status(404).json({ error: 'Affiliate not found' });
+          }
+          const passwordMatch = comparePassword(current_password!, currentAffiliate.password_hash);
+          if (!passwordMatch) {
+            return res.status(400).json({ error: 'Current password is incorrect' });
+          }
+          const hashedNewPassword = hashPassword(new_password);
+          (affiliateUpdates as any).password_hash = hashedNewPassword;
+        }
+        if (Object.keys(affiliateUpdates).length === 0) {
+          return res.status(400).json({ error: 'No updates provided' });
+        }
+        const setClauseAff = Object.keys(affiliateUpdates).map(key => `${key} = ?`).join(', ');
+        const valuesAff = [...Object.values(affiliateUpdates), req.user!.id];
+        await runQuery(`UPDATE affiliates SET ${setClauseAff}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, valuesAff);
+        const updatedAffiliate = await getAffiliateById(req.user!.id);
+        if (!updatedAffiliate) {
+          return res.status(404).json({ error: 'Affiliate not found after update' });
+        }
+        const affiliateData = {
+          id: updatedAffiliate.id,
+          email: updatedAffiliate.email,
+          first_name: updatedAffiliate.first_name,
+          last_name: updatedAffiliate.last_name,
+          company_name: updatedAffiliate.company_name,
+          phone: updatedAffiliate.phone,
+          role: 'affiliate',
+          avatar: updatedAffiliate.avatar,
+          admin_id: updatedAffiliate.admin_id,
+          plan_type: updatedAffiliate.plan_type,
+          commission_rate: updatedAffiliate.commission_rate,
+          total_earnings: updatedAffiliate.total_earnings,
+          total_referrals: updatedAffiliate.total_referrals,
+          status: updatedAffiliate.status,
+          created_at: updatedAffiliate.created_at,
+          last_login: updatedAffiliate.last_login,
+          referral_slug: updatedAffiliate.referral_slug,
+        };
+        return res.json({
+          message: 'Profile updated successfully',
+          user: affiliateData
+        });
+      }
+
       if (Object.keys(profileUpdates).length === 0) {
         return res.status(400).json({ error: 'No updates provided' });
       }
@@ -1301,6 +1374,9 @@ export class AuthController {
       
       // Get updated user
       const updatedUser = await getUserById(req.user!.id);
+      if (!updatedUser) {
+        return res.status(404).json({ error: 'User not found after update' });
+      }
       
       res.json({
         message: 'Profile updated successfully',

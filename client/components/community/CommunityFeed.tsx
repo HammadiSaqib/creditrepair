@@ -499,7 +499,7 @@ export function CommunityFeed({ currentUser }: CommunityFeedProps) {
               variant="outline"
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="border-2 border-blue-200 text-blue-600 hover:bg-blue-50 hover:border-blue-300 rounded-full px-8 py-3 font-semibold transition-all duration-300 shadow-md hover:shadow-lg"
+              className="border-2 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue hover:shadow-lg"
             >
               <RefreshCw className={`w-5 h-5 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
               Refresh

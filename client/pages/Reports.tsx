@@ -909,6 +909,18 @@ export default function Reports() {
             };
             bureauName = bureauMap[highestScore.BureauId] || bureauName;
           }
+        } else {
+          const numericCandidates = [
+            report.experian_score,
+            report.equifax_score,
+            report.transunion_score,
+            report.credit_score
+          ]
+            .map((v) => (v !== undefined && v !== null ? parseInt(v) : NaN))
+            .filter((n) => !isNaN(n));
+          if (numericCandidates.length) {
+            creditScore = String(Math.max(...numericCandidates));
+          }
         }
         
         // Count accounts, negative accounts, and inquiries
@@ -1002,7 +1014,17 @@ export default function Reports() {
 
   const isFundable = (r: any) => {
     const s = parseScore(r.score);
-    return !isNaN(s) && s >= 700;
+    if (!isNaN(s)) return s >= 700;
+    const nums = [
+      r.experian_score,
+      r.equifax_score,
+      r.transunion_score,
+      r.credit_score
+    ]
+      .map(parseScore)
+      .filter((n) => !isNaN(n));
+    const m = nums.length ? Math.max(...nums) : NaN;
+    return !isNaN(m) && m >= 700;
   };
 
   const isThisMonth = (d: any) => {

@@ -40,7 +40,7 @@ interface SupportTicket {
 }
 
 interface FAQItem {
-  id: string;
+  id: number | string;
   question: string;
   answer: string;
   category: string;
@@ -84,6 +84,9 @@ export default function Support() {
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [faqs, setFaqs] = useState<FAQItem[]>([]);
+  const [faqVotes, setFaqVotes] = useState<Record<number | string, 'helpful' | 'not_helpful'>>({});
+  const voteKey = (id: number | string) => `faq_vote_${currentUserId || 'guest'}_${id}`;
   
   // Chat-related state
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -118,29 +121,41 @@ export default function Support() {
     },
   ];
 
-  const faqItems: FAQItem[] = [
-    {
-      id: "faq-1",
-      question: "How do I add a new client?",
-      answer: "To add a new client, navigate to the Clients page and click the 'Add Client' button. Fill in the required information including name, contact details, and initial credit report data.",
-      category: "Client Management",
-      helpful: 45,
-    },
-    {
-      id: "faq-2",
-      question: "How long does a dispute typically take?",
-      answer: "Credit disputes typically take 30-45 days to process. The credit bureaus have 30 days to investigate and respond to disputes under the Fair Credit Reporting Act.",
-      category: "Disputes",
-      helpful: 38,
-    },
-    {
-      id: "faq-3",
-      question: "Can I export client reports?",
-      answer: "Yes, you can export client reports in PDF format. Go to the Reports section, select the client, and click the 'Export' button to download the report.",
-      category: "Reports",
-      helpful: 29,
-    },
-  ];
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+  const loadFaqs = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/knowledge-base/faqs`);
+      if (!response.ok) return;
+      const data = await response.json();
+      const items = Array.isArray(data?.data) ? data.data : [];
+      const mapped: FAQItem[] = items.map((f: any) => ({
+        id: f.id,
+        question: f.question,
+        answer: f.answer,
+        category: f.category,
+        helpful: Number(f.helpful || 0),
+      }));
+      setFaqs(mapped);
+    } catch {}
+  };
+  useEffect(() => { loadFaqs(); }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qsTab = params.get('tab');
+    const hashTab = window.location.hash ? window.location.hash.slice(1) : '';
+    const initial = (qsTab || hashTab) as string;
+    if (['overview','tickets','faq','contact','livechat'].includes(initial)) {
+      setActiveTab(initial);
+    }
+  }, []);
+  useEffect(() => {
+    const votes: Record<number | string, 'helpful' | 'not_helpful'> = {};
+    faqs.forEach(f => {
+      const v = localStorage.getItem(voteKey(f.id)) as 'helpful' | 'not_helpful' | null;
+      if (v) votes[f.id] = v;
+    });
+    setFaqVotes(votes);
+  }, [faqs]);
 
   // WebSocket integration for live chat
   const { connected, emit } = useWebSocket({
@@ -429,11 +444,38 @@ export default function Support() {
     }
   };
 
-  const filteredFAQs = faqItems.filter(faq =>
+  const filteredFAQs = faqs.filter(faq =>
     faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
     faq.answer.toLowerCase().includes(searchQuery.toLowerCase()) ||
     faq.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const markFaqHelpful = async (id: number | string) => {
+    if (faqVotes[id]) return;
+    try {
+      const token = localStorage.getItem('auth_token');
+      await fetch(`${API_BASE_URL}/api/knowledge-base/faqs/${id}/interact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ type: 'helpful' })
+      });
+      setFaqs(prev => prev.map(f => f.id === id ? { ...f, helpful: (f.helpful || 0) + 1 } : f));
+      setFaqVotes(prev => ({ ...prev, [id]: 'helpful' }));
+      localStorage.setItem(voteKey(id), 'helpful');
+    } catch {}
+  };
+  const markFaqNotHelpful = async (id: number | string) => {
+    if (faqVotes[id]) return;
+    try {
+      const token = localStorage.getItem('auth_token');
+      await fetch(`${API_BASE_URL}/api/knowledge-base/faqs/${id}/interact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ type: 'not_helpful' })
+      });
+      setFaqVotes(prev => ({ ...prev, [id]: 'not_helpful' }));
+      localStorage.setItem(voteKey(id), 'not_helpful');
+    } catch {}
+  };
 
   const [showAddClient, setShowAddClient] = useState(false);
 
@@ -547,7 +589,10 @@ export default function Support() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                  <div
+                    className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                    onClick={() => window.open('/docs#video-tutorials', '_blank', 'noopener,noreferrer')}
+                  >
                     <Video className="h-5 w-5 text-blue-500" />
                     <div>
                       <p className="font-medium">Video Tutorials</p>
@@ -555,7 +600,10 @@ export default function Support() {
                     </div>
                     <ExternalLink className="h-4 w-4 text-slate-400 ml-auto" />
                   </div>
-                  <div className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer">
+                  <div
+                    className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                    onClick={() => window.open('/docs#user-manual', '_blank', 'noopener,noreferrer')}
+                  >
                     <FileText className="h-5 w-5 text-green-500" />
                     <div>
                       <p className="font-medium">User Manual</p>
@@ -721,10 +769,22 @@ export default function Support() {
                         <span>{faq.helpful} people found this helpful</span>
                       </div>
                       <div className="flex space-x-2">
-                        <Button variant="ghost" size="sm">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => markFaqHelpful(faq.id)}
+                          disabled={faqVotes[faq.id] === 'not_helpful'}
+                          className={faqVotes[faq.id] === 'helpful' ? 'bg-green-100 text-green-700' : undefined}
+                        >
                           👍 Helpful
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => markFaqNotHelpful(faq.id)}
+                          disabled={faqVotes[faq.id] === 'helpful'}
+                          className={faqVotes[faq.id] === 'not_helpful' ? 'bg-red-100 text-red-700' : undefined}
+                        >
                           👎 Not helpful
                         </Button>
                       </div>

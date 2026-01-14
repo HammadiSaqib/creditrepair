@@ -379,15 +379,13 @@ export default function FundingDIY() {
   };
 
   const sortedBanks = useMemo(() => {
+    const canon = canonBureau(selectedBureau);
     return [...allBanks]
       .filter((bank) => {
         const elig = bankEligibility(bank.id);
-        const hasAnyEligibleBureau = (
-          (elig.bureauEligible.Experian && clientFundableFlags.Experian) ||
-          (elig.bureauEligible.Equifax && clientFundableFlags.Equifax) ||
-          (elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion)
-        );
-        const canon = canonBureau(selectedBureau);
+        const hasAnyEligibleBureau = canon
+          ? (elig.bureauEligible as any)[canon]
+          : (elig.bureauEligible.Experian || elig.bureauEligible.Equifax || elig.bureauEligible.TransUnion);
         const hasRelevantProduct = ((cards.length > 0 ? cards : allCards) || []).some((c) => {
           if (c.bank_id !== bank.id) return false;
           if (!allowedFundingTypeSet.has(c.funding_type)) return false;
@@ -407,7 +405,7 @@ export default function FundingDIY() {
         if (scoreB !== scoreA) return scoreB - scoreA;
         return a.name.localeCompare(b.name);
       });
-  }, [allBanks, cards, allCards, selectedBureau, clientFundableFlags, allowedFundingTypeSet, resolvedType, isBoth, selectedState, clientDetails]);
+  }, [allBanks, cards, allCards, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth, selectedState, clientDetails]);
 
   useEffect(() => {
     const fetchCards = async () => {

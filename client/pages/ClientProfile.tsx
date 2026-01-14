@@ -450,9 +450,42 @@ export default function ClientProfile() {
             console.log('🔍 DEBUG: Final extracted scores:', extractedScores);
           } else {
             console.log('🔍 DEBUG: No valid score array found');
+            // Fallback: some scrapers provide a unified scores object
+            try {
+              const unified = latestJsonData.scores || latestJsonData.reportData?.scores;
+              if (unified && typeof unified === 'object') {
+                extractedScores.experian = parseInt(unified.experian) || extractedScores.experian;
+                extractedScores.equifax = parseInt(unified.equifax) || extractedScores.equifax;
+                extractedScores.transunion = parseInt(unified.transunion) || extractedScores.transunion;
+                console.log('🔍 DEBUG: Extracted scores from unified object:', extractedScores);
+              }
+            } catch (e) {
+              console.log('🔍 DEBUG: Unified scores fallback failed:', e);
+            }
           }
         } else {
           console.log('🔍 DEBUG: No latestJsonData available');
+        }
+
+        // Final fallback: use latest history row bureau columns if JSON did not yield scores
+        if (
+          extractedScores.experian === 0 &&
+          extractedScores.equifax === 0 &&
+          extractedScores.transunion === 0 &&
+          historyResponse &&
+          historyResponse.data &&
+          Array.isArray(historyResponse.data.data) &&
+          historyResponse.data.data.length > 0
+        ) {
+          try {
+            const latest = historyResponse.data.data[0];
+            extractedScores.experian = parseInt(latest.experian_score) || 0;
+            extractedScores.equifax = parseInt(latest.equifax_score) || 0;
+            extractedScores.transunion = parseInt(latest.transunion_score) || 0;
+            console.log('🔍 DEBUG: Scores from history fallback:', extractedScores);
+          } catch (e) {
+            console.log('🔍 DEBUG: History scores fallback failed:', e);
+          }
         }
         const transformedClient: ClientData = {
           id: clientData.id.toString(),

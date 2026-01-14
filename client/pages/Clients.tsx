@@ -192,12 +192,24 @@ const getScoreChange = (current: number, previous: number) => {
   const fetchClients = async () => {
     try {
       setLoading(true);
+      const statusParam = (() => {
+        if (statusFilter === "all") return undefined;
+        if (statusFilter.startsWith("login-")) return undefined;
+        const map: Record<string, string> = {
+          Active: "active",
+          Inactive: "inactive",
+          Completed: "completed",
+          Pending: "pending",
+          "On Hold": "on_hold",
+        };
+        return map[statusFilter] || undefined;
+      })();
+
       const response = await clientsApi.getClients({
         page: pagination.page,
         limit: pagination.limit,
         search: searchTerm || undefined,
-        status: statusFilter !== "all" && !statusFilter.startsWith('login-') ? statusFilter.toLowerCase() : undefined,
-        loginStatus: statusFilter.startsWith('login-') ? statusFilter.replace('login-', '') : undefined,
+        status: statusParam,
       });
 
       if (response.error) {
@@ -740,21 +752,30 @@ const getScoreChange = (current: number, previous: number) => {
     }
   };
 
-  const filteredClients = clients;
-
-  // Get current month and year for filtering
   const currentDate = new Date();
   const currentMonth = currentDate.getMonth();
   const currentYear = currentDate.getFullYear();
 
+  const filteredClients = clients.filter((c) => {
+    if (statusFilter === "all") return true;
+    if (statusFilter === "login-enabled") return c.status === "Active";
+    if (statusFilter === "login-disabled") return c.status === "Inactive";
+    if (statusFilter === "New") {
+      const d = new Date(c.joinDate);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    }
+    if (statusFilter === "Report Pull This Month") {
+      if (!c.lastReportPull) return false;
+      const d = new Date(c.lastReportPull);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+    }
+    return c.status === statusFilter;
+  });
+
   const statusCounts = {
     all: clients.length,
-    "Login Enabled": clients.filter((c) => 
-      !c.login_disabled && !c.is_locked && c.status?.toLowerCase() === 'active'
-    ).length,
-    "Login Disabled": clients.filter((c) => 
-      c.login_disabled || c.is_locked || c.status?.toLowerCase() === 'inactive'
-    ).length,
+    "Login Enabled": clients.filter((c) => c.status === "Active").length,
+    "Login Disabled": clients.filter((c) => c.status === "Inactive").length,
     New: clients.filter((c) => {
       // Filter clients added in current month
       const joinDate = new Date(c.joinDate);
@@ -780,16 +801,24 @@ const getScoreChange = (current: number, previous: number) => {
           <Card
             key={status}
             className={`border-0 shadow-md cursor-pointer transition-all duration-200 hover:shadow-lg ${
-              statusFilter === status
+              statusFilter === (status === "Login Enabled" ? "login-enabled" : status === "Login Disabled" ? "login-disabled" : status)
                 ? "gradient-primary text-white"
                 : "bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm hover:bg-gradient-soft"
             }`}
-            onClick={() => setStatusFilter(status)}
+            onClick={() =>
+              setStatusFilter(
+                status === "Login Enabled"
+                  ? "login-enabled"
+                  : status === "Login Disabled"
+                  ? "login-disabled"
+                  : status
+              )
+            }
           >
             <CardContent className="p-4 text-center">
               <div
                 className={`text-2xl font-bold ${
-                  statusFilter === status
+                  statusFilter === (status === "Login Enabled" ? "login-enabled" : status === "Login Disabled" ? "login-disabled" : status)
                     ? "text-white"
                     : "gradient-text-primary"
                 }`}
@@ -798,7 +827,7 @@ const getScoreChange = (current: number, previous: number) => {
               </div>
               <div
                 className={`text-xs ${
-                  statusFilter === status
+                  statusFilter === (status === "Login Enabled" ? "login-enabled" : status === "Login Disabled" ? "login-disabled" : status)
                     ? "text-white/80"
                     : "text-muted-foreground"
                 }`}

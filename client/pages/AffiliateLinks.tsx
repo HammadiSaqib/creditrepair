@@ -294,22 +294,14 @@ export default function AffiliateLinks() {
             {performanceData && (
               <div className="space-y-3">
                 <Label className="text-sm font-medium">Your Performance</Label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-white rounded-lg border">
-                    <div className="text-3xl font-bold text-blue-600">{performanceData.totalReferrals || 0}</div>
-                    <div className="text-sm text-muted-foreground">Total Clicks</div>
-                  </div>
-                  <div className="text-center p-4 bg-white rounded-lg border">
-                    <div className="text-3xl font-bold text-green-600">{performanceData.conversions || 0}</div>
-                    <div className="text-sm text-muted-foreground">Conversions</div>
-                  </div>
+                <div className="grid grid-cols-2 md:grid-cols-2 gap-4">
                   <div className="text-center p-4 bg-white rounded-lg border">
                     <div className="text-3xl font-bold text-purple-600">${performanceData.totalEarnings || 0}</div>
                     <div className="text-sm text-muted-foreground">Total Earnings</div>
                   </div>
                   <div className="text-center p-4 bg-white rounded-lg border">
-                    <div className="text-3xl font-bold text-orange-600">{performanceData.conversionRate || 0}%</div>
-                    <div className="text-sm text-muted-foreground">Conversion Rate</div>
+                    <div className="text-3xl font-bold text-green-600">{performanceData.paidReferralsCount ?? performanceData.conversions ?? 0}</div>
+                    <div className="text-sm text-muted-foreground">Total Perched</div>
                   </div>
                 </div>
               </div>

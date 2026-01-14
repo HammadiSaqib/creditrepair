@@ -183,6 +183,9 @@ export const authApi = {
     company_name?: string;
     phone?: string;
     address?: string;
+    city?: string;
+    state?: string;
+    zip_code?: string;
     // Custom credit repair URL override
     credit_repair_url?: string;
     // NMI gateway fields

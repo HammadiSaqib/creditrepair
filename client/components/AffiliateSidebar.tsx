@@ -268,7 +268,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
                 onClick={() => navigate("/affiliate/links")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-green-500/20 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                className="w-full justify-start border-green-500/20 text-green-600 hover:black dark:hover:bg-green-900/20"
               >
                 <LinkIcon className="h-4 w-4 mr-2" />
                 Generate Link
@@ -331,7 +331,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start hover:bg-green-50 dark:hover:bg-green-900/20"
+                  className="w-full justify-start hover:black dark:hover:bg-green-900/20"
                 >
                   <Settings className="h-4 w-4 mr-2" />
                   Settings

@@ -1453,40 +1453,6 @@ export default function Login() {
               </CardContent>
             </Card>
 
-            {/* Testimonial Carousel */}
-            <div className="mt-6">
-              <Card className="border-0 bg-white/80 dark:bg-gradient-to-br dark:from-slate-800/80 dark:to-slate-700/80 dark:border-slate-600/50 backdrop-blur-sm">
-                <CardContent className="p-4">
-                  <div className="text-center">
-                    <div className="flex items-center justify-center space-x-1 mb-3">
-                      {[...Array(5)].map((_, i) => (
-                        <Star
-                          key={i}
-                          className="h-4 w-4 fill-yellow-400 text-yellow-400"
-                        />
-                      ))}
-                    </div>
-                    <blockquote className="text-sm italic text-muted-foreground mb-3">
-                      "{testimonials[animationStep % testimonials.length]?.text}
-                      "
-                    </blockquote>
-                    <div className="text-xs font-medium">
-                      {testimonials[animationStep % testimonials.length]?.name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {
-                        testimonials[animationStep % testimonials.length]
-                          ?.company
-                      }
-                    </div>
-                    <div className="mt-2 text-[10px] text-muted-foreground italic">
-                      Results may vary. Testimonial reflects one user’s experience.
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
             {/* Bottom Links */}
             <div className="mt-4 text-center text-xs text-muted-foreground">
               <p>

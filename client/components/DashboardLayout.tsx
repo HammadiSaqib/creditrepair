@@ -165,7 +165,7 @@ export default function DashboardLayout({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="hover:bg-gradient-soft"
+                    className="hover:bg-gradient-soft text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white"
                   >
                     {theme === "light" ? (
                       <Sun className="h-4 w-4" />
@@ -226,7 +226,7 @@ export default function DashboardLayout({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="hover:bg-gradient-soft"
+                      className="hover:bg-gradient-soft text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white"
                     >
                       <Crown className="h-4 w-4 text-purple-600" />
                     </Button>
@@ -263,7 +263,7 @@ export default function DashboardLayout({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="hover:bg-gradient-soft"
+                    className="hover:bg-gradient-soft text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white"
                   >
                     <Settings className="h-4 w-4" />
                   </Button>

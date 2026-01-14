@@ -42,10 +42,12 @@ const AdminNotifications: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const canView = !!userProfile && ['admin', 'super_admin', 'user', 'employee', 'funding_manager'].includes(userProfile.role);
 
   // Fetch notifications
   const fetchNotifications = async () => {
     try {
+      if (!canView) return;
       setLoading(true);
       const response = await adminNotificationApi.getNotifications({ limit: 20 });
       const data: NotificationData = response.data.data;
@@ -59,8 +61,14 @@ const AdminNotifications: React.FC = () => {
       setNotifications(filtered);
       setUnreadCount(filtered.filter(n => !n.is_read).length);
     } catch (error) {
-      console.error('Error fetching notifications:', error);
-      toast.error('Failed to load notifications');
+      const status = (error as any)?.response?.status;
+      if (status === 403) {
+        setNotifications([]);
+        setUnreadCount(0);
+      } else {
+        console.error('Error fetching notifications:', error);
+        toast.error('Failed to load notifications');
+      }
     } finally {
       setLoading(false);
     }
@@ -82,8 +90,11 @@ const AdminNotifications: React.FC = () => {
       
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
-      console.error('Error marking notification as read:', error);
-      toast.error('Failed to mark notification as read');
+      const status = (error as any)?.response?.status;
+      if (status !== 403) {
+        console.error('Error marking notification as read:', error);
+        toast.error('Failed to mark notification as read');
+      }
     }
   };
 
@@ -100,8 +111,11 @@ const AdminNotifications: React.FC = () => {
       setUnreadCount(0);
       toast.success('All notifications marked as read');
     } catch (error) {
-      console.error('Error marking all notifications as read:', error);
-      toast.error('Failed to mark all notifications as read');
+      const status = (error as any)?.response?.status;
+      if (status !== 403) {
+        console.error('Error marking all notifications as read:', error);
+        toast.error('Failed to mark all notifications as read');
+      }
     }
   };
 
@@ -173,11 +187,11 @@ const AdminNotifications: React.FC = () => {
 
   // Auto-refresh notifications every 30 seconds
   useEffect(() => {
+    if (!canView) return;
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [canView]);
 
-  const canView = !!userProfile && ['admin', 'user', 'employee', 'funding_manager'].includes(userProfile.role);
   if (!canView) {
     return null;
   }
@@ -188,7 +202,7 @@ const AdminNotifications: React.FC = () => {
         <Button
           variant="ghost"
           size="sm"
-          className="relative hover:bg-gradient-soft"
+          className="relative hover:bg-gradient-soft text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white"
         >
           <Bell className="h-4 w-4" />
           {unreadCount > 0 && (

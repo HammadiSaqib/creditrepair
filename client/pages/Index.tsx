@@ -781,7 +781,7 @@ export default function Index() {
 
               <h1 className="hero-text-item text-5xl lg:text-7xl font-bold leading-[1.1] tracking-tight text-slate-900">
                 <span className="block">Next-Generation</span>
-                <span className="block bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 bg-clip-text text-transparent">
+                <span className="p-3 block bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 bg-clip-text text-transparent">
                   Credit Intelligence
                 </span>
                 <span className="block text-4xl lg:text-5xl mt-2 text-slate-700">for Professionals</span>

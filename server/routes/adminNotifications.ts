@@ -9,8 +9,7 @@ async function resolveAdminRecipientId(req: AuthRequest): Promise<number | null>
   const db = getDatabaseAdapter();
   const user = req.user;
   if (!user) return null;
-  if (user.role === 'admin') return user.id;
-  if (user.role === 'super_admin') return null;
+  if (user.role === 'admin' || user.role === 'super_admin') return user.id;
   if (['user', 'funding_manager', 'employee'].includes(user.role)) {
     const link = await db.getQuery(
       'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',

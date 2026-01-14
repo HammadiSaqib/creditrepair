@@ -119,6 +119,7 @@ export default function AffiliateReferrals() {
       case "paid":
         return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
       case "cancelled":
+      case "canceled":
         return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
       case "expired":
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
@@ -127,6 +128,14 @@ export default function AffiliateReferrals() {
     }
   };
 
+  const formatStatusLabel = (status: string) => {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "cancelled" || normalized === "canceled") return "Canceled";
+    if (normalized === "paid") return "Paid";
+    if (normalized === "unpaid") return "Unpaid";
+    if (normalized === "expired") return "Expired";
+    return status;
+  };
   const getTierColor = (tier: string) => {
     switch (tier) {
       case "basic":
@@ -386,7 +395,7 @@ export default function AffiliateReferrals() {
                         </TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(referral.status)}>
-                            {referral.status}
+                            {formatStatusLabel(referral.status)}
                           </Badge>
                         </TableCell>
                         <TableCell>

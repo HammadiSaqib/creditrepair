@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -121,6 +121,9 @@ const CourseLearning: React.FC = () => {
     return match ? `https://www.youtube.com/embed/${match[1]}` : url;
   };
 
+  const location = useLocation();
+  const navState = (location.state || {}) as any;
+
   const fetchCourseData = async (id: number) => {
     try {
       setLoading(true);
@@ -174,7 +177,23 @@ const CourseLearning: React.FC = () => {
           timeLimit: quizzes[0].time_limit
         } : null
       };
-      
+
+      if (!courseData.videos || courseData.videos.length === 0) {
+        const fallbackUrl = (navState && typeof navState.videoUrl === 'string' && navState.videoUrl.trim().length > 0)
+          ? navState.videoUrl
+          : (typeof course?.video_url === 'string' && course.video_url.trim().length > 0 ? course.video_url : '');
+        if (fallbackUrl) {
+          courseData.videos = [{
+            id: -1,
+            title: course.title || 'Course Video',
+            url: fallbackUrl,
+            duration: course.duration || 'N/A',
+            order: 1,
+            completed: false
+          }];
+        }
+      }
+
       setCourseData(courseData);
       
       if (courseData.videos.length > 0) {

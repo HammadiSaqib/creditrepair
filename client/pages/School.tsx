@@ -876,7 +876,7 @@ export default function School() {
   const handleCourseAction = (course: Course) => {
     if (canAccessCourse(course)) {
       // Navigate to course page
-      safeNavigate(`/course/${course.id}`, { state: { from: 'school', courseId: course.id }, preserveSearch: true });
+      safeNavigate(`/course/${course.id}`, { state: { from: 'school', courseId: course.id, videoUrl: (course as any).videoUrl }, preserveSearch: true });
     } else {
       // Call handlePurchaseCourse to create payment intent and show payment form
       handlePurchaseCourse(course.id);
@@ -1203,8 +1203,8 @@ export default function School() {
         return;
       }
 
-      // Navigate to course learning page
-      safeNavigate(`/course/${courseId}`, { state: { from: 'school', courseId }, preserveSearch: true });
+      // Navigate to course learning page with direct video url fallback
+      safeNavigate(`/course/${courseId}`, { state: { from: 'school', courseId, videoUrl: course.videoUrl }, preserveSearch: true });
 
     } catch (error) {
       console.error('Error opening course:', error);
@@ -1670,17 +1670,35 @@ export default function School() {
                           </div>
                         )}
 
-                        <div className="flex space-x-2">
-                          {course.isPaid ? (
-                            <div className="flex space-x-2 w-full">
-                              <Button 
-                                size="sm" 
-                                className="flex-1 gradient-primary hover:opacity-90"
-                                onClick={() => handleWatchVideo(course.id)}
-                              >
-                                <Play className="h-3 w-3 mr-1" />
-                                Watch Video
-                              </Button>
+                        <div className="flex space-x-2 w-full">
+                          {canAccessCourse(course) ? (
+                            <Button size="sm" className="flex-1 gradient-primary hover:opacity-90" asChild>
+                              <Link to={`/course/${course.id}`} state={{ from: 'school', courseId: course.id }}>
+                                <PlayCircle className="h-3 w-3 mr-1" />
+                                {getCourseButtonText(course)}
+                              </Link>
+                            </Button>
+                          ) : (
+                            <Button 
+                              size="sm" 
+                              className="flex-1 gradient-primary hover:opacity-90"
+                              onClick={() => handleCourseAction(course)}
+                            >
+                              <CreditCard className="h-3 w-3 mr-1" />
+                              {getCourseButtonText(course)}
+                            </Button>
+                          )}
+                          {canAccessCourse(course) && (
+                            <>
+                              {course.videoUrl && (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => handleWatchVideo(course.id)}
+                                >
+                                  <PlayCircle className="h-3 w-3" />
+                                </Button>
+                              )}
                               {course.documents && course.documents.length > 0 && (
                                 <Button 
                                   size="sm" 
@@ -1696,33 +1714,12 @@ export default function School() {
                                   variant="outline"
                                   onClick={() => handleTakeQuiz(course.id)}
                                 >
-                                  <FileText className="h-3 w-3" />
+                                  <HelpCircle className="h-3 w-3" />
                                 </Button>
                               )}
-                            </div>
-                          ) : course.isPaid ? (
-                            <Button 
-                              size="sm" 
-                              className="flex-1 gradient-primary hover:opacity-90"
-                              onClick={() => handlePurchaseCourse(course.id)}
-                            >
-                              <CreditCard className="h-3 w-3 mr-1" />
-                              Purchase ${course.price}
-                            </Button>
-                          ) : (
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              className="flex-1"
-                              onClick={() => handleEnrollInCourse(course.id)}
-                            >
-                              <BookOpen className="h-3 w-3 mr-1" />
-                              Enroll Free
-                            </Button>
+                            </>
                           )}
-                          <Button size="sm" variant="outline">
-                            <Eye className="h-3 w-3" />
-                          </Button>
+                          
                         </div>
                       </div>
                     </CardContent>
@@ -2112,9 +2109,7 @@ export default function School() {
                                 Enroll
                               </Button>
                             )}
-                            <Button size="sm" variant="outline">
-                              <Eye className="h-3 w-3" />
-                            </Button>
+                            
                           </div>
                         </div>
                       </CardContent>
@@ -2591,7 +2586,10 @@ export default function School() {
                       <div className="text-xs text-muted-foreground">{currentUser?.address || "New York, NY"}</div>
                     </div>
                   </div>
-                  <Button className="w-full gradient-primary hover:opacity-90">
+                  <Button
+                    className="w-full gradient-primary hover:opacity-90"
+                    onClick={() => window.open('/support#contact', '_self')}
+                  >
                     <Send className="h-4 w-4 mr-2" />
                     Contact Support
                   </Button>
@@ -2621,7 +2619,7 @@ export default function School() {
                       </div>
                     )}
                   </div>
-                  <Button variant="outline" className="w-full">
+                  <Button variant="outline" className="w-full" onClick={() => window.open('/docs#certifications', '_blank', 'noopener,noreferrer')}>
                     <Award className="h-4 w-4 mr-2" />
                     View All Certifications
                   </Button>
@@ -2636,19 +2634,19 @@ export default function School() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <Button variant="ghost" className="w-full justify-start">
+                  <Button variant="ghost" className="w-full justify-start" onClick={() => window.open('/docs#student-handbook', '_blank', 'noopener,noreferrer')}>
                     <FileText className="h-4 w-4 mr-2" />
                     Student Handbook
                   </Button>
-                  <Button variant="ghost" className="w-full justify-start">
+                  <Button variant="ghost" className="w-full justify-start" onClick={() => window.open('/support#faq', '_self')}>
                     <HelpCircle className="h-4 w-4 mr-2" />
                     FAQ
                   </Button>
-                  <Button variant="ghost" className="w-full justify-start">
+                  <Button variant="ghost" className="w-full justify-start" onClick={() => window.open('/docs#academy-policies', '_blank', 'noopener,noreferrer')}>
                     <Settings className="h-4 w-4 mr-2" />
                     Academy Policies
                   </Button>
-                  <Button variant="ghost" className="w-full justify-start">
+                  <Button variant="ghost" className="w-full justify-start" onClick={() => window.open('/docs#industry-resources', '_blank', 'noopener,noreferrer')}>
                     <ExternalLink className="h-4 w-4 mr-2" />
                     Industry Resources
                   </Button>
@@ -3137,4 +3135,3 @@ export default function School() {
     </DashboardLayout>
   );
 }
-

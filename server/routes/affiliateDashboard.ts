@@ -482,6 +482,7 @@ router.get('/dashboard/recent-referrals', authenticateToken, requireAffiliateRol
         WHEN ar.status = 'approved' THEN 'paid'
         WHEN ar.status = 'converted' THEN 'paid'
         WHEN u.status = 'inactive' THEN 'cancelled'
+        WHEN (SELECT s.status FROM subscriptions s WHERE s.user_id = u.id ORDER BY s.updated_at DESC LIMIT 1) IN ('canceled','unpaid','past_due') THEN 'cancelled'
         ELSE 'unpaid'
       END as referral_status
       FROM affiliate_referrals ar
@@ -748,6 +749,7 @@ router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, re
         'basic' as subscription_plan,
         CASE 
           WHEN u.status = 'inactive' THEN 'cancelled'
+          WHEN (SELECT s.status FROM subscriptions s WHERE s.user_id = u.id ORDER BY s.updated_at DESC LIMIT 1) IN ('canceled','unpaid','past_due') THEN 'cancelled'
           WHEN ac.latest_status IN ('paid','settled','approved') OR ac.payment_date IS NOT NULL THEN 'paid'
           WHEN ar.status IN ('approved','converted','paid') THEN 'paid'
           ELSE 'unpaid'

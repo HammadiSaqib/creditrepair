@@ -536,7 +536,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
                 className={`w-full justify-start relative group ${
                   !hasPermission('clients')
                     ? "border-slate-200 text-slate-400 cursor-not-allowed opacity-40 hover:opacity-60"
-                    : "border-ocean-blue/20 text-ocean-blue hover:bg-gradient-soft"
+                    : "border-ocean-blue/20 text-ocean-blue hover:ocean-blue"
                 }`}
                 title={!hasPermission('clients') ? "Upgrade your subscription to access this feature" : ""}
               >
@@ -554,7 +554,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
                 onClick={() => navigate("/invoices")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-slate-300/60 text-slate-700 hover:bg-gradient-soft"
+                className="w-full justify-start border-slate-300/60 text-slate-700 hover:ocean-blue"
               >
                 <FileText className="h-4 w-4 mr-2" />
                 Invoices

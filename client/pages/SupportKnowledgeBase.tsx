@@ -113,9 +113,27 @@ export default function SupportKnowledgeBase() {
     tags: '',
     question: '',
     answer: '',
-    status: 'draft'
+    status: 'published'
   });
   const [isCreating, setIsCreating] = useState(false);
+  const [isEditArticleOpen, setIsEditArticleOpen] = useState(false);
+  const [isEditFaqOpen, setIsEditFaqOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [editArticleForm, setEditArticleForm] = useState({
+    title: '',
+    content: '',
+    category: '',
+    tags: '',
+    status: 'draft',
+    featured: false as boolean
+  });
+  const [editFaqForm, setEditFaqForm] = useState({
+    question: '',
+    answer: '',
+    category: '',
+    order_index: 0,
+    status: 'active'
+  });
 
   // API Functions
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -355,13 +373,13 @@ export default function SupportKnowledgeBase() {
   };
 
   const handleDeleteArticle = async (articleId: number) => {
-    if (!user || user.role !== 'admin') {
-      toast.error('Only administrators can delete articles');
+    if (!user || (user.role !== 'admin' && user.role !== 'support')) {
+      toast.error('Only administrators or support can delete articles');
       return;
     }
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/knowledge-base/admin/articles/${articleId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/knowledge-base/articles/${articleId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
@@ -396,7 +414,7 @@ export default function SupportKnowledgeBase() {
           content: createForm.content,
           category: createForm.category,
           tags: createForm.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-          status: createForm.status
+          status: createForm.status || 'published'
         };
       } else {
         if (!createForm.question || !createForm.answer || !createForm.category) {
@@ -462,13 +480,13 @@ export default function SupportKnowledgeBase() {
   };
 
   const handleDeleteFaq = async (faqId: number) => {
-    if (!user || user.role !== 'admin') {
-      toast.error('Only administrators can delete FAQs');
+    if (!user || (user.role !== 'admin' && user.role !== 'support')) {
+      toast.error('Only administrators or support can delete FAQs');
       return;
     }
     
     try {
-      const response = await fetch(`/api/knowledge-base/admin/faqs/${faqId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/knowledge-base/faqs/${faqId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
@@ -481,6 +499,115 @@ export default function SupportKnowledgeBase() {
       toast.success('FAQ deleted successfully');
     } catch (error) {
       toast.error('Failed to delete FAQ');
+    }
+  };
+  
+  const handleEditArticle = (article: KnowledgeArticle) => {
+    setSelectedArticle(article);
+    setEditArticleForm({
+      title: article.title,
+      content: article.content,
+      category: article.category,
+      tags: (article.tags || []).join(', '),
+      status: article.status,
+      featured: !!article.featured
+    });
+    setIsEditArticleOpen(true);
+  };
+  
+  const handleEditFaq = (faq: FAQ) => {
+    setSelectedFaq(faq);
+    setEditFaqForm({
+      question: faq.question,
+      answer: faq.answer,
+      category: faq.category,
+      order_index: faq.order_index,
+      status: faq.status
+    });
+    setIsEditFaqOpen(true);
+  };
+  
+  const handleUpdateArticle = async () => {
+    if (!user || user.role !== 'admin' || !selectedArticle) {
+      toast.error('Only administrators can update articles');
+      return;
+    }
+    if (isUpdating) return;
+    setIsUpdating(true);
+    try {
+      const payload = {
+        title: editArticleForm.title,
+        content: editArticleForm.content,
+        category: editArticleForm.category,
+        tags: editArticleForm.tags.split(',').map(t => t.trim()).filter(Boolean),
+        status: editArticleForm.status,
+        featured: !!editArticleForm.featured
+      };
+      const response = await fetch(`${API_BASE_URL}/api/knowledge-base/articles/${selectedArticle.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error('Failed to update article');
+      setArticles(prev => prev.map(a => a.id === selectedArticle.id ? { 
+        ...a, 
+        title: payload.title, 
+        content: payload.content, 
+        category: payload.category, 
+        tags: payload.tags as any, 
+        status: payload.status as any, 
+        featured: payload.featured 
+      } : a));
+      setIsEditArticleOpen(false);
+      toast.success('Article updated successfully');
+    } catch (e) {
+      toast.error('Failed to update article');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+  
+  const handleUpdateFaq = async () => {
+    if (!user || user.role !== 'admin' || !selectedFaq) {
+      toast.error('Only administrators can update FAQs');
+      return;
+    }
+    if (isUpdating) return;
+    setIsUpdating(true);
+    try {
+      const payload = {
+        question: editFaqForm.question,
+        answer: editFaqForm.answer,
+        category: editFaqForm.category,
+        order_index: editFaqForm.order_index,
+        status: editFaqForm.status
+      };
+      const response = await fetch(`${API_BASE_URL}/api/knowledge-base/faqs/${selectedFaq.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error('Failed to update FAQ');
+      setFaqs(prev => prev.map(f => f.id === selectedFaq.id ? { 
+        ...f, 
+        question: payload.question, 
+        answer: payload.answer, 
+        category: payload.category, 
+        order_index: payload.order_index, 
+        status: payload.status as any 
+      } : f));
+      setIsEditFaqOpen(false);
+      toast.success('FAQ updated successfully');
+    } catch (e) {
+      toast.error('Failed to update FAQ');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -837,17 +964,18 @@ export default function SupportKnowledgeBase() {
                         <ThumbsDown className="h-4 w-4 mr-1" />
                         {article.dislikes}
                       </Button>
-                      {user?.role === 'admin' && (
+                      {(user?.role === 'admin' || user?.role === 'support') && (
                         <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                          >
-                            <Edit className="h-4 w-4 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                        onClick={() => handleEditArticle(article)}
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleDeleteArticle(article.id)}
@@ -931,35 +1059,18 @@ export default function SupportKnowledgeBase() {
                         <Eye className="h-4 w-4 mr-1" />
                         View
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleFaqHelpful(faq.id)}
-                        className="text-green-600 border-green-200 hover:bg-green-50"
-                      >
-                        <ThumbsUp className="h-4 w-4 mr-1" />
-                        {faq.helpful}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleFaqNotHelpful(faq.id)}
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                      >
-                        <ThumbsDown className="h-4 w-4 mr-1" />
-                        {faq.not_helpful}
-                      </Button>
-                      {user?.role === 'admin' && (
+                      {(user?.role === 'admin' || user?.role === 'support') && (
                         <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                          >
-                            <Edit className="h-4 w-4 mr-1" />
-                            Edit
-                          </Button>
-                          <Button
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                        onClick={() => handleEditFaq(faq)}
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleDeleteFaq(faq.id)}
@@ -1060,6 +1171,74 @@ export default function SupportKnowledgeBase() {
           </DialogContent>
         </Dialog>
 
+        <Dialog open={isEditArticleOpen} onOpenChange={setIsEditArticleOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Article</DialogTitle>
+              <DialogDescription>Update article details</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-article-title">Title</Label>
+                <Input
+                  id="edit-article-title"
+                  value={editArticleForm.title}
+                  onChange={(e) => setEditArticleForm(prev => ({ ...prev, title: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-article-category">Category</Label>
+                <Input
+                  id="edit-article-category"
+                  value={editArticleForm.category}
+                  onChange={(e) => setEditArticleForm(prev => ({ ...prev, category: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-article-tags">Tags (comma separated)</Label>
+                <Input
+                  id="edit-article-tags"
+                  value={editArticleForm.tags}
+                  onChange={(e) => setEditArticleForm(prev => ({ ...prev, tags: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-article-status">Status</Label>
+                <Select value={editArticleForm.status} onValueChange={(value) => setEditArticleForm(prev => ({ ...prev, status: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="published">Published</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="edit-article-content">Content</Label>
+                <Textarea
+                  id="edit-article-content"
+                  rows={8}
+                  value={editArticleForm.content}
+                  onChange={(e) => setEditArticleForm(prev => ({ ...prev, content: e.target.value }))}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsEditArticleOpen(false)}>Cancel</Button>
+                <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={handleUpdateArticle} disabled={isUpdating}>
+                  {isUpdating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : 'Save Changes'}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* FAQ Details Dialog */}
         <Dialog open={isFaqDialogOpen} onOpenChange={setIsFaqDialogOpen}>
           <DialogContent className="max-w-2xl">
@@ -1104,6 +1283,74 @@ export default function SupportKnowledgeBase() {
                 </div>
               </>
             )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isEditFaqOpen} onOpenChange={setIsEditFaqOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit FAQ</DialogTitle>
+              <DialogDescription>Update FAQ details</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="edit-faq-question">Question</Label>
+                <Input
+                  id="edit-faq-question"
+                  value={editFaqForm.question}
+                  onChange={(e) => setEditFaqForm(prev => ({ ...prev, question: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-faq-category">Category</Label>
+                <Input
+                  id="edit-faq-category"
+                  value={editFaqForm.category}
+                  onChange={(e) => setEditFaqForm(prev => ({ ...prev, category: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-faq-status">Status</Label>
+                <Select value={editFaqForm.status} onValueChange={(value) => setEditFaqForm(prev => ({ ...prev, status: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="edit-faq-order">Order</Label>
+                <Input
+                  id="edit-faq-order"
+                  type="number"
+                  value={editFaqForm.order_index}
+                  onChange={(e) => setEditFaqForm(prev => ({ ...prev, order_index: Number(e.target.value) }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-faq-answer">Answer</Label>
+                <Textarea
+                  id="edit-faq-answer"
+                  rows={6}
+                  value={editFaqForm.answer}
+                  onChange={(e) => setEditFaqForm(prev => ({ ...prev, answer: e.target.value }))}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsEditFaqOpen(false)}>Cancel</Button>
+                <Button className="bg-purple-600 hover:bg-purple-700 text-white" onClick={handleUpdateFaq} disabled={isUpdating}>
+                  {isUpdating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : 'Save Changes'}
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
 

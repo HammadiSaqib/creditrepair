@@ -483,15 +483,26 @@ export default function AffiliateDashboard() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Button className="h-20 flex flex-col items-center justify-center space-y-2 bg-green-600 hover:bg-green-700">
+              <Button
+                onClick={() => navigate("/affiliate/links")}
+                className="h-20 flex flex-col items-center justify-center space-y-2 bg-green-600 hover:bg-green-700 text-white"
+              >
                 <Link className="h-6 w-6" />
                 <span>Generate Referral Link</span>
               </Button>
-              <Button variant="outline" className="h-20 flex flex-col items-center justify-center space-y-2 border-green-200 text-green-700 hover:bg-green-50">
+              <Button
+                onClick={() => navigate("/affiliate/analytics")}
+                variant="outline"
+                className="h-20 flex flex-col items-center justify-center space-y-2 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700 dark:hover:text-green-300"
+              >
                 <BarChart3 className="h-6 w-6" />
                 <span>View Analytics</span>
               </Button>
-              <Button variant="outline" className="h-20 flex flex-col items-center justify-center space-y-2 border-green-200 text-green-700 hover:bg-green-50">
+              <Button
+                onClick={() => navigate("/affiliate/referrals")}
+                variant="outline"
+                className="h-20 flex flex-col items-center justify-center space-y-2 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700 dark:hover:text-green-300"
+              >
                 <Users className="h-6 w-6" />
                 <span>View All Referrals</span>
               </Button>
@@ -525,11 +536,11 @@ export default function AffiliateDashboard() {
                       key={referral.id}
                       className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
                     >
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium text-sm">{referral.id}</span>
                           {referral.transactionId && (
-                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded break-all">
                               TXN: {referral.transactionId}
                             </span>
                           )}
@@ -541,14 +552,19 @@ export default function AffiliateDashboard() {
                           </span>
                         </div>
                         <h4 className="font-medium mt-1">{referral.customerName}</h4>
-                        <div className="flex items-center space-x-4 text-sm text-muted-foreground mt-1">
-                          <span>Email: {referral.email}</span>
+                        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mt-1">
+                          <span className="break-words">Email: {referral.email}</span>
                           <span>Referred: {referral.dateReferred}</span>
                           {referral.conversionDate && <span>Converted: {referral.conversionDate}</span>}
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <Button variant="ghost" size="sm" className="text-green-600 hover:text-green-700 hover:bg-green-50">
+                        <Button
+                          onClick={() => navigate("/affiliate/referrals")}
+                          variant="ghost"
+                          size="sm"
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                        >
                           View
                         </Button>
                         {referral.status === "pending" && (
@@ -562,7 +578,11 @@ export default function AffiliateDashboard() {
                 )}
               </div>
               <div className="mt-4 text-center">
-                <Button variant="outline" className="border-green-200 text-green-700 hover:bg-green-50">
+                <Button
+                  onClick={() => navigate("/affiliate/referrals")}
+                  variant="outline"
+                  className="border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700 dark:hover:text-green-300"
+                >
                   View All Referrals
                 </Button>
               </div>
