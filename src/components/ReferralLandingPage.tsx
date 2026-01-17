@@ -107,6 +107,8 @@ const ReferralLandingPage: React.FC = () => {
   const [billingFilter, setBillingFilter] = useState<'monthly' | 'yearly'>('monthly');
   const [demoOpen, setDemoOpen] = useState(false);
   const ctaRef = React.useRef<HTMLDivElement>(null);
+  const slugOrId = (affiliateId && affiliateId.trim().length > 0) ? affiliateId : (affiliate?.id ? String(affiliate.id) : '');
+  const referralLink = slugOrId ? `${window.location.origin}/ref/${slugOrId}` : `${window.location.origin}/ref`;
 
   useGSAP(() => {
     const el = ctaRef.current;
@@ -399,6 +401,20 @@ const ReferralLandingPage: React.FC = () => {
                 </Button>
               </div>
               
+              <div className="mt-6 flex items-center gap-4 justify-center lg:justify-start">
+                <div className="bg-white/90 border border-slate-200 rounded-xl p-3 shadow-sm flex items-center gap-3">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(referralLink)}`}
+                    alt="Referral QR"
+                    className="w-20 h-20"
+                  />
+                  <div className="text-sm">
+                    <div className="font-semibold text-slate-800">Scan to open referral link</div>
+                    <div className="text-slate-500">Or visit: <span className="text-teal-700">{referralLink}</span></div>
+                  </div>
+                </div>
+              </div>
+              
               <p className="text-xs text-slate-500 italic max-w-md mx-auto lg:mx-0 leading-relaxed">
                 Join other users who were referred by {affiliate.firstName} and chose to explore Score Machine. No credit card required for signup.
               </p>
@@ -429,6 +445,16 @@ const ReferralLandingPage: React.FC = () => {
                         </div>
                         <div className="text-2xl font-bold text-slate-900">Verified</div>
                      </div>
+                  </div>
+                  
+                  <div className="absolute top-6 right-6 z-30 bg-white/95 backdrop-blur-md rounded-xl p-3 shadow-lg border border-white/50 flex flex-col items-center">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(referralLink)}`}
+                      alt="Referral QR"
+                      className="w-24 h-24"
+                    />
+                    <div className="mt-2 text-xs text-slate-700 font-medium">Scan to open</div>
+                    <div className="mt-1 text-[10px] text-slate-500 break-all max-w-[180px]">{referralLink}</div>
                   </div>
                </div>
 
