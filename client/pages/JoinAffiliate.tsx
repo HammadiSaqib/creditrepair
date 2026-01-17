@@ -553,7 +553,7 @@ const JoinAffiliate: React.FC = () => {
       </section>
 
       {/* White Label Pricing Tiers */}
-      <section className="py-24 bg-gradient-to-br from-indigo-50 via-white to-purple-50/30 relative overflow-hidden">
+      <section className="hidden py-24 bg-gradient-to-br from-indigo-50 via-white to-purple-50/30 relative overflow-hidden">
         {/* Background Elements */}
         <div className="absolute inset-0 bg-grid-slate-100/50 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] -z-10" />
         <div className="absolute top-20 left-20 w-96 h-96 bg-indigo-100/20 rounded-full blur-3xl -z-10" />

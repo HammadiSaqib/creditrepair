@@ -359,9 +359,9 @@ export class WebSocketService {
 
   private canSubscribeToStream(userRole: string, stream: string): boolean {
     const rolePermissions: Record<string, string[]> = {
-      'super_admin': ['plans', 'subscriptions', 'users', 'analytics', 'system'],
-      'admin': ['clients', 'disputes', 'analytics'],
-      'user': ['profile', 'subscriptions']
+      'super_admin': ['plans', 'subscriptions', 'users', 'analytics', 'system', 'scrape_jobs'],
+      'admin': ['clients', 'disputes', 'analytics', 'scrape_jobs'],
+      'user': ['profile', 'subscriptions', 'scrape_jobs']
     };
 
     return rolePermissions[userRole]?.includes(stream) || false;

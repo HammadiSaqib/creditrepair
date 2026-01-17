@@ -85,7 +85,17 @@ const CardManagement: React.FC = () => {
   // Funding type options based on card type
   const fundingTypeOptions = {
     business: ['Credit Card', 'Loans', 'SBA Loans', 'Merchant Cash Advance', 'Line of Credit'],
-    personal: ['Credit Card', 'Loans', 'Sub Prime Lenders', 'Line of Credit']
+    personal: [
+      'Credit Card',
+      'Loans',
+      'Sub Prime Lenders',
+      'Line of Credit',
+      'Home Loan',
+      'Auto Loan',
+      'Mortgages',
+      'Home Equity Loans',
+      'Home Lines of Credit'
+    ]
   };
 
   
@@ -780,7 +790,14 @@ const CardManagement: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, funding_type: e.target.value })}
                   >
                     <option value="">Select funding type</option>
-                    {fundingTypeOptions[formData.card_type].map((type) => (
+                    {(
+                      (() => {
+                        const base = fundingTypeOptions[formData.card_type];
+                        return formData.funding_type && !base.includes(formData.funding_type)
+                          ? [formData.funding_type, ...base]
+                          : base;
+                      })()
+                    ).map((type) => (
                       <option key={type} value={type}>
                         {type}
                       </option>

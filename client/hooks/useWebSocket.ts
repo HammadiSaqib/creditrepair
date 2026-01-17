@@ -15,6 +15,9 @@ interface UseWebSocketOptions {
   onChatMessage?: (data: any) => void;
   onUserTyping?: (data: any) => void;
   onUserOnlineStatus?: (data: any) => void;
+  onScrapeJobUpdate?: (data: any) => void;
+  onScrapeJobDone?: (data: any) => void;
+  onScrapeJobError?: (data: any) => void;
 }
 
 interface WebSocketState {
@@ -36,6 +39,9 @@ export function useWebSocket({
   onChatMessage,
   onUserTyping,
   onUserOnlineStatus,
+  onScrapeJobUpdate,
+  onScrapeJobDone,
+  onScrapeJobError,
 }: UseWebSocketOptions = {}) {
   const [state, setState] = useState<WebSocketState>({
     connected: false,
@@ -61,6 +67,9 @@ export function useWebSocket({
     onChatMessage,
     onUserTyping,
     onUserOnlineStatus,
+    onScrapeJobUpdate,
+    onScrapeJobDone,
+    onScrapeJobError,
   });
 
   // Update callbacks ref when they change
@@ -75,8 +84,11 @@ export function useWebSocket({
       onChatMessage,
       onUserTyping,
       onUserOnlineStatus,
+      onScrapeJobUpdate,
+      onScrapeJobDone,
+      onScrapeJobError,
     };
-  }, [onConnect, onDisconnect, onError, onPlanUpdate, onSubscriptionUpdate, onDashboardStatsUpdate, onChatMessage, onUserTyping, onUserOnlineStatus])
+  }, [onConnect, onDisconnect, onError, onPlanUpdate, onSubscriptionUpdate, onDashboardStatsUpdate, onChatMessage, onUserTyping, onUserOnlineStatus, onScrapeJobUpdate, onScrapeJobDone, onScrapeJobError])
 
   const getAuthToken = useCallback(() => {
     const token = localStorage.getItem('auth_token');
@@ -320,6 +332,35 @@ export function useWebSocket({
           callbacksRef.current.onChatMessage?.(data);
         } catch (error) {
           console.error('Error handling chat message:', error);
+        }
+      });
+
+      // Scrape job events
+      socket.on('scrape_job_update', (data) => {
+        try {
+          console.log('🧪 Scrape job update:', data);
+          if (!data || typeof data !== 'object') return;
+          callbacksRef.current.onScrapeJobUpdate?.(data);
+        } catch (error) {
+          console.error('Error handling scrape_job_update:', error);
+        }
+      });
+      socket.on('scrape_job_done', (data) => {
+        try {
+          console.log('✅ Scrape job done:', data);
+          if (!data || typeof data !== 'object') return;
+          callbacksRef.current.onScrapeJobDone?.(data);
+        } catch (error) {
+          console.error('Error handling scrape_job_done:', error);
+        }
+      });
+      socket.on('scrape_job_error', (data) => {
+        try {
+          console.log('🔴 Scrape job error:', data);
+          if (!data || typeof data !== 'object') return;
+          callbacksRef.current.onScrapeJobError?.(data);
+        } catch (error) {
+          console.error('Error handling scrape_job_error:', error);
         }
       });
 
