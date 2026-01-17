@@ -65,16 +65,12 @@ router.post('/register', async (req, res) => {
     // Generate unique affiliate code
     const affiliateCode = crypto.randomBytes(8).toString('hex').toUpperCase();
 
-    // Generate 6-digit verification code
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000); // 2 days from now
-
-    // Create affiliate with pending status
+    // Create affiliate with active status
     const insertQuery = `
       INSERT INTO affiliates (
         admin_id, email, password_hash, first_name, last_name, 
         commission_rate, status, email_verified, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', FALSE, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, 'active', TRUE, NOW(), NOW())
     `;
 
     const result = await runQuery(insertQuery, [
@@ -88,22 +84,6 @@ router.post('/register', async (req, res) => {
 
     const affiliateId = result.insertId;
 
-    // Store verification code in database
-    const codeQuery = `
-      INSERT INTO email_verification_codes (email, code, type, expires_at)
-      VALUES (?, ?, 'affiliate_registration', ?)
-    `;
-    
-    await runQuery(codeQuery, [email, verificationCode, expiresAt]);
-
-    // Send verification email
-    const emailSent = await emailService.sendVerificationCode(email, verificationCode, firstName);
-    
-    if (!emailSent) {
-      console.error('Failed to send verification email to:', email);
-      // Don't fail the registration, but log the issue
-    }
-
     // Log successful registration
     securityLogger.logSecurityEvent('affiliate_registration', {
       affiliateId,
@@ -116,14 +96,14 @@ router.post('/register', async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Affiliate registration submitted successfully. Please check your email for a verification code to complete your registration.',
+      message: 'Affiliate registration successful.',
       data: {
         id: affiliateId,
         email,
         firstName,
         lastName,
-        status: 'pending',
-        emailSent: emailSent
+        status: 'active',
+        emailSent: false
       }
     });
 

@@ -7,7 +7,7 @@ import { Label } from '../components/ui/label';
 
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
-import { Loader2, Users, DollarSign, TrendingUp, CheckCircle, ArrowRight, Sparkles, CreditCard, Shield, Award, Star, Building2, Handshake, Layers, Info, HelpCircle, BarChart3 } from 'lucide-react';
+import { Loader2, Users, DollarSign, TrendingUp, CheckCircle, ArrowRight, Sparkles, CreditCard, Shield, Award, Star, Building2, Handshake, Layers, Info, HelpCircle, BarChart3, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import SiteHeader from '@/components/SiteHeader';
 import Footer from '@/components/Footer';
@@ -43,6 +43,8 @@ const JoinAffiliate: React.FC = () => {
   const [success, setSuccess] = useState(false);
   const [showVerification, setShowVerification] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
 
 
@@ -115,9 +117,28 @@ const JoinAffiliate: React.FC = () => {
       const data = await response.json();
 
       if (data.success) {
-        // Show verification form instead of success message
-        setVerificationData(prev => ({ ...prev, email: formData.email }));
-        setShowVerification(true);
+        try {
+          const loginRes = await fetch('/api/auth/affiliate/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: formData.email, password: formData.password }),
+          });
+          const loginData = await loginRes.json();
+          if (loginRes.ok && loginData.token) {
+            localStorage.setItem('auth_token', loginData.token);
+            localStorage.setItem('userRole', 'affiliate');
+            if (loginData.user?.id) localStorage.setItem('userId', String(loginData.user.id));
+            if (loginData.user?.first_name || loginData.user?.last_name) {
+              localStorage.setItem('userName', `${loginData.user?.first_name || ''} ${loginData.user?.last_name || ''}`.trim());
+            }
+            navigate('/affiliate/dashboard');
+            return;
+          } else {
+            setError(loginData.error || 'Login failed');
+          }
+        } catch (loginErr) {
+          setError('Login failed. Please try affiliate login.');
+        }
       } else {
         setError(data.error || 'Registration failed');
       }
@@ -1003,32 +1024,52 @@ const JoinAffiliate: React.FC = () => {
                           <Label htmlFor="password" className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                             Password <span className="text-red-500">*</span>
                           </Label>
-                          <Input
-                            id="password"
-                            name="password"
-                            type="password"
-                            value={formData.password}
-                            onChange={handleInputChange}
-                            className="h-12 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 rounded-xl bg-white/80 backdrop-blur-sm transition-all duration-200"
-                            placeholder="Create a strong password"
-                            required
-                          />
+                          <div className="relative">
+                            <Input
+                              id="password"
+                              name="password"
+                              type={showPassword ? 'text' : 'password'}
+                              value={formData.password}
+                              onChange={handleInputChange}
+                              className="h-12 pr-12 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 rounded-xl bg-white/80 backdrop-blur-sm transition-all duration-200"
+                              placeholder="Create a strong password"
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(v => !v)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                              aria-label="Toggle password visibility"
+                            >
+                              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                            </button>
+                          </div>
                         </div>
                         
                         <div className="space-y-3">
                           <Label htmlFor="confirmPassword" className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                             Confirm Password <span className="text-red-500">*</span>
                           </Label>
-                          <Input
-                            id="confirmPassword"
-                            name="confirmPassword"
-                            type="password"
-                            value={formData.confirmPassword}
-                            onChange={handleInputChange}
-                            className="h-12 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 rounded-xl bg-white/80 backdrop-blur-sm transition-all duration-200"
-                            placeholder="Confirm your password"
-                            required
-                          />
+                          <div className="relative">
+                            <Input
+                              id="confirmPassword"
+                              name="confirmPassword"
+                              type={showConfirmPassword ? 'text' : 'password'}
+                              value={formData.confirmPassword}
+                              onChange={handleInputChange}
+                              className="h-12 pr-12 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500/20 rounded-xl bg-white/80 backdrop-blur-sm transition-all duration-200"
+                              placeholder="Confirm your password"
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPassword(v => !v)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                              aria-label="Toggle confirm password visibility"
+                            >
+                              {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
