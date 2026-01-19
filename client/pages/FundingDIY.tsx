@@ -13,7 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from "@/components/ui/use-toast";
 import { useNavigate, useParams, useSearchParams, useLocation } from "react-router-dom";
 import { useAuthContext } from "@/contexts/AuthContext";
-import { FileText, Building2, User, ArrowLeft, CreditCard, Shield, DollarSign, CheckCircle, AlertCircle, Clock } from "lucide-react";
+import { creditReportScraperApi } from "@/lib/api";
+import { FileText, Building2, User, ArrowLeft, CreditCard, Shield, DollarSign, CheckCircle, AlertCircle, Clock, Info } from "lucide-react";
 
 type CardType = "personal" | "business";
 
@@ -175,24 +176,17 @@ export default function FundingDIY() {
     if (t.includes('loan') || t.includes('term') || t.includes('installment') || t.includes('mortgage')) return 'Loan';
     return x;
   }, []);
-  const PERSONAL_EXTRAS = ['Home Loan', 'Auto Loan', 'Mortgages', 'Home Equity Loans', 'Home Lines of Credit'];
+  const HOME_EQUITY_COMPOSITE = 'Home Equity (Loan / Line)';
+  const PERSONAL_EXTRAS = [HOME_EQUITY_COMPOSITE, 'Auto Loan'];
   const isPersonalExtraType = (s: string) => PERSONAL_EXTRAS.includes(String(s));
   const cardMatchesPersonalExtra = (extra: string, card: FundingCard) => {
     const text = `${String(card.card_name || '')} ${String(card.funding_type || '')}`.toLowerCase();
     const has = (tok: string) => text.includes(tok);
-    if (extra === 'Home Equity Loans') {
-      const isLoan = has('loan') || has('loans') || has('lending');
-      const isLine = has('line') || has('loc') || has('line of credit') || has('heloc');
-      return has('home equity') && isLoan && !isLine;
-    }
-    if (extra === 'Home Lines of Credit') {
-      return (has('line of credit') && (has('home') || has('home equity'))) || has('heloc') || has('home equity line');
-    }
-    if (extra === 'Home Loan') {
-      return has('home loan') || has('home lending') || has('mortgage');
-    }
-    if (extra === 'Mortgages') {
-      return has('mortgage');
+    if (extra === HOME_EQUITY_COMPOSITE) {
+      const isLoan = has('loan') || has('loans') || has('lending') || has('mortgage');
+      const isLine = has('line') || has('loc') || has('line of credit') || has('heloc') || has('home equity line');
+      const isHome = has('home') || has('home equity') || has('mortgage');
+      return isHome && (isLoan || isLine);
     }
     if (extra === 'Auto Loan') {
       return has('auto loan') || has('car loan') || has('vehicle loan');
@@ -216,11 +210,11 @@ export default function FundingDIY() {
   const fundingTypes = useMemo(() => {
     const source = (cards || []).filter((c) => allowedFundingTypeSet.has(canonicalProductType(c.funding_type)));
     const unique = Array.from(new Set(source.map((c) => canonicalProductType(c.funding_type)).filter(Boolean)));
-    const personalExtras = ['Home Loan', 'Auto Loan', 'Mortgages', 'Home Equity Loans', 'Home Lines of Credit'];
-    const extras = (isPersonal || isBoth) ? personalExtras : [];
     const merged = [...unique];
-    for (const e of extras) {
-      if (!merged.includes(e)) merged.push(e);
+    if (isPersonal || isBoth) {
+      const hasHomeEquityLike = (cards || []).some((c) => cardMatchesPersonalExtra(HOME_EQUITY_COMPOSITE, c));
+      if (hasHomeEquityLike && !merged.includes(HOME_EQUITY_COMPOSITE)) merged.push(HOME_EQUITY_COMPOSITE);
+      if (!merged.includes('Auto Loan')) merged.push('Auto Loan');
     }
     return ["all", ...merged];
   }, [cards, allowedFundingTypeSet, isPersonal, isBoth]);
@@ -230,6 +224,7 @@ export default function FundingDIY() {
   const [clientLoading, setClientLoading] = useState<boolean>(false);
   const [clientError, setClientError] = useState<string | null>(null);
   const [selectedState, setSelectedState] = useState<string | null>(null);
+  const [reportState, setReportState] = useState<string | null>(null);
 
   // Three-slot selection workflow state
   type SlotForm = {
@@ -306,6 +301,31 @@ export default function FundingDIY() {
     fetchClient();
   }, [clientIdDetected, clientIdInput]);
 
+  useEffect(() => {
+    const clientId = (Number.isFinite(clientIdDetected) && clientIdDetected > 0) ? clientIdDetected : clientIdInput;
+    if (!clientId || clientId <= 0) return;
+    const primary = resolveClientState();
+    if (primary) return;
+    let cancelled = false;
+    const loadReportState = async () => {
+      try {
+        const resp = await creditReportScraperApi.getClientReport(String(clientId));
+        const payload = resp?.data?.data ?? resp?.data ?? {};
+        const reportBlock = payload.reportData || payload.report_data || payload;
+        const s = extractStateFromReportData(reportBlock);
+        if (!cancelled && s) {
+          setReportState(s);
+          setSelectedState((prev) => prev || s);
+        }
+      } catch {
+      }
+    };
+    loadReportState();
+    return () => {
+      cancelled = true;
+    };
+  }, [clientIdDetected, clientIdInput, clientDetails]);
+
   // Derive fundable bureaus from explicit DB flags on clients table
   const fundableBureaus = useMemo(() => {
     const out: string[] = [];
@@ -337,6 +357,22 @@ export default function FundingDIY() {
     'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'
   ];
 
+  const extractStateFromReportData = (raw: any): string | null => {
+    if (!raw) return null;
+    const payload = raw.reportData || raw.report_data || raw;
+    const addresses: any[] = Array.isArray(payload.Address)
+      ? payload.Address
+      : Array.isArray(payload.addresses)
+        ? payload.addresses
+        : [];
+    for (let i = 0; i < addresses.length; i++) {
+      const addr = addresses[i] || {};
+      const code = String((addr.State || addr.state || "")).trim().toUpperCase();
+      if (US_STATE_CODES.includes(code)) return code;
+    }
+    return null;
+  };
+
   const resolveClientState = (): string | null => {
     const raw = String(clientDetails?.state || '').trim();
     const upper = raw.toUpperCase();
@@ -357,9 +393,15 @@ export default function FundingDIY() {
   };
 
   useEffect(() => {
-    const s = resolveClientState();
-    setSelectedState(s);
-  }, [clientDetails]);
+    const primary = resolveClientState();
+    if (primary) {
+      setSelectedState(primary);
+    } else if (reportState) {
+      setSelectedState(reportState);
+    } else {
+      setSelectedState(null);
+    }
+  }, [clientDetails, reportState]);
 
   // Eligibility helpers
   const bankEligibility = (bankId?: number) => {
@@ -434,17 +476,28 @@ export default function FundingDIY() {
 
   const sortedBanks = useMemo(() => {
     const canon = canonBureau(selectedBureau);
+    const allowedSet = new Set(fundableBureaus);
     return [...allBanks]
       .filter((bank) => {
         const elig = bankEligibility(bank.id);
         const hasAnyEligibleBureau = canon
-          ? (elig.bureauEligible as any)[canon]
-          : (elig.bureauEligible.Experian || elig.bureauEligible.Equifax || elig.bureauEligible.TransUnion);
+          ? ((allowedSet.size === 0 || allowedSet.has(canon)) && (elig.bureauEligible as any)[canon])
+          : (
+              (allowedSet.size === 0 && (elig.bureauEligible.Experian || elig.bureauEligible.Equifax || elig.bureauEligible.TransUnion))
+              || (allowedSet.size > 0 && Array.from(allowedSet).some((b) => (elig.bureauEligible as any)[b]))
+            );
         const hasRelevantProduct = ((cards.length > 0 ? cards : allCards) || []).some((c) => {
           if (c.bank_id !== bank.id) return false;
           if (!allowedFundingTypeSet.has(canonicalProductType(c.funding_type))) return false;
           if (!isBoth && c.card_type !== resolvedType) return false;
-          if (!canon) return true;
+          if (!canon) {
+            if (allowedSet.size === 0) return true;
+            return (
+              (allowedSet.has('Experian') && cardHasBureau(c, 'Experian')) ||
+              (allowedSet.has('Equifax') && cardHasBureau(c, 'Equifax')) ||
+              (allowedSet.has('TransUnion') && cardHasBureau(c, 'TransUnion'))
+            );
+          }
           return cardHasBureau(c, canon);
         });
         return hasAnyEligibleBureau && hasRelevantProduct;
@@ -459,7 +512,7 @@ export default function FundingDIY() {
         if (scoreB !== scoreA) return scoreB - scoreA;
         return a.name.localeCompare(b.name);
       });
-  }, [allBanks, cards, allCards, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth, selectedState, clientDetails]);
+  }, [allBanks, cards, allCards, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth, selectedState, clientDetails, fundableBureaus]);
 
   useEffect(() => {
     const fetchCards = async () => {
@@ -650,33 +703,57 @@ export default function FundingDIY() {
     const selectedCanon = selectedFundingType === 'all' ? 'all' : canonicalProductType(selectedFundingType);
     const canonicalCategories = ['Credit Card','Line of Credit','Loan','SBA Loan','Merchant Cash Advance','Sub Prime Lenders'].map(String);
     const isCanonical = canonicalCategories.includes(String(selectedFundingType));
-    const byType = selectedCanon === "all"
-      ? cards.filter((c) => {
+    const byType = (() => {
+      if (selectedCanon === "all") {
+        return cards.filter((c) => {
           const raw = String(c.funding_type || '');
           const canon = canonicalProductType(raw);
           return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
-        })
-      : isCanonical
-        ? cards
-            .filter((c) => canonicalProductType(c.funding_type || "").toLowerCase() === String(selectedCanon).toLowerCase())
-            .filter((c) => {
-              const raw = String(c.funding_type || '');
-              const canon = canonicalProductType(raw);
-              return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
-            })
-        : cards
-            .filter((c) => String(c.funding_type || '').toLowerCase() === String(selectedFundingType).toLowerCase())
-            .filter((c) => {
-              const raw = String(c.funding_type || '');
-              const canon = canonicalProductType(raw);
-              return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
-            });
+        });
+      }
+      if (isCanonical) {
+        return cards
+          .filter((c) => canonicalProductType(c.funding_type || "").toLowerCase() === String(selectedCanon).toLowerCase())
+          .filter((c) => {
+            const raw = String(c.funding_type || '');
+            const canon = canonicalProductType(raw);
+            return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
+          });
+      }
+      if (isPersonalExtraType(selectedFundingType)) {
+        return cards
+          .filter((c) => cardMatchesPersonalExtra(selectedFundingType, c))
+          .filter((c) => {
+            const raw = String(c.funding_type || '');
+            const canon = canonicalProductType(raw);
+            return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
+          });
+      }
+      return cards
+        .filter((c) => String(c.funding_type || '').toLowerCase() === String(selectedFundingType).toLowerCase())
+        .filter((c) => {
+          const raw = String(c.funding_type || '');
+          const canon = canonicalProductType(raw);
+          return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
+        });
+    })();
     const byGoal = isBoth ? byType : byType.filter((c) => c.card_type === resolvedType);
-    if (selectedBureau === "all") return byGoal;
+    const allowedSet = new Set(fundableBureaus);
+    const byClientBureau = allowedSet.size > 0
+      ? byGoal.filter((c) => {
+          const m = [
+            allowedSet.has('Experian') && cardHasBureau(c, 'Experian'),
+            allowedSet.has('Equifax') && cardHasBureau(c, 'Equifax'),
+            allowedSet.has('TransUnion') && cardHasBureau(c, 'TransUnion'),
+          ];
+          return m.some(Boolean);
+        })
+      : byGoal;
+    if (selectedBureau === "all") return byClientBureau;
     const canon = canonBureau(selectedBureau);
-    if (!canon) return byGoal;
-    return byGoal.filter((c) => cardHasBureau(c, canon));
-  }, [cards, selectedFundingType, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth]);
+    if (!canon) return byClientBureau;
+    return byClientBureau.filter((c) => cardHasBureau(c, canon));
+  }, [cards, selectedFundingType, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth, fundableBureaus]);
 
   useEffect(() => {
     if (!(resolvedType || isBoth)) return;
@@ -688,10 +765,15 @@ export default function FundingDIY() {
     const rest = filtered.filter((c) => !lockedIds.includes(c.id));
     const desiredCounts = (() => {
       const canon = canonBureau(selectedBureau);
+      const allowedSet = new Set(fundableBureaus);
       if (canon) {
-        return { Experian: canon === 'Experian' ? bureauPullCounts.Experian : 0, Equifax: canon === 'Equifax' ? bureauPullCounts.Equifax : 0, TransUnion: canon === 'TransUnion' ? bureauPullCounts.TransUnion : 0 };
+        const allowCanon = allowedSet.size === 0 || allowedSet.has(canon);
+        return { Experian: canon === 'Experian' && allowCanon ? bureauPullCounts.Experian : 0, Equifax: canon === 'Equifax' && allowCanon ? bureauPullCounts.Equifax : 0, TransUnion: canon === 'TransUnion' && allowCanon ? bureauPullCounts.TransUnion : 0 };
       }
-      return { Experian: bureauPullCounts.Experian, Equifax: bureauPullCounts.Equifax, TransUnion: bureauPullCounts.TransUnion };
+      const ex = (allowedSet.size === 0 || allowedSet.has('Experian')) ? bureauPullCounts.Experian : 0;
+      const eq = (allowedSet.size === 0 || allowedSet.has('Equifax')) ? bureauPullCounts.Equifax : 0;
+      const tu = (allowedSet.size === 0 || allowedSet.has('TransUnion')) ? bureauPullCounts.TransUnion : 0;
+      return { Experian: ex, Equifax: eq, TransUnion: tu };
     })();
     const order: Array<'Experian' | 'Equifax' | 'TransUnion'> = ['Experian', 'Equifax', 'TransUnion'];
     const bankOrder = new Map<number, number>();
@@ -1009,7 +1091,7 @@ export default function FundingDIY() {
               )}
               <div className="space-y-2">
                 <Label>Client State</Label>
-                <p className="text-sm text-muted-foreground">Detected from address: {resolveClientState() || 'Not detected'}</p>
+                <p className="text-sm text-muted-foreground">Detected from profile or latest report: {selectedState || 'Not detected'}</p>
                 <Select value={String(selectedState || '')} onValueChange={(v) => setSelectedState(v || null)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select state" />
@@ -1167,9 +1249,46 @@ export default function FundingDIY() {
                 )
               )}
               {(selectedFundingType === "all" && selectedBureau === "all" && bureauPullCounts.total > 0) && (
-                <div className="mb-2 text-sm text-muted-foreground">
-                  Pulls — EX {bureauPullCounts.Experian}, EQ {bureauPullCounts.Equifax}, TU {bureauPullCounts.TransUnion} • Target total {bureauPullCounts.total} cards
-                </div>
+                <Card className="my-8 border-none shadow-md bg-gradient-to-br from-white to-blue-50 overflow-hidden relative">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
+                  <CardContent className="p-6">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                      <div className="flex items-center gap-4 self-start md:self-center">
+                        <div className="p-3 bg-blue-100 rounded-full shadow-sm">
+                          <Info className="h-6 w-6 text-blue-600" />
+                        </div>
+                        <div>
+                          <h4 className="text-lg font-bold text-gray-900">Application Strategy</h4>
+                          <p className="text-sm text-gray-500">
+                            Recommended distribution of credit pulls based on your profile
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 flex-wrap justify-center w-full md:w-auto">
+                        <div className="flex flex-col items-center px-5 py-2 bg-white rounded-xl shadow-sm border border-blue-100 min-w-[80px]">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Experian</span>
+                          <span className="text-2xl font-bold text-blue-600">{bureauPullCounts.Experian}</span>
+                        </div>
+                        <div className="flex flex-col items-center px-5 py-2 bg-white rounded-xl shadow-sm border border-blue-100 min-w-[80px]">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Equifax</span>
+                          <span className="text-2xl font-bold text-blue-600">{bureauPullCounts.Equifax}</span>
+                        </div>
+                        <div className="flex flex-col items-center px-5 py-2 bg-white rounded-xl shadow-sm border border-blue-100 min-w-[80px]">
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">TransUnion</span>
+                          <span className="text-2xl font-bold text-blue-600">{bureauPullCounts.TransUnion}</span>
+                        </div>
+                        
+                        <div className="h-10 w-px bg-gray-200 mx-2 hidden md:block"></div>
+                        
+                        <div className="flex flex-col items-center px-6 py-2 bg-blue-600 rounded-xl shadow-lg text-white min-w-[90px]">
+                          <span className="text-[10px] font-bold text-blue-100 uppercase tracking-wider">Target</span>
+                          <span className="text-2xl font-bold">{bureauPullCounts.total}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
               
               {submittedRows.length > 0 && (
@@ -1394,12 +1513,26 @@ export default function FundingDIY() {
                               if (isCanonical) {
                                 return canonicalProductType(c.funding_type || '').toLowerCase() === canonicalProductType(String(effective)).toLowerCase();
                               }
+                              if (isPersonalExtraType(String(effective))) {
+                                return cardMatchesPersonalExtra(String(effective), c);
+                              }
                               return String(c.funding_type || '').toLowerCase() === String(effective).toLowerCase();
                             })
                             .filter(c => {
                               const raw = String(c.funding_type || '');
                               const canon = canonicalProductType(raw);
                               return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
+                            })
+                            .filter(c => {
+                              const allowedSet = new Set(fundableBureaus);
+                              if (allowedSet.size === 0) return true;
+                              if (c.id === slot.cardId) return true;
+                              const m = [
+                                allowedSet.has('Experian') && cardHasBureau(c, 'Experian'),
+                                allowedSet.has('Equifax') && cardHasBureau(c, 'Equifax'),
+                                allowedSet.has('TransUnion') && cardHasBureau(c, 'TransUnion'),
+                              ];
+                              return m.some(Boolean);
                             })
                             .filter(c => {
                               if (selectedBureau === 'all') return true;
