@@ -133,7 +133,7 @@ export default function Contact() {
                     </div>
                     <div className="flex-1">
                       <p className="font-semibold text-gray-900 leading-tight">Email Support</p>
-                      <p className="text-sm text-gray-600 leading-tight">thescoremachineofficial@gmail.com</p>
+                      <p className="text-sm text-gray-600 leading-tight">support@thescoremachine.com</p>
                       <p className="text-xs text-green-600 font-medium leading-tight">Fast response times</p>
                     </div>
                   </div>

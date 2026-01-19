@@ -421,8 +421,8 @@ class EmailService {
       console.log('EMAIL_SECURE:', process.env.EMAIL_SECURE);
       console.log('EMAIL_USER:', process.env.EMAIL_USER);
       console.log('EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? '***SET***' : 'NOT SET');
-      const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
-      const port = parseInt(process.env.EMAIL_PORT || '587', 10);
+      const host = process.env.EMAIL_HOST || 'smtp.hostinger.com';
+      const port = parseInt(process.env.EMAIL_PORT || '465', 10);
       const secure = (process.env.EMAIL_SECURE === 'true') || port === 465;
       const user = process.env.EMAIL_USER || '';
       const pass = process.env.EMAIL_PASSWORD || '';
@@ -442,7 +442,7 @@ class EmailService {
     try {
       const transporter = this.initializeTransporter();
       const mailOptions = {
-        from: `"${process.env.EMAIL_FROM_NAME || 'Score Machine'}" <${process.env.EMAIL_FROM_ADDRESS || process.env.EMAIL_USER}>`,
+        from: `"${process.env.EMAIL_FROM_NAME || 'Score Machine Support'}" <${process.env.EMAIL_FROM_ADDRESS || 'support@thescoremachine.com' || process.env.EMAIL_USER}>`,
         to: options.to,
         subject: options.subject,
         html: options.html,
