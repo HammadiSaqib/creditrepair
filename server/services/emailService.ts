@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { ENV_CONFIG } from '../config/environment.js';
 
 interface EmailOptions {
   to: string;
@@ -64,9 +65,13 @@ interface PurchaseNotificationData {
 class EmailService {
   private transporter: nodemailer.Transporter | null = null;
 
+  private getFrontendBaseUrl(): string {
+    return String(ENV_CONFIG.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3001').replace(/\/$/, '');
+  }
+
   // Enhanced email template with admin dashboard color scheme
   private getEmailTemplate(content: string, title: string = 'Score Machine'): string {
-    const baseUrl = process.env.CLIENT_URL || 'http://localhost:3001';
+    const baseUrl = this.getFrontendBaseUrl();
     const logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/image.png`;
     return `
       <!DOCTYPE html>
@@ -500,7 +505,7 @@ class EmailService {
     const { email, name, type, token, invitedBy, meetingLink } = data;
     
     // Determine the invitation URL based on type
-    const baseUrl = process.env.CLIENT_URL || 'http://localhost:3001';
+    const baseUrl = this.getFrontendBaseUrl();
     const invitationUrl = `${baseUrl}/invitation/accept?token=${token}&type=${type}`;
     
     // Generate role-specific content
@@ -923,6 +928,7 @@ Score Machine Team
 
   async sendAdminLoginNotification(data: AdminLoginData): Promise<boolean> {
     try {
+      const baseUrl = this.getFrontendBaseUrl();
       const content = `
         <div style="text-align: center; margin-bottom: 30px;">
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="80" height="80" style="margin: 0 auto 20px auto;">
@@ -989,7 +995,7 @@ Score Machine Team
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="http://localhost:3001/admin/security" 
+          <a href="${baseUrl}/admin/security" 
              style="display: inline-block; background: linear-gradient(135deg, #0ea5e9, #06b6d4); color: white; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);">
             Review Security Settings
           </a>
@@ -1090,6 +1096,7 @@ Score Machine Team
   async sendWelcomeEmail(data: WelcomeEmailData): Promise<boolean> {
     try {
       const roleInfo = this.getRoleInfo(data.userType);
+      const baseUrl = this.getFrontendBaseUrl();
       
       const content = `
         <div style="text-align: center; margin-bottom: 30px;">
@@ -1137,11 +1144,11 @@ Score Machine Team
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="http://localhost:3001/dashboard" 
+          <a href="${baseUrl}/dashboard" 
              style="display: inline-block; background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); margin-right: 12px;">
             Access Dashboard
           </a>
-          <a href="http://localhost:3001/help" 
+          <a href="${baseUrl}/help" 
              style="display: inline-block; background: transparent; color: #10b981; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; border: 2px solid #10b981;">
             Get Help
           </a>
@@ -1161,7 +1168,7 @@ Score Machine Team
 
   async sendAffiliateAccountCreatedEmail(data: AffiliateCreatedEmailData): Promise<boolean> {
     try {
-      const baseUrl = process.env.CLIENT_URL || 'http://localhost:3001';
+      const baseUrl = this.getFrontendBaseUrl();
       const loginUrl = `${baseUrl}/affiliate/login`;
 
       const content = `
@@ -1209,7 +1216,7 @@ Score Machine Team
 
   async sendAdminAccountCreatedEmail(data: AdminCreatedEmailData): Promise<boolean> {
     try {
-      const baseUrl = process.env.CLIENT_URL || 'http://localhost:3001';
+      const baseUrl = this.getFrontendBaseUrl();
       const loginUrl = `${baseUrl}/login`;
 
       const content = `
@@ -1257,6 +1264,7 @@ Score Machine Team
 
   async sendPurchaseNotification(data: PurchaseNotificationData): Promise<boolean> {
     try {
+      const baseUrl = this.getFrontendBaseUrl();
       const customerName = `${data.firstName} ${data.lastName}`.trim();
       const content = `
         <div style="text-align: center; margin-bottom: 30px;">
@@ -1331,11 +1339,11 @@ Score Machine Team
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="http://localhost:3001/dashboard" 
+          <a href="${baseUrl}/dashboard" 
              style="display: inline-block; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); margin-right: 12px;">
             Access Your Account
           </a>
-          <a href="http://localhost:3001/billing" 
+          <a href="${baseUrl}/billing" 
              style="display: inline-block; background: transparent; color: #8b5cf6; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; border: 2px solid #8b5cf6;">
             View Invoice
           </a>

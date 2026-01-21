@@ -591,7 +591,7 @@ export default function Support() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div
                     className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-                    onClick={() => window.open('/docs#video-tutorials', '_blank', 'noopener,noreferrer')}
+                    onClick={() => window.open('https://thescoremachine.com/course/35', '_blank', 'noopener,noreferrer')}
                   >
                     <Video className="h-5 w-5 text-blue-500" />
                     <div>

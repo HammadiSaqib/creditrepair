@@ -1,4 +1,7 @@
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { clientsApi, warMachineApi } from "@/lib/api";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -46,8 +49,9 @@ import { TrialCreditReportWrapper, TrialScoreWrapper, TrialSensitiveWrapper } fr
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { shouldShowField, tabConfig } from "@/utils/fieldCategorization";
-import { calculateUtilization as calculateAccountUtilization } from "../../utils/utilizationCalculator.js";
+import { calculateAccountUtilization } from "../../utils/utilizationCalculator.js";
 import {
+  Gauge,
   FileText,
   Search,
   Download,
@@ -112,16 +116,623 @@ import {
   Banknote,
   ScrollText,
   Lock,
-  Gauge,
   BadgeCheck,
+  Settings,
+  Gavel,
 } from "lucide-react";
 import FundingProjectionsCalculator from '../../utils/fundingProjections.js';
 import GapAnalyzer from '../../utils/gapAnalyzer.js';
 import PersonalCardsDisplay from '../../components/PersonalCardsDisplay';
 import BusinessCardsDisplay from '../../components/BusinessCardsDisplay';
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
-import { clientsApi } from "@/lib/api";
 import { useAuthContext } from "@/contexts/AuthContext";
+
+interface DebtConsolidationViewProps {
+  accounts: any[];
+  payoffPlans?: any[];
+  onSavePlan?: (plan: any) => Promise<void>;
+  clientId?: string | number;
+}
+
+const getOrdinalSuffix = (day: number) => {
+    if (day > 3 && day < 21) return 'th';
+    switch (day % 10) {
+      case 1:  return "st";
+      case 2:  return "nd";
+      case 3:  return "rd";
+      default: return "th";
+    }
+};
+
+
+
+const getNextReminderDate = (day: number) => {
+    const today = new Date();
+    let nextDate = new Date(today.getFullYear(), today.getMonth(), day);
+    
+    // If the date for this month has passed, move to next month
+    if (nextDate < today) {
+        nextDate = new Date(today.getFullYear(), today.getMonth() + 1, day);
+    }
+    return nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientId }: DebtConsolidationViewProps) => {
+  const [targetUtilization, setTargetUtilization] = useState(0);
+  const [payoffMonths, setPayoffMonths] = useState(12);
+  const [remindersSet, setRemindersSet] = useState(false);
+  
+  // Gamification
+  const [points, setPoints] = useState(1250);
+  
+  // Edit State
+  const [editingAccount, setEditingAccount] = useState<any>(null);
+  const [editForm, setEditForm] = useState({
+    targetUtilization: 0,
+    payoffTimelineMonths: 12,
+    paymentDate: 1,
+    reminderEnabled: false,
+    trackEnabled: false
+  });
+
+  const handleEditClick = (account: any) => {
+    const existingPlan = payoffPlans.find(p => p.account_id === String(account.id));
+    setEditingAccount(account);
+    setEditForm({
+      targetUtilization: existingPlan?.target_utilization ?? 0,
+      payoffTimelineMonths: existingPlan?.payoff_timeline_months ?? 12,
+      paymentDate: existingPlan?.payment_date ?? 1,
+      reminderEnabled: !!existingPlan?.reminder_enabled,
+      trackEnabled: !!existingPlan?.track_enabled
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAccount(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!onSavePlan || !clientId || !editingAccount) return;
+    
+    try {
+      await onSavePlan({
+        client_id: Number(clientId),
+        account_id: String(editingAccount.id),
+        account_name: editingAccount.name,
+        target_utilization: Number(editForm.targetUtilization),
+        payoff_timeline_months: Number(editForm.payoffTimelineMonths),
+        payment_date: Number(editForm.paymentDate),
+        reminder_enabled: Boolean(editForm.reminderEnabled),
+        track_enabled: Boolean(editForm.trackEnabled)
+      });
+      setEditingAccount(null);
+      toast.success("Payoff plan updated successfully");
+    } catch (error) {
+      toast.error("Failed to update payoff plan");
+    }
+  };
+  
+  const calculateAge = (dateString: string) => {
+    if (!dateString) return "N/A";
+    const openDate = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - openDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const years = Math.floor(diffDays / 365);
+    const months = Math.floor((diffDays % 365) / 30);
+    return `${years}y ${months}m`;
+  };
+
+  const revolvingAccounts = useMemo(() => {
+    if (!accounts) return [];
+    const isRevolving = (acc: any) => {
+      const t = String(acc.type || '').toLowerCase();
+      const at = String(acc.AccountType || acc.AccountTypeDescription || '').toLowerCase();
+      return t.includes('credit') || t.includes('revolving') || at.includes('revolving') || acc.type === 'Credit Card';
+    };
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const clean = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const canonical = (s: any) => {
+      const t = clean(s);
+      if (/navyfederal|navyfcu/.test(t)) return 'navy federal credit union';
+      if (/creditone|crdtonebnk/.test(t)) return 'credit one bank';
+      if (/jpmcb|chase/.test(t)) return 'chase';
+      if (/americanexpress|amex/.test(t)) return 'american express';
+      if (/discover/.test(t)) return 'discover';
+      return norm(s);
+    };
+    const last4 = (s: any) => String(s || '').replace(/\D/g, '').slice(-4);
+    const raw = accounts.filter(isRevolving);
+    const groups = new Map<string, any>();
+    raw.forEach((acc: any, index: number) => {
+      const nameRaw = acc.creditor || acc.CreditorName || acc.name;
+      const nameKey = canonical(nameRaw);
+      const num4 = last4(acc.accountNumber || acc.AccountNumber);
+      const fallback = String(acc.DateOpened || acc.opened || '').slice(0, 7);
+      const effLimit = Number(acc.limit ?? acc.CreditLimit ?? acc.HighBalance ?? 0);
+      const bucket = effLimit > 0 ? Math.round(effLimit / 100) * 100 : 0;
+      const key = `${nameKey}|${num4 || bucket || fallback}`;
+      const balance = Number(acc.balance ?? acc.Balance ?? acc.CurrentBalance ?? 0);
+      const limit = Number(acc.limit ?? acc.CreditLimit ?? acc.HighBalance ?? 0);
+      const opened = acc.DateOpened || acc.opened || '';
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          id: acc.id ?? index,
+          name: nameRaw || 'Unknown Creditor',
+          balance,
+          limit,
+          opened
+        });
+      } else {
+        if (balance > (existing.balance ?? 0)) existing.balance = balance;
+        if (limit > (existing.limit ?? 0)) existing.limit = limit;
+        const openedDate = new Date(opened);
+        const existingDate = new Date(existing.opened || opened);
+        if (opened && !isNaN(openedDate.getTime()) && (isNaN(existingDate.getTime()) || openedDate < existingDate)) {
+          existing.opened = opened;
+        }
+      }
+    });
+    const unique = Array.from(groups.values());
+    return unique
+      .map((acc: any, index: number) => {
+        const plan = payoffPlans.find(p => p.account_id === String(acc.id ?? index));
+        const balance = Number(acc.balance || 0);
+        const limit = Number(acc.limit || 0);
+        const baseMin = Math.max(25, balance * 0.02);
+        const minPayment = balance <= 50 ? balance : Math.min(balance, baseMin);
+        return {
+          id: acc.id ?? index,
+          name: acc.name,
+          balance,
+          limit,
+          utilization: limit > 0 ? (balance / limit) * 100 : 0,
+          age: calculateAge(acc.opened),
+          apr: 0.24,
+          minPayment,
+          plan
+        };
+      })
+      .filter(a => a.balance > 0 && a.limit > 0)
+      .sort((a, b) => a.balance - b.balance);
+  }, [accounts, payoffPlans]);
+
+  const totalDebt = revolvingAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+
+  const eligibleAccounts = useMemo(() => {
+    return revolvingAccounts.filter(a => a.limit > 0 && a.balance > 0);
+  }, [revolvingAccounts]);
+
+  const monthlyBudget = useMemo(() => {
+    return eligibleAccounts.reduce((sum, acc) => sum + acc.minPayment, 0) + 1;
+  }, [eligibleAccounts]);
+
+  const snowballPlan = useMemo(() => {
+    const sorted = eligibleAccounts.slice().sort((a, b) => a.balance - b.balance);
+    let extra = 1;
+    const out = [] as any[];
+    for (const acc of sorted) {
+      const monthlyPay = acc.minPayment + extra;
+      const months = monthlyPay > 0 ? Math.ceil(acc.balance / monthlyPay) : 0;
+      out.push({ id: acc.id, name: acc.name, minPayment: acc.minPayment, extraPayment: extra, payoffMonths: months });
+      extra += acc.minPayment;
+    }
+    return out;
+  }, [eligibleAccounts]);
+
+  const oneMonth = useMemo(() => {
+    const updatedBalances: Record<string, number> = {};
+    const payments = eligibleAccounts.map(acc => ({ id: acc.id, minPayment: Math.min(acc.balance, acc.minPayment), extraPayment: 0, totalPayment: 0, balance: acc.balance }));
+    for (const p of payments) {
+      p.totalPayment = p.minPayment;
+      updatedBalances[String(p.id)] = Math.max(0, p.balance - p.minPayment);
+    }
+    if (eligibleAccounts.length > 0) {
+      const smallest = eligibleAccounts[0];
+      const ps = payments.find(x => x.id === smallest.id);
+      if (ps) {
+        const extraPay = Math.min(updatedBalances[String(ps.id)], 1);
+        ps.extraPayment = extraPay;
+        ps.totalPayment += extraPay;
+        updatedBalances[String(ps.id)] = Math.max(0, updatedBalances[String(ps.id)] - extraPay);
+      }
+    }
+    return { payments, updatedBalances };
+  }, [eligibleAccounts]);
+
+  const smallDebtOptions = useMemo(() => {
+    const out: Record<string, { months: number; monthly: number }[]> = {};
+    for (const acc of eligibleAccounts) {
+      if (acc.balance < 500) {
+        const opts = [] as { months: number; monthly: number }[];
+        for (let m = 1; m <= 6; m++) {
+          const monthly = Math.ceil(acc.balance / m);
+          opts.push({ months: m, monthly });
+        }
+        out[String(acc.id)] = opts;
+      }
+    }
+    return out;
+  }, [eligibleAccounts]);
+
+  const handlePayoffVerify = () => {
+    setPoints(prev => prev + 100);
+    // In a real app, this would show a toast or confetti
+  };
+
+  const calculatePayoffToTarget = (balance: number, limit: number, targetPercent: number) => {
+    const targetBalance = limit * (targetPercent / 100);
+    const amountToPay = balance - targetBalance;
+    return Math.max(0, amountToPay);
+  };
+
+  return (
+    <div className="space-y-6">
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <Card className="bg-gradient-to-br from-rose-500 to-pink-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">${totalDebt.toLocaleString()}</div>
+             <div className="text-rose-100 font-medium">Total Revolving Debt</div>
+           </CardContent>
+         </Card>
+         <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">${Math.ceil(monthlyBudget).toLocaleString()}/mo</div>
+             <div className="text-indigo-100 font-medium">Target Monthly Payment</div>
+           </CardContent>
+         </Card>
+         <Card className="bg-gradient-to-br from-yellow-50 to-orange-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">{points.toLocaleString()}</div>
+             <div className="text-yellow-100 font-medium">Reward Points</div>
+           </CardContent>
+         </Card>
+       </div>
+
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+         <Card className="lg:col-span-1 shadow-md border-slate-200 dark:border-slate-800">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-rose-500" />
+                {editingAccount ? `Configure: ${editingAccount.name}` : "Plan Configuration"}
+             </CardTitle>
+             <CardDescription>
+                {editingAccount ? "Update payoff settings for this account" : "Customize your payoff strategy"}
+             </CardDescription>
+           </CardHeader>
+           <CardContent className="space-y-8">
+             {editingAccount ? (
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label>Target Utilization (%)</Label>
+                        <div className="flex items-center gap-4">
+                            <input 
+                                type="range" 
+                                min="0" 
+                                max="100" 
+                                step="1"
+                                value={editForm.targetUtilization} 
+                                onChange={(e) => setEditForm({...editForm, targetUtilization: Number(e.target.value)})}
+                                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                            <span className="w-12 text-right font-bold">{editForm.targetUtilization}%</span>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <Label>Payoff Timeline (Months)</Label>
+                        <div className="flex items-center gap-4">
+                            <input 
+                                type="range" 
+                                min="1" 
+                                max="36" 
+                                step="1"
+                                value={editForm.payoffTimelineMonths} 
+                                onChange={(e) => setEditForm({...editForm, payoffTimelineMonths: Number(e.target.value)})}
+                                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                            <span className="w-12 text-right font-bold">{editForm.payoffTimelineMonths}</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Payment Date (Day of Month)</Label>
+                        <Input 
+                            type="number" 
+                            min="1" 
+                            max="31" 
+                            value={editForm.paymentDate}
+                            onChange={(e) => setEditForm({...editForm, paymentDate: Number(e.target.value)})}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between space-x-2 pt-4 border-t">
+                        <Label htmlFor="reminder-mode" className="flex flex-col space-y-1">
+                            <span>Enable Payment Reminders</span>
+                            <span className="font-normal text-xs text-muted-foreground">
+                                Send monthly email reminders
+                            </span>
+                        </Label>
+                        {editForm.reminderEnabled ? (
+                            <div className="flex gap-2">
+                                <Button 
+                                    size="sm" 
+                                    variant="destructive" 
+                                    onClick={() => setEditForm({
+                                        ...editForm,
+                                        reminderEnabled: false,
+                                        trackEnabled: false
+                                    })}
+                                >
+                                    Stop Reminder
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                    onClick={() => setEditForm({
+                                        ...editForm,
+                                        reminderEnabled: false,
+                                        trackEnabled: false
+                                    })}
+                                >
+                                    Payment Clear
+                                </Button>
+                            </div>
+                        ) : (
+                            <Switch
+                                id="reminder-mode"
+                                checked={editForm.reminderEnabled}
+                                onCheckedChange={(checked) => setEditForm({
+                                    ...editForm, 
+                                    reminderEnabled: checked,
+                                    trackEnabled: checked 
+                                })}
+                            />
+                        )}
+                    </div>
+                    {editForm.reminderEnabled && (
+                        <div className="flex flex-col gap-2">
+                            <div className="text-xs text-muted-foreground bg-green-50 p-2 rounded border border-green-100 flex items-center gap-2">
+                                <CheckCircle2 className="h-3 w-3 text-green-600" />
+                                <span className="text-green-700">Reminders active for the {editForm.paymentDate}{getOrdinalSuffix(editForm.paymentDate)} of each month</span>
+                            </div>
+                            <div className="text-xs font-medium text-indigo-600 pl-7">
+                                Next upcoming reminder: {getNextReminderDate(editForm.paymentDate)}
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex gap-2 pt-4">
+                        <Button className="flex-1" onClick={handleSaveEdit}>
+                            {editForm.reminderEnabled && payoffPlans.some(p => p.account_id === String(editingAccount.id) && p.reminder_enabled) 
+                                ? "Update Reminder" 
+                                : "Save"}
+                        </Button>
+                        <Button variant="outline" className="flex-1" onClick={handleCancelEdit}>Cancel</Button>
+                    </div>
+                </div>
+             ) : (
+               <div className="space-y-4">
+                 <div className="flex items-center justify-between mb-4">
+                    <Label className="text-base font-semibold">Active Reminders</Label>
+                    <Badge variant="outline" className="text-muted-foreground">{payoffPlans.filter(p => p.reminder_enabled).length} Active</Badge>
+                 </div>
+                 
+                 {payoffPlans.filter(p => p.reminder_enabled).length > 0 ? (
+                    <div className="space-y-3">
+                        {payoffPlans.filter(p => p.reminder_enabled).map((plan, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                                <div>
+                                    <div className="font-medium text-sm">{plan.account_name}</div>
+                                    <div className="text-xs text-muted-foreground">Payment Date: {plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xs font-medium text-indigo-600">Next: {getNextReminderDate(plan.payment_date)}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                 ) : (
+                    <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg bg-slate-50/50">
+                        <div className="flex justify-center mb-2">
+                            <Clock className="h-8 w-8 text-slate-300" />
+                        </div>
+                        <div className="mb-4">No active reminders.</div>
+                        <Select onValueChange={(value) => {
+                            const account = revolvingAccounts.find(a => String(a.id) === value);
+                            if (account) handleEditClick(account);
+                        }}>
+                            <SelectTrigger className="w-[200px] mx-auto bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                                <SelectValue placeholder="Select account to configure" />
+                            </SelectTrigger>
+                            <SelectContent className="dark:bg-slate-900 dark:border-slate-700">
+                                {revolvingAccounts.map((acc) => (
+                                    <SelectItem key={acc.id} value={String(acc.id)}>
+                                        {acc.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                 )}
+               </div>
+             )}
+           </CardContent>
+         </Card>
+
+         <Card className="lg:col-span-2 shadow-md border-slate-200 dark:border-slate-800 dark:bg-card">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <LineChart className="w-5 h-5 text-indigo-500" />
+                Snowball Payoff Schedule
+             </CardTitle>
+             <CardDescription>Focus extra payments on the smallest balance first</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="rounded-md border overflow-x-auto">
+               <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[150px]">Account</TableHead>
+                    <TableHead>Limit</TableHead>
+                    <TableHead>Balance</TableHead>
+                    <TableHead>Minimum Payment</TableHead>
+                    <TableHead>Payoff Time</TableHead>
+                    <TableHead>Percent Progress</TableHead>
+                    <TableHead>Updated Balance</TableHead>
+                    <TableHead>Plan Options</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                 <TableBody>
+                  {eligibleAccounts.length > 0 ? eligibleAccounts.map((acc, idx) => {
+                    const planRec = snowballPlan.find(p => p.id === acc.id);
+                    const pm = oneMonth.payments.find(p => p.id === acc.id);
+                    const progressPct = pm && acc.balance > 0 ? Math.min(100, ((pm.totalPayment / acc.balance) * 100)) : 0;
+                    const updated = oneMonth.updatedBalances[String(acc.id)] ?? acc.balance;
+                    return (
+                      <TableRow key={idx} className={acc.plan?.track_enabled ? "bg-green-50/50" : ""}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-rose-100 rounded-full text-rose-600">
+                               <CreditCard className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <div>{acc.name}</div>
+                              {acc.plan?.track_enabled && (
+                                <div className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Track Enabled
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>${acc.limit.toLocaleString()}</TableCell>
+                        <TableCell>${acc.balance.toLocaleString()}</TableCell>
+                        <TableCell className="font-bold">${Math.ceil(acc.minPayment).toLocaleString()}</TableCell>
+                        <TableCell>{planRec?.payoffMonths || 0} months</TableCell>
+                        <TableCell>
+                          <div className="text-xs font-medium">
+                            {progressPct.toFixed(1)}%
+                          </div>
+                        </TableCell>
+                        <TableCell>${Math.ceil(updated).toLocaleString()}</TableCell>
+                        <TableCell>
+                          {smallDebtOptions[String(acc.id)] ? (
+                            <div className="flex flex-wrap gap-1">
+                              {smallDebtOptions[String(acc.id)].map((opt, i) => (
+                                <Badge key={i} variant="outline" className="text-xs">
+                                  {opt.months}m ${opt.monthly}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleEditClick(acc)}>
+                               <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                           </Button>
+                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={handlePayoffVerify}>
+                               <CheckCircle2 className="h-5 w-5 text-slate-300 hover:text-green-500 transition-colors" />
+                           </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }) : (
+                    <TableRow>
+                       <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                           No revolving accounts found.
+                       </TableCell>
+                    </TableRow>
+                  )}
+                 </TableBody>
+               </Table>
+             </div>
+             
+            
+           </CardContent>
+         </Card>
+       </div>
+       
+       <Card className="shadow-md border-slate-200 dark:border-slate-800 dark:bg-card">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-green-600" />
+                Saved Payoff Plans
+             </CardTitle>
+             <CardDescription>View all your saved debt payoff strategies and reminders</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="rounded-md border overflow-x-auto">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead>Account Name</TableHead>
+                     <TableHead>Target Utilization</TableHead>
+                     <TableHead>Payoff Timeline</TableHead>
+                     <TableHead>Payment Date</TableHead>
+                     <TableHead>Reminders</TableHead>
+                     <TableHead>Tracking</TableHead>
+                     <TableHead>Actions</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {payoffPlans.length > 0 ? payoffPlans.map((plan, idx) => (
+                     <TableRow key={idx}>
+                       <TableCell className="font-medium">{plan.account_name}</TableCell>
+                       <TableCell>{plan.target_utilization}%</TableCell>
+                       <TableCell>{plan.payoff_timeline_months} months</TableCell>
+                       <TableCell>{plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</TableCell>
+                       <TableCell>
+                         {plan.reminder_enabled ? (
+                           <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-green-200">Active</Badge>
+                         ) : (
+                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         {plan.track_enabled ? (
+                           <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200">Enabled</Badge>
+                         ) : (
+                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         <Button 
+                           size="sm" 
+                           variant="ghost" 
+                           onClick={() => {
+                             const account = revolvingAccounts.find(a => String(a.id) === plan.account_id) || { id: plan.account_id, name: plan.account_name };
+                             handleEditClick(account);
+                           }}
+                         >
+                           <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                         </Button>
+                       </TableCell>
+                     </TableRow>
+                   )) : (
+                     <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No saved payoff plans found.
+                        </TableCell>
+                     </TableRow>
+                   )}
+                 </TableBody>
+               </Table>
+             </div>
+           </CardContent>
+         </Card>
+       
+    </div>
+  );
+};
+
+const PERSONAL_INFO_MODE_OPTIONS = { normal: 'normal', credit_repair: 'credit_repair' } as const;
 
 // Import the same detailed report data from Reports.tsx for consistency
 const detailedReport = {
@@ -668,18 +1279,379 @@ const detailedReport = {
 };
 
 export default function CreditReport() {
+  const { userProfile } = useAuthContext();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("underwriting");
+  const [activeTab, setActiveTab] = useState("overview");
   const [reportData, setReportData] = useState(detailedReport);
   const [apiData, setApiData] = useState<any>(null);
   const [qualifyView, setQualifyView] = useState<'cards' | 'table'>('table');
+  const [refreshAuditNonce, setRefreshAuditNonce] = useState(0);
+  const [isRerunningAudit, setIsRerunningAudit] = useState(false);
   const [eligibilityBureau, setEligibilityBureau] = useState<'all' | 'tu' | 'ex' | 'eq'>('all');
   const analysisRef = useRef<HTMLDivElement>(null);
+  const [personalInfoMode, setPersonalInfoMode] = useState<'normal' | 'credit_repair'>('normal');
+  const [smPiLoading, setSmPiLoading] = useState(false);
+  const [smPiResult, setSmPiResult] = useState<any | null>(null);
+  const [smPiError, setSmPiError] = useState<string | null>(null);
+  const [lawEngineAutoMode, setLawEngineAutoMode] = useState(false);
+  const [lawEngineNoticeOpen, setLawEngineNoticeOpen] = useState(false);
+  const [pendingLawEngineTab, setPendingLawEngineTab] = useState<string | null>(null);
+  const [fundingAuditNoticeOpen, setFundingAuditNoticeOpen] = useState(false);
+  const [pendingFundingAuditTab, setPendingFundingAuditTab] = useState<string | null>(null);
+  const creditReportTabs = ['overview', 'personal', 'inquiries', 'public', 'accounts'] as const;
+  type CreditReportTab = (typeof creditReportTabs)[number];
+  const isLawEngineView = lawEngineAutoMode && (creditReportTabs as readonly string[]).includes(activeTab);
+
+  const requestEnableLawEngine = (tab?: CreditReportTab) => {
+    const nextTab = tab ?? ((creditReportTabs as readonly string[]).includes(activeTab as any) ? (activeTab as any) : 'overview');
+    if (lawEngineAutoMode) {
+      setActiveTab(nextTab);
+      return;
+    }
+    setPendingLawEngineTab(nextTab);
+    setLawEngineNoticeOpen(true);
+  };
+
+  const acknowledgeLawEngineNotice = () => {
+    setLawEngineNoticeOpen(false);
+    setLawEngineAutoMode(true);
+    if (pendingLawEngineTab) setActiveTab(pendingLawEngineTab);
+    setPendingLawEngineTab(null);
+  };
+
+  const requestOpenFundingAudit = () => {
+    setPendingFundingAuditTab('funding');
+    setFundingAuditNoticeOpen(true);
+  };
+
+  const acknowledgeFundingAuditNotice = () => {
+    setFundingAuditNoticeOpen(false);
+    if (pendingFundingAuditTab) setActiveTab(pendingFundingAuditTab);
+    setPendingFundingAuditTab(null);
+  };
+
+  const handleActiveTabChange = (nextTab: string) => {
+    if (nextTab === 'funding') {
+      requestOpenFundingAudit();
+      return;
+    }
+    setActiveTab(nextTab);
+  };
+
+  useEffect(() => {
+    if (!(creditReportTabs as readonly string[]).includes(activeTab as any)) {
+      setLawEngineAutoMode(false);
+    }
+  }, [activeTab]);
   
+  const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
+  const { clientId: urlClientId } = useParams<{ clientId: string }>();
+  const clientId = urlClientId || searchParams.get("clientId") || userProfile?.id;
+
+  const fetchPayoffPlans = async () => {
+    if (!clientId) return;
+    try {
+      const response = await clientsApi.getDebtPayoffPlans(Number(clientId));
+      setPayoffPlans(response.data);
+    } catch (error) {
+      console.error("Failed to fetch payoff plans:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayoffPlans();
+  }, [clientId]);
+
+  const handleSavePayoffPlan = async (plan: any) => {
+    try {
+      await clientsApi.saveDebtPayoffPlan(plan);
+      fetchPayoffPlans();
+    } catch (error) {
+      throw error;
+    }
+  };
+
   // Subscription status for tab access control
   const subscriptionStatus = useSubscriptionStatus();
 
+  const employmentMismatch = useMemo(() => {
+    if (!smPiResult?.debug?.trigger_hits) return false;
+    try {
+      return smPiResult.debug.trigger_hits.some((h: any) => String(h?.trigger) === 'EMPLOYMENT_INCONSISTENT');
+    } catch {
+      return false;
+    }
+  }, [smPiResult]);
+
+  const buildSmPiPayload = () => {
+    const nameFor = (bureauId: number) => {
+      const names = apiData?.Name?.filter((n: any) => Number(n.BureauId) === Number(bureauId)) || [];
+      const primary = names.find((n: any) => (n.NameType || '') === 'Primary') || names[0];
+      if (!primary) return null;
+      const parts = [primary.FirstName || '', primary.Middle || '', primary.LastName || ''].filter(Boolean);
+      const full = parts.join(' ').trim();
+      return full || null;
+    };
+    const aliasesFor = (bureauId: number) => {
+      const names = apiData?.Name?.filter((n: any) => Number(n.BureauId) === Number(bureauId)) || [];
+      return names
+        .filter((n: any) => /(aka|alias|also known as|former)/i.test(String(n.NameType || '')))
+        .map((n: any) => `${n.FirstName || ''} ${n.Middle || ''} ${n.LastName || ''}`.trim())
+        .filter(Boolean);
+    };
+    const dobFor = (bureauId: number) => {
+      const dob = apiData?.DOB?.find((d: any) => Number(d.BureauId) === Number(bureauId))?.DOB;
+      return dob || (reportData?.personalInfo?.dateOfBirth || null);
+    };
+    const addressesFor = (bureauId: number) => {
+      const addresses = apiData?.Address?.filter((a: any) => Number(a.BureauId) === Number(bureauId)) || [];
+      const toText = (a: any) => `${a.StreetAddress || ''}, ${a.City || ''}, ${a.State || ''} ${a.Zip || ''}`.replace(/^,\s*|,\s*$/, '').trim();
+      const current = addresses.filter((a: any) => String(a.AddressType || '').toLowerCase() === 'current').map(toText).filter(Boolean);
+      const previous = addresses.filter((a: any) => String(a.AddressType || '').toLowerCase() !== 'current').map(toText).filter(Boolean);
+      // Fallback to mocked personalInfo addresses if API empty
+      if (addresses.length === 0 && Array.isArray(reportData?.personalInfo?.addresses)) {
+        const arr = reportData.personalInfo.addresses;
+        current.push(
+          ...arr.filter((x: any) => String(x.type || '').toLowerCase() === 'current')
+              .map((x: any) => `${x.street || ''}, ${x.city || ''}, ${x.state || ''} ${x.zip || ''}`.replace(/^,\s*|,\s*$/, '').trim())
+              .filter(Boolean)
+        );
+        previous.push(
+          ...arr.filter((x: any) => String(x.type || '').toLowerCase() !== 'current')
+              .map((x: any) => `${x.street || ''}, ${x.city || ''}, ${x.state || ''} ${x.zip || ''}`.replace(/^,\s*|,\s*$/, '').trim())
+              .filter(Boolean)
+        );
+      }
+      return { current, previous };
+    };
+    const employmentFor = (bureauId: number) => {
+      const employers = (reportData as any)?.personalInfo?.employers || [];
+      const list = employers.filter((e: any) => Number(e.bureauId) === Number(bureauId));
+      const toText = (e: any) => [e.name || '', e.position || ''].filter(Boolean).join(' - ');
+      return list.map(toText).filter(Boolean);
+    };
+    const phones = ((reportData as any)?.personalInfo?.phoneNumbers || [])
+      .map((p: any) => p.number)
+      .filter(Boolean);
+    const ssn = (reportData as any)?.personalInfo?.ssn || null;
+    const BID = { equifax: 1, transunion: 2, experian: 3 };
+    const exAddr = addressesFor(BID.experian);
+    const tuAddr = addressesFor(BID.transunion);
+    const eqAddr = addressesFor(BID.equifax);
+    return {
+      consumer_id: String(clientId || ''),
+      pi: {
+        experian: {
+          full_name: nameFor(BID.experian),
+          aka_names: aliasesFor(BID.experian),
+          dob: dobFor(BID.experian),
+          ssn,
+          current_addresses: exAddr.current,
+          previous_addresses: exAddr.previous,
+          phones,
+          employment: employmentFor(BID.experian),
+        },
+        transunion: {
+          full_name: nameFor(BID.transunion),
+          aka_names: aliasesFor(BID.transunion),
+          dob: dobFor(BID.transunion),
+          ssn,
+          current_addresses: tuAddr.current,
+          previous_addresses: tuAddr.previous,
+          phones,
+          employment: employmentFor(BID.transunion),
+        },
+        equifax: {
+          full_name: nameFor(BID.equifax),
+          aka_names: aliasesFor(BID.equifax),
+          dob: dobFor(BID.equifax),
+          ssn,
+          current_addresses: eqAddr.current,
+          previous_addresses: eqAddr.previous,
+          phones,
+          employment: employmentFor(BID.equifax),
+        },
+      },
+      options: { strict_mode: true, normalize: true },
+    };
+  };
+
+  const handleRunSmPiEngine = async () => {
+    try {
+      setSmPiLoading(true);
+      setSmPiError(null);
+      const payload = buildSmPiPayload();
+      const resp = await warMachineApi.runSmPiSuperEngine(payload);
+      const data = resp?.data;
+      setSmPiResult(data?.result || data);
+      toast.success('SM PI Super engine completed');
+    } catch (err: any) {
+      console.error('SM PI Super engine error:', err);
+      setSmPiError('Failed to run engine');
+      toast.error('Failed to run SM PI Super engine');
+    } finally {
+      setSmPiLoading(false);
+    }
+  };
+
+  const buildInquiriesPayload = () => {
+    const list = (apiData as any)?.reportData?.reportData?.Inquiries ?? (apiData as any)?.reportData?.Inquiries ?? (apiData as any)?.Inquiries ?? [];
+    const group = {
+      experian: [] as any[],
+      transunion: [] as any[],
+      equifax: [] as any[],
+    };
+    for (const inq of list) {
+      const b = Number(inq?.BureauId);
+      const item = {
+        creditor_name: inq?.CreditorName ?? null,
+        date: inq?.DateInquiry ?? null,
+        type: inq?.InquiryType === 'I' ? 'HARD' : inq?.InquiryType === 'S' ? 'SOFT' : String(inq?.InquiryType || '').toUpperCase() || null,
+        industry: inq?.Industry ?? null,
+      };
+      if (b === 2) group.experian.push(item);
+      else if (b === 1) group.transunion.push(item);
+      else group.equifax.push(item);
+    }
+    return {
+      consumer_id: String(clientId || ''),
+      inquiries: group,
+      options: { strict_mode: true, normalize: true, window_months: 12 },
+    };
+  };
+
+  const [inqReviewLoading, setInqReviewLoading] = useState(false);
+  const [inqReviewError, setInqReviewError] = useState<string | null>(null);
+  const [inqReviewResult, setInqReviewResult] = useState<any>(null);
+
+  const handleRunInquiriesReview = async () => {
+    try {
+      setInqReviewLoading(true);
+      setInqReviewError(null);
+      const payload = buildInquiriesPayload();
+      const resp = await warMachineApi.runInquiriesReview(payload);
+      const data = resp?.data;
+      setInqReviewResult(data?.result || data);
+      toast.success('War Machine Inquiries Review completed');
+    } catch (err: any) {
+      console.error('Inquiries Review engine error:', err);
+      setInqReviewError('Failed to Run Law Engine Inquiries');
+      toast.error('Failed to Run Law Engine Inquiries Review');
+    } finally {
+      setInqReviewLoading(false);
+    }
+  };
+  const buildAccountsEvalPayload = () => {
+    const accountsList =
+      (apiData as any)?.reportData?.reportData?.Accounts ??
+      (apiData as any)?.reportData?.Accounts ??
+      (apiData as any)?.Accounts ??
+      [];
+    const pick = (...vals: any[]) => {
+      for (const v of vals) {
+        if (v === undefined || v === null) continue;
+        const s = String(v).trim();
+        if (!s || s.toLowerCase() === 'n/a') continue;
+        return s;
+      }
+      return null;
+    };
+    const normalizedAccountsList = Array.isArray(accountsList)
+      ? accountsList.map((acc: any) => ({
+          ...acc,
+          CreditorName: pick(
+            acc?.CreditorName,
+            acc?.Creditor,
+            acc?.creditor,
+            acc?.SubscriberName,
+            acc?.Subscriber,
+            acc?.company,
+            acc?.Company,
+          ),
+          AccountNumber: pick(
+            acc?.AccountNumber,
+            acc?.accountNumber,
+            acc?.MaskAccountNumber,
+            acc?.maskAccountNumber,
+            acc?.MaskedAccountNumber,
+            acc?.maskedAccountNumber,
+          ),
+        }))
+      : [];
+    return {
+      version: '1.0',
+      case_id: String(clientId || ''),
+      consumer_id: String(clientId || ''),
+      normalize: true,
+      match_strategy: 'strict',
+      bureau_ids: [1, 2, 3],
+      data: { Accounts: normalizedAccountsList },
+    };
+  };
+  const [acctEvalLoading, setAcctEvalLoading] = useState(false);
+  const [acctEvalError, setAcctEvalError] = useState<string | null>(null);
+  const [acctEvalResult, setAcctEvalResult] = useState<any>(null);
+  const [prEvalLoading, setPrEvalLoading] = useState(false);
+  const [prEvalError, setPrEvalError] = useState<string | null>(null);
+  const [prEvalResult, setPrEvalResult] = useState<any>(null);
+  const handleRunAccountsEval = async () => {
+    try {
+      setAcctEvalLoading(true);
+      setAcctEvalError(null);
+      const payload = buildAccountsEvalPayload();
+      const resp = await warMachineApi.runAccountsEval(payload);
+      const data = resp?.data;
+      setAcctEvalResult(data?.result || data);
+      toast.success('War Machine Accounts Evaluation completed');
+    } catch (err: any) {
+      console.error('Accounts Eval engine error:', err);
+      setAcctEvalError('Failed to run Accounts Law Engine');
+      toast.error('Failed to run Accounts Law Engine');
+    } finally {
+      setAcctEvalLoading(false);
+    }
+  };
+  const handleRunPublicRecordsEval = async () => {
+    try {
+      setPrEvalLoading(true);
+      setPrEvalError(null);
+      const publicRecords =
+        (apiData as any)?.PublicRecords ??
+        (reportData as any)?.publicRecords ??
+        [];
+      const payload = {
+        version: '1.0',
+        case_id: String(clientId || ''),
+        consumer_id: String(clientId || ''),
+        normalize: true,
+        bureau_ids: [1, 2, 3],
+        data: { PublicRecords: publicRecords },
+      };
+      const resp = await warMachineApi.runPublicRecordsEval(payload);
+      const data = resp?.data;
+      setPrEvalResult(data?.result || data);
+      toast.success('Public Records Evaluation completed');
+    } catch (err: any) {
+      setPrEvalError('Failed to run Public Records Law Engine');
+      toast.error('Failed to run Public Records Law Engine');
+    } finally {
+      setPrEvalLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!lawEngineAutoMode) return;
+    if (activeTab === 'personal') {
+      if (!smPiResult && !smPiLoading) handleRunSmPiEngine();
+    } else if (activeTab === 'inquiries') {
+      if (!inqReviewResult && !inqReviewLoading) handleRunInquiriesReview();
+    } else if (activeTab === 'public') {
+      if (!prEvalResult && !prEvalLoading) handleRunPublicRecordsEval();
+    } else if (activeTab === 'accounts') {
+      if (subscriptionStatus.hasActiveSubscription && !acctEvalResult && !acctEvalLoading) handleRunAccountsEval();
+    }
+  }, [activeTab, lawEngineAutoMode]);
   // Global helper: read underwriting flag for a bureau/key
   // This is used by the Basic (table) header indicator so it must be in component scope
   const getCriteriaFlag = (bureau: number, key: string) =>
@@ -816,10 +1788,9 @@ export default function CreditReport() {
     return Boolean(isFundingEligible) || localEligible;
   }, [reportData, apiData, isFundingEligible]);
 
-const { userProfile } = useAuthContext();
-const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
-  || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
-  || 'https://www.m2ficoforge.com/';
+  const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
+    || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
+    || 'https://www.m2ficoforge.com/';
   
   // Bureau card tabs state - each account group has its own tab state
   const [bureauTabs, setBureauTabs] = useState<Record<string, string>>({});
@@ -839,8 +1810,72 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   
   // Funding application modal states
   const [showFundingModal, setShowFundingModal] = useState(false);
-  const [fundingType, setFundingType] = useState<'personal' | 'business' | null>(null);
+  const [fundingType, setFundingType] = useState<'personal' | 'business' | 'both' | null>(null);
   const [fundingOption, setFundingOption] = useState<'done-for-you' | 'diy' | null>(null);
+  const [selectedProductTypes, setSelectedProductTypes] = useState<string[]>(['Credit Card','SBA Loan','Line of Credit']);
+  const [fundingEstimateNoticeOpen, setFundingEstimateNoticeOpen] = useState(false);
+  const [pendingFundingGoal, setPendingFundingGoal] = useState<'personal' | 'business' | 'both' | null>(null);
+
+  const performGoToDiyFunding = (goal: 'personal' | 'business' | 'both' = 'both') => {
+    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+    const infer = (inq: any) => {
+      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
+      if (b) return String(b);
+      const id = inq?.BureauId;
+      if (id === 1) return 'TransUnion';
+      if (id === 2) return 'Equifax';
+      if (id === 3) return 'Experian';
+      return '';
+    };
+    const ib = {
+      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
+      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
+      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
+    };
+    const maxPullsPerBureau = 4;
+    const headroomByBureau: Record<'Experian' | 'Equifax' | 'TransUnion', number> = {
+      Experian: Math.max(0, maxPullsPerBureau - Number(ib.Experian || 0)),
+      Equifax: Math.max(0, maxPullsPerBureau - Number(ib.Equifax || 0)),
+      TransUnion: Math.max(0, maxPullsPerBureau - Number(ib.TransUnion || 0)),
+    };
+    const maxSuggestedSlots = 4;
+    const maxSlotsPerBureau = 2;
+    const preferredOrder: Array<keyof typeof headroomByBureau> = ['Experian', 'Equifax', 'TransUnion'];
+    const bureauSlotCounts: Record<'Experian' | 'Equifax' | 'TransUnion', number> = {
+      Experian: 0,
+      Equifax: 0,
+      TransUnion: 0,
+    };
+    let remaining = maxSuggestedSlots;
+    for (const bureau of preferredOrder) {
+      if (remaining <= 0) break;
+      const headroom = headroomByBureau[bureau];
+      const alloc = Math.max(0, Math.min(maxSlotsPerBureau, Number(headroom || 0), remaining));
+      bureauSlotCounts[bureau] = alloc;
+      remaining -= alloc;
+    }
+    navigate(`/funding/diy/${goal}`, {
+      state: {
+        clientId: clientId ? Number(clientId) : undefined,
+        productTypes: selectedProductTypes,
+        inquiriesByBureau: ib,
+        bureauSlotCounts,
+        goal,
+      },
+    });
+  };
+
+  const goToDiyFunding = (goal: 'personal' | 'business' | 'both' = 'both') => {
+    setPendingFundingGoal(goal);
+    setFundingEstimateNoticeOpen(true);
+  };
+
+  const acknowledgeFundingEstimateNotice = () => {
+    const goal = pendingFundingGoal ?? 'both';
+    setFundingEstimateNoticeOpen(false);
+    setPendingFundingGoal(null);
+    performGoToDiyFunding(goal);
+  };
   
   // DIY Cards visibility states (for page section instead of modal)
   const [showDIYSection, setShowDIYSection] = useState(false);
@@ -849,6 +1884,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Eligibility audit modal state
+  const [showEligibilityAuditModal, setShowEligibilityAuditModal] = useState(false);
+  const [auditRunning, setAuditRunning] = useState(false);
+  const [auditResult, setAuditResult] = useState<string | null>(null);
+  const [clientRecord, setClientRecord] = useState<any>(null);
   const [formData, setFormData] = useState({
     // Business Information
     titlePosition: '',
@@ -968,7 +2009,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       if (!utilizationByBureau[bureauId]) return;
 
       // Revolving accounts (credit cards, lines of credit)
-      if (account.CreditType === 'Revolving Account' || account.AccountTypeDescription === 'Revolving Account') {
+      if (
+        account.CreditType === 'Revolving Account' ||
+        account.AccountTypeDescription === 'Revolving Account' ||
+        String(account.CreditType || '').toLowerCase().includes('credit card') ||
+        String(account.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+        String(account.AccountType || '').toLowerCase().includes('credit card')
+      ) {
         // All revolving accounts
         utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
         utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
@@ -994,6 +2041,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           utilizationByBureau[bureauId].installmentDebt += currentBalance;
         }
       }
+    });
+
+    Object.keys(utilizationByBureau).forEach((key) => {
+      const b: any = (utilizationByBureau as any)[key];
+      const openLimit = b.openRevolvingLimit || 0;
+      const allLimit = b.allRevolvingLimit || 0;
+      b.openRevolvingUtilization = openLimit > 0 ? (b.openRevolvingBalance / openLimit) * 100 : null;
+      b.allRevolvingUtilization = allLimit > 0 ? (b.allRevolvingBalance / allLimit) * 100 : null;
     });
 
     return utilizationByBureau;
@@ -1272,12 +2327,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       if (!el) return;
       const html2pdf = (await import('html2pdf.js')).default;
       const opt = {
-        margin: [10, 10],
+        margin: [15, 15],
         filename: 'CreditReport-Analysis.pdf',
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css'], avoid: ['.pdf-avoid-break', '.analysis-pdf-root > *'] }
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['.pdf-avoid-break', '.analysis-pdf-root > *'] }
       } as any;
       await (html2pdf() as any).set(opt).from(el).save();
     } catch (err) {
@@ -1440,7 +2495,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             totalRevolvingBalance += balance;
             totalRevolvingLimit += limit;
           }
-        } else if (accountType.toLowerCase().includes('installment') || accountType.toLowerCase().includes('loan')) {
+        } else if (
+          accountType.toLowerCase().includes('installment') ||
+          accountType.toLowerCase().includes('loan') ||
+          accountType.toLowerCase().includes('mortgage') ||
+          (account.Industry && String(account.Industry).toLowerCase().includes('real estate'))
+        ) {
           totalInstallmentUtilization += utilization;
           installmentAccountCount++;
         }
@@ -1553,7 +2613,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     const openRevolvingAccounts = accounts.filter((account: any) => {
       const accountType = account.CreditType || account.type || account.AccountType || '';
       const status = account.AccountStatus || account.status || '';
-      return accountType.toLowerCase().includes('revolving') && 
+      return (accountType.toLowerCase().includes('revolving') || accountType.toLowerCase().includes('credit card')) &&
              (status.toLowerCase() === 'open' || status.toLowerCase() === 'current');
     });
     
@@ -1659,7 +2719,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     // Filter only open revolving accounts with positive limits - using correct field names from API
     const openRevolvingAccounts = accounts.filter(acc => {
       const isOpen = acc.AccountStatus === 'Open';
-      const isRevolving = acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account';
+      const isRevolving = (
+        acc.CreditType === 'Revolving Account' ||
+        acc.AccountTypeDescription === 'Revolving Account' ||
+        String(acc.CreditType || '').toLowerCase().includes('credit card') ||
+        String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+        String(acc.AccountType || '').toLowerCase().includes('credit card')
+      );
       const hasLimit = parseFloat(acc.CreditLimit || '0') > 0;
       
       if (acc.CreditorName && acc.CreditorName.includes('CAPITAL')) {
@@ -1959,10 +3025,105 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     fundingProjection: calculateFundingProjections()
   };
 
-  const { clientId: urlClientId } = useParams<{ clientId: string }>();
-  // Align clientId resolution with other client pages: prefer authenticated user ID
-  const clientId = userProfile?.id?.toString() || urlClientId || searchParams.get("clientId");
   const clientName = searchParams.get("clientName") || "Client";
+  const reportHistory = Array.isArray((reportData as any)?.reportHistory) ? (reportData as any).reportHistory : [];
+
+  const parseLooseDate = (value: any) => {
+    try {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const s = String(value);
+      const normalized = s.includes(' ') && !s.includes('T') ? s.replace(' ', 'T') : s;
+      const d = new Date(normalized);
+      return Number.isFinite(d.getTime()) ? d : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const formatMonthDay = (value: any) => {
+    const d = parseLooseDate(value);
+    return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A';
+  };
+
+  const formatIsoDate = (value: any) => {
+    const d = parseLooseDate(value);
+    return d ? d.toISOString().slice(0, 10) : 'N/A';
+  };
+
+  const getHistoryDateValue = (row: any) =>
+    row?.created_at || row?.report_date || row?.date || row?.reportDate || row?.reportDateTime || null;
+
+  const getHistoryJson = (row: any) => row?.data || row?.reportData || row?.report_data || null;
+
+  const getReportDateFromJson = (json: any) => {
+    try {
+      if (!json) return null;
+      const root = (json as any)?.reportData || (json as any)?.report_data || json;
+      const direct =
+        (root as any)?.report_date ??
+        (root as any)?.reportDate ??
+        (root as any)?.ReportDate ??
+        (root as any)?.DateReported ??
+        (root as any)?.date ??
+        null;
+      const directParsed = parseLooseDate(direct);
+      if (directParsed) return directParsed;
+
+      const scoreArray = (root as any)?.Score || (root as any)?.reportData?.Score || null;
+      if (Array.isArray(scoreArray) && scoreArray.length > 0) {
+        const dates = scoreArray
+          .map((s: any) => s?.DateReported || s?.DateUpdated || s?.date || s?.Date || null)
+          .map(parseLooseDate)
+          .filter(Boolean) as Date[];
+        if (dates.length > 0) {
+          return dates.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), dates[0]);
+        }
+      }
+
+      const bureauDates = (root as any)?.bureauDates || (root as any)?.BureauDates || null;
+      if (bureauDates) {
+        const dates = [
+          bureauDates?.experian,
+          bureauDates?.transunion,
+          bureauDates?.equifax,
+          bureauDates?.Experian,
+          bureauDates?.TransUnion,
+          bureauDates?.Equifax,
+        ]
+          .map(parseLooseDate)
+          .filter(Boolean) as Date[];
+        if (dates.length > 0) {
+          return dates.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), dates[0]);
+        }
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getHistoryReportDateValue = (row: any) => getReportDateFromJson(getHistoryJson(row)) || getHistoryDateValue(row);
+
+  const getHistoryBureauScore = (row: any, bureau: 'experian' | 'transunion' | 'equifax') => {
+    const direct =
+      row?.[`${bureau}_score`] ??
+      row?.scores?.[bureau] ??
+      row?.data?.scores?.[bureau] ??
+      row?.data?.reportData?.scores?.[bureau] ??
+      null;
+    const num = Number(direct);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const getScoreDelta = (bureau: 'experian' | 'transunion' | 'equifax') => {
+    const current = Number((reportData as any)?.scores?.[bureau]);
+    const previous = reportHistory.length > 1 ? getHistoryBureauScore(reportHistory[1], bureau) : null;
+    if (!Number.isFinite(current)) return null;
+    if (previous === null) return null;
+    return current - previous;
+  };
 
   // Transform API account data to match frontend structure
   const transformApiAccounts = (apiAccounts: any[]) => {
@@ -1981,8 +3142,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       // Map BureauId to bureau name
       const getBureauName = (bureauId: number) => {
         switch (bureauId) {
-          case 1: return 'Experian';
-          case 2: return 'TransUnion';
+          case 1: return 'TransUnion';
+          case 2: return 'Experian';
           case 3: return 'Equifax';
           default: return 'Unknown';
         }
@@ -2072,13 +3233,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     const passCount = [tuCriteria, expCriteria, eqCriteria].filter(Boolean).length;
     
     if (passCount === 3) {
-      return 'bg-green-50 border-green-200'; // All pass - light green
+      return 'bg-green-50 border-green-200 dark:bg-green-900/50 dark:border-green-800 dark:text-white'; // All pass - light green
     } else if (passCount === 2) {
-      return 'bg-yellow-50 border-yellow-200'; // 2 pass - light yellow
+      return 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/50 dark:border-yellow-800 dark:text-white'; // 2 pass - light yellow
     } else if (passCount === 1) {
-      return 'bg-orange-50 border-orange-200'; // 1 pass - light orange
+      return 'bg-orange-50 border-orange-200 dark:bg-orange-900/50 dark:border-orange-800 dark:text-white'; // 1 pass - light orange
     } else {
-      return 'bg-red-50 border-red-200'; // None pass - light red
+      return 'bg-red-50 border-red-200 dark:bg-red-900/50 dark:border-red-800 dark:text-white'; // None pass - light red
     }
   };
 
@@ -2098,6 +3259,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         try {
           const clientResp = await clientsApi.getClient(clientId);
           dbSSNLastFour = clientResp?.data?.ssn_last_four || null;
+          setClientRecord(clientResp?.data || null);
+          const shouldShowAudit = !clientResp?.data?.fundable_status
+            || searchParams.get('newReport') === 'true'
+            || searchParams.get('fresh') === 'true';
+          if (shouldShowAudit) {
+            setShowEligibilityAuditModal(true);
+          }
         } catch (clientErr) {
           console.warn('Failed to fetch client data for SSN last four:', clientErr);
         }
@@ -2172,6 +3340,30 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             });
             console.log('🔍 DEBUG: Extracted scores from API:', scores);
             console.log('🔍 DEBUG: Extracted score types from API:', scoreTypes);
+          } else if (data.data.reportData.Scores && Array.isArray(data.data.reportData.Scores)) {
+            const scoreData = data.data.reportData.Scores;
+            scoreData.forEach((score: any) => {
+              if (score.BureauId === 1) {
+                scores.transunion = score.Score;
+                scoreTypes.transunion = score.ScoreType || "FICO";
+              }
+              if (score.BureauId === 2) {
+                scores.experian = score.Score;
+                scoreTypes.experian = score.ScoreType || "FICO";
+              }
+              if (score.BureauId === 3) {
+                scores.equifax = score.Score;
+                scoreTypes.equifax = score.ScoreType || "FICO";
+              }
+            });
+            console.log('🔍 DEBUG: Extracted scores from API (Scores fallback):', scores);
+            console.log('🔍 DEBUG: Extracted score types from API (Scores fallback):', scoreTypes);
+          } else if (data.data.scores && typeof data.data.scores === 'object') {
+            const s = data.data.scores as any;
+            scores.experian = String(s.experian ?? scores.experian);
+            scores.equifax = String(s.equifax ?? scores.equifax);
+            scores.transunion = String(s.transunion ?? scores.transunion);
+            console.log('🔍 DEBUG: Extracted scores from API (scores object fallback):', scores);
           } else {
             console.log('🔍 DEBUG: Using fallback scores:', scores);
             console.log('🔍 DEBUG: Using fallback score types:', scoreTypes);
@@ -2224,16 +3416,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               }));
           };
 
-          // Transform collections from accounts with negative indicators
+          // Transform true collection accounts (not just late payments)
           const transformApiCollections = (accounts) => {
             return accounts
-              .filter(account => 
-                account.AccountStatus === 'Closed' && 
-                account.CurrentBalance > 0 ||
-                account.PaymentStatus?.includes('Late') ||
-                account.WorstPayStatus?.includes('Late') ||
-                account.AmountPastDue > 0
-              )
+              .filter(account => {
+                const paymentStatus = String(account.PaymentStatus || '').toLowerCase();
+                const accountType = String(account.AccountType || account.AccountTypeDescription || account.CreditType || '').toLowerCase();
+                const condition = String(account.AccountCondition || account.AccountStatus || '').toLowerCase();
+                const isCollectionLike =
+                  paymentStatus.includes('collection') ||
+                  accountType.includes('collection') ||
+                  condition.includes('collection');
+                const hasBalance =
+                  Number(account.CurrentBalance || 0) > 0 ||
+                  Number(account.AmountPastDue || 0) > 0;
+                return isCollectionLike && hasBalance;
+              })
               .map((account, index) => ({
                 id: index + 1,
                 agency: account.CreditorName || 'Unknown Agency',
@@ -2255,9 +3453,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
           // Extract bureau-specific dates from Score array
           const getBureauDate = (bureauId) => {
-            const scoreEntry = data.data.reportData.Score?.find(s => s.BureauId === bureauId);
-            if (scoreEntry?.DateScore) {
-              return new Date(scoreEntry.DateScore).toLocaleDateString('en-US', {
+            const scoreArray = data.data.reportData.Score || data.data.reportData.Scores;
+            const scoreEntry = Array.isArray(scoreArray) ? scoreArray.find((s: any) => s.BureauId === bureauId) : null;
+            const ds = scoreEntry?.DateScore || scoreEntry?.DateReported || scoreEntry?.DateUpdated || null;
+            if (ds) {
+              return new Date(ds).toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric'
@@ -2310,13 +3510,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               if (!utilizationByBureau[bureauId]) return;
 
               // Revolving accounts (credit cards, lines of credit)
-              if (account.CreditType === 'Revolving Account' || account.AccountTypeDescription === 'Revolving Account') {
+              const at = String(account.AccountType || '').toLowerCase();
+              const ad = String(account.AccountTypeDescription || '').toLowerCase();
+              const ct = String(account.CreditType || '').toLowerCase();
+              const ind = String(account.Industry || '').toLowerCase();
+              if (
+                at.includes('revolving') ||
+                ad.includes('revolving') ||
+                ct.includes('revolving') ||
+                at.includes('credit card') ||
+                ad.includes('credit card') ||
+                ct.includes('credit card') ||
+                ad.includes('charge account') ||
+                ad.includes('flexible spending credit card') ||
+                ind.includes('bank credit cards')
+              ) {
                 // All revolving accounts
                 utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
                 utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
                 
                 // Open revolving accounts only
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].openRevolvingBalance += currentBalance;
                   utilizationByBureau[bureauId].openRevolvingLimit += creditLimit || highBalance;
                 }
@@ -2325,14 +3543,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               // Real estate debt (mortgages)
               if (account.AccountType === 'Mortgage' || account.Industry?.includes('Real Estate') || 
                   account.CreditorName?.toLowerCase().includes('mortgage')) {
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].realEstateDebt += currentBalance;
                 }
               }
               
               // Installment debt (auto loans, personal loans, etc.)
               if (account.CreditType === 'Installment Account' || account.AccountTypeDescription === 'Installment Account') {
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].installmentDebt += currentBalance;
                 }
               }
@@ -2429,30 +3655,75 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
               // Check accounts for this bureau
               const bureauAccounts = apiData.reportData?.Accounts?.filter((acc: any) => acc.BureauId === bureauId) || [];
-              
-              const openRevolvingAccounts = bureauAccounts.filter((acc: any) => 
-                (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account') && 
-                (acc.AccountStatus === 'Open' || acc.AccountStatus === 'Current')
-              );
-              
-              criteria[bureauId].minFiveOpenRevolving = openRevolvingAccounts.length >= 5;
+              const openPrimaryRevolving = bureauAccounts.filter((acc: any) => {
+                const at = String(acc.AccountType || '').toLowerCase();
+                const ad = String(acc.AccountTypeDescription || '').toLowerCase();
+                const ct = String(acc.CreditType || '').toLowerCase();
+                const ind = String(acc.Industry || '').toLowerCase();
+                const isRevolving =
+                  at.includes('revolving') ||
+                  ad.includes('revolving') ||
+                  ct.includes('revolving') ||
+                  at.includes('credit card') ||
+                  ad.includes('credit card') ||
+                  ct.includes('credit card') ||
+                  ad.includes('charge account') ||
+                  ad.includes('flexible spending credit card') ||
+                  ind.includes('bank credit cards');
+                const isOpen =
+                  acc.AccountStatus === 'Open' ||
+                  acc.AccountStatus === 'Current' ||
+                  acc.AccountCondition === 'Open';
+                const designator = String(acc.AccountDesignator || '').toLowerCase();
+                const isPrimary = !designator.includes('authorized');
+                return isRevolving && isOpen && isPrimary;
+              });
+              const withGoodHistory = openPrimaryRevolving.filter((acc: any) => {
+                if (!acc.DateOpened) return false;
+                const opened = new Date(acc.DateOpened);
+                if (isNaN(opened.getTime())) return false;
+                const months = Math.floor((Date.now() - opened.getTime()) / (1000 * 60 * 60 * 24 * 30));
+                const payHist = String(acc.PayStatusHistory || '').toUpperCase();
+                const recent = payHist.slice(-24);
+                const negInHist = /[DLB]/.test(recent);
+                const negStatus =
+                  String(acc.PaymentStatus || '').toLowerCase().includes('late') ||
+                  String(acc.WorstPayStatus || '').toLowerCase().includes('late') ||
+                  (parseFloat(acc.AmountPastDue) || 0) > 0;
+                return months >= 24 && !negInHist && !negStatus;
+              });
+              criteria[bureauId].minFiveOpenRevolving = withGoodHistory.length >= 5;
 
               // Check for 3+ year old credit card with $5K+ limit
-              const qualifyingCard = openRevolvingAccounts.find((acc: any) => {
+              const qualifyingCards = openPrimaryRevolving.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
-                const yearsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
+                const yearsOld = (Date.now() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
                 const creditLimit = parseFloat(acc.CreditLimit) || 0;
                 return yearsOld >= 3 && creditLimit >= 5000;
               });
-              criteria[bureauId].creditCard3YearsOld5KLimit = !!qualifyingCard;
+              criteria[bureauId].creditCard3YearsOld5KLimit = qualifyingCards.length >= 3;
 
               // Check unsecured accounts opened in past 12 months
               const recentUnsecuredAccounts = bureauAccounts.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
                 const monthsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
-                return monthsOld <= 12 && (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account');
+                const at = String(acc.AccountType || '').toLowerCase();
+                const ad = String(acc.AccountTypeDescription || '').toLowerCase();
+                const ct = String(acc.CreditType || '').toLowerCase();
+                const ind = String(acc.Industry || '').toLowerCase();
+                const isRevolving =
+                  at.includes('revolving') ||
+                  ad.includes('revolving') ||
+                  ct.includes('revolving') ||
+                  at.includes('credit card') ||
+                  ad.includes('credit card') ||
+                  ct.includes('credit card') ||
+                  ad.includes('charge account') ||
+                  ad.includes('flexible spending credit card') ||
+                  ind.includes('bank credit cards');
+                return monthsOld <= 12 && isRevolving;
               });
               criteria[bureauId].maxFourUnsecuredIn12Months = recentUnsecuredAccounts.length <= 4;
 
@@ -2502,8 +3773,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               ) || [];
               criteria[bureauId].noInquiries = bureauInquiries.length === 0;
 
-              // Check bankruptcies (simplified - would need more detailed bankruptcy data)
-              criteria[bureauId].noBankruptcies = true; // Assume no bankruptcies for now
+              const bureauPublicRecords = apiData.reportData?.PublicRecords?.filter((rec: any) => rec.BureauId === bureauId) || [];
+              const hasBankruptcy = bureauPublicRecords.some((rec: any) => {
+                const cls = String(rec.Classification || '').toLowerCase();
+                const typ = String(rec.Type || '').toLowerCase();
+                return cls.includes('bankruptcy') || typ.includes('bankruptcy');
+              });
+              criteria[bureauId].noBankruptcies = !hasBankruptcy;
             });
 
             return criteria;
@@ -2517,8 +3793,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             scores: scores,
             scoreTypes: scoreTypes,
             bureauDates: {
-              experian: getBureauDate(1),
-              transunion: getBureauDate(2), 
+              experian: getBureauDate(2),
+              transunion: getBureauDate(1),
               equifax: getBureauDate(3)
             },
             previousScores: detailedReport.previousScores, // Keep mock previous scores for now
@@ -2539,9 +3815,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               purpose: inquiry.Industry || 'Unknown Purpose',
               type: inquiry.InquiryType === 'I' ? 'Hard' : 'Soft',
               date: inquiry.DateInquiry || new Date().toISOString().split('T')[0],
-              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : 'Equifax'
+              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : inquiry.BureauId === 3 ? 'Equifax' : 'Unknown'
             })),
-            publicRecords: apiData?.PublicRecords || [],
+            publicRecords: (data.data.reportData.PublicRecords || []),
             // Keep the original structure for other data
             creditUtilization: detailedReport.creditUtilization,
             debtUtilization: debtUtilization, // Add calculated debt utilization
@@ -2586,7 +3862,60 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             if (historyResponse.ok) {
               const historyData = await historyResponse.json();
               console.log('🔍 DEBUG: Report history data:', historyData);
-              transformedData.reportHistory = historyData.data || [];
+              const rawHistory = Array.isArray(historyData?.data) ? historyData.data : [];
+
+              const tokenForFetch = freshToken || token;
+              const fetchReportJson = async (reportPath: any) => {
+                if (!reportPath || typeof reportPath !== 'string') return null;
+                try {
+                  const resp = await fetch(`/api/credit-reports/json-file?path=${encodeURIComponent(reportPath)}`, {
+                    method: 'GET',
+                    headers: {
+                      'Authorization': `Bearer ${tokenForFetch}`,
+                      'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                  });
+                  if (!resp.ok) return null;
+                  const json = await resp.json();
+                  return json?.data ?? null;
+                } catch {
+                  return null;
+                }
+              };
+
+              const latestRow = rawHistory.length > 0 ? rawHistory[0] : null;
+              const previousRow = rawHistory.length > 1 ? rawHistory[1] : null;
+              const oldestRow = rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
+
+              const dataById = new Map<any, any>();
+              const dataByPath = new Map<string, any>();
+              const rowsToFetch = [latestRow, previousRow, oldestRow].filter(Boolean) as any[];
+
+              try {
+                for (const row of rowsToFetch) {
+                  const reportPath = row?.report_path;
+                  if (!reportPath || typeof reportPath !== 'string') continue;
+                  if (dataByPath.has(reportPath)) {
+                    const cached = dataByPath.get(reportPath);
+                    if (row?.id != null && cached) dataById.set(row.id, cached);
+                    continue;
+                  }
+                  const json = await fetchReportJson(reportPath);
+                  if (json) {
+                    dataByPath.set(reportPath, json);
+                    if (row?.id != null) dataById.set(row.id, json);
+                  }
+                }
+              } catch (e) {
+                console.warn('Failed to load report JSON for history compare:', e);
+              }
+
+              transformedData.reportHistory = rawHistory.map((h: any) => {
+                if (h?.id != null && dataById.has(h.id)) return { ...h, data: dataById.get(h.id) };
+                if (typeof h?.report_path === 'string' && dataByPath.has(h.report_path)) return { ...h, data: dataByPath.get(h.report_path) };
+                return h;
+              });
             } else {
               const errorText = await historyResponse.text();
               console.warn('Failed to fetch report history:', historyResponse.status, errorText);
@@ -2691,14 +4020,66 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         // Keep using mock data on error
       } finally {
         setLoading(false);
+        setIsRerunningAudit(false);
       }
     };
 
     fetchCreditReport();
-  }, [clientId]);
+  }, [clientId, refreshAuditNonce]);
+
+  const runEligibilityAudit = async () => {
+    if (!clientId) return;
+    try {
+      setAuditRunning(true);
+      const qc: any = (reportData as any)?.qualificationCriteria || {};
+      const getInquiryCountByName = (name: string) => {
+        try {
+          const listA = (reportData as any)?.inquiries || [];
+          if (Array.isArray(listA) && listA.length > 0) {
+            return listA.filter((inq: any) => String(inq?.bureau) === name && (String(inq?.type).toLowerCase() === 'hard' || String(inq?.InquiryType) === 'I')).length;
+          }
+          const rawB = (apiData as any)?.reportData?.reportData?.Inquiries || (apiData as any)?.reportData?.Inquiries || [];
+          const mapId = (n: string) => n === 'TransUnion' ? 1 : (n === 'Experian' ? 2 : 3);
+          return rawB.filter((inq: any) => Number(inq?.BureauId) === mapId(name) && String(inq?.InquiryType) === 'I').length;
+        } catch {
+          return 0;
+        }
+      };
+      const inquiriesUnderLimit = (name: string) => getInquiryCountByName(name) < 4;
+      const isPass = (c: any, name: string) => Boolean(c?.score700Plus || c?.score730Plus)
+        && Boolean(c?.openRevolvingUnder30)
+        && Boolean(c?.allRevolvingUnder30)
+        && Boolean(c?.minFiveOpenRevolving)
+        && Boolean(c?.creditCard3YearsOld5KLimit)
+        && Boolean(c?.maxFourUnsecuredIn12Months)
+        && Boolean(inquiriesUnderLimit(name))
+        && Boolean(c?.noCollections)
+        && Boolean(c?.noChargeOffs)
+        && Boolean(c?.noLatePayments)
+        && Boolean(c?.noBankruptcies)
+        && Boolean(c?.noCollectionsLiensJudgements);
+      const fundable_in_tu = isPass(qc?.[1], 'TransUnion');
+      const fundable_in_ex = isPass(qc?.[3], 'Experian');
+      const fundable_in_eq = isPass(qc?.[2], 'Equifax');
+      const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
+      await clientsApi.updateClient(String(clientId), {
+        fundable_in_tu,
+        fundable_in_ex,
+        fundable_in_eq,
+        fundable_status
+      });
+      setAuditResult(fundable_status === 'fundable' ? 'Client is fundable. Status saved.' : 'Client is not fundable. Status saved.');
+      setShowEligibilityAuditModal(false);
+    } catch (err) {
+      console.error('Eligibility audit update failed:', err);
+      setAuditResult('Failed to save audit result');
+    } finally {
+      setAuditRunning(false);
+    }
+  };
 
   const getScoreChange = (current: number, previous: number) => {
-    const change = current - previous;
+    const change = current - 700;
     return {
       value: change,
       isPositive: change >= 0,
@@ -2710,13 +4091,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   const getAccountStatusColor = (status: string) => {
     switch (status) {
       case "Open":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-slate-800 dark:text-blue-300 dark:border-slate-700";
       case "Closed":
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-foreground border-border";
       case "Charge Off":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "bg-red-100 text-red-800 border-red-200 dark:bg-slate-800 dark:text-red-300 dark:border-slate-700";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-foreground border-border";
     }
   };
 
@@ -2767,27 +4148,125 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       title={`Credit Report - ${clientName}`}
       description="Detailed credit report analysis and information"
     >
+      <Dialog
+        open={lawEngineNoticeOpen}
+        onOpenChange={(open) => {
+          setLawEngineNoticeOpen(open);
+          if (!open) setPendingLawEngineTab(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Law Engine Notice</DialogTitle>
+            <DialogDescription>
+              This feature uses automated software algorithms to generate outputs and recommendations.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              Please independently review and verify all information before using it in any communication, dispute, or decision.
+            </p>
+            <p>This content is provided for educational purposes only.</p>
+            <p>
+              Score Machine does not provide legal advice, and we do not assume responsibility for outcomes resulting from the use
+              of Law Engine outputs.
+            </p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeLawEngineNotice}>Acknowledge &amp; Activate</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fundingAuditNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingAuditNoticeOpen(open);
+          if (!open) setPendingFundingAuditTab(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Audit Notice</DialogTitle>
+            <DialogDescription>
+              This tab provides automated educational estimates and general information.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>This content is provided for educational purposes only and is not financial, credit, or legal advice.</p>
+            <p>Results are estimates and are not a guarantee of approval, limits, rates, or terms from any lender.</p>
+            <p>Please verify all details independently and consult qualified professionals for decisions.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingAuditNotice}>Acknowledge &amp; Continue</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fundingEstimateNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingEstimateNoticeOpen(open);
+          if (!open) setPendingFundingGoal(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Estimate Notice</DialogTitle>
+            <DialogDescription>
+              Funding amounts and terms shown are estimates generated by our software.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              These figures are not a guarantee of approval, rates, limits, or final terms. Banks and lenders make the final
+              decision based on their underwriting criteria.
+            </p>
+            <p>Please verify all details with the lender before applying.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingEstimateNotice}>Acknowledge &amp; Continue</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header Navigation */}
       <div className="mb-6">
+        <Button
+          variant="outline"
+          onClick={() => navigate("/reports")}
+          className="mb-4"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Reports
+        </Button>
 
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold gradient-text-primary">
+            <h1 className="text-3xl font-bold text-foreground">
               {clientName}
             </h1>
             <p className="text-muted-foreground">Credit Report Analysis</p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={downloadAnalysisPdf} disabled={activeTab !== 'analysis'}>
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
             
+            <Button size="sm" variant="default">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
           </div>
         </div>
       </div>
-
+      
           {/* Floating Underwriting Quick Nav */}
           <div className="fixed bottom-6 right-6 z-40">
             <Popover>
               <PopoverTrigger asChild>
-                <Button className="rounded-full shadow-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white px-4 py-2 hover:from-indigo-500 hover:to-pink-500 transition-colors">
+                <Button className="rounded-full shadow-xl px-4 py-2" variant="default">
                   Underwriting Nav
                 </Button>
               </PopoverTrigger>
@@ -2820,7 +4299,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
           {/* Underwriting Section Navigation */}
           <div className="sticky top-4 z-30">
-            <div className="mx-auto w-full max-w-5xl bg-card/90 dark:bg-slate-800/80 backdrop-blur-md border border-border/40 shadow-lg rounded-full px-3 py-2">
+            <div className="mx-auto w-full max-w-5xl bg-card/90 backdrop-blur-md border shadow-lg rounded-full px-3 py-2">
               <div className="flex flex-wrap justify-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => document.getElementById('uw-client-information')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Client Information</Button>
                 <Button variant="outline" size="sm" onClick={() => document.getElementById('uw-credit-scores')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Credit Scores</Button>
@@ -2833,9 +4312,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             </div>
           </div>
           {/* Client Information Header */}
-          <Card id="uw-client-information" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 scroll-mt-24">
+          <Card id="uw-client-information" className="border-0 shadow-xl bg-card scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Client Information</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground">Client Information</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-4">
@@ -2871,18 +4350,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Credit Scores with Speedometers */}
-          <Card id="uw-credit-scores" className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 scroll-mt-24">
+          <Card id="uw-credit-scores" className="border-0 shadow-xl bg-card scroll-mt-24">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Credit Scores</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground">Credit Scores</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-3 gap-6 mb-8">
                 {/* TransUnion Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-blue-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg font-bold text-blue-800">TransUnion</CardTitle>
-                      <div className="text-xs text-slate-600 font-medium">
+                      <CardTitle className="text-lg font-bold text-foreground">TransUnion</CardTitle>
+                      <div className="text-xs text-muted-foreground font-medium">
                         {reportData?.bureauDates?.transunion || 'N/A'}
                       </div>
                     </div>
@@ -2926,7 +4405,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <circle cx="160" cy="50" r="6" fill="#94a3b8" />
                           <circle cx="280" cy="130" r="6" fill="#94a3b8" />
                           {/* Score number in center */}
-                          <text x="160" y="120" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                          <text x="160" y="120" textAnchor="middle" className="fill-current text-foreground text-6xl font-bold">
                             {reportData.scores.transunion}
                           </text>
                         </svg>
@@ -2947,7 +4426,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-card/80 dark:bg-slate-700/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.transunion,
                           reportData.previousScores.transunion,
@@ -2984,11 +4463,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Experian Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-green-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg font-bold text-green-800">Experian</CardTitle>
-                      <div className="text-xs text-slate-600 font-medium">
+                      <CardTitle className="text-lg font-bold text-foreground">Experian</CardTitle>
+                      <div className="text-xs text-muted-foreground font-medium">
                         {reportData?.bureauDates?.experian || 'N/A'}
                       </div>
                     </div>
@@ -3032,7 +4511,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <circle cx="150" cy="40" r="6" fill="#94a3b8" />
                           <circle cx="260" cy="120" r="6" fill="#94a3b8" />
                           {/* Score number in center */}
-                          <text x="150" y="110" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                          <text x="150" y="110" textAnchor="middle" className="fill-current text-foreground text-6xl font-bold">
                             {reportData.scores.experian}
                           </text>
                         </svg>
@@ -3053,7 +4532,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-card/80 dark:bg-slate-700/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.experian,
                           reportData.previousScores.experian,
@@ -3090,11 +4569,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Equifax Speedometer */}
-                <Card className="border-0 shadow-lg bg-gradient-to-br from-white to-purple-50/50 dark:from-slate-800 dark:to-slate-700 hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
+                <Card className="border-0 shadow-lg bg-card hover:shadow-xl transition-all duration-300 hover:scale-[1.02] min-h-[320px]">
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg font-bold text-purple-800">Equifax</CardTitle>
-                      <div className="text-xs text-slate-600 font-medium">
+                      <CardTitle className="text-lg font-bold text-foreground">Equifax</CardTitle>
+                      <div className="text-xs text-muted-foreground font-medium">
                         {reportData?.bureauDates?.equifax || 'N/A'}
                       </div>
                     </div>
@@ -3138,7 +4617,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <circle cx="160" cy="50" r="6" fill="#94a3b8" />
                           <circle cx="280" cy="130" r="6" fill="#94a3b8" />
                           {/* Score number in center */}
-                          <text x="160" y="120" textAnchor="middle" className="fill-slate-700 text-6xl font-bold">
+                          <text x="160" y="120" textAnchor="middle" className="fill-current text-foreground text-6xl font-bold">
                             {reportData.scores.equifax}
                           </text>
                         </svg>
@@ -3159,7 +4638,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-card/80 dark:bg-slate-700/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
                         {getScoreChange(
                           reportData.scores.equifax,
                           reportData.previousScores.equifax,
@@ -3205,7 +4684,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               type="single"
               value={qualifyView}
               onValueChange={(v) => v && setQualifyView(v as 'cards' | 'table')}
-              className="bg-card dark:bg-slate-800 border border-border/40 rounded-md shadow-sm"
+              className="bg-card border-border rounded-md shadow-sm"
             >
               <ToggleGroupItem value="table" className="px-3 py-1 text-sm">
                 Basic
@@ -3217,11 +4696,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </div>
 
           {/* Debt Utilization - Full Width (Do You Qualify) */}
-          <Card id="uw-do-you-qualify" className={`${qualifyView === 'table' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 scroll-mt-24`}>
+          <Card id="uw-do-you-qualify" className={`${qualifyView === 'table' ? 'hidden' : ''} border-0 shadow-xl bg-card scroll-mt-24`}>
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
-                <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Do You Qualify</CardTitle>
-                  <span className="text-sm font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-3 py-1 rounded-full">
+                <CardTitle className="text-2xl font-bold text-foreground">Do You Qualify</CardTitle>
+                <Button onClick={() => { setIsRerunningAudit(true); setRefreshAuditNonce(n => n + 1); }} variant="outline" className="text-sm">
+                  <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
+                  Rerun Funding Audit
+                </Button>
+                  <span className="text-sm font-bold bg-primary text-primary-foreground px-3 py-1 rounded-full">
                   {(() => {
                     // Compute an overall 0–10 score by averaging category grades
                     const grades: number[] = [];
@@ -3450,7 +4933,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       const hasBk = (id: number) =>
                         pr.some(
                           (r: any) =>
-                            Number(r?.BureauId) === Number(id) && /bankruptcy|chapter/i.test(String(r?.RecordType || ""))
+                            Number(r?.BureauId) === Number(id) && (
+                              /bankruptcy|chapter/i.test(String(r?.RecordType || "")) ||
+                              /bankruptcy|chapter/i.test(String(r?.Type || "")) ||
+                              /bankruptcy/i.test(String(r?.Classification || ""))
+                            )
                         );
                       const any = hasBk(1) || hasBk(3) || hasBk(2);
                       grades.push(any ? 0 : 10);
@@ -3490,13 +4977,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </span>
               </div>
               <div className="flex items-center flex-wrap gap-2 mt-2">
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800">
                   <CheckCircle className="h-3 w-3" /> Good to go
                 </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800">
                   <AlertTriangle className="h-3 w-3" /> Proceed with caution
                 </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800">
                   <XCircle className="h-3 w-3" /> Not eligible
                 </span>
               </div>
@@ -3564,9 +5051,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     status === "yellow" ? "Proceed with caution" : "Not eligible";
                   const Icon = status === "green" ? CheckCircle : status === "yellow" ? AlertTriangle : XCircle;
                   const colorClasses =
-                    status === "green" ? "bg-green-100 text-green-700 border-green-200" :
-                    status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200" :
-                    "bg-red-100 text-red-700 border-red-200";
+                    status === "green" ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800" :
+                    status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800" :
+                    "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800";
 
                   return (
                     <div className="flex items-center gap-2">
@@ -3589,11 +5076,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
                 
                 {/* Credit Score Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Credit Score
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the highest score from the three bureaus
                           const tuScore = parseInt(reportData?.scores?.transunion || '0');
@@ -3621,15 +5108,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.score700Plus || false,
                       reportData?.qualificationCriteria?.[3]?.score700Plus || false,
                       reportData?.qualificationCriteria?.[2]?.score700Plus || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3637,13 +5124,20 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const scales = [800, 790, 780, 770, 760, 750, 740, 730, 720, 710, 700];
                             
                             // Updated color logic: below 700 (red), 710-750 (yellow), 760-800 (green)
-                            const getColorForScale = (scale) => {
-                              if (scale >= 760) return 'green';  // 760-800: green
-                              if (scale >= 710) return 'yellow'; // 710-750: yellow
-                              return 'red';                      // below 700: red
+                            const getBgColorClass = (scale) => {
+                              if (scale >= 760) return 'bg-green-50 dark:bg-green-900/50';
+                              if (scale >= 710) return 'bg-yellow-50 dark:bg-yellow-900/50';
+                              return 'bg-red-50 dark:bg-red-900/50';
+                            };
+
+                            const getTextColorClass = (scale) => {
+                              if (scale >= 760) return 'text-green-600 dark:text-white';
+                              if (scale >= 710) return 'text-yellow-600 dark:text-white';
+                              return 'text-red-600 dark:text-white';
                             };
                             
-                            const colors = scales.map(scale => getColorForScale(scale));
+                            const bgColors = scales.map(scale => getBgColorClass(scale));
+                            const textColors = scales.map(scale => getTextColorClass(scale));
                             
                             // Function to map score to nearest scale
                             const mapScoreToScale = (score) => {
@@ -3667,15 +5161,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqScale = mapScoreToScale(eqScore);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`border-b bg-${colors[index]}-50`}>
-                                <td className={`py-1 px-1 text-${colors[index]}-600`}>{scale}</td>
-                                <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                              <tr key={scale} className={`border-b ${bgColors[index]} dark:text-white`}>
+                                <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
+                                <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                   {tuScale === scale ? tuScore : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                   {exScale === scale ? exScore : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                   {eqScale === scale ? eqScore : ''}
                                 </td>
                               </tr>
@@ -3688,15 +5182,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowScores) {
                               rows.push(
-                                <tr key="below-scale" className="border-b bg-red-50">
-                                  <td className="py-1 px-1 text-red-600">Below {scales[scales.length - 1]}</td>
-                                  <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                                <tr key="below-scale" className="border-b bg-red-50 dark:bg-red-900/50 dark:text-white">
+                                  <td className="py-1 px-1 text-red-600 dark:text-white">Below {scales[scales.length - 1]}</td>
+                                  <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                     {tuScore && parseInt(tuScore) < scales[scales.length - 1] ? tuScore : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                     {exScore && parseInt(exScore) < scales[scales.length - 1] ? exScore : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                     {eqScore && parseInt(eqScore) < scales[scales.length - 1] ? eqScore : ''}
                                   </td>
                                 </tr>
@@ -3712,11 +5206,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Credit Usage Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Credit Usage
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the lowest utilization from the three bureaus (lower is better)
                           const debtData = getDebtUtilizationData();
@@ -3745,15 +5239,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3762,13 +5256,20 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const scales = [0, 5, 10, 15, 20, 25, 30];
                             
                             // Updated color logic: 30-20 yellow, 15-0 green
-                            const getColorForUtilization = (scale) => {
-                              if (scale >= 20) return 'yellow';  // 30-20: yellow
-                              if (scale >= 0) return 'green';    // 15-0: green
-                              return 'green';                    // default green
+                            const getBgColorClass = (scale) => {
+                              if (scale >= 20) return 'bg-yellow-50 dark:bg-yellow-900/50'; // 30-20: yellow
+                              if (scale >= 0) return 'bg-green-50 dark:bg-green-900/50';   // 15-0: green
+                              return 'bg-green-50 dark:bg-green-900/50';                   // default green
+                            };
+
+                            const getTextColorClass = (scale) => {
+                              if (scale >= 20) return 'text-yellow-600 dark:text-white';
+                              if (scale >= 0) return 'text-green-600 dark:text-white';
+                              return 'text-green-600 dark:text-white';
                             };
                             
-                            const colors = scales.map(scale => getColorForUtilization(scale));
+                            const bgColors = scales.map(scale => getBgColorClass(scale));
+                            const textColors = scales.map(scale => getTextColorClass(scale));
                             
                             // Function to map utilization to nearest scale
                             const mapUtilizationToScale = (utilization) => {
@@ -3803,19 +5304,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqScale = mapUtilizationToScale(eqUtilization);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`border-b bg-${colors[index]}-50`}>
-                                <td className={`py-1 px-1 text-${colors[index]}-600`}>{scale}%</td>
-                                <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                              <tr key={scale} className={`border-b ${bgColors[index]} dark:text-white`}>
+                                <td className={`py-1 px-1 ${textColors[index]}`}>{scale}%</td>
+                                <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                   {tuScale === scale && tuUtilization !== null && tuUtilization !== undefined && tuUtilization <= 30 ? `${tuUtilization.toFixed(1)}%` : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                   {exScale === scale && exUtilization !== null && exUtilization !== undefined && exUtilization <= 30 ? `${exUtilization.toFixed(1)}%` : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                   {eqScale === scale && eqUtilization !== null && eqUtilization !== undefined && eqUtilization <= 30 ? `${eqUtilization.toFixed(1)}%` : ''}
                                 </td>
                               </tr>
                             ));
+
+                            
                             
                             // Add indicator row for values below the lowest scale
                             const hasLowValues = (tuUtilization !== null && tuUtilization !== undefined && tuUtilization < scales[0]) || 
@@ -3824,15 +5327,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowValues) {
                               rows.unshift(
-                                <tr key="below-scale" className="border-b bg-gray-50">
-                                  <td className="py-1 px-1 text-gray-600">Below {scales[0]}%</td>
-                                  <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                                <tr key="below-scale" className="border-b bg-muted dark:bg-slate-700/50 dark:text-white">
+                                  <td className="py-1 px-1 text-muted-foreground dark:text-white">Below {scales[0]}%</td>
+                                  <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                     {(tuUtilization !== null && tuUtilization !== undefined && tuUtilization < scales[0]) ? `${tuUtilization?.toFixed(1)}%` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                     {(exUtilization !== null && exUtilization !== undefined && exUtilization < scales[0]) ? `${exUtilization?.toFixed(1)}%` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                     {(eqUtilization !== null && eqUtilization !== undefined && eqUtilization < scales[0]) ? `${eqUtilization?.toFixed(1)}%` : ''}
                                   </td>
                                 </tr>
@@ -3846,15 +5349,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
                             if (hasHighValues) {
                               rows.push(
-                                <tr key="above-scale" className="border-b bg-red-50">
-                                  <td className="py-1 px-1 text-red-600">Above {scales[scales.length - 1]}%</td>
-                                  <td className="text-center py-1 px-1 font-semibold text-blue-600">
+                                <tr key="above-scale" className="border-b bg-red-50 dark:bg-red-900/50 dark:text-white">
+                                  <td className="py-1 px-1 text-red-600 dark:text-white">Above {scales[scales.length - 1]}%</td>
+                                  <td className="text-center py-1 px-1 font-semibold text-blue-600 dark:text-white">
                                     {(tuUtilization !== null && tuUtilization !== undefined && tuUtilization > scales[scales.length - 1]) ? `${tuUtilization.toFixed(1)}%` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-green-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-green-600 dark:text-white">
                                     {(exUtilization !== null && exUtilization !== undefined && exUtilization > scales[scales.length - 1]) ? `${exUtilization.toFixed(1)}%` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-semibold text-purple-600">
+                                  <td className="text-center py-1 px-1 font-semibold text-purple-600 dark:text-white">
                                     {(eqUtilization !== null && eqUtilization !== undefined && eqUtilization > scales[scales.length - 1]) ? `${eqUtilization.toFixed(1)}%` : ''}
                                   </td>
                                 </tr>
@@ -3870,11 +5373,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Open Accounts Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Open Accounts
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the highest number of open accounts from the three bureaus (more is better)
                           const getOpenAccountCount = (bureauId) => {
@@ -3910,23 +5413,23 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5];
                             // Updated color scheme: 15-10 green, 9-5 yellow
-                            const colors = ['bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50'];
-                            const textColors = ['text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white'];
                             
                             // Function to map account count to scale
                             const mapAccountCountToScale = (count) => {
@@ -3962,15 +5465,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqScale = mapAccountCountToScale(eqOpenAccounts);
 
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index < scales.length - 1 ? 'border-b' : ''} ${colors[index]}`}>
+                              <tr key={scale} className={`${index < scales.length - 1 ? 'border-b dark:border-slate-700' : ''} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {tuScale === scale ? tuOpenAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {exScale === scale ? exOpenAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {eqScale === scale ? eqOpenAccounts : ''}
                                 </td>
                               </tr>
@@ -3983,15 +5486,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowCounts) {
                               rows.push(
-                                <tr key="below-scale" className="border-b bg-gray-50">
-                                  <td className="py-1 px-1 text-gray-600">Below {scales[scales.length - 1]}</td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                <tr key="below-scale" className="border-b dark:border-slate-700 bg-muted dark:bg-slate-700/50">
+                                  <td className="py-1 px-1 text-muted-foreground dark:text-white">Below {scales[scales.length - 1]}</td>
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {tuOpenAccounts < scales[scales.length - 1] ? tuOpenAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {exOpenAccounts < scales[scales.length - 1] ? exOpenAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {eqOpenAccounts < scales[scales.length - 1] ? eqOpenAccounts : ''}
                                   </td>
                                 </tr>
@@ -4007,11 +5510,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* High-Limit Accounts Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground dark:text-white flex justify-between items-center">
                       High-Limit Accounts
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the highest number of high-limit accounts from the three bureaus (more is better)
                           const getHighLimitAccountCount = (bureauId) => {
@@ -4047,23 +5550,23 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
                             // Updated color scheme: above 10-5 green, 0-5 yellow
-                            const colors = ['bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-green-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50', 'bg-yellow-50'];
-                            const textColors = ['text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-green-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600', 'text-yellow-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white'];
                             
                             // Function to map high-limit account count to scale (10-scale format)
                             const mapHighLimitCountToScale = (count) => {
@@ -4111,15 +5614,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqScale = mapHighLimitCountToScale(eqHighLimitAccounts);
 
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index < scales.length - 1 ? 'border-b' : ''} ${colors[index]}`}>
+                              <tr key={scale} className={`${index < scales.length - 1 ? 'border-b dark:border-slate-700' : ''} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {tuScale === scale ? tuHighLimitAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {exScale === scale ? exHighLimitAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1 font-medium">
+                                <td className="text-center py-1 px-1 font-medium dark:text-white">
                                   {eqScale === scale ? eqHighLimitAccounts : ''}
                                 </td>
                               </tr>
@@ -4130,15 +5633,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasLowCounts) {
                               rows.push(
-                                <tr key="below-5" className="border-t bg-gray-50">
-                                  <td className="py-1 px-1 text-gray-600">Below 5</td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                <tr key="below-5" className="border-t dark:border-slate-700 bg-muted dark:bg-slate-700/50">
+                                  <td className="py-1 px-1 text-muted-foreground dark:text-white">Below 5</td>
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {tuScale === null ? tuHighLimitAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {exScale === null ? exHighLimitAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {eqScale === null ? eqHighLimitAccounts : ''}
                                   </td>
                                 </tr>
@@ -4152,15 +5655,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.unshift(
-                                <tr key="above-scale" className="border-b bg-emerald-50">
-                                  <td className="py-1 px-1 text-emerald-600">Above {scales[0]}</td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-emerald-50 dark:bg-emerald-900/50">
+                                  <td className="py-1 px-1 text-emerald-600 dark:text-white">Above {scales[0]}</td>
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {tuHighLimitAccounts > scales[0] ? tuHighLimitAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {exHighLimitAccounts > scales[0] ? exHighLimitAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1 font-medium">
+                                  <td className="text-center py-1 px-1 font-medium dark:text-white">
                                     {eqHighLimitAccounts > scales[0] ? eqHighLimitAccounts : ''}
                                   </td>
                                 </tr>
@@ -4176,11 +5679,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* New Accounts Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground dark:text-white flex justify-between items-center">
                       New Accounts
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Get the lowest number of new accounts from the three bureaus (fewer is better)
                           const getNewAccountCount = (bureauId) => {
@@ -4218,15 +5721,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -4235,13 +5738,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             // Function to get color based on inquiry count
                             const getColorForInquiry = (scale) => {
-                              if (scale === 0) return 'bg-green-50'; // 0 inquiries green
-                              return 'bg-yellow-50'; // Rest yellow
+                              if (scale === 0) return 'bg-green-50 dark:bg-green-900/50'; // 0 inquiries green
+                              return 'bg-yellow-50 dark:bg-yellow-900/50'; // Rest yellow
                             };
                             
                             const getTextColorForInquiry = (scale) => {
-                              if (scale === 0) return 'text-green-600'; // 0 inquiries green
-                              return 'text-yellow-600'; // Rest yellow
+                              if (scale === 0) return 'text-green-600 dark:text-white'; // 0 inquiries green
+                              return 'text-yellow-600 dark:text-white'; // Rest yellow
                             };
                             
                             const colors = scales.map(scale => getColorForInquiry(scale));
@@ -4270,15 +5773,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqNewAccounts = getNewAccountCount(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`border-b ${colors[index]}`}>
+                              <tr key={scale} className={`border-b dark:border-slate-700 ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapNewAccountCountToScale(tuNewAccounts) === scale ? tuNewAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapNewAccountCountToScale(exNewAccounts) === scale ? exNewAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapNewAccountCountToScale(eqNewAccounts) === scale ? eqNewAccounts : ''}
                                 </td>
                               </tr>
@@ -4291,15 +5794,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.push(
-                                <tr key="above-scale" className="border-b bg-red-100">
-                                  <td className="py-1 px-1 text-red-700">Above {scales[scales.length - 1]}</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-red-100 dark:bg-red-900/50">
+                                  <td className="py-1 px-1 text-red-700 dark:text-white">Above {scales[scales.length - 1]}</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuNewAccounts > scales[scales.length - 1] ? tuNewAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exNewAccounts > scales[scales.length - 1] ? exNewAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqNewAccounts > scales[scales.length - 1] ? eqNewAccounts : ''}
                                   </td>
                                 </tr>
@@ -4315,11 +5818,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Over 50% Usage Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground dark:text-white flex justify-between items-center">
                       Over 50% Usage
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Grade based on lowest count of high-usage accounts across bureaus (lower is better)
                           const getHighUsageAccountCount = (bureauId: number) => {
@@ -4357,22 +5860,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-                            const colors = ['bg-green-50', 'bg-blue-50', 'bg-yellow-50', 'bg-orange-50', 'bg-red-50', 'bg-yellow-50', 'bg-orange-50', 'bg-orange-50', 'bg-red-50', 'bg-red-50', 'bg-red-50'];
-                            const textColors = ['text-green-600', 'text-blue-600', 'text-yellow-600', 'text-orange-600', 'text-red-600', 'text-yellow-600', 'text-orange-600', 'text-orange-600', 'text-red-600', 'text-red-600', 'text-red-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50', 'bg-red-50 dark:bg-red-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white', 'text-red-600 dark:text-white'];
                             
                             const mapHighUsageCountToScale = (count) => {
                               return Math.min(count, 10);
@@ -4402,15 +5905,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqHighUsageAccounts = getHighUsageAccountCount(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapHighUsageCountToScale(tuHighUsageAccounts) === scale ? tuHighUsageAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapHighUsageCountToScale(exHighUsageAccounts) === scale ? exHighUsageAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapHighUsageCountToScale(eqHighUsageAccounts) === scale ? eqHighUsageAccounts : ''}
                                 </td>
                               </tr>
@@ -4423,15 +5926,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.unshift(
-                                <tr key="above-scale" className="border-b bg-red-100">
-                                  <td className="py-1 px-1 text-red-700">Above {scales[0]}</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-red-100 dark:bg-red-900/50">
+                                  <td className="py-1 px-1 text-red-700 dark:text-white">Above {scales[0]}</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuHighUsageAccounts > scales[0] ? tuHighUsageAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exHighUsageAccounts > scales[0] ? exHighUsageAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqHighUsageAccounts > scales[0] ? eqHighUsageAccounts : ''}
                                   </td>
                                 </tr>
@@ -4452,11 +5955,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 
                 {/* Installment Accounts Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground dark:text-white flex justify-between items-center">
                       Installment Accounts
-                      <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
+                      <span className="text-xs font-bold bg-primary text-primary-foreground px-2 py-1 rounded-full">
                         {(() => {
                           // Grade based on highest count of installment accounts (more is better)
                           const getInstallmentAccountCount = (bureauId: number) => {
@@ -4489,22 +5992,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [2, 1, 0];
-                            const colors = ['bg-green-50', 'bg-green-50', 'bg-yellow-50'];
-                            const textColors = ['text-green-600', 'text-green-600', 'text-yellow-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-green-600 dark:text-white', 'text-yellow-600 dark:text-white'];
                             
                             const mapInstallmentCountToScale = (count) => {
                               return Math.min(count, 2);
@@ -4532,15 +6035,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqInstallmentAccounts = getInstallmentAccountCount(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInstallmentCountToScale(tuInstallmentAccounts) === scale ? tuInstallmentAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInstallmentCountToScale(exInstallmentAccounts) === scale ? exInstallmentAccounts : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInstallmentCountToScale(eqInstallmentAccounts) === scale ? eqInstallmentAccounts : ''}
                                 </td>
                               </tr>
@@ -4553,15 +6056,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.unshift(
-                                <tr key="above-scale" className="border-b bg-green-100">
-                                  <td className="py-1 px-1 text-green-700">Above {scales[0]}</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-green-100 dark:bg-green-900/50">
+                                  <td className="py-1 px-1 text-green-700 dark:text-white">Above {scales[0]}</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuInstallmentAccounts > scales[0] ? tuInstallmentAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exInstallmentAccounts > scales[0] ? exInstallmentAccounts : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqInstallmentAccounts > scales[0] ? eqInstallmentAccounts : ''}
                                   </td>
                                 </tr>
@@ -4577,9 +6080,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Age Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-border shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Age
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -4629,15 +6132,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className={`border-b transition-colors ${getRowBgColor(
+                          <tr className={`border-b dark:border-slate-700 transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.minFiveOpenRevolving || false,
                       reportData?.qualificationCriteria?.[3]?.minFiveOpenRevolving || false,
                       reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving || false
                     )}`}>
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -4647,16 +6150,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             // Function to get color based on age scale
                             const getColorForAge = (scale) => {
                               const ageValue = parseInt(scale);
-                              if (ageValue >= 7) return 'bg-green-50'; // 7-12 years green
-                              if (ageValue >= 2) return 'bg-yellow-50'; // 2-6 years yellow
-                              return 'bg-red-50'; // Below 2 years red
+                              if (ageValue >= 7) return 'bg-green-50 dark:bg-green-900/50'; // 7-12 years green
+                              if (ageValue >= 2) return 'bg-yellow-50 dark:bg-yellow-900/50'; // 2-6 years yellow
+                              return 'bg-red-50 dark:bg-red-900/50'; // Below 2 years red
                             };
                             
                             const getTextColorForAge = (scale) => {
                               const ageValue = parseInt(scale);
-                              if (ageValue >= 7) return 'text-green-600'; // 7-12 years green
-                              if (ageValue >= 2) return 'text-yellow-600'; // 2-6 years yellow
-                              return 'text-red-600'; // Below 2 years red
+                              if (ageValue >= 7) return 'text-green-600 dark:text-white'; // 7-12 years green
+                              if (ageValue >= 2) return 'text-yellow-600 dark:text-white'; // 2-6 years yellow
+                              return 'text-red-600 dark:text-white'; // Below 2 years red
                             };
                             
                             const colors = scales.map(scale => getColorForAge(scale));
@@ -4702,15 +6205,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqAverageAge = getAverageAccountAge(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapAgeToScale(tuAverageAge) === scale ? `${tuAverageAge} yrs` : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapAgeToScale(exAverageAge) === scale ? `${exAverageAge} yrs` : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapAgeToScale(eqAverageAge) === scale ? `${eqAverageAge} yrs` : ''}
                                 </td>
                               </tr>
@@ -4721,15 +6224,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighAges) {
                               rows.unshift(
-                                <tr key="above-scale" className="border-b bg-green-100">
-                                  <td className="py-1 px-1 text-green-700">Above 12 yrs</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-green-100 dark:bg-green-900/50">
+                                  <td className="py-1 px-1 text-green-700 dark:text-white">Above 12 yrs</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuAverageAge > 12 ? `${tuAverageAge} yrs` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exAverageAge > 12 ? `${exAverageAge} yrs` : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqAverageAge > 12 ? `${eqAverageAge} yrs` : ''}
                                   </td>
                                 </tr>
@@ -4745,9 +6248,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Inquiries Card (All-Time) */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-border shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Inquiries
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -4778,18 +6281,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                          <tr className="border-b dark:border-slate-700">
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = [0, 1, 2, 3, 4];
-                            const colors = ['bg-green-50', 'bg-blue-50', 'bg-yellow-50', 'bg-orange-50', 'bg-red-50'];
-                            const textColors = ['text-green-600', 'text-blue-600', 'text-yellow-600', 'text-orange-600', 'text-red-600'];
+                            const colors = ['bg-green-50 dark:bg-green-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-yellow-50 dark:bg-yellow-900/50', 'bg-orange-50 dark:bg-orange-900/50', 'bg-red-50 dark:bg-red-900/50'];
+                            const textColors = ['text-green-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-yellow-600 dark:text-white', 'text-orange-600 dark:text-white', 'text-red-600 dark:text-white'];
                             
                             const mapInquiryCountToScale = (count) => {
                               return Math.min(count, 4);
@@ -4809,15 +6312,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqInquiries = getTotalInquiryCount(2);
                             
                             const rows = scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInquiryCountToScale(tuInquiries) === scale ? tuInquiries : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInquiryCountToScale(exInquiries) === scale ? exInquiries : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {mapInquiryCountToScale(eqInquiries) === scale ? eqInquiries : ''}
                                 </td>
                               </tr>
@@ -4830,15 +6333,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             
                             if (hasHighCounts) {
                               rows.push(
-                                <tr key="above-scale" className="border-b bg-red-100">
-                                  <td className="py-1 px-1 text-red-700">Above {scales[scales.length - 1]}</td>
-                                  <td className="text-center py-1 px-1">
+                                <tr key="above-scale" className="border-b dark:border-slate-700 bg-red-100 dark:bg-red-900/50">
+                                  <td className="py-1 px-1 text-red-700 dark:text-white">Above {scales[scales.length - 1]}</td>
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {tuInquiries > scales[scales.length - 1] ? tuInquiries : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {exInquiries > scales[scales.length - 1] ? exInquiries : ''}
                                   </td>
-                                  <td className="text-center py-1 px-1">
+                                  <td className="text-center py-1 px-1 dark:text-white">
                                     {eqInquiries > scales[scales.length - 1] ? eqInquiries : ''}
                                   </td>
                                 </tr>
@@ -4854,9 +6357,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Bankruptcy Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-border shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Bankruptcy
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -4865,8 +6368,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             try {
                               return pr.some((record: any) => {
                                 if (Number(record?.BureauId) !== Number(bureauId)) return false;
-                                const type = String(record?.RecordType || '').toLowerCase();
-                                return type.includes('bankruptcy') || type.includes('chapter');
+                                const recType = String(record?.RecordType || '').toLowerCase();
+                                const type = String(record?.Type || '').toLowerCase();
+                                const classification = String(record?.Classification || '').toLowerCase();
+                                return (
+                                  recType.includes('bankruptcy') || recType.includes('chapter') ||
+                                  type.includes('bankruptcy') || type.includes('chapter') ||
+                                  classification.includes('bankruptcy')
+                                );
                               });
                             } catch {
                               return false;
@@ -4882,27 +6391,32 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                          <tr className="border-b dark:border-slate-700">
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
                           {(() => {
                             const scales = ['Yes', 'No'];
-                            const colors = ['bg-red-50', 'bg-green-50'];
-                            const textColors = ['text-red-600', 'text-green-600'];
+                            const colors = ['bg-red-50 dark:bg-red-900/50', 'bg-green-50 dark:bg-green-900/50'];
+                            const textColors = ['text-red-600 dark:text-white', 'text-green-600 dark:text-white'];
                             
                             const getBankruptcyStatus = (bureauId) => {
                               if (!apiData?.PublicRecords) return 'No';
                               
                               const hasBankruptcy = apiData.PublicRecords?.some(record => {
-                                if (record.BureauId !== bureauId) return false;
-                                
-                                const recordType = record.RecordType?.toLowerCase() || '';
-                                return recordType.includes('bankruptcy') || recordType.includes('chapter');
+                                if (Number(record.BureauId) !== Number(bureauId)) return false;
+                                const recType = String(record.RecordType || '').toLowerCase();
+                                const type = String(record.Type || '').toLowerCase();
+                                const classification = String(record.Classification || '').toLowerCase();
+                                return (
+                                  recType.includes('bankruptcy') || recType.includes('chapter') ||
+                                  type.includes('bankruptcy') || type.includes('chapter') ||
+                                  classification.includes('bankruptcy')
+                                );
                               });
                               
                               return hasBankruptcy ? 'Yes' : 'No';
@@ -4913,15 +6427,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const eqBankruptcy = getBankruptcyStatus(2);
                             
                             return scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {tuBankruptcy === scale ? scale : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {exBankruptcy === scale ? scale : ''}
                                 </td>
-                                <td className="text-center py-1 px-1">
+                                <td className="text-center py-1 px-1 dark:text-white">
                                   {eqBankruptcy === scale ? scale : ''}
                                 </td>
                               </tr>
@@ -4934,9 +6448,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 {/* Negative Marks Card */}
-                <Card className="border border-gray-200 shadow-sm">
+                <Card className="border border-border shadow-sm dark:bg-slate-800 dark:border-slate-700">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold text-gray-700 flex justify-between items-center">
+                    <CardTitle className="text-sm font-semibold text-foreground flex justify-between items-center dark:text-white">
                       Negative Marks
                       <span className="text-xs font-bold bg-gradient-to-r from-blue-500 to-emerald-600 text-white px-2 py-1 rounded-full">
                         {(() => {
@@ -4973,11 +6487,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="border-b">
-                            <th className="text-left py-1 px-1 font-medium">Scale</th>
-                            <th className="text-center py-1 px-1 font-medium">TU</th>
-                            <th className="text-center py-1 px-1 font-medium">EX</th>
-                            <th className="text-center py-1 px-1 font-medium">EQ</th>
+                          <tr className="border-b dark:border-slate-700">
+                            <th className="text-left py-1 px-1 font-medium dark:text-white">Scale</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">TU</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EX</th>
+                            <th className="text-center py-1 px-1 font-medium dark:text-white">EQ</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -5006,10 +6520,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             const ex = hasNegativeMarks(3) ? 'Yes' : 'No';
                             const eq = hasNegativeMarks(2) ? 'Yes' : 'No';
                             const scales = ['Yes', 'No'];
-                            const colors = ['bg-red-50', 'bg-green-50'];
-                            const textColors = ['text-red-600', 'text-green-600'];
+                            const colors = ['bg-red-50 dark:bg-red-900/50', 'bg-green-50 dark:bg-green-900/50'];
+                            const textColors = ['text-red-600 dark:text-white', 'text-green-600 dark:text-white'];
                             return scales.map((scale, index) => (
-                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b'} ${colors[index]}`}>
+                              <tr key={scale} className={`${index === scales.length - 1 ? '' : 'border-b dark:border-slate-700'} ${colors[index]}`}>
                                 <td className={`py-1 px-1 ${textColors[index]}`}>{scale}</td>
                                 <td className="text-center py-1 px-1">{tu === scale ? scale : ''}</td>
                                 <td className="text-center py-1 px-1">{ex === scale ? scale : ''}</td>
@@ -5030,18 +6544,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
 
           {/* Do You Qualify */}
-          <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800`}>
+          <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50 dark:bg-none dark:bg-slate-800 dark:border dark:border-slate-700`}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Do You Qualify</CardTitle>
+                <CardTitle className="text-2xl font-bold text-foreground">Do You Qualify</CardTitle>
                 <div className="flex items-center flex-wrap gap-2">
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
+                  <Button onClick={() => { setIsRerunningAudit(true); setRefreshAuditNonce(n => n + 1); }} variant="outline" className="text-sm">
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
+                    Rerun Funding Audit
+                  </Button>
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800">
                     <CheckCircle className="h-3 w-3" /> Good to go
                   </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800">
                     <AlertTriangle className="h-3 w-3" /> Proceed with caution
                   </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800">
                     <XCircle className="h-3 w-3" /> Not eligible
                   </span>
                 </div>
@@ -5110,9 +6628,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     status === "yellow" ? "Proceed with caution" : "Not eligible";
                   const Icon = status === "green" ? CheckCircle : status === "yellow" ? AlertTriangle : XCircle;
                   const colorClasses =
-                    status === "green" ? "bg-green-100 text-green-700 border-green-200" :
-                    status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200" :
-                    "bg-red-100 text-red-700 border-red-200";
+                    status === "green" ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800" :
+                    status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800" :
+                    "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800";
 
                   return (
                     <div className="flex items-center gap-2">
@@ -5134,11 +6652,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="border-b">
-                      <th className="text-center py-2 px-4 font-semibold">TU</th>
-                      <th className="text-center py-2 px-4 font-semibold">EX</th>
-                      <th className="text-center py-2 px-4 font-semibold">EQ</th>
-                      <th className="text-left py-2 px-4 font-semibold">Criteria</th>
+                    <tr className="border-b dark:border-slate-700">
+                      <th className="text-center py-2 px-4 font-semibold dark:text-white">TU</th>
+                      <th className="text-center py-2 px-4 font-semibold dark:text-white">EX</th>
+                      <th className="text-center py-2 px-4 font-semibold dark:text-white">EQ</th>
+                      <th className="text-left py-2 px-4 font-semibold dark:text-white">Criteria</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm">
@@ -5146,10 +6664,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       // Function to get row background color based on qualification status
                       const getRowBgColor = (tuStatus: boolean, exStatus: boolean, eqStatus: boolean) => {
                         const passedCount = [tuStatus, exStatus, eqStatus].filter(Boolean).length;
-                        if (passedCount === 3) return 'bg-green-50 hover:bg-green-100';
-                        if (passedCount === 2) return 'bg-yellow-50 hover:bg-yellow-100';
-                        if (passedCount === 1) return 'bg-orange-50 hover:bg-orange-100';
-                        return 'bg-red-50 hover:bg-red-100';
+                        if (passedCount === 3) return 'bg-green-50 hover:bg-green-100 dark:bg-green-900/50 dark:hover:bg-green-800/50 dark:text-white';
+                        if (passedCount === 2) return 'bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/50 dark:hover:bg-yellow-800/50 dark:text-white';
+                        if (passedCount === 1) return 'bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/50 dark:hover:bg-orange-800/50 dark:text-white';
+                        return 'bg-red-50 hover:bg-red-100 dark:bg-red-900/50 dark:hover:bg-red-800/50 dark:text-white';
                       };
 
                       // Robustly fetch inquiries from either reportData or apiData (support multiple shapes)
@@ -5516,6 +7034,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </CardContent>
           </Card>
 
+
           {(() => {
             // Underwriting eligibility helpers based on calculated qualification criteria
             const getCriteria = (bureau: number, key: string) => {
@@ -5591,9 +7110,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             const criteriaTotal = Object.values(criteriaFlags).length;
 
             return (
-              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800">
+              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:bg-none dark:bg-slate-800 dark:border dark:border-slate-700">
                 <CardHeader>
-                  <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Next Steps</CardTitle>
+                  <CardTitle className="text-2xl font-bold text-foreground">Next Steps</CardTitle>
                   <CardDescription>
                     {effectiveEligible
                       ? "You meet the underwriting criteria. Proceed to funding."
@@ -5607,7 +7126,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         <CheckCircle2 className="h-5 w-5" />
                         Qualified for funding
                       </div>
-                      <Button onClick={() => setActiveTab('fundingApplications')} className="bg-green-600 hover:bg-green-700">
+                      <Button onClick={() => goToDiyFunding('both')} className="bg-green-600 hover:bg-green-700">
                         Go to Funding
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
@@ -5632,19 +7151,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           })()}
 
           {/* Debt Utilization Table */}
-          <Card id="uw-debt-utilization" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 scroll-mt-24">
+          <Card id="uw-debt-utilization" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800 dark:text-foreground">Debt Utilization</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Debt Utilization</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <Table className="w-full">
                   <TableHeader>
-                    <TableRow className="bg-gray-50">
-                      <TableHead className="text-left font-semibold text-muted-foreground py-3 px-4"></TableHead>
-                      <TableHead className="text-center font-semibold text-blue-600 py-3 px-4">TU</TableHead>
-                      <TableHead className="text-center font-semibold text-green-600 py-3 px-4">EX</TableHead>
-                      <TableHead className="text-center font-semibold text-purple-600 py-3 px-4">EQ</TableHead>
+                    <TableRow className="bg-gray-50 dark:bg-slate-800">
+                      <TableHead className="text-left font-semibold text-gray-700 dark:text-white py-3 px-4"></TableHead>
+                      <TableHead className="text-center font-semibold text-blue-600 dark:text-blue-400 py-3 px-4">TU</TableHead>
+                      <TableHead className="text-center font-semibold text-green-600 dark:text-green-400 py-3 px-4">EX</TableHead>
+                      <TableHead className="text-center font-semibold text-purple-600 dark:text-purple-400 py-3 px-4">EQ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -5653,49 +7172,49 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       return (
                         <>
                           {/* Total Balance Utilization (Open Revolving) */}
-                          <TableRow className="border-b bg-purple-50/30 dark:bg-muted">
-                            <TableCell className="font-medium text-muted-foreground py-3 px-4">Total Balance Utilization (Open Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b bg-purple-50/30 dark:bg-purple-900/50 dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Total Balance Utilization (Open Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.openRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.openRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.openRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Total Credit Limit (Open Revolving) */}
-                          <TableRow className="border-b">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Total Credit Limit (Open Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Total Credit Limit (Open Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.openRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.openRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.openRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Percent Utilization (Open Revolving) */}
-                          <TableRow className="border-b bg-blue-50/30">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Percent Utilization (Open Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b bg-blue-50/30 dark:bg-blue-900/50 dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Percent Utilization (Open Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               {debtData[1]?.openRevolvingLimit > 0 ? 
                                 `${((debtData[1]?.openRevolvingBalance / debtData[1]?.openRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
                               }
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               {debtData[3]?.openRevolvingLimit > 0 ? 
                                 `${((debtData[3]?.openRevolvingBalance / debtData[3]?.openRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
                               }
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               {debtData[2]?.openRevolvingLimit > 0 ? 
                                 `${((debtData[2]?.openRevolvingBalance / debtData[2]?.openRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
@@ -5704,49 +7223,49 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           </TableRow>
 
                           {/* Total Balance Utilization (All Revolving) */}
-                          <TableRow className="border-b">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Total Balance Utilization (All Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Total Balance Utilization (All Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.allRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.allRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.allRevolvingBalance?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Total Credit Limit (All Revolving) */}
-                          <TableRow className="border-b bg-green-50/30">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Total Credit Limit (All Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b bg-green-50/30 dark:bg-green-900/50 dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Total Credit Limit (All Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.allRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.allRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.allRevolvingLimit?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Percent Utilization (All Revolving) */}
-                          <TableRow className="border-b">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Percent Utilization (All Revolving):</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Percent Utilization (All Revolving):</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               {debtData[1]?.allRevolvingLimit > 0 ? 
                                 `${((debtData[1]?.allRevolvingBalance / debtData[1]?.allRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
                               }
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               {debtData[3]?.allRevolvingLimit > 0 ? 
                                 `${((debtData[3]?.allRevolvingBalance / debtData[3]?.allRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
                               }
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               {debtData[2]?.allRevolvingLimit > 0 ? 
                                 `${((debtData[2]?.allRevolvingBalance / debtData[2]?.allRevolvingLimit) * 100).toFixed(1)}%` : 
                                 '0.0%'
@@ -5755,29 +7274,29 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           </TableRow>
 
                           {/* Real Estate Debt */}
-                          <TableRow className="border-b bg-yellow-50/30">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Real Estate Debt:</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b bg-yellow-50/30 dark:bg-yellow-900/50 dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Real Estate Debt:</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.realEstateDebt?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.realEstateDebt?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.realEstateDebt?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
 
                           {/* Installment Debt */}
-                          <TableRow className="border-b">
-                            <TableCell className="font-medium text-gray-700 py-3 px-4">Installment Debt:</TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600">
+                          <TableRow className="border-b dark:border-slate-700">
+                            <TableCell className="font-medium text-gray-700 dark:text-white py-3 px-4">Installment Debt:</TableCell>
+                            <TableCell className="text-center py-3 px-4 font-semibold text-blue-600 dark:text-blue-400">
                               ${debtData[1]?.installmentDebt?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-green-600 dark:text-green-400">
                               ${debtData[3]?.installmentDebt?.toLocaleString() || '0'}
                             </TableCell>
-                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600">
+                            <TableCell className="text-center py-3 px-4 font-semibold text-purple-600 dark:text-purple-400">
                               ${debtData[2]?.installmentDebt?.toLocaleString() || '0'}
                             </TableCell>
                           </TableRow>
@@ -5791,14 +7310,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Accounts impeding your eligibility */}
-          <Card id="uw-accounts-impeding" className={`border-0 shadow-xl bg-gradient-to-br ${
-            eligibilityBureau === 'tu' ? 'from-white via-purple-50/30 to-violet-100/50' :
-            eligibilityBureau === 'ex' ? 'from-white via-green-50/30 to-emerald-100/50' :
-            eligibilityBureau === 'eq' ? 'from-white via-red-50/30 to-rose-100/50' :
-            'from-white via-red-50/30 to-pink-50/50'
-          } scroll-mt-24`}>
+          <Card id="uw-accounts-impeding" className={`border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700`}>
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Negetive Accounts Impacting Your Qualification</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Negative Accounts Impacting Your Qualification</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="mb-4 flex items-center justify-between">
@@ -5831,12 +7345,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               {eligibilityBureau !== 'all' && (
                 <div className="flex justify-center mb-4">
                   <div
-                    className={`p-3 bg-white rounded-xl shadow-md border ${
+                    className={`p-3 bg-white dark:bg-slate-800 rounded-xl shadow-md border dark:border-slate-700 ${
                       eligibilityBureau === 'tu'
-                        ? 'border-purple-100/50'
+                        ? 'border-purple-100/50 dark:border-purple-900/50'
                         : eligibilityBureau === 'ex'
-                        ? 'border-green-100/50'
-                        : 'border-red-100/50'
+                        ? 'border-green-100/50 dark:border-green-900/50'
+                        : 'border-red-100/50 dark:border-red-900/50'
                     }`}
                   >
                     {eligibilityBureau === 'tu' && (
@@ -5854,14 +7368,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Bureau</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Company</TableHead>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Payment Status</TableHead>
-                      <TableHead>Worst Payment Status</TableHead>
+                    <TableRow className="dark:border-slate-700">
+                      <TableHead className="dark:text-white">#</TableHead>
+                      <TableHead className="dark:text-white">Bureau</TableHead>
+                      <TableHead className="dark:text-white">Type</TableHead>
+                      <TableHead className="dark:text-white">Company</TableHead>
+                      <TableHead className="dark:text-white">Account</TableHead>
+                      <TableHead className="dark:text-white">Payment Status</TableHead>
+                      <TableHead className="dark:text-white">Worst Payment Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -5900,7 +7414,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
                       return hasDerogKeyword || hasNumericLate || isChargeOff || isCollection || isPastDue;
                     }).map((account, index) => (
-                      <TableRow key={index}>
+                      <TableRow key={index} className="dark:border-slate-700 dark:text-white">
                         <TableCell>{index + 1}</TableCell>
                         <TableCell className="text-center">
                           {account.BureauId === 1 ? (
@@ -5951,8 +7465,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </TableCell>
                       </TableRow>
                     )) || (
-                      <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                      <TableRow className="dark:border-slate-700">
+                        <TableCell colSpan={7} className="text-center py-8 text-gray-500 dark:text-gray-400">
                           No accounts impeding eligibility found
                         </TableCell>
                       </TableRow>
@@ -5964,9 +7478,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Inquiries impeding your eligibility */}
-          <Card id="uw-inquiries-impeding" className="border-0 shadow-xl bg-gradient-to-br from-white via-orange-50/30 to-yellow-50/50 scroll-mt-24">
+          <Card id="uw-inquiries-impeding" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Inquiries lowering your chances of approval</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Inquiries lowering your chances of approval</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="mb-4">
@@ -5975,11 +7489,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow>
-                      <TableHead>#</TableHead>
-                      <TableHead>Bureau</TableHead>
-                      <TableHead>Creditor</TableHead>
-                      <TableHead>Date of Inquiry</TableHead>
+                    <TableRow className="dark:border-slate-700">
+                      <TableHead className="dark:text-white">#</TableHead>
+                      <TableHead className="dark:text-white">Bureau</TableHead>
+                      <TableHead className="dark:text-white">Creditor</TableHead>
+                      <TableHead className="dark:text-white">Date of Inquiry</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -6014,8 +7528,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       const arr = (reportData?.inquiries || []);
                       if (arr.length === 0) {
                         return (
-                          <TableRow>
-                            <TableCell colSpan={4} className="text-center py-8 text-gray-500">
+                          <TableRow className="dark:border-slate-700">
+                            <TableCell colSpan={4} className="text-center py-8 text-gray-500 dark:text-gray-400">
                               No inquiries found
                             </TableCell>
                           </TableRow>
@@ -6023,8 +7537,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       }
                       const sorted = arr.slice().sort((a: any, b: any) => orderIndex(a) - orderIndex(b));
                       return sorted.map((inquiry: any, index: number) => (
-                        <TableRow key={index}>
-                          <TableCell>{index + 1}</TableCell>
+                        <TableRow key={index} className="dark:border-slate-700">
+                          <TableCell className="dark:text-white">{index + 1}</TableCell>
                           <TableCell>
                             {(() => {
                               const raw = inquiry?.bureau ?? inquiry?.Bureau ?? inquiry?.BureauName ?? inquiry?.bureauName ?? inquiry?.BureauId;
@@ -6051,12 +7565,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               return src ? (
                                 <img src={src} alt={alt || 'Bureau'} className="h-6 w-auto" />
                               ) : (
-                                <span className="text-gray-700">{inquiry?.bureau || 'Unknown'}</span>
+                                <span className="text-gray-700 dark:text-white">{inquiry?.bureau || 'Unknown'}</span>
                               );
                             })()}
                           </TableCell>
-                          <TableCell>{inquiry.creditorName}</TableCell>
-                          <TableCell>
+                          <TableCell className="dark:text-white">{inquiry.creditorName}</TableCell>
+                          <TableCell className="dark:text-white">
                             {(() => {
                               const d = inquiry?.dateOfInquiry || inquiry?.date || inquiry?.DateInquiry;
                               return d ? new Date(d).toLocaleDateString('en-US', {
@@ -6076,10 +7590,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           </Card>
 
           {/* Pay Down */}
-          <Card id="uw-paydown" className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-cyan-50/50 scroll-mt-24">
+          <Card id="uw-paydown" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-gray-800">Pay Down</CardTitle>
-              <CardDescription>Payments needed to reach target utilization levels</CardDescription>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Pay Down</CardTitle>
+              <CardDescription className="text-muted-foreground">Payments needed to reach target utilization levels</CardDescription>
             </CardHeader>
             <CardContent>
               {(() => {
@@ -6122,7 +7636,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 if (Array.isArray(apiAccounts) && apiAccounts.length > 0) {
                   accounts = apiAccounts
                     .filter((acc: any) =>
-                      (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account') &&
+                      (
+                        acc.CreditType === 'Revolving Account' ||
+                        acc.AccountTypeDescription === 'Revolving Account' ||
+                        String(acc.CreditType || '').toLowerCase().includes('credit card') ||
+                        String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+                        String(acc.AccountType || '').toLowerCase().includes('credit card')
+                      ) &&
                       ((parseFloat(acc.CreditLimit) || parseFloat(acc.HighBalance) || 0) > 0)
                     )
                     .map((acc: any) => ({
@@ -6150,7 +7670,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
                 if (!accounts.length) {
                   return (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                       No revolving accounts found to compute paydown.
                     </div>
                   );
@@ -6178,14 +7698,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead>Account</TableHead>
-                          <TableHead className="text-right">Limit</TableHead>
-                          <TableHead className="text-right">Balance</TableHead>
-                          <TableHead className="text-right">Utilization</TableHead>
-                          <TableHead className="text-right">Account Age</TableHead>
+                        <TableRow className="dark:border-slate-700">
+                          <TableHead className="dark:text-white">Account</TableHead>
+                          <TableHead className="text-right dark:text-white">Limit</TableHead>
+                          <TableHead className="text-right dark:text-white">Balance</TableHead>
+                          <TableHead className="text-right dark:text-white">Utilization</TableHead>
+                          <TableHead className="text-right dark:text-white">Account Age</TableHead>
                           {targets.map((t) => (
-                            <TableHead key={t} className="text-right">To {t}%</TableHead>
+                            <TableHead key={t} className="text-right dark:text-white">To {t}%</TableHead>
                           ))}
                         </TableRow>
                       </TableHeader>
@@ -6193,21 +7713,21 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         {sortedAccounts.map((acc, idx) => {
                           const util = acc.limit > 0 ? (acc.balance / acc.limit) * 100 : 0;
                           const rowAccent =
-                            util >= 80 ? 'hover:bg-red-50/40' :
-                            util >= 60 ? 'hover:bg-orange-50/40' :
-                            util >= 40 ? 'hover:bg-yellow-50/40' :
-                            util > 0  ? 'hover:bg-green-50/40' : 'hover:bg-gray-50/40';
+                            util >= 80 ? 'hover:bg-red-50/40 dark:hover:bg-red-900/40' :
+                            util >= 60 ? 'hover:bg-orange-50/40 dark:hover:bg-orange-900/40' :
+                            util >= 40 ? 'hover:bg-yellow-50/40 dark:hover:bg-yellow-900/40' :
+                            util > 0  ? 'hover:bg-green-50/40 dark:hover:bg-green-900/40' : 'hover:bg-gray-50/40 dark:hover:bg-gray-800/40';
 
                           const utilStyles =
-                            util >= 80 ? 'bg-red-50 text-red-700' :
-                            util >= 60 ? 'bg-orange-50 text-orange-700' :
-                            util >= 40 ? 'bg-yellow-50 text-yellow-700' :
-                            util > 0  ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600';
+                            util >= 80 ? 'bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-white' :
+                            util >= 60 ? 'bg-orange-50 text-orange-700 dark:bg-orange-900/50 dark:text-white' :
+                            util >= 40 ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-white' :
+                            util > 0  ? 'bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-white' : 'bg-gray-50 text-gray-600 dark:bg-slate-700 dark:text-gray-300';
 
                           return (
                             <TableRow
                               key={idx}
-                              className={`cursor-pointer transition-colors ${rowAccent}`}
+                              className={`cursor-pointer transition-colors dark:border-slate-700 ${rowAccent}`}
                               onClick={() => {
                                 setSelectedPaydownAccount(acc);
                                 // Pick an initial target based on current utilization (default to 30%)
@@ -6218,23 +7738,23 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               }}
                             >
                               <TableCell>
-                                <div className="font-medium text-gray-800">{acc.creditor}</div>
+                                <div className="font-medium text-gray-800 dark:text-white">{acc.creditor}</div>
                                 <div className="text-xs text-muted-foreground">{acc.accountNumber || ''}</div>
                               </TableCell>
-                              <TableCell className="text-right font-semibold text-blue-700">{formatCurrency(acc.limit)}</TableCell>
-                              <TableCell className="text-right font-semibold text-purple-700">{formatCurrency(acc.balance)}</TableCell>
+                              <TableCell className="text-right font-semibold text-blue-700 dark:text-blue-400">{formatCurrency(acc.limit)}</TableCell>
+                              <TableCell className="text-right font-semibold text-purple-700 dark:text-purple-400">{formatCurrency(acc.balance)}</TableCell>
                               <TableCell className={`text-right font-semibold rounded-md px-2 ${utilStyles}`}>{formatPercent(util)}</TableCell>
-                              <TableCell className="text-right text-slate-700">{formatAge(acc.opened)}</TableCell>
+                              <TableCell className="text-right text-slate-700 dark:text-slate-300">{formatAge(acc.opened)}</TableCell>
                               {targets.map((t) => {
                                 const targetBal = Math.round(acc.limit * (t / 100));
                                 const payment = Math.max(0, Math.round(acc.balance - targetBal));
                                 const paymentRatio = acc.balance > 0 ? payment / acc.balance : 0;
                                 const paymentStyles =
-                                  payment === 0 ? 'bg-green-50 text-green-700' :
-                                  paymentRatio <= 0.10 ? 'bg-lime-50 text-lime-700' :
-                                  paymentRatio <= 0.25 ? 'bg-yellow-50 text-yellow-700' :
-                                  paymentRatio <= 0.50 ? 'bg-orange-50 text-orange-700' :
-                                  'bg-red-50 text-red-700';
+                                  payment === 0 ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
+                                  paymentRatio <= 0.10 ? 'bg-lime-50 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300' :
+                                  paymentRatio <= 0.25 ? 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300' :
+                                  paymentRatio <= 0.50 ? 'bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' :
+                                  'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300';
                                 return (
                                   <TableCell key={t} className={`text-right rounded-md px-2 ${paymentStyles}`}>
                                     {formatCurrency(payment)}
@@ -6273,14 +7793,17 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 <div className="space-y-6">
                   {(() => {
                     const formatCurrency = (n: number) => `$${Math.round(n).toLocaleString()}`;
+                    const formatCurrency2 = (n: number) =>
+                      `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                     const formatPercent = (n: number) => `${Math.round(n)}%`;
                     const limit = Number(selectedPaydownAccount.limit || 0);
                     const balance = Number(selectedPaydownAccount.balance || 0);
                     const util = limit > 0 ? (balance / limit) * 100 : 0;
                     const targetBal = Math.round(limit * (selectedTarget / 100));
                     const payment = Math.max(0, Math.round(balance - targetBal));
-                    const weekly = Math.round(payment / 52);
-                    const monthly = Math.round(payment / 12);
+                    const weekly = payment / 52;
+                    const daily = payment / 365;
+                    const monthly = payment / 12;
                     const yearly = payment;
                     return (
                       <>
@@ -6326,14 +7849,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         {/* Payment targets */}
                         <div className="space-y-3">
                           <div className="font-medium">Payment Targets</div>
-                          <div className="grid grid-cols-3 gap-3">
+                          <div className="grid grid-cols-4 gap-3">
+                            <div className="rounded-md bg-slate-50 border p-3">
+                              <div className="text-xs text-muted-foreground">Daily (365 days)</div>
+                              <div className="font-semibold text-teal-700">{formatCurrency2(daily)}</div>
+                            </div>
                             <div className="rounded-md bg-slate-50 border p-3">
                               <div className="text-xs text-muted-foreground">Weekly (52 weeks)</div>
-                              <div className="font-semibold text-emerald-700">{formatCurrency(weekly)}</div>
+                              <div className="font-semibold text-emerald-700">{formatCurrency2(weekly)}</div>
                             </div>
                             <div className="rounded-md bg-slate-50 border p-3">
                               <div className="text-xs text-muted-foreground">Monthly (12 months)</div>
-                              <div className="font-semibold text-indigo-700">{formatCurrency(monthly)}</div>
+                              <div className="font-semibold text-indigo-700">{formatCurrency2(monthly)}</div>
                             </div>
                             <div className="rounded-md bg-slate-50 border p-3">
                               <div className="text-xs text-muted-foreground">Yearly (total)</div>
@@ -6347,8 +7874,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <div className="font-medium">Step-by-Step Plan</div>
                           <ol className="list-decimal list-inside space-y-1 text-sm">
                             <li>Choose your target utilization ({selectedTarget}%).</li>
-                            <li>Set your schedule: weekly or monthly payments.</li>
-                            <li>Pay {formatCurrency(weekly)} per week or {formatCurrency(monthly)} per month until {formatCurrency(payment)} is completed.</li>
+                            <li>Set your schedule: daily, weekly or monthly payments.</li>
+                            <li>Pay {formatCurrency2(daily)} per day, {formatCurrency2(weekly)} per week or {formatCurrency2(monthly)} per month until {formatCurrency(payment)} is completed.</li>
                             <li>Keep new charges low to maintain target utilization.</li>
                           </ol>
                         </div>
@@ -6366,19 +7893,64 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               )}
             </DialogContent>
           </Dialog>
-        
+       
+
       {/* Funding Application Modal */}
       <Dialog open={showFundingModal} onOpenChange={setShowFundingModal}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
-              {fundingType === 'personal' ? 'Personal' : 'Business'} Funding Application
+              {fundingType === 'personal' ? 'Personal' : fundingType === 'business' ? 'Business' : 'Both'} Funding Application
             </DialogTitle>
           </DialogHeader>
 
           {!fundingOption ? (
             // Enhanced Funding Option Selection
             <div className="space-y-8 py-6">
+              <div className="space-y-3 max-w-3xl mx-auto">
+                <h4 className="text-lg font-semibold">What are you looking for?</h4>
+                <div className="flex flex-wrap gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('Credit Card')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('Credit Card'); else next.delete('Credit Card');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>Credit cards</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('SBA Loan')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('SBA Loan'); else next.delete('SBA Loan');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>SBA loans</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('Line of Credit')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('Line of Credit'); else next.delete('Line of Credit');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>Lines of credit</span>
+                  </label>
+                </div>
+              </div>
               <div className="text-center">
                 <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
                   <DollarSign className="h-10 w-10 text-white" />
@@ -6386,16 +7958,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 <h3 className="text-3xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                   Choose Your Funding Path
                 </h3>
-                <p className="text-muted-foreground max-w-2xl mx-auto text-lg leading-relaxed">
+                <p className="text-gray-600 max-w-2xl mx-auto text-lg leading-relaxed">
                   Select the option that best fits your needs and let us help you secure the funding you deserve
                 </p>
               </div>
 
               <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
                 <Card 
-                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-blue-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-blue-50 dark:from-slate-800 dark:to-slate-700"
+                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-blue-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-blue-50"
                   onClick={() => {
-                    navigate(`/funding/apply/${fundingType}`);
+                    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+                    const infer = (inq: any) => {
+                      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
+                      if (b) return String(b);
+                      const id = inq?.BureauId;
+                      if (id === 1) return 'TransUnion';
+                      if (id === 2) return 'Equifax';
+                      if (id === 3) return 'Experian';
+                      return '';
+                    };
+                    const ib = {
+                      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
+                      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
+                      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
+                    };
+                    navigate(`/funding/apply/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined, productTypes: selectedProductTypes, inquiriesByBureau: ib, goal: fundingType } });
                     setShowFundingModal(false);
                   }}
                 >
@@ -6404,8 +7991,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-500 shadow-xl">
                       <Users className="h-12 w-12 text-white" />
                     </div>
-                    <h4 className="text-2xl font-bold mb-4 text-gray-800 dark:text-foreground group-hover:text-blue-700 transition-colors duration-300">Done For You</h4>
-                    <p className="text-muted-foreground text-base mb-6 leading-relaxed">
+                    <h4 className="text-2xl font-bold mb-4 text-gray-800 group-hover:text-blue-700 transition-colors duration-300">Done For You</h4>
+                    <p className="text-gray-600 text-base mb-6 leading-relaxed">
                       Our funding experts handle everything for you. Complete application assistance, document preparation, and personalized guidance throughout the entire process.
                     </p>
                     <div className="space-y-3 mb-8">
@@ -6437,9 +8024,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </Card>
 
                 <Card 
-                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-green-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-green-50 dark:from-slate-800 dark:to-slate-700"
+                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-green-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-green-50"
                   onClick={() => {
-                    navigate(`/funding/diy/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined } });
+                    performGoToDiyFunding((fundingType as any) || 'both');
                     setShowFundingModal(false);
                   }}
                 >
@@ -6448,8 +8035,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <div className="w-24 h-24 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-500 shadow-xl">
                       <FileText className="h-12 w-12 text-white" />
                     </div>
-                    <h4 className="text-2xl font-bold mb-4 text-gray-800 dark:text-foreground group-hover:text-green-700 transition-colors duration-300">DIY Funding</h4>
-                    <p className="text-muted-foreground text-base mb-6 leading-relaxed">
+                    <h4 className="text-2xl font-bold mb-4 text-gray-800 group-hover:text-green-700 transition-colors duration-300">DIY Funding</h4>
+                    <p className="text-gray-600 text-base mb-6 leading-relaxed">
                       Take control of your funding journey. Complete the application yourself with our comprehensive step-by-step guidance and resources.
                     </p>
                     <div className="space-y-3 mb-8">
@@ -6473,8 +8060,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     <Button 
                       variant="outline" 
                       className="w-full border-2 border-green-500 text-green-600 hover:bg-green-500 hover:text-white font-semibold py-4 rounded-xl transition-all duration-300 text-lg hover:shadow-lg"
-                      onClick={() => {
-                        navigate(`/funding/diy/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined } });
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        performGoToDiyFunding((fundingType as any) || 'both');
                         setShowFundingModal(false);
                       }}
                     >
@@ -6495,10 +8083,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             ) : (
               <PersonalCardsDisplay onClose={() => setFundingOption(null)} />
             )
-          ) : (
-            // Enhanced 4-Step Form (only show for Done For You option)
-            fundingOption === 'done-for-you' && (
-              <div className="space-y-8 py-6">
+            ) : (
+              // Enhanced 4-Step Form (only show for Done For You option)
+              fundingOption === 'done-for-you' && (
+                <div className="space-y-8 py-6">
                 {/* Enhanced Step Navigation with Progress Bar */}
                 <div className="relative mb-12">
                   <div className="flex items-center justify-between mb-8">
@@ -7573,10 +9161,10 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 )}
 
                 {/* Navigation Buttons */}
-                <div className="flex justify-between items-center pt-6 border-t border-border">
+                <div className="flex justify-between items-center pt-6 border-t border-gray-200">
                   <Button 
                     variant="outline" 
-                    className="group relative overflow-hidden px-6 py-3 border-2 border-border hover:border-blue-500 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-card hover:bg-muted"
+                    className="group relative overflow-hidden px-6 py-3 border-2 border-gray-300 hover:border-blue-500 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-white hover:bg-blue-50"
                     onClick={() => handleStepNavigation('back')}
                   >
                     <div className="flex items-center gap-2">
@@ -7643,6 +9231,29 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </div>
               </div>
             )
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Eligibility Audit Modal */}
+      <Dialog open={showEligibilityAuditModal} onOpenChange={setShowEligibilityAuditModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Run Funding Eligibility Audit</DialogTitle>
+            <DialogDescription>
+              Analyze current underwriting criteria and update client fundable status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-3">
+            <Button size="lg" onClick={runEligibilityAudit} disabled={auditRunning}>
+              {auditRunning ? 'Running...' : 'Run Audit'}
+            </Button>
+            <Button variant="outline" onClick={() => setShowEligibilityAuditModal(false)}>
+              Dismiss
+            </Button>
+          </div>
+          {auditResult && (
+            <p className="text-sm text-muted-foreground mt-2">{auditResult}</p>
           )}
         </DialogContent>
       </Dialog>

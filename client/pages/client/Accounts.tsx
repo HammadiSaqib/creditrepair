@@ -1,4 +1,7 @@
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { clientsApi, warMachineApi } from "@/lib/api";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -46,8 +49,9 @@ import { TrialCreditReportWrapper, TrialScoreWrapper, TrialSensitiveWrapper } fr
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { shouldShowField, tabConfig } from "@/utils/fieldCategorization";
-import { calculateUtilization as calculateAccountUtilization } from "../../utils/utilizationCalculator.js";
+import { calculateAccountUtilization } from "../../utils/utilizationCalculator.js";
 import {
+  Gauge,
   FileText,
   Search,
   Download,
@@ -112,16 +116,623 @@ import {
   Banknote,
   ScrollText,
   Lock,
-  Gauge,
   BadgeCheck,
+  Settings,
+  Gavel,
 } from "lucide-react";
 import FundingProjectionsCalculator from '../../utils/fundingProjections.js';
 import GapAnalyzer from '../../utils/gapAnalyzer.js';
 import PersonalCardsDisplay from '../../components/PersonalCardsDisplay';
 import BusinessCardsDisplay from '../../components/BusinessCardsDisplay';
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
-import { clientsApi } from "@/lib/api";
 import { useAuthContext } from "@/contexts/AuthContext";
+
+interface DebtConsolidationViewProps {
+  accounts: any[];
+  payoffPlans?: any[];
+  onSavePlan?: (plan: any) => Promise<void>;
+  clientId?: string | number;
+}
+
+const getOrdinalSuffix = (day: number) => {
+    if (day > 3 && day < 21) return 'th';
+    switch (day % 10) {
+      case 1:  return "st";
+      case 2:  return "nd";
+      case 3:  return "rd";
+      default: return "th";
+    }
+};
+
+
+
+const getNextReminderDate = (day: number) => {
+    const today = new Date();
+    let nextDate = new Date(today.getFullYear(), today.getMonth(), day);
+    
+    // If the date for this month has passed, move to next month
+    if (nextDate < today) {
+        nextDate = new Date(today.getFullYear(), today.getMonth() + 1, day);
+    }
+    return nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientId }: DebtConsolidationViewProps) => {
+  const [targetUtilization, setTargetUtilization] = useState(0);
+  const [payoffMonths, setPayoffMonths] = useState(12);
+  const [remindersSet, setRemindersSet] = useState(false);
+  
+  // Gamification
+  const [points, setPoints] = useState(1250);
+  
+  // Edit State
+  const [editingAccount, setEditingAccount] = useState<any>(null);
+  const [editForm, setEditForm] = useState({
+    targetUtilization: 0,
+    payoffTimelineMonths: 12,
+    paymentDate: 1,
+    reminderEnabled: false,
+    trackEnabled: false
+  });
+
+  const handleEditClick = (account: any) => {
+    const existingPlan = payoffPlans.find(p => p.account_id === String(account.id));
+    setEditingAccount(account);
+    setEditForm({
+      targetUtilization: existingPlan?.target_utilization ?? 0,
+      payoffTimelineMonths: existingPlan?.payoff_timeline_months ?? 12,
+      paymentDate: existingPlan?.payment_date ?? 1,
+      reminderEnabled: !!existingPlan?.reminder_enabled,
+      trackEnabled: !!existingPlan?.track_enabled
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAccount(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!onSavePlan || !clientId || !editingAccount) return;
+    
+    try {
+      await onSavePlan({
+        client_id: Number(clientId),
+        account_id: String(editingAccount.id),
+        account_name: editingAccount.name,
+        target_utilization: Number(editForm.targetUtilization),
+        payoff_timeline_months: Number(editForm.payoffTimelineMonths),
+        payment_date: Number(editForm.paymentDate),
+        reminder_enabled: Boolean(editForm.reminderEnabled),
+        track_enabled: Boolean(editForm.trackEnabled)
+      });
+      setEditingAccount(null);
+      toast.success("Payoff plan updated successfully");
+    } catch (error) {
+      toast.error("Failed to update payoff plan");
+    }
+  };
+  
+  const calculateAge = (dateString: string) => {
+    if (!dateString) return "N/A";
+    const openDate = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - openDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const years = Math.floor(diffDays / 365);
+    const months = Math.floor((diffDays % 365) / 30);
+    return `${years}y ${months}m`;
+  };
+
+  const revolvingAccounts = useMemo(() => {
+    if (!accounts) return [];
+    const isRevolving = (acc: any) => {
+      const t = String(acc.type || '').toLowerCase();
+      const at = String(acc.AccountType || acc.AccountTypeDescription || '').toLowerCase();
+      return t.includes('credit') || t.includes('revolving') || at.includes('revolving') || acc.type === 'Credit Card';
+    };
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const clean = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const canonical = (s: any) => {
+      const t = clean(s);
+      if (/navyfederal|navyfcu/.test(t)) return 'navy federal credit union';
+      if (/creditone|crdtonebnk/.test(t)) return 'credit one bank';
+      if (/jpmcb|chase/.test(t)) return 'chase';
+      if (/americanexpress|amex/.test(t)) return 'american express';
+      if (/discover/.test(t)) return 'discover';
+      return norm(s);
+    };
+    const last4 = (s: any) => String(s || '').replace(/\D/g, '').slice(-4);
+    const raw = accounts.filter(isRevolving);
+    const groups = new Map<string, any>();
+    raw.forEach((acc: any, index: number) => {
+      const nameRaw = acc.creditor || acc.CreditorName || acc.name;
+      const nameKey = canonical(nameRaw);
+      const num4 = last4(acc.accountNumber || acc.AccountNumber);
+      const fallback = String(acc.DateOpened || acc.opened || '').slice(0, 7);
+      const effLimit = Number(acc.limit ?? acc.CreditLimit ?? acc.HighBalance ?? 0);
+      const bucket = effLimit > 0 ? Math.round(effLimit / 100) * 100 : 0;
+      const key = `${nameKey}|${num4 || bucket || fallback}`;
+      const balance = Number(acc.balance ?? acc.Balance ?? acc.CurrentBalance ?? 0);
+      const limit = Number(acc.limit ?? acc.CreditLimit ?? acc.HighBalance ?? 0);
+      const opened = acc.DateOpened || acc.opened || '';
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          id: acc.id ?? index,
+          name: nameRaw || 'Unknown Creditor',
+          balance,
+          limit,
+          opened
+        });
+      } else {
+        if (balance > (existing.balance ?? 0)) existing.balance = balance;
+        if (limit > (existing.limit ?? 0)) existing.limit = limit;
+        const openedDate = new Date(opened);
+        const existingDate = new Date(existing.opened || opened);
+        if (opened && !isNaN(openedDate.getTime()) && (isNaN(existingDate.getTime()) || openedDate < existingDate)) {
+          existing.opened = opened;
+        }
+      }
+    });
+    const unique = Array.from(groups.values());
+    return unique
+      .map((acc: any, index: number) => {
+        const plan = payoffPlans.find(p => p.account_id === String(acc.id ?? index));
+        const balance = Number(acc.balance || 0);
+        const limit = Number(acc.limit || 0);
+        const baseMin = Math.max(25, balance * 0.02);
+        const minPayment = balance <= 50 ? balance : Math.min(balance, baseMin);
+        return {
+          id: acc.id ?? index,
+          name: acc.name,
+          balance,
+          limit,
+          utilization: limit > 0 ? (balance / limit) * 100 : 0,
+          age: calculateAge(acc.opened),
+          apr: 0.24,
+          minPayment,
+          plan
+        };
+      })
+      .filter(a => a.balance > 0 && a.limit > 0)
+      .sort((a, b) => a.balance - b.balance);
+  }, [accounts, payoffPlans]);
+
+  const totalDebt = revolvingAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+
+  const eligibleAccounts = useMemo(() => {
+    return revolvingAccounts.filter(a => a.limit > 0 && a.balance > 0);
+  }, [revolvingAccounts]);
+
+  const monthlyBudget = useMemo(() => {
+    return eligibleAccounts.reduce((sum, acc) => sum + acc.minPayment, 0) + 1;
+  }, [eligibleAccounts]);
+
+  const snowballPlan = useMemo(() => {
+    const sorted = eligibleAccounts.slice().sort((a, b) => a.balance - b.balance);
+    let extra = 1;
+    const out = [] as any[];
+    for (const acc of sorted) {
+      const monthlyPay = acc.minPayment + extra;
+      const months = monthlyPay > 0 ? Math.ceil(acc.balance / monthlyPay) : 0;
+      out.push({ id: acc.id, name: acc.name, minPayment: acc.minPayment, extraPayment: extra, payoffMonths: months });
+      extra += acc.minPayment;
+    }
+    return out;
+  }, [eligibleAccounts]);
+
+  const oneMonth = useMemo(() => {
+    const updatedBalances: Record<string, number> = {};
+    const payments = eligibleAccounts.map(acc => ({ id: acc.id, minPayment: Math.min(acc.balance, acc.minPayment), extraPayment: 0, totalPayment: 0, balance: acc.balance }));
+    for (const p of payments) {
+      p.totalPayment = p.minPayment;
+      updatedBalances[String(p.id)] = Math.max(0, p.balance - p.minPayment);
+    }
+    if (eligibleAccounts.length > 0) {
+      const smallest = eligibleAccounts[0];
+      const ps = payments.find(x => x.id === smallest.id);
+      if (ps) {
+        const extraPay = Math.min(updatedBalances[String(ps.id)], 1);
+        ps.extraPayment = extraPay;
+        ps.totalPayment += extraPay;
+        updatedBalances[String(ps.id)] = Math.max(0, updatedBalances[String(ps.id)] - extraPay);
+      }
+    }
+    return { payments, updatedBalances };
+  }, [eligibleAccounts]);
+
+  const smallDebtOptions = useMemo(() => {
+    const out: Record<string, { months: number; monthly: number }[]> = {};
+    for (const acc of eligibleAccounts) {
+      if (acc.balance < 500) {
+        const opts = [] as { months: number; monthly: number }[];
+        for (let m = 1; m <= 6; m++) {
+          const monthly = Math.ceil(acc.balance / m);
+          opts.push({ months: m, monthly });
+        }
+        out[String(acc.id)] = opts;
+      }
+    }
+    return out;
+  }, [eligibleAccounts]);
+
+  const handlePayoffVerify = () => {
+    setPoints(prev => prev + 100);
+    // In a real app, this would show a toast or confetti
+  };
+
+  const calculatePayoffToTarget = (balance: number, limit: number, targetPercent: number) => {
+    const targetBalance = limit * (targetPercent / 100);
+    const amountToPay = balance - targetBalance;
+    return Math.max(0, amountToPay);
+  };
+
+  return (
+    <div className="space-y-6">
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <Card className="bg-gradient-to-br from-rose-500 to-pink-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">${totalDebt.toLocaleString()}</div>
+             <div className="text-rose-100 font-medium">Total Revolving Debt</div>
+           </CardContent>
+         </Card>
+         <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">${Math.ceil(monthlyBudget).toLocaleString()}/mo</div>
+             <div className="text-indigo-100 font-medium">Target Monthly Payment</div>
+           </CardContent>
+         </Card>
+         <Card className="bg-gradient-to-br from-yellow-50 to-orange-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">{points.toLocaleString()}</div>
+             <div className="text-yellow-100 font-medium">Reward Points</div>
+           </CardContent>
+         </Card>
+       </div>
+
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+         <Card className="lg:col-span-1 shadow-md border-slate-200 dark:border-slate-800">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-rose-500" />
+                {editingAccount ? `Configure: ${editingAccount.name}` : "Plan Configuration"}
+             </CardTitle>
+             <CardDescription>
+                {editingAccount ? "Update payoff settings for this account" : "Customize your payoff strategy"}
+             </CardDescription>
+           </CardHeader>
+           <CardContent className="space-y-8">
+             {editingAccount ? (
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label>Target Utilization (%)</Label>
+                        <div className="flex items-center gap-4">
+                            <input 
+                                type="range" 
+                                min="0" 
+                                max="100" 
+                                step="1"
+                                value={editForm.targetUtilization} 
+                                onChange={(e) => setEditForm({...editForm, targetUtilization: Number(e.target.value)})}
+                                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                            <span className="w-12 text-right font-bold">{editForm.targetUtilization}%</span>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <Label>Payoff Timeline (Months)</Label>
+                        <div className="flex items-center gap-4">
+                            <input 
+                                type="range" 
+                                min="1" 
+                                max="36" 
+                                step="1"
+                                value={editForm.payoffTimelineMonths} 
+                                onChange={(e) => setEditForm({...editForm, payoffTimelineMonths: Number(e.target.value)})}
+                                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                            <span className="w-12 text-right font-bold">{editForm.payoffTimelineMonths}</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Payment Date (Day of Month)</Label>
+                        <Input 
+                            type="number" 
+                            min="1" 
+                            max="31" 
+                            value={editForm.paymentDate}
+                            onChange={(e) => setEditForm({...editForm, paymentDate: Number(e.target.value)})}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between space-x-2 pt-4 border-t">
+                        <Label htmlFor="reminder-mode" className="flex flex-col space-y-1">
+                            <span>Enable Payment Reminders</span>
+                            <span className="font-normal text-xs text-muted-foreground">
+                                Send monthly email reminders
+                            </span>
+                        </Label>
+                        {editForm.reminderEnabled ? (
+                            <div className="flex gap-2">
+                                <Button 
+                                    size="sm" 
+                                    variant="destructive" 
+                                    onClick={() => setEditForm({
+                                        ...editForm,
+                                        reminderEnabled: false,
+                                        trackEnabled: false
+                                    })}
+                                >
+                                    Stop Reminder
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                    onClick={() => setEditForm({
+                                        ...editForm,
+                                        reminderEnabled: false,
+                                        trackEnabled: false
+                                    })}
+                                >
+                                    Payment Clear
+                                </Button>
+                            </div>
+                        ) : (
+                            <Switch
+                                id="reminder-mode"
+                                checked={editForm.reminderEnabled}
+                                onCheckedChange={(checked) => setEditForm({
+                                    ...editForm, 
+                                    reminderEnabled: checked,
+                                    trackEnabled: checked 
+                                })}
+                            />
+                        )}
+                    </div>
+                    {editForm.reminderEnabled && (
+                        <div className="flex flex-col gap-2">
+                            <div className="text-xs text-muted-foreground bg-green-50 p-2 rounded border border-green-100 flex items-center gap-2">
+                                <CheckCircle2 className="h-3 w-3 text-green-600" />
+                                <span className="text-green-700">Reminders active for the {editForm.paymentDate}{getOrdinalSuffix(editForm.paymentDate)} of each month</span>
+                            </div>
+                            <div className="text-xs font-medium text-indigo-600 pl-7">
+                                Next upcoming reminder: {getNextReminderDate(editForm.paymentDate)}
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex gap-2 pt-4">
+                        <Button className="flex-1" onClick={handleSaveEdit}>
+                            {editForm.reminderEnabled && payoffPlans.some(p => p.account_id === String(editingAccount.id) && p.reminder_enabled) 
+                                ? "Update Reminder" 
+                                : "Save"}
+                        </Button>
+                        <Button variant="outline" className="flex-1" onClick={handleCancelEdit}>Cancel</Button>
+                    </div>
+                </div>
+             ) : (
+               <div className="space-y-4">
+                 <div className="flex items-center justify-between mb-4">
+                    <Label className="text-base font-semibold">Active Reminders</Label>
+                    <Badge variant="outline" className="text-muted-foreground">{payoffPlans.filter(p => p.reminder_enabled).length} Active</Badge>
+                 </div>
+                 
+                 {payoffPlans.filter(p => p.reminder_enabled).length > 0 ? (
+                    <div className="space-y-3">
+                        {payoffPlans.filter(p => p.reminder_enabled).map((plan, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                                <div>
+                                    <div className="font-medium text-sm">{plan.account_name}</div>
+                                    <div className="text-xs text-muted-foreground">Payment Date: {plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xs font-medium text-indigo-600">Next: {getNextReminderDate(plan.payment_date)}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                 ) : (
+                    <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg bg-slate-50/50">
+                        <div className="flex justify-center mb-2">
+                            <Clock className="h-8 w-8 text-slate-300" />
+                        </div>
+                        <div className="mb-4">No active reminders.</div>
+                        <Select onValueChange={(value) => {
+                            const account = revolvingAccounts.find(a => String(a.id) === value);
+                            if (account) handleEditClick(account);
+                        }}>
+                            <SelectTrigger className="w-[200px] mx-auto bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                                <SelectValue placeholder="Select account to configure" />
+                            </SelectTrigger>
+                            <SelectContent className="dark:bg-slate-900 dark:border-slate-700">
+                                {revolvingAccounts.map((acc) => (
+                                    <SelectItem key={acc.id} value={String(acc.id)}>
+                                        {acc.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                 )}
+               </div>
+             )}
+           </CardContent>
+         </Card>
+
+         <Card className="lg:col-span-2 shadow-md border-slate-200 dark:border-slate-800 dark:bg-card">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <LineChart className="w-5 h-5 text-indigo-500" />
+                Snowball Payoff Schedule
+             </CardTitle>
+             <CardDescription>Focus extra payments on the smallest balance first</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="rounded-md border overflow-x-auto">
+               <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[150px]">Account</TableHead>
+                    <TableHead>Limit</TableHead>
+                    <TableHead>Balance</TableHead>
+                    <TableHead>Minimum Payment</TableHead>
+                    <TableHead>Payoff Time</TableHead>
+                    <TableHead>Percent Progress</TableHead>
+                    <TableHead>Updated Balance</TableHead>
+                    <TableHead>Plan Options</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                 <TableBody>
+                  {eligibleAccounts.length > 0 ? eligibleAccounts.map((acc, idx) => {
+                    const planRec = snowballPlan.find(p => p.id === acc.id);
+                    const pm = oneMonth.payments.find(p => p.id === acc.id);
+                    const progressPct = pm && acc.balance > 0 ? Math.min(100, ((pm.totalPayment / acc.balance) * 100)) : 0;
+                    const updated = oneMonth.updatedBalances[String(acc.id)] ?? acc.balance;
+                    return (
+                      <TableRow key={idx} className={acc.plan?.track_enabled ? "bg-green-50/50" : ""}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-rose-100 rounded-full text-rose-600">
+                               <CreditCard className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <div>{acc.name}</div>
+                              {acc.plan?.track_enabled && (
+                                <div className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Track Enabled
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>${acc.limit.toLocaleString()}</TableCell>
+                        <TableCell>${acc.balance.toLocaleString()}</TableCell>
+                        <TableCell className="font-bold">${Math.ceil(acc.minPayment).toLocaleString()}</TableCell>
+                        <TableCell>{planRec?.payoffMonths || 0} months</TableCell>
+                        <TableCell>
+                          <div className="text-xs font-medium">
+                            {progressPct.toFixed(1)}%
+                          </div>
+                        </TableCell>
+                        <TableCell>${Math.ceil(updated).toLocaleString()}</TableCell>
+                        <TableCell>
+                          {smallDebtOptions[String(acc.id)] ? (
+                            <div className="flex flex-wrap gap-1">
+                              {smallDebtOptions[String(acc.id)].map((opt, i) => (
+                                <Badge key={i} variant="outline" className="text-xs">
+                                  {opt.months}m ${opt.monthly}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleEditClick(acc)}>
+                               <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                           </Button>
+                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={handlePayoffVerify}>
+                               <CheckCircle2 className="h-5 w-5 text-slate-300 hover:text-green-500 transition-colors" />
+                           </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }) : (
+                    <TableRow>
+                       <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                           No revolving accounts found.
+                       </TableCell>
+                    </TableRow>
+                  )}
+                 </TableBody>
+               </Table>
+             </div>
+             
+            
+           </CardContent>
+         </Card>
+       </div>
+       
+       <Card className="shadow-md border-slate-200 dark:border-slate-800 dark:bg-card">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-green-600" />
+                Saved Payoff Plans
+             </CardTitle>
+             <CardDescription>View all your saved debt payoff strategies and reminders</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="rounded-md border overflow-x-auto">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead>Account Name</TableHead>
+                     <TableHead>Target Utilization</TableHead>
+                     <TableHead>Payoff Timeline</TableHead>
+                     <TableHead>Payment Date</TableHead>
+                     <TableHead>Reminders</TableHead>
+                     <TableHead>Tracking</TableHead>
+                     <TableHead>Actions</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {payoffPlans.length > 0 ? payoffPlans.map((plan, idx) => (
+                     <TableRow key={idx}>
+                       <TableCell className="font-medium">{plan.account_name}</TableCell>
+                       <TableCell>{plan.target_utilization}%</TableCell>
+                       <TableCell>{plan.payoff_timeline_months} months</TableCell>
+                       <TableCell>{plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</TableCell>
+                       <TableCell>
+                         {plan.reminder_enabled ? (
+                           <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-green-200">Active</Badge>
+                         ) : (
+                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         {plan.track_enabled ? (
+                           <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200">Enabled</Badge>
+                         ) : (
+                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         <Button 
+                           size="sm" 
+                           variant="ghost" 
+                           onClick={() => {
+                             const account = revolvingAccounts.find(a => String(a.id) === plan.account_id) || { id: plan.account_id, name: plan.account_name };
+                             handleEditClick(account);
+                           }}
+                         >
+                           <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                         </Button>
+                       </TableCell>
+                     </TableRow>
+                   )) : (
+                     <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No saved payoff plans found.
+                        </TableCell>
+                     </TableRow>
+                   )}
+                 </TableBody>
+               </Table>
+             </div>
+           </CardContent>
+         </Card>
+       
+    </div>
+  );
+};
+
+const PERSONAL_INFO_MODE_OPTIONS = { normal: 'normal', credit_repair: 'credit_repair' } as const;
 
 // Import the same detailed report data from Reports.tsx for consistency
 const detailedReport = {
@@ -668,18 +1279,379 @@ const detailedReport = {
 };
 
 export default function CreditReport() {
+  const { userProfile } = useAuthContext();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("accounts");
+  const [activeTab, setActiveTab] = useState("overview");
   const [reportData, setReportData] = useState(detailedReport);
   const [apiData, setApiData] = useState<any>(null);
   const [qualifyView, setQualifyView] = useState<'cards' | 'table'>('table');
+  const [refreshAuditNonce, setRefreshAuditNonce] = useState(0);
+  const [isRerunningAudit, setIsRerunningAudit] = useState(false);
   const [eligibilityBureau, setEligibilityBureau] = useState<'all' | 'tu' | 'ex' | 'eq'>('all');
   const analysisRef = useRef<HTMLDivElement>(null);
+  const [personalInfoMode, setPersonalInfoMode] = useState<'normal' | 'credit_repair'>('normal');
+  const [smPiLoading, setSmPiLoading] = useState(false);
+  const [smPiResult, setSmPiResult] = useState<any | null>(null);
+  const [smPiError, setSmPiError] = useState<string | null>(null);
+  const [lawEngineAutoMode, setLawEngineAutoMode] = useState(false);
+  const [lawEngineNoticeOpen, setLawEngineNoticeOpen] = useState(false);
+  const [pendingLawEngineTab, setPendingLawEngineTab] = useState<string | null>(null);
+  const [fundingAuditNoticeOpen, setFundingAuditNoticeOpen] = useState(false);
+  const [pendingFundingAuditTab, setPendingFundingAuditTab] = useState<string | null>(null);
+  const creditReportTabs = ['overview', 'personal', 'inquiries', 'public', 'accounts'] as const;
+  type CreditReportTab = (typeof creditReportTabs)[number];
+  const isLawEngineView = lawEngineAutoMode && (creditReportTabs as readonly string[]).includes(activeTab);
+
+  const requestEnableLawEngine = (tab?: CreditReportTab) => {
+    const nextTab = tab ?? ((creditReportTabs as readonly string[]).includes(activeTab as any) ? (activeTab as any) : 'overview');
+    if (lawEngineAutoMode) {
+      setActiveTab(nextTab);
+      return;
+    }
+    setPendingLawEngineTab(nextTab);
+    setLawEngineNoticeOpen(true);
+  };
+
+  const acknowledgeLawEngineNotice = () => {
+    setLawEngineNoticeOpen(false);
+    setLawEngineAutoMode(true);
+    if (pendingLawEngineTab) setActiveTab(pendingLawEngineTab);
+    setPendingLawEngineTab(null);
+  };
+
+  const requestOpenFundingAudit = () => {
+    setPendingFundingAuditTab('funding');
+    setFundingAuditNoticeOpen(true);
+  };
+
+  const acknowledgeFundingAuditNotice = () => {
+    setFundingAuditNoticeOpen(false);
+    if (pendingFundingAuditTab) setActiveTab(pendingFundingAuditTab);
+    setPendingFundingAuditTab(null);
+  };
+
+  const handleActiveTabChange = (nextTab: string) => {
+    if (nextTab === 'funding') {
+      requestOpenFundingAudit();
+      return;
+    }
+    setActiveTab(nextTab);
+  };
+
+  useEffect(() => {
+    if (!(creditReportTabs as readonly string[]).includes(activeTab as any)) {
+      setLawEngineAutoMode(false);
+    }
+  }, [activeTab]);
   
+  const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
+  const { clientId: urlClientId } = useParams<{ clientId: string }>();
+  const clientId = urlClientId || searchParams.get("clientId") || userProfile?.id;
+
+  const fetchPayoffPlans = async () => {
+    if (!clientId) return;
+    try {
+      const response = await clientsApi.getDebtPayoffPlans(Number(clientId));
+      setPayoffPlans(response.data);
+    } catch (error) {
+      console.error("Failed to fetch payoff plans:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayoffPlans();
+  }, [clientId]);
+
+  const handleSavePayoffPlan = async (plan: any) => {
+    try {
+      await clientsApi.saveDebtPayoffPlan(plan);
+      fetchPayoffPlans();
+    } catch (error) {
+      throw error;
+    }
+  };
+
   // Subscription status for tab access control
   const subscriptionStatus = useSubscriptionStatus();
 
+  const employmentMismatch = useMemo(() => {
+    if (!smPiResult?.debug?.trigger_hits) return false;
+    try {
+      return smPiResult.debug.trigger_hits.some((h: any) => String(h?.trigger) === 'EMPLOYMENT_INCONSISTENT');
+    } catch {
+      return false;
+    }
+  }, [smPiResult]);
+
+  const buildSmPiPayload = () => {
+    const nameFor = (bureauId: number) => {
+      const names = apiData?.Name?.filter((n: any) => Number(n.BureauId) === Number(bureauId)) || [];
+      const primary = names.find((n: any) => (n.NameType || '') === 'Primary') || names[0];
+      if (!primary) return null;
+      const parts = [primary.FirstName || '', primary.Middle || '', primary.LastName || ''].filter(Boolean);
+      const full = parts.join(' ').trim();
+      return full || null;
+    };
+    const aliasesFor = (bureauId: number) => {
+      const names = apiData?.Name?.filter((n: any) => Number(n.BureauId) === Number(bureauId)) || [];
+      return names
+        .filter((n: any) => /(aka|alias|also known as|former)/i.test(String(n.NameType || '')))
+        .map((n: any) => `${n.FirstName || ''} ${n.Middle || ''} ${n.LastName || ''}`.trim())
+        .filter(Boolean);
+    };
+    const dobFor = (bureauId: number) => {
+      const dob = apiData?.DOB?.find((d: any) => Number(d.BureauId) === Number(bureauId))?.DOB;
+      return dob || (reportData?.personalInfo?.dateOfBirth || null);
+    };
+    const addressesFor = (bureauId: number) => {
+      const addresses = apiData?.Address?.filter((a: any) => Number(a.BureauId) === Number(bureauId)) || [];
+      const toText = (a: any) => `${a.StreetAddress || ''}, ${a.City || ''}, ${a.State || ''} ${a.Zip || ''}`.replace(/^,\s*|,\s*$/, '').trim();
+      const current = addresses.filter((a: any) => String(a.AddressType || '').toLowerCase() === 'current').map(toText).filter(Boolean);
+      const previous = addresses.filter((a: any) => String(a.AddressType || '').toLowerCase() !== 'current').map(toText).filter(Boolean);
+      // Fallback to mocked personalInfo addresses if API empty
+      if (addresses.length === 0 && Array.isArray(reportData?.personalInfo?.addresses)) {
+        const arr = reportData.personalInfo.addresses;
+        current.push(
+          ...arr.filter((x: any) => String(x.type || '').toLowerCase() === 'current')
+              .map((x: any) => `${x.street || ''}, ${x.city || ''}, ${x.state || ''} ${x.zip || ''}`.replace(/^,\s*|,\s*$/, '').trim())
+              .filter(Boolean)
+        );
+        previous.push(
+          ...arr.filter((x: any) => String(x.type || '').toLowerCase() !== 'current')
+              .map((x: any) => `${x.street || ''}, ${x.city || ''}, ${x.state || ''} ${x.zip || ''}`.replace(/^,\s*|,\s*$/, '').trim())
+              .filter(Boolean)
+        );
+      }
+      return { current, previous };
+    };
+    const employmentFor = (bureauId: number) => {
+      const employers = (reportData as any)?.personalInfo?.employers || [];
+      const list = employers.filter((e: any) => Number(e.bureauId) === Number(bureauId));
+      const toText = (e: any) => [e.name || '', e.position || ''].filter(Boolean).join(' - ');
+      return list.map(toText).filter(Boolean);
+    };
+    const phones = ((reportData as any)?.personalInfo?.phoneNumbers || [])
+      .map((p: any) => p.number)
+      .filter(Boolean);
+    const ssn = (reportData as any)?.personalInfo?.ssn || null;
+    const BID = { equifax: 1, transunion: 2, experian: 3 };
+    const exAddr = addressesFor(BID.experian);
+    const tuAddr = addressesFor(BID.transunion);
+    const eqAddr = addressesFor(BID.equifax);
+    return {
+      consumer_id: String(clientId || ''),
+      pi: {
+        experian: {
+          full_name: nameFor(BID.experian),
+          aka_names: aliasesFor(BID.experian),
+          dob: dobFor(BID.experian),
+          ssn,
+          current_addresses: exAddr.current,
+          previous_addresses: exAddr.previous,
+          phones,
+          employment: employmentFor(BID.experian),
+        },
+        transunion: {
+          full_name: nameFor(BID.transunion),
+          aka_names: aliasesFor(BID.transunion),
+          dob: dobFor(BID.transunion),
+          ssn,
+          current_addresses: tuAddr.current,
+          previous_addresses: tuAddr.previous,
+          phones,
+          employment: employmentFor(BID.transunion),
+        },
+        equifax: {
+          full_name: nameFor(BID.equifax),
+          aka_names: aliasesFor(BID.equifax),
+          dob: dobFor(BID.equifax),
+          ssn,
+          current_addresses: eqAddr.current,
+          previous_addresses: eqAddr.previous,
+          phones,
+          employment: employmentFor(BID.equifax),
+        },
+      },
+      options: { strict_mode: true, normalize: true },
+    };
+  };
+
+  const handleRunSmPiEngine = async () => {
+    try {
+      setSmPiLoading(true);
+      setSmPiError(null);
+      const payload = buildSmPiPayload();
+      const resp = await warMachineApi.runSmPiSuperEngine(payload);
+      const data = resp?.data;
+      setSmPiResult(data?.result || data);
+      toast.success('SM PI Super engine completed');
+    } catch (err: any) {
+      console.error('SM PI Super engine error:', err);
+      setSmPiError('Failed to run engine');
+      toast.error('Failed to run SM PI Super engine');
+    } finally {
+      setSmPiLoading(false);
+    }
+  };
+
+  const buildInquiriesPayload = () => {
+    const list = (apiData as any)?.reportData?.reportData?.Inquiries ?? (apiData as any)?.reportData?.Inquiries ?? (apiData as any)?.Inquiries ?? [];
+    const group = {
+      experian: [] as any[],
+      transunion: [] as any[],
+      equifax: [] as any[],
+    };
+    for (const inq of list) {
+      const b = Number(inq?.BureauId);
+      const item = {
+        creditor_name: inq?.CreditorName ?? null,
+        date: inq?.DateInquiry ?? null,
+        type: inq?.InquiryType === 'I' ? 'HARD' : inq?.InquiryType === 'S' ? 'SOFT' : String(inq?.InquiryType || '').toUpperCase() || null,
+        industry: inq?.Industry ?? null,
+      };
+      if (b === 2) group.experian.push(item);
+      else if (b === 1) group.transunion.push(item);
+      else group.equifax.push(item);
+    }
+    return {
+      consumer_id: String(clientId || ''),
+      inquiries: group,
+      options: { strict_mode: true, normalize: true, window_months: 12 },
+    };
+  };
+
+  const [inqReviewLoading, setInqReviewLoading] = useState(false);
+  const [inqReviewError, setInqReviewError] = useState<string | null>(null);
+  const [inqReviewResult, setInqReviewResult] = useState<any>(null);
+
+  const handleRunInquiriesReview = async () => {
+    try {
+      setInqReviewLoading(true);
+      setInqReviewError(null);
+      const payload = buildInquiriesPayload();
+      const resp = await warMachineApi.runInquiriesReview(payload);
+      const data = resp?.data;
+      setInqReviewResult(data?.result || data);
+      toast.success('War Machine Inquiries Review completed');
+    } catch (err: any) {
+      console.error('Inquiries Review engine error:', err);
+      setInqReviewError('Failed to Run Law Engine Inquiries');
+      toast.error('Failed to Run Law Engine Inquiries Review');
+    } finally {
+      setInqReviewLoading(false);
+    }
+  };
+  const buildAccountsEvalPayload = () => {
+    const accountsList =
+      (apiData as any)?.reportData?.reportData?.Accounts ??
+      (apiData as any)?.reportData?.Accounts ??
+      (apiData as any)?.Accounts ??
+      [];
+    const pick = (...vals: any[]) => {
+      for (const v of vals) {
+        if (v === undefined || v === null) continue;
+        const s = String(v).trim();
+        if (!s || s.toLowerCase() === 'n/a') continue;
+        return s;
+      }
+      return null;
+    };
+    const normalizedAccountsList = Array.isArray(accountsList)
+      ? accountsList.map((acc: any) => ({
+          ...acc,
+          CreditorName: pick(
+            acc?.CreditorName,
+            acc?.Creditor,
+            acc?.creditor,
+            acc?.SubscriberName,
+            acc?.Subscriber,
+            acc?.company,
+            acc?.Company,
+          ),
+          AccountNumber: pick(
+            acc?.AccountNumber,
+            acc?.accountNumber,
+            acc?.MaskAccountNumber,
+            acc?.maskAccountNumber,
+            acc?.MaskedAccountNumber,
+            acc?.maskedAccountNumber,
+          ),
+        }))
+      : [];
+    return {
+      version: '1.0',
+      case_id: String(clientId || ''),
+      consumer_id: String(clientId || ''),
+      normalize: true,
+      match_strategy: 'strict',
+      bureau_ids: [1, 2, 3],
+      data: { Accounts: normalizedAccountsList },
+    };
+  };
+  const [acctEvalLoading, setAcctEvalLoading] = useState(false);
+  const [acctEvalError, setAcctEvalError] = useState<string | null>(null);
+  const [acctEvalResult, setAcctEvalResult] = useState<any>(null);
+  const [prEvalLoading, setPrEvalLoading] = useState(false);
+  const [prEvalError, setPrEvalError] = useState<string | null>(null);
+  const [prEvalResult, setPrEvalResult] = useState<any>(null);
+  const handleRunAccountsEval = async () => {
+    try {
+      setAcctEvalLoading(true);
+      setAcctEvalError(null);
+      const payload = buildAccountsEvalPayload();
+      const resp = await warMachineApi.runAccountsEval(payload);
+      const data = resp?.data;
+      setAcctEvalResult(data?.result || data);
+      toast.success('War Machine Accounts Evaluation completed');
+    } catch (err: any) {
+      console.error('Accounts Eval engine error:', err);
+      setAcctEvalError('Failed to run Accounts Law Engine');
+      toast.error('Failed to run Accounts Law Engine');
+    } finally {
+      setAcctEvalLoading(false);
+    }
+  };
+  const handleRunPublicRecordsEval = async () => {
+    try {
+      setPrEvalLoading(true);
+      setPrEvalError(null);
+      const publicRecords =
+        (apiData as any)?.PublicRecords ??
+        (reportData as any)?.publicRecords ??
+        [];
+      const payload = {
+        version: '1.0',
+        case_id: String(clientId || ''),
+        consumer_id: String(clientId || ''),
+        normalize: true,
+        bureau_ids: [1, 2, 3],
+        data: { PublicRecords: publicRecords },
+      };
+      const resp = await warMachineApi.runPublicRecordsEval(payload);
+      const data = resp?.data;
+      setPrEvalResult(data?.result || data);
+      toast.success('Public Records Evaluation completed');
+    } catch (err: any) {
+      setPrEvalError('Failed to run Public Records Law Engine');
+      toast.error('Failed to run Public Records Law Engine');
+    } finally {
+      setPrEvalLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!lawEngineAutoMode) return;
+    if (activeTab === 'personal') {
+      if (!smPiResult && !smPiLoading) handleRunSmPiEngine();
+    } else if (activeTab === 'inquiries') {
+      if (!inqReviewResult && !inqReviewLoading) handleRunInquiriesReview();
+    } else if (activeTab === 'public') {
+      if (!prEvalResult && !prEvalLoading) handleRunPublicRecordsEval();
+    } else if (activeTab === 'accounts') {
+      if (subscriptionStatus.hasActiveSubscription && !acctEvalResult && !acctEvalLoading) handleRunAccountsEval();
+    }
+  }, [activeTab, lawEngineAutoMode]);
   // Global helper: read underwriting flag for a bureau/key
   // This is used by the Basic (table) header indicator so it must be in component scope
   const getCriteriaFlag = (bureau: number, key: string) =>
@@ -816,10 +1788,9 @@ export default function CreditReport() {
     return Boolean(isFundingEligible) || localEligible;
   }, [reportData, apiData, isFundingEligible]);
 
-const { userProfile } = useAuthContext();
-const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
-  || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
-  || 'https://www.m2ficoforge.com/';
+  const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
+    || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
+    || 'https://www.m2ficoforge.com/';
   
   // Bureau card tabs state - each account group has its own tab state
   const [bureauTabs, setBureauTabs] = useState<Record<string, string>>({});
@@ -839,8 +1810,72 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   
   // Funding application modal states
   const [showFundingModal, setShowFundingModal] = useState(false);
-  const [fundingType, setFundingType] = useState<'personal' | 'business' | null>(null);
+  const [fundingType, setFundingType] = useState<'personal' | 'business' | 'both' | null>(null);
   const [fundingOption, setFundingOption] = useState<'done-for-you' | 'diy' | null>(null);
+  const [selectedProductTypes, setSelectedProductTypes] = useState<string[]>(['Credit Card','SBA Loan','Line of Credit']);
+  const [fundingEstimateNoticeOpen, setFundingEstimateNoticeOpen] = useState(false);
+  const [pendingFundingGoal, setPendingFundingGoal] = useState<'personal' | 'business' | 'both' | null>(null);
+
+  const performGoToDiyFunding = (goal: 'personal' | 'business' | 'both' = 'both') => {
+    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+    const infer = (inq: any) => {
+      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
+      if (b) return String(b);
+      const id = inq?.BureauId;
+      if (id === 1) return 'TransUnion';
+      if (id === 2) return 'Equifax';
+      if (id === 3) return 'Experian';
+      return '';
+    };
+    const ib = {
+      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
+      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
+      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
+    };
+    const maxPullsPerBureau = 4;
+    const headroomByBureau: Record<'Experian' | 'Equifax' | 'TransUnion', number> = {
+      Experian: Math.max(0, maxPullsPerBureau - Number(ib.Experian || 0)),
+      Equifax: Math.max(0, maxPullsPerBureau - Number(ib.Equifax || 0)),
+      TransUnion: Math.max(0, maxPullsPerBureau - Number(ib.TransUnion || 0)),
+    };
+    const maxSuggestedSlots = 4;
+    const maxSlotsPerBureau = 2;
+    const preferredOrder: Array<keyof typeof headroomByBureau> = ['Experian', 'Equifax', 'TransUnion'];
+    const bureauSlotCounts: Record<'Experian' | 'Equifax' | 'TransUnion', number> = {
+      Experian: 0,
+      Equifax: 0,
+      TransUnion: 0,
+    };
+    let remaining = maxSuggestedSlots;
+    for (const bureau of preferredOrder) {
+      if (remaining <= 0) break;
+      const headroom = headroomByBureau[bureau];
+      const alloc = Math.max(0, Math.min(maxSlotsPerBureau, Number(headroom || 0), remaining));
+      bureauSlotCounts[bureau] = alloc;
+      remaining -= alloc;
+    }
+    navigate(`/funding/diy/${goal}`, {
+      state: {
+        clientId: clientId ? Number(clientId) : undefined,
+        productTypes: selectedProductTypes,
+        inquiriesByBureau: ib,
+        bureauSlotCounts,
+        goal,
+      },
+    });
+  };
+
+  const goToDiyFunding = (goal: 'personal' | 'business' | 'both' = 'both') => {
+    setPendingFundingGoal(goal);
+    setFundingEstimateNoticeOpen(true);
+  };
+
+  const acknowledgeFundingEstimateNotice = () => {
+    const goal = pendingFundingGoal ?? 'both';
+    setFundingEstimateNoticeOpen(false);
+    setPendingFundingGoal(null);
+    performGoToDiyFunding(goal);
+  };
   
   // DIY Cards visibility states (for page section instead of modal)
   const [showDIYSection, setShowDIYSection] = useState(false);
@@ -849,6 +1884,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Eligibility audit modal state
+  const [showEligibilityAuditModal, setShowEligibilityAuditModal] = useState(false);
+  const [auditRunning, setAuditRunning] = useState(false);
+  const [auditResult, setAuditResult] = useState<string | null>(null);
+  const [clientRecord, setClientRecord] = useState<any>(null);
   const [formData, setFormData] = useState({
     // Business Information
     titlePosition: '',
@@ -968,7 +2009,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       if (!utilizationByBureau[bureauId]) return;
 
       // Revolving accounts (credit cards, lines of credit)
-      if (account.CreditType === 'Revolving Account' || account.AccountTypeDescription === 'Revolving Account') {
+      if (
+        account.CreditType === 'Revolving Account' ||
+        account.AccountTypeDescription === 'Revolving Account' ||
+        String(account.CreditType || '').toLowerCase().includes('credit card') ||
+        String(account.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+        String(account.AccountType || '').toLowerCase().includes('credit card')
+      ) {
         // All revolving accounts
         utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
         utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
@@ -994,6 +2041,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           utilizationByBureau[bureauId].installmentDebt += currentBalance;
         }
       }
+    });
+
+    Object.keys(utilizationByBureau).forEach((key) => {
+      const b: any = (utilizationByBureau as any)[key];
+      const openLimit = b.openRevolvingLimit || 0;
+      const allLimit = b.allRevolvingLimit || 0;
+      b.openRevolvingUtilization = openLimit > 0 ? (b.openRevolvingBalance / openLimit) * 100 : null;
+      b.allRevolvingUtilization = allLimit > 0 ? (b.allRevolvingBalance / allLimit) * 100 : null;
     });
 
     return utilizationByBureau;
@@ -1272,12 +2327,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       if (!el) return;
       const html2pdf = (await import('html2pdf.js')).default;
       const opt = {
-        margin: [10, 10],
+        margin: [15, 15],
         filename: 'CreditReport-Analysis.pdf',
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css'], avoid: ['.pdf-avoid-break', '.analysis-pdf-root > *'] }
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['.pdf-avoid-break', '.analysis-pdf-root > *'] }
       } as any;
       await (html2pdf() as any).set(opt).from(el).save();
     } catch (err) {
@@ -1440,7 +2495,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             totalRevolvingBalance += balance;
             totalRevolvingLimit += limit;
           }
-        } else if (accountType.toLowerCase().includes('installment') || accountType.toLowerCase().includes('loan')) {
+        } else if (
+          accountType.toLowerCase().includes('installment') ||
+          accountType.toLowerCase().includes('loan') ||
+          accountType.toLowerCase().includes('mortgage') ||
+          (account.Industry && String(account.Industry).toLowerCase().includes('real estate'))
+        ) {
           totalInstallmentUtilization += utilization;
           installmentAccountCount++;
         }
@@ -1553,7 +2613,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     const openRevolvingAccounts = accounts.filter((account: any) => {
       const accountType = account.CreditType || account.type || account.AccountType || '';
       const status = account.AccountStatus || account.status || '';
-      return accountType.toLowerCase().includes('revolving') && 
+      return (accountType.toLowerCase().includes('revolving') || accountType.toLowerCase().includes('credit card')) &&
              (status.toLowerCase() === 'open' || status.toLowerCase() === 'current');
     });
     
@@ -1659,7 +2719,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     // Filter only open revolving accounts with positive limits - using correct field names from API
     const openRevolvingAccounts = accounts.filter(acc => {
       const isOpen = acc.AccountStatus === 'Open';
-      const isRevolving = acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account';
+      const isRevolving = (
+        acc.CreditType === 'Revolving Account' ||
+        acc.AccountTypeDescription === 'Revolving Account' ||
+        String(acc.CreditType || '').toLowerCase().includes('credit card') ||
+        String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+        String(acc.AccountType || '').toLowerCase().includes('credit card')
+      );
       const hasLimit = parseFloat(acc.CreditLimit || '0') > 0;
       
       if (acc.CreditorName && acc.CreditorName.includes('CAPITAL')) {
@@ -1959,10 +3025,105 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     fundingProjection: calculateFundingProjections()
   };
 
-  const { clientId: urlClientId } = useParams<{ clientId: string }>();
-  // Align clientId resolution with other client pages: prefer authenticated user ID
-  const clientId = userProfile?.id?.toString() || urlClientId || searchParams.get("clientId");
   const clientName = searchParams.get("clientName") || "Client";
+  const reportHistory = Array.isArray((reportData as any)?.reportHistory) ? (reportData as any).reportHistory : [];
+
+  const parseLooseDate = (value: any) => {
+    try {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const s = String(value);
+      const normalized = s.includes(' ') && !s.includes('T') ? s.replace(' ', 'T') : s;
+      const d = new Date(normalized);
+      return Number.isFinite(d.getTime()) ? d : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const formatMonthDay = (value: any) => {
+    const d = parseLooseDate(value);
+    return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A';
+  };
+
+  const formatIsoDate = (value: any) => {
+    const d = parseLooseDate(value);
+    return d ? d.toISOString().slice(0, 10) : 'N/A';
+  };
+
+  const getHistoryDateValue = (row: any) =>
+    row?.created_at || row?.report_date || row?.date || row?.reportDate || row?.reportDateTime || null;
+
+  const getHistoryJson = (row: any) => row?.data || row?.reportData || row?.report_data || null;
+
+  const getReportDateFromJson = (json: any) => {
+    try {
+      if (!json) return null;
+      const root = (json as any)?.reportData || (json as any)?.report_data || json;
+      const direct =
+        (root as any)?.report_date ??
+        (root as any)?.reportDate ??
+        (root as any)?.ReportDate ??
+        (root as any)?.DateReported ??
+        (root as any)?.date ??
+        null;
+      const directParsed = parseLooseDate(direct);
+      if (directParsed) return directParsed;
+
+      const scoreArray = (root as any)?.Score || (root as any)?.reportData?.Score || null;
+      if (Array.isArray(scoreArray) && scoreArray.length > 0) {
+        const dates = scoreArray
+          .map((s: any) => s?.DateReported || s?.DateUpdated || s?.date || s?.Date || null)
+          .map(parseLooseDate)
+          .filter(Boolean) as Date[];
+        if (dates.length > 0) {
+          return dates.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), dates[0]);
+        }
+      }
+
+      const bureauDates = (root as any)?.bureauDates || (root as any)?.BureauDates || null;
+      if (bureauDates) {
+        const dates = [
+          bureauDates?.experian,
+          bureauDates?.transunion,
+          bureauDates?.equifax,
+          bureauDates?.Experian,
+          bureauDates?.TransUnion,
+          bureauDates?.Equifax,
+        ]
+          .map(parseLooseDate)
+          .filter(Boolean) as Date[];
+        if (dates.length > 0) {
+          return dates.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), dates[0]);
+        }
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getHistoryReportDateValue = (row: any) => getReportDateFromJson(getHistoryJson(row)) || getHistoryDateValue(row);
+
+  const getHistoryBureauScore = (row: any, bureau: 'experian' | 'transunion' | 'equifax') => {
+    const direct =
+      row?.[`${bureau}_score`] ??
+      row?.scores?.[bureau] ??
+      row?.data?.scores?.[bureau] ??
+      row?.data?.reportData?.scores?.[bureau] ??
+      null;
+    const num = Number(direct);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const getScoreDelta = (bureau: 'experian' | 'transunion' | 'equifax') => {
+    const current = Number((reportData as any)?.scores?.[bureau]);
+    const previous = reportHistory.length > 1 ? getHistoryBureauScore(reportHistory[1], bureau) : null;
+    if (!Number.isFinite(current)) return null;
+    if (previous === null) return null;
+    return current - previous;
+  };
 
   // Transform API account data to match frontend structure
   const transformApiAccounts = (apiAccounts: any[]) => {
@@ -1981,8 +3142,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       // Map BureauId to bureau name
       const getBureauName = (bureauId: number) => {
         switch (bureauId) {
-          case 1: return 'Experian';
-          case 2: return 'TransUnion';
+          case 1: return 'TransUnion';
+          case 2: return 'Experian';
           case 3: return 'Equifax';
           default: return 'Unknown';
         }
@@ -2072,13 +3233,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     const passCount = [tuCriteria, expCriteria, eqCriteria].filter(Boolean).length;
     
     if (passCount === 3) {
-      return 'bg-green-50 border-green-200'; // All pass - light green
+      return 'bg-green-50 border-green-200 dark:bg-green-900/50 dark:border-green-800 dark:text-white'; // All pass - light green
     } else if (passCount === 2) {
-      return 'bg-yellow-50 border-yellow-200'; // 2 pass - light yellow
+      return 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/50 dark:border-yellow-800 dark:text-white'; // 2 pass - light yellow
     } else if (passCount === 1) {
-      return 'bg-orange-50 border-orange-200'; // 1 pass - light orange
+      return 'bg-orange-50 border-orange-200 dark:bg-orange-900/50 dark:border-orange-800 dark:text-white'; // 1 pass - light orange
     } else {
-      return 'bg-red-50 border-red-200'; // None pass - light red
+      return 'bg-red-50 border-red-200 dark:bg-red-900/50 dark:border-red-800 dark:text-white'; // None pass - light red
     }
   };
 
@@ -2098,6 +3259,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         try {
           const clientResp = await clientsApi.getClient(clientId);
           dbSSNLastFour = clientResp?.data?.ssn_last_four || null;
+          setClientRecord(clientResp?.data || null);
+          const shouldShowAudit = !clientResp?.data?.fundable_status
+            || searchParams.get('newReport') === 'true'
+            || searchParams.get('fresh') === 'true';
+          if (shouldShowAudit) {
+            setShowEligibilityAuditModal(true);
+          }
         } catch (clientErr) {
           console.warn('Failed to fetch client data for SSN last four:', clientErr);
         }
@@ -2172,6 +3340,30 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             });
             console.log('🔍 DEBUG: Extracted scores from API:', scores);
             console.log('🔍 DEBUG: Extracted score types from API:', scoreTypes);
+          } else if (data.data.reportData.Scores && Array.isArray(data.data.reportData.Scores)) {
+            const scoreData = data.data.reportData.Scores;
+            scoreData.forEach((score: any) => {
+              if (score.BureauId === 1) {
+                scores.transunion = score.Score;
+                scoreTypes.transunion = score.ScoreType || "FICO";
+              }
+              if (score.BureauId === 2) {
+                scores.experian = score.Score;
+                scoreTypes.experian = score.ScoreType || "FICO";
+              }
+              if (score.BureauId === 3) {
+                scores.equifax = score.Score;
+                scoreTypes.equifax = score.ScoreType || "FICO";
+              }
+            });
+            console.log('🔍 DEBUG: Extracted scores from API (Scores fallback):', scores);
+            console.log('🔍 DEBUG: Extracted score types from API (Scores fallback):', scoreTypes);
+          } else if (data.data.scores && typeof data.data.scores === 'object') {
+            const s = data.data.scores as any;
+            scores.experian = String(s.experian ?? scores.experian);
+            scores.equifax = String(s.equifax ?? scores.equifax);
+            scores.transunion = String(s.transunion ?? scores.transunion);
+            console.log('🔍 DEBUG: Extracted scores from API (scores object fallback):', scores);
           } else {
             console.log('🔍 DEBUG: Using fallback scores:', scores);
             console.log('🔍 DEBUG: Using fallback score types:', scoreTypes);
@@ -2224,16 +3416,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               }));
           };
 
-          // Transform collections from accounts with negative indicators
+          // Transform true collection accounts (not just late payments)
           const transformApiCollections = (accounts) => {
             return accounts
-              .filter(account => 
-                account.AccountStatus === 'Closed' && 
-                account.CurrentBalance > 0 ||
-                account.PaymentStatus?.includes('Late') ||
-                account.WorstPayStatus?.includes('Late') ||
-                account.AmountPastDue > 0
-              )
+              .filter(account => {
+                const paymentStatus = String(account.PaymentStatus || '').toLowerCase();
+                const accountType = String(account.AccountType || account.AccountTypeDescription || account.CreditType || '').toLowerCase();
+                const condition = String(account.AccountCondition || account.AccountStatus || '').toLowerCase();
+                const isCollectionLike =
+                  paymentStatus.includes('collection') ||
+                  accountType.includes('collection') ||
+                  condition.includes('collection');
+                const hasBalance =
+                  Number(account.CurrentBalance || 0) > 0 ||
+                  Number(account.AmountPastDue || 0) > 0;
+                return isCollectionLike && hasBalance;
+              })
               .map((account, index) => ({
                 id: index + 1,
                 agency: account.CreditorName || 'Unknown Agency',
@@ -2255,9 +3453,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
           // Extract bureau-specific dates from Score array
           const getBureauDate = (bureauId) => {
-            const scoreEntry = data.data.reportData.Score?.find(s => s.BureauId === bureauId);
-            if (scoreEntry?.DateScore) {
-              return new Date(scoreEntry.DateScore).toLocaleDateString('en-US', {
+            const scoreArray = data.data.reportData.Score || data.data.reportData.Scores;
+            const scoreEntry = Array.isArray(scoreArray) ? scoreArray.find((s: any) => s.BureauId === bureauId) : null;
+            const ds = scoreEntry?.DateScore || scoreEntry?.DateReported || scoreEntry?.DateUpdated || null;
+            if (ds) {
+              return new Date(ds).toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric'
@@ -2310,13 +3510,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               if (!utilizationByBureau[bureauId]) return;
 
               // Revolving accounts (credit cards, lines of credit)
-              if (account.CreditType === 'Revolving Account' || account.AccountTypeDescription === 'Revolving Account') {
+              const at = String(account.AccountType || '').toLowerCase();
+              const ad = String(account.AccountTypeDescription || '').toLowerCase();
+              const ct = String(account.CreditType || '').toLowerCase();
+              const ind = String(account.Industry || '').toLowerCase();
+              if (
+                at.includes('revolving') ||
+                ad.includes('revolving') ||
+                ct.includes('revolving') ||
+                at.includes('credit card') ||
+                ad.includes('credit card') ||
+                ct.includes('credit card') ||
+                ad.includes('charge account') ||
+                ad.includes('flexible spending credit card') ||
+                ind.includes('bank credit cards')
+              ) {
                 // All revolving accounts
                 utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
                 utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
                 
                 // Open revolving accounts only
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].openRevolvingBalance += currentBalance;
                   utilizationByBureau[bureauId].openRevolvingLimit += creditLimit || highBalance;
                 }
@@ -2325,14 +3543,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               // Real estate debt (mortgages)
               if (account.AccountType === 'Mortgage' || account.Industry?.includes('Real Estate') || 
                   account.CreditorName?.toLowerCase().includes('mortgage')) {
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].realEstateDebt += currentBalance;
                 }
               }
               
               // Installment debt (auto loans, personal loans, etc.)
               if (account.CreditType === 'Installment Account' || account.AccountTypeDescription === 'Installment Account') {
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].installmentDebt += currentBalance;
                 }
               }
@@ -2429,30 +3655,75 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
               // Check accounts for this bureau
               const bureauAccounts = apiData.reportData?.Accounts?.filter((acc: any) => acc.BureauId === bureauId) || [];
-              
-              const openRevolvingAccounts = bureauAccounts.filter((acc: any) => 
-                (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account') && 
-                (acc.AccountStatus === 'Open' || acc.AccountStatus === 'Current')
-              );
-              
-              criteria[bureauId].minFiveOpenRevolving = openRevolvingAccounts.length >= 5;
+              const openPrimaryRevolving = bureauAccounts.filter((acc: any) => {
+                const at = String(acc.AccountType || '').toLowerCase();
+                const ad = String(acc.AccountTypeDescription || '').toLowerCase();
+                const ct = String(acc.CreditType || '').toLowerCase();
+                const ind = String(acc.Industry || '').toLowerCase();
+                const isRevolving =
+                  at.includes('revolving') ||
+                  ad.includes('revolving') ||
+                  ct.includes('revolving') ||
+                  at.includes('credit card') ||
+                  ad.includes('credit card') ||
+                  ct.includes('credit card') ||
+                  ad.includes('charge account') ||
+                  ad.includes('flexible spending credit card') ||
+                  ind.includes('bank credit cards');
+                const isOpen =
+                  acc.AccountStatus === 'Open' ||
+                  acc.AccountStatus === 'Current' ||
+                  acc.AccountCondition === 'Open';
+                const designator = String(acc.AccountDesignator || '').toLowerCase();
+                const isPrimary = !designator.includes('authorized');
+                return isRevolving && isOpen && isPrimary;
+              });
+              const withGoodHistory = openPrimaryRevolving.filter((acc: any) => {
+                if (!acc.DateOpened) return false;
+                const opened = new Date(acc.DateOpened);
+                if (isNaN(opened.getTime())) return false;
+                const months = Math.floor((Date.now() - opened.getTime()) / (1000 * 60 * 60 * 24 * 30));
+                const payHist = String(acc.PayStatusHistory || '').toUpperCase();
+                const recent = payHist.slice(-24);
+                const negInHist = /[DLB]/.test(recent);
+                const negStatus =
+                  String(acc.PaymentStatus || '').toLowerCase().includes('late') ||
+                  String(acc.WorstPayStatus || '').toLowerCase().includes('late') ||
+                  (parseFloat(acc.AmountPastDue) || 0) > 0;
+                return months >= 24 && !negInHist && !negStatus;
+              });
+              criteria[bureauId].minFiveOpenRevolving = withGoodHistory.length >= 5;
 
               // Check for 3+ year old credit card with $5K+ limit
-              const qualifyingCard = openRevolvingAccounts.find((acc: any) => {
+              const qualifyingCards = openPrimaryRevolving.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
-                const yearsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
+                const yearsOld = (Date.now() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
                 const creditLimit = parseFloat(acc.CreditLimit) || 0;
                 return yearsOld >= 3 && creditLimit >= 5000;
               });
-              criteria[bureauId].creditCard3YearsOld5KLimit = !!qualifyingCard;
+              criteria[bureauId].creditCard3YearsOld5KLimit = qualifyingCards.length >= 3;
 
               // Check unsecured accounts opened in past 12 months
               const recentUnsecuredAccounts = bureauAccounts.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
                 const monthsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
-                return monthsOld <= 12 && (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account');
+                const at = String(acc.AccountType || '').toLowerCase();
+                const ad = String(acc.AccountTypeDescription || '').toLowerCase();
+                const ct = String(acc.CreditType || '').toLowerCase();
+                const ind = String(acc.Industry || '').toLowerCase();
+                const isRevolving =
+                  at.includes('revolving') ||
+                  ad.includes('revolving') ||
+                  ct.includes('revolving') ||
+                  at.includes('credit card') ||
+                  ad.includes('credit card') ||
+                  ct.includes('credit card') ||
+                  ad.includes('charge account') ||
+                  ad.includes('flexible spending credit card') ||
+                  ind.includes('bank credit cards');
+                return monthsOld <= 12 && isRevolving;
               });
               criteria[bureauId].maxFourUnsecuredIn12Months = recentUnsecuredAccounts.length <= 4;
 
@@ -2502,8 +3773,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               ) || [];
               criteria[bureauId].noInquiries = bureauInquiries.length === 0;
 
-              // Check bankruptcies (simplified - would need more detailed bankruptcy data)
-              criteria[bureauId].noBankruptcies = true; // Assume no bankruptcies for now
+              const bureauPublicRecords = apiData.reportData?.PublicRecords?.filter((rec: any) => rec.BureauId === bureauId) || [];
+              const hasBankruptcy = bureauPublicRecords.some((rec: any) => {
+                const cls = String(rec.Classification || '').toLowerCase();
+                const typ = String(rec.Type || '').toLowerCase();
+                return cls.includes('bankruptcy') || typ.includes('bankruptcy');
+              });
+              criteria[bureauId].noBankruptcies = !hasBankruptcy;
             });
 
             return criteria;
@@ -2517,8 +3793,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             scores: scores,
             scoreTypes: scoreTypes,
             bureauDates: {
-              experian: getBureauDate(1),
-              transunion: getBureauDate(2), 
+              experian: getBureauDate(2),
+              transunion: getBureauDate(1),
               equifax: getBureauDate(3)
             },
             previousScores: detailedReport.previousScores, // Keep mock previous scores for now
@@ -2539,9 +3815,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               purpose: inquiry.Industry || 'Unknown Purpose',
               type: inquiry.InquiryType === 'I' ? 'Hard' : 'Soft',
               date: inquiry.DateInquiry || new Date().toISOString().split('T')[0],
-              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : 'Equifax'
+              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : inquiry.BureauId === 3 ? 'Equifax' : 'Unknown'
             })),
-            publicRecords: apiData?.PublicRecords || [],
+            publicRecords: (data.data.reportData.PublicRecords || []),
             // Keep the original structure for other data
             creditUtilization: detailedReport.creditUtilization,
             debtUtilization: debtUtilization, // Add calculated debt utilization
@@ -2586,7 +3862,60 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             if (historyResponse.ok) {
               const historyData = await historyResponse.json();
               console.log('🔍 DEBUG: Report history data:', historyData);
-              transformedData.reportHistory = historyData.data || [];
+              const rawHistory = Array.isArray(historyData?.data) ? historyData.data : [];
+
+              const tokenForFetch = freshToken || token;
+              const fetchReportJson = async (reportPath: any) => {
+                if (!reportPath || typeof reportPath !== 'string') return null;
+                try {
+                  const resp = await fetch(`/api/credit-reports/json-file?path=${encodeURIComponent(reportPath)}`, {
+                    method: 'GET',
+                    headers: {
+                      'Authorization': `Bearer ${tokenForFetch}`,
+                      'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                  });
+                  if (!resp.ok) return null;
+                  const json = await resp.json();
+                  return json?.data ?? null;
+                } catch {
+                  return null;
+                }
+              };
+
+              const latestRow = rawHistory.length > 0 ? rawHistory[0] : null;
+              const previousRow = rawHistory.length > 1 ? rawHistory[1] : null;
+              const oldestRow = rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
+
+              const dataById = new Map<any, any>();
+              const dataByPath = new Map<string, any>();
+              const rowsToFetch = [latestRow, previousRow, oldestRow].filter(Boolean) as any[];
+
+              try {
+                for (const row of rowsToFetch) {
+                  const reportPath = row?.report_path;
+                  if (!reportPath || typeof reportPath !== 'string') continue;
+                  if (dataByPath.has(reportPath)) {
+                    const cached = dataByPath.get(reportPath);
+                    if (row?.id != null && cached) dataById.set(row.id, cached);
+                    continue;
+                  }
+                  const json = await fetchReportJson(reportPath);
+                  if (json) {
+                    dataByPath.set(reportPath, json);
+                    if (row?.id != null) dataById.set(row.id, json);
+                  }
+                }
+              } catch (e) {
+                console.warn('Failed to load report JSON for history compare:', e);
+              }
+
+              transformedData.reportHistory = rawHistory.map((h: any) => {
+                if (h?.id != null && dataById.has(h.id)) return { ...h, data: dataById.get(h.id) };
+                if (typeof h?.report_path === 'string' && dataByPath.has(h.report_path)) return { ...h, data: dataByPath.get(h.report_path) };
+                return h;
+              });
             } else {
               const errorText = await historyResponse.text();
               console.warn('Failed to fetch report history:', historyResponse.status, errorText);
@@ -2691,14 +4020,66 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         // Keep using mock data on error
       } finally {
         setLoading(false);
+        setIsRerunningAudit(false);
       }
     };
 
     fetchCreditReport();
-  }, [clientId]);
+  }, [clientId, refreshAuditNonce]);
+
+  const runEligibilityAudit = async () => {
+    if (!clientId) return;
+    try {
+      setAuditRunning(true);
+      const qc: any = (reportData as any)?.qualificationCriteria || {};
+      const getInquiryCountByName = (name: string) => {
+        try {
+          const listA = (reportData as any)?.inquiries || [];
+          if (Array.isArray(listA) && listA.length > 0) {
+            return listA.filter((inq: any) => String(inq?.bureau) === name && (String(inq?.type).toLowerCase() === 'hard' || String(inq?.InquiryType) === 'I')).length;
+          }
+          const rawB = (apiData as any)?.reportData?.reportData?.Inquiries || (apiData as any)?.reportData?.Inquiries || [];
+          const mapId = (n: string) => n === 'TransUnion' ? 1 : (n === 'Experian' ? 2 : 3);
+          return rawB.filter((inq: any) => Number(inq?.BureauId) === mapId(name) && String(inq?.InquiryType) === 'I').length;
+        } catch {
+          return 0;
+        }
+      };
+      const inquiriesUnderLimit = (name: string) => getInquiryCountByName(name) < 4;
+      const isPass = (c: any, name: string) => Boolean(c?.score700Plus || c?.score730Plus)
+        && Boolean(c?.openRevolvingUnder30)
+        && Boolean(c?.allRevolvingUnder30)
+        && Boolean(c?.minFiveOpenRevolving)
+        && Boolean(c?.creditCard3YearsOld5KLimit)
+        && Boolean(c?.maxFourUnsecuredIn12Months)
+        && Boolean(inquiriesUnderLimit(name))
+        && Boolean(c?.noCollections)
+        && Boolean(c?.noChargeOffs)
+        && Boolean(c?.noLatePayments)
+        && Boolean(c?.noBankruptcies)
+        && Boolean(c?.noCollectionsLiensJudgements);
+      const fundable_in_tu = isPass(qc?.[1], 'TransUnion');
+      const fundable_in_ex = isPass(qc?.[3], 'Experian');
+      const fundable_in_eq = isPass(qc?.[2], 'Equifax');
+      const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
+      await clientsApi.updateClient(String(clientId), {
+        fundable_in_tu,
+        fundable_in_ex,
+        fundable_in_eq,
+        fundable_status
+      });
+      setAuditResult(fundable_status === 'fundable' ? 'Client is fundable. Status saved.' : 'Client is not fundable. Status saved.');
+      setShowEligibilityAuditModal(false);
+    } catch (err) {
+      console.error('Eligibility audit update failed:', err);
+      setAuditResult('Failed to save audit result');
+    } finally {
+      setAuditRunning(false);
+    }
+  };
 
   const getScoreChange = (current: number, previous: number) => {
-    const change = current - previous;
+    const change = current - 700;
     return {
       value: change,
       isPositive: change >= 0,
@@ -2710,13 +4091,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   const getAccountStatusColor = (status: string) => {
     switch (status) {
       case "Open":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-slate-800 dark:text-blue-300 dark:border-slate-700";
       case "Closed":
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-foreground border-border";
       case "Charge Off":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "bg-red-100 text-red-800 border-red-200 dark:bg-slate-800 dark:text-red-300 dark:border-slate-700";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-foreground border-border";
     }
   };
 
@@ -2767,18 +4148,116 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       title={`Credit Report - ${clientName}`}
       description="Detailed credit report analysis and information"
     >
+      <Dialog
+        open={lawEngineNoticeOpen}
+        onOpenChange={(open) => {
+          setLawEngineNoticeOpen(open);
+          if (!open) setPendingLawEngineTab(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Law Engine Notice</DialogTitle>
+            <DialogDescription>
+              This feature uses automated software algorithms to generate outputs and recommendations.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              Please independently review and verify all information before using it in any communication, dispute, or decision.
+            </p>
+            <p>This content is provided for educational purposes only.</p>
+            <p>
+              Score Machine does not provide legal advice, and we do not assume responsibility for outcomes resulting from the use
+              of Law Engine outputs.
+            </p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeLawEngineNotice}>Acknowledge &amp; Activate</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fundingAuditNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingAuditNoticeOpen(open);
+          if (!open) setPendingFundingAuditTab(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Audit Notice</DialogTitle>
+            <DialogDescription>
+              This tab provides automated educational estimates and general information.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>This content is provided for educational purposes only and is not financial, credit, or legal advice.</p>
+            <p>Results are estimates and are not a guarantee of approval, limits, rates, or terms from any lender.</p>
+            <p>Please verify all details independently and consult qualified professionals for decisions.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingAuditNotice}>Acknowledge &amp; Continue</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fundingEstimateNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingEstimateNoticeOpen(open);
+          if (!open) setPendingFundingGoal(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Estimate Notice</DialogTitle>
+            <DialogDescription>
+              Funding amounts and terms shown are estimates generated by our software.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              These figures are not a guarantee of approval, rates, limits, or final terms. Banks and lenders make the final
+              decision based on their underwriting criteria.
+            </p>
+            <p>Please verify all details with the lender before applying.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingEstimateNotice}>Acknowledge &amp; Continue</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header Navigation */}
       <div className="mb-6">
+        <Button
+          variant="outline"
+          onClick={() => navigate("/reports")}
+          className="mb-4"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Reports
+        </Button>
 
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold gradient-text-primary">
+            <h1 className="text-3xl font-bold text-foreground">
               {clientName}
             </h1>
             <p className="text-muted-foreground">Credit Report Analysis</p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={downloadAnalysisPdf} disabled={activeTab !== 'analysis'}>
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
             
+            <Button size="sm" variant="default">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
           </div>
         </div>
       </div>
@@ -2788,12 +4267,29 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             <CardTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-ocean-blue" />
               Account Details by Bureau
+              <Button onClick={handleRunAccountsEval} disabled={acctEvalLoading} className="ml-auto">
+                {acctEvalLoading ? 'Running…' : 'Run Accounts Law Engine'}
+              </Button>
             </CardTitle>
                 <CardDescription>
                   Detailed account information from each credit bureau
                 </CardDescription>
               </CardHeader>
           <CardContent>
+            {acctEvalError && (
+              <div className="text-red-600 text-sm mb-3">{acctEvalError}</div>
+            )}
+            {acctEvalResult?.summary && (
+              <div className="mb-6 rounded-lg border p-4">
+                <div className="font-semibold mb-2">Accounts Law Engine Summary</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div>Total records: {acctEvalResult.summary.total_records}</div>
+                  <div>Positive skipped: {acctEvalResult.summary.positive_skipped}</div>
+                  <div>Negative detected: {acctEvalResult.summary.negative_detected}</div>
+                  <div>Negative with violations: {acctEvalResult.summary.negative_with_violations}</div>
+                </div>
+              </div>
+            )}
             {(() => {
               // Group accounts by creditor and account number for comparison
               const groupAccountsForComparison = () => {
@@ -2801,10 +4297,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   return [];
                 }
 
-                const grouped = {};
-                const accountGroupTracker = new Set(); // Track unique account groups by first 5 digits + account type
-                
-                reportData.accounts.forEach(account => {
+                const grouped: Record<string, any> = {};
+
+                const normName = (s: any) => String(s || '').split('/')?.[0]?.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const digitsOnly = (s: any) => String(s || '').replace(/\D/g, '');
+
+                reportData.accounts.forEach((account) => {
                   const creditorName = account.CreditorName || account.creditor || 'Unknown';
                   const accountNumber =
                     account.AccountNumber ||
@@ -2815,103 +4313,47 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     account.maskedAccountNumber ||
                     'N/A';
                   const accountType = account.AccountTypeDescription || account.CreditType || account.type || 'N/A';
-                  
-                  // Get first 5 digits of account number for grouping
-                  const normalizedAccountNumber = accountNumber.toString().replace(/[\s\-]/g, '');
-                  const first5Digits = normalizedAccountNumber.substring(0, 5);
-                  
-                  // Create a unique identifier based on first 5 digits + account type
-                  const groupIdentifier = `${first5Digits}_${accountType}`.toLowerCase();
-                  
-                  // Check if this account group already exists
-                  const existingKey = Object.keys(grouped).find(key => {
-                    const existingAccountNumber = grouped[key].accountNumber.toString().replace(/[\s\-]/g, '');
-                    const existingFirst5 = existingAccountNumber.substring(0, 5);
-                    const existingType = grouped[key].type;
-                    const existingIdentifier = `${existingFirst5}_${existingType}`.toLowerCase();
-                    return existingIdentifier === groupIdentifier;
+
+                  const numDigits = digitsOnly(accountNumber);
+                  const prefix6 = numDigits.slice(0, 6);
+                  const prefix5 = numDigits.slice(0, 5);
+                  const limitVal = parseFloat(account.CreditLimit || account.creditLimit || account.limit || account.HighBalance || '0') || 0;
+                  const nameKey = normName(creditorName);
+                  const idKey = numDigits.length >= 6
+                    ? prefix6
+                    : [nameKey, prefix5 || 'na', Math.round(limitVal)].join('|');
+
+                  const existingKey = Object.keys(grouped).find((k) => {
+                    const g = grouped[k];
+                    const gDigits = digitsOnly(g.accountNumber);
+                    const gPrefix6 = gDigits.slice(0, 6);
+                    const gPrefix5 = gDigits.slice(0, 5);
+                    const nameMatch = normName(g.creditor) === nameKey;
+                    const numExact = gDigits.length > 0 && numDigits.length > 0 && gDigits === numDigits;
+                    const num6Match = prefix6 && gPrefix6 && gPrefix6 === prefix6;
+                    const limits = Object.values(g.bureaus || {});
+                    const withinLimit = limits.length === 0 ? true : limits.some((b: any) => Math.abs(parseFloat(b.limit || 0) - limitVal) <= 100);
+                    const num5Match = numDigits.length < 6 && numDigits.length >= 5 && prefix5 && gPrefix5 && gPrefix5 === prefix5 && withinLimit;
+                    const typeMatch = String(g.type || '').toLowerCase() === String(accountType || '').toLowerCase();
+                    return (num6Match || numExact || (nameMatch && num5Match)) && typeMatch;
                   });
-                  
-                  if (existingKey && accountNumber !== 'N/A') {
-                    // Merge bureau data into existing group
-                    const bureauName = account.bureau || 'Unknown';
-                    grouped[existingKey].bureaus[bureauName] = {
-                      balance: account.CurrentBalance || account.balance || 0,
-                      limit: account.CreditLimit || account.creditLimit || account.limit || 0,
-                      status: account.AccountStatus || account.status || 'Unknown',
-                      utilization: account.utilization || (() => {
-                        const balance = parseInt(account.CurrentBalance || 0);
-                        const creditLimit = parseInt(account.CreditLimit || 0);
-                        const highBalance = parseInt(account.HighBalance || 0);
-                        
-                        // Use High Balance as credit limit when Credit Limit is 0
-                        const effectiveLimit = creditLimit > 0 ? creditLimit : highBalance;
-                        
-                        if (balance && effectiveLimit > 0) {
-                          return Math.round((balance / effectiveLimit) * 100);
-                        }
-                        return 0;
-                      })(),
-                      opened: account.DateOpened || account.dateOpened || account.opened,
-                      paymentHistory: account.PaymentStatus || account.paymentHistory || 'N/A',
-                      designator: account.AccountDesignator || account.designator || 'N/A',
-                      reported: account.DateReported || account.dateReported || account.reported,
-                      pastDue: account.AmountPastDue || account.pastDue || 0,
-                      highBalance: account.HighBalance || account.highBalance || 0,
-                      industry: account.Industry || account.industry || 'N/A',
-                      worstStatus: account.WorstPayStatus || account.worstStatus || 'N/A',
-                      remark: account.Remark || account.remark || 'N/A',
-                      payStatusHistory: account.PayStatusHistory || account.payStatusHistory || 'N/A',
-                      payStatusHistoryStartDate: account.PayStatusHistoryStartDate || account.payStatusHistoryStartDate || 'N/A',
-                      // Ensure creditor and account number are present for merged bureaus
-                      creditorName: account.CreditorName || account.creditor || 'Unknown',
-                      accountNumber: (
-                        account.AccountNumber ||
-                        account.accountNumber ||
-                        account.MaskAccountNumber ||
-                        account.maskAccountNumber ||
-                        account.MaskedAccountNumber ||
-                        account.maskedAccountNumber ||
-                        'N/A'
-                      ),
-                      // Add additional bureau-specific fields to avoid N/A in TU/EQ
-                      creditType: account.CreditType || account.creditType || grouped[existingKey]?.type || 'N/A',
-                      accountTypeDescription: account.AccountTypeDescription || account.accountTypeDescription || 'N/A',
-                      accountType: account.AccountType || account.accountType || 'N/A',
-                      paymentFrequency: account.PaymentFrequency || account.paymentFrequency || 'N/A',
-                      accountCondition: account.AccountCondition || account.accountCondition || account.AccountStatus || 'N/A',
-                      disputeFlag: account.DisputeFlag || account.disputeFlag || 'N/A'
-                      ,
-                      // Ensure status date is carried per bureau
-                      dateAccountStatus: account.DateAccountStatus || account.dateAccountStatus || 'N/A'
-                    };
-                    return; // Skip creating new group
-                  }
-                  
-                  // Create a unique key based on creditor name, first 5 digits, and account type
-                  const key = `${creditorName}_${first5Digits}_${accountType}`;
-                  
-                  if (!grouped[key]) {
-                    grouped[key] = {
+
+                  const targetKey = existingKey || idKey;
+                  if (!grouped[targetKey]) {
+                    grouped[targetKey] = {
                       creditor: creditorName,
                       accountNumber: accountNumber,
                       type: accountType,
                       bureaus: {}
                     };
-                    
-                    // Track this account group to prevent duplicates
-                    if (accountNumber !== 'N/A') {
-                      accountGroupTracker.add(groupIdentifier);
-                    }
                   }
-                  
-                  // Add account data for this bureau
+
                   const bureauName = account.bureau || 'Unknown';
-                  grouped[key].bureaus[bureauName] = {
+                  grouped[targetKey].bureaus[bureauName] = {
                     balance: account.CurrentBalance || account.balance || 0,
                     limit: account.CreditLimit || account.creditLimit || account.limit || 0,
                     status: account.AccountStatus || account.status || 'Unknown',
-                    utilization: account.utilization || (calculateAccountUtilization(account)?.utilization ?? 0),
+                    utilization: typeof account.utilization === 'number' ? account.utilization : (calculateAccountUtilization(account) ?? 0),
                     opened: account.DateOpened || account.dateOpened || account.opened,
                     paymentHistory: account.PaymentStatus || account.paymentHistory || 'N/A',
                     designator: account.AccountDesignator || account.designator || 'N/A',
@@ -2935,11 +4377,38 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     disputeFlag: account.DisputeFlag || account.disputeFlag || 'N/A'
                   };
                 });
-                
+
                 return Object.values(grouped);
               };
 
               const groupedAccounts = groupAccountsForComparison();
+              const isNegativeAccountGroup = (group: any) => {
+                const bureaus = Object.values(group?.bureaus || {}) as any[];
+                return bureaus.some((b) => {
+                  const statusText = String(b?.status ?? '').toLowerCase();
+                  const paymentText = String(b?.paymentHistory ?? '').toLowerCase();
+                  const remarkText = String(b?.remark ?? '').toLowerCase();
+                  const conditionText = String(b?.accountCondition ?? '').toLowerCase();
+                  const worst = b?.worstStatus ?? '';
+                  const worstNum = typeof worst === 'number' ? worst : parseInt(String(worst), 10);
+                  const pastDueNum = parseFloat(String(b?.pastDue ?? '0'));
+                  const historyText = String(b?.payStatusHistory ?? '').toLowerCase();
+
+                  if (pastDueNum > 0) return true;
+                  if (Number.isFinite(worstNum) && worstNum > 0) return true;
+                  if (/[1-9]/.test(historyText)) return true;
+
+                  const combined = `${statusText} ${paymentText} ${remarkText} ${conditionText}`;
+                  return /(charge\s*off|charged\s*off|collection|delinq|delinquen|late|past\s*due|repos|foreclos|bankrupt|lien|judg)/.test(combined);
+                });
+              };
+              const sortedAccounts = [...groupedAccounts].sort((a: any, b: any) => {
+                const negDiff = Number(isNegativeAccountGroup(b)) - Number(isNegativeAccountGroup(a));
+                if (negDiff !== 0) return negDiff;
+                const creditorDiff = String(a?.creditor ?? '').localeCompare(String(b?.creditor ?? ''));
+                if (creditorDiff !== 0) return creditorDiff;
+                return String(a?.accountNumber ?? '').localeCompare(String(b?.accountNumber ?? ''));
+              });
 
               if (groupedAccounts.length === 0) {
                 return (
@@ -2954,8 +4423,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               return (
                 <div className="space-y-4">
                   {/* Header with bureau logos */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-gradient-to-r from-slate-50 to-gray-100 dark:from-slate-800 dark:to-slate-700 rounded-xl p-4 border border-border shadow-sm">
-                    <div className="font-bold text-base text-gray-800 flex items-center gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-card rounded-xl p-4 border border-border shadow-sm">
+                    <div className="font-bold text-base text-foreground flex items-center gap-2">
                       <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
                       </svg>
@@ -2963,27 +4432,27 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Experian_logo.svg.png" alt="Experian" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-blue-700"></div>
+                      <div className="text-sm font-semibold text-blue-700 dark:text-blue-400"></div>
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-purple-700"></div>
+                      <div className="text-sm font-semibold text-purple-700 dark:text-purple-400"></div>
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
                       <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-8 w-auto mx-auto mb-2" />
-                      <div className="text-sm font-semibold text-green-700"></div>
+                      <div className="text-sm font-semibold text-green-700 dark:text-green-400"></div>
                     </div>
                   </div>
 
                   {/* Account comparison rows */}
-                  {groupedAccounts.map((accountGroup, index) => {
+                  {sortedAccounts.map((accountGroup, index) => {
                     const accountKey = `${accountGroup.creditor}_${accountGroup.accountNumber}`;
                     const activeTab = getActiveTab(accountKey);
                     
                     return (
-                    <div key={index} className="bg-gradient-to-r from-white via-gray-50/30 to-white dark:from-slate-800 dark:via-slate-800/30 dark:to-slate-800 border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 mb-6">
+                    <div key={index} className="bg-card border border-border rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 mb-6 dark:bg-slate-900 dark:border-slate-800">
                       {/* Tabs for filtering fields */}
-                      <div className="mb-4 border-b border-gray-200">
+                      <div className="mb-4 border-b border-gray-200 dark:border-slate-700">
                         <div className="flex space-x-1">
                           {tabConfig.map((tab) => (
                             <button
@@ -2991,8 +4460,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                               onClick={() => setActiveTabForAccount(accountKey, tab.id)}
                               className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
                                 activeTab === tab.id
-                                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-700'
-                                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                  ? 'bg-blue-50 text-blue-700 dark:text-blue-400 border-b-2 border-blue-700'
+                                  : 'text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-800'
                               }`}
                             >
                               {tab.label}
@@ -3001,75 +4470,81 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
                       </div>
                       
-                      <div className={`grid grid-cols-1 ${activeTab === 'credit-repair' ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-6`}>
+                      {activeTab === 'credit-repair' && (
+                        <div className="mb-4">
+                          <div className="font-bold text-lg text-gray-800 dark:text-white">{accountGroup.creditor}</div>
+                        </div>
+                      )}
+
+                      <div className={`grid grid-cols-1 ${activeTab === 'credit-repair' ? 'lg:grid-cols-4' : 'lg:grid-cols-4'} gap-6`}>
                         {/* Account Info Column */}
                         {activeTab !== 'credit-repair' && (
-                        <div className="bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-xl p-5 border border-slate-200 shadow-md hover:shadow-lg transition-shadow">
+                        <div className="bg-gradient-to-br from-slate-50 via-white to-slate-100 rounded-xl p-5 border border-slate-200 shadow-md hover:shadow-lg transition-shadow dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 dark:border-slate-700">
                           <div className="space-y-4">
                             <div className="flex items-center gap-3 pb-3 border-b border-slate-300">
                               <div className="w-3 h-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full shadow-sm"></div>
-                              <div className="font-bold text-lg text-foreground">{accountGroup.creditor}</div>
+                              <div className="font-bold text-lg text-gray-800 dark:text-white">{accountGroup.creditor}</div>
                             </div>
                             
                             <div className="space-y-3 text-sm">
-                              <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
-                                <span className="text-muted-foreground font-medium flex items-center gap-2">
+                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                   <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                   </svg>
                                   Account #:
                                 </span>
-                                <span className="font-semibold text-foreground text-xs">{accountGroup.accountNumber}</span>
+                                <span className="font-semibold text-gray-800 dark:text-white text-xs">{accountGroup.accountNumber}</span>
                               </div>
-                              <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
-                                <span className="text-muted-foreground font-medium flex items-center gap-2">
+                              <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                   <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
                                   </svg>
                                   Type:
                                 </span>
-                                <span className="font-semibold text-foreground">{accountGroup.type}</span>
+                                <span className="font-semibold text-gray-800 dark:text-white">{accountGroup.type}</span>
                               </div>
                               {/* Get additional details from first available bureau */}
                               {(() => {
                                 const firstBureau = Object.values(accountGroup.bureaus)[0];
                                 return firstBureau ? (
                                   <>
-                                    <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
-                                      <span className="text-muted-foreground font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                         </svg>
                                         Designator:
                                       </span>
-                                      <span className="font-semibold text-foreground">{firstBureau.designator || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.designator || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
-                                      <span className="text-muted-foreground font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
                                         Opened:
                                       </span>
-                                      <span className="font-semibold text-foreground">{firstBureau.opened ? new Date(firstBureau.opened).toLocaleDateString() : 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.opened ? new Date(firstBureau.opened).toLocaleDateString() : 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
-                                      <span className="text-muted-foreground font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                                         </svg>
                                         Industry:
                                       </span>
-                                      <span className="font-semibold text-foreground">{firstBureau.industry || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white">{firstBureau.industry || 'N/A'}</span>
                                     </div>
-                                    <div className="flex items-center justify-between bg-card rounded-lg p-2 border border-border">
-                                      <span className="text-muted-foreground font-medium flex items-center gap-2">
+                                    <div className="flex items-center justify-between bg-white rounded-lg p-2 border border-gray-100 dark:bg-slate-800 dark:border-slate-700">
+                                      <span className="text-gray-600 dark:text-slate-300 font-medium flex items-center gap-2">
                                         <svg className="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-1l-4 4z" />
                                         </svg>
                                         Remark:
                                       </span>
-                                      <span className="font-semibold text-foreground text-xs truncate max-w-[120px]" title={firstBureau.remark || 'N/A'}>{firstBureau.remark || 'N/A'}</span>
+                                      <span className="font-semibold text-gray-800 dark:text-white text-xs truncate max-w-[120px]" title={firstBureau.remark || 'N/A'}>{firstBureau.remark || 'N/A'}</span>
                                     </div>
                                   </>
                                 ) : null;
@@ -3080,7 +4555,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         )}
 
                         {/* Experian Column */}
-                        <div className="text-left bg-card rounded-lg p-4 border border-border">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.Experian ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -3089,29 +4564,41 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.Experian.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-700'
                                   }`}
                                 >
                                   {accountGroup.bureaus.Experian.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/Experian_logo.svg.png" alt="Experian" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100 dark:from-slate-800 dark:to-slate-700">
-                                  <div className="font-bold text-xl text-foreground">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
-                                  <div className="text-muted-foreground text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
-                                  {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
+                                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100 dark:from-blue-950/40 dark:to-indigo-950/40 dark:border-blue-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.Experian.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.Experian.limit).toLocaleString()}</div>
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
                                     <div className="space-y-1 mt-1">
-                                      <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.Experian.utilization)}`}>
-                                        {accountGroup.bureaus.Experian.utilization}% Paid
-                                      </div>
-                                      <div className={`font-bold text-sm ${getUtilizationColor(100 - accountGroup.bureaus.Experian.utilization)}`}>
-                                        {100 - accountGroup.bureaus.Experian.utilization}% Remaining
-                                      </div>
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.Experian.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.Experian.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.Experian.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   ) : (
                                     <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.Experian.utilization)}`}>
@@ -3125,19 +4612,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 
                                 <div className="space-y-2 text-xs">
                                   {shouldShowField('paymentHistory', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         Payment:
                                       </span>
-                                      <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.paymentHistory}</span>
+                                      <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.paymentHistory}</span>
                                     </div>
                                   )}
                                   {shouldShowField('reported', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -3160,16 +4647,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.reported);
                                           const v3 = normalize(b.Equifax?.reported);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.reported ? new Date(accountGroup.bureaus.Experian.reported).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.reported ? new Date(accountGroup.bureaus.Experian.reported).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('opened', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -3192,16 +4679,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.opened);
                                           const v3 = normalize(b.Equifax?.opened);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.opened ? new Date(accountGroup.bureaus.Experian.opened).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.opened ? new Date(accountGroup.bureaus.Experian.opened).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('dateAccountStatus', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10" />
                                         </svg>
@@ -3224,16 +4711,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.dateAccountStatus);
                                           const v3 = normalize(b.Equifax?.dateAccountStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.dateAccountStatus ? new Date(accountGroup.bureaus.Experian.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.dateAccountStatus ? new Date(accountGroup.bureaus.Experian.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditorName', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3251,16 +4738,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.creditorName || b.TransUnion?.CreditorName || b.TransUnion?.creditor);
                                           const v3 = normalize(b.Equifax?.creditorName || b.Equifax?.CreditorName || b.Equifax?.creditor);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.creditorName || accountGroup.bureaus.Experian.CreditorName || accountGroup.bureaus.Experian.creditor || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.creditorName || accountGroup.bureaus.Experian.CreditorName || accountGroup.bureaus.Experian.creditor || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountNumber', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                         </svg>
@@ -3283,16 +4770,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.accountNumber);
                                           const v3 = normalize(b.Equifax?.accountNumber);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.accountNumber || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.accountNumber || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('designator', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                         </svg>
@@ -3315,16 +4802,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.designator);
                                           const v3 = normalize(b.Equifax?.designator);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.designator}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.designator}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountTypeDescription', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3342,16 +4829,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.accountTypeDescription);
                                           const v3 = normalize(b.Equifax?.accountTypeDescription);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.accountTypeDescription || accountGroup.type}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.accountTypeDescription || accountGroup.type}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3369,16 +4856,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.accountType);
                                           const v3 = normalize(b.Equifax?.accountType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.accountType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.accountType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3396,16 +4883,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.creditType);
                                           const v3 = normalize(b.Equifax?.creditType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.creditType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.creditType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('paymentFrequency', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3423,16 +4910,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.paymentFrequency);
                                           const v3 = normalize(b.Equifax?.paymentFrequency);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.paymentFrequency || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.paymentFrequency || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountCondition', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3450,16 +4937,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.accountCondition);
                                           const v3 = normalize(b.Equifax?.accountCondition);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.accountCondition || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.accountCondition || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('disputeFlag', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3477,16 +4964,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.disputeFlag);
                                           const v3 = normalize(b.Equifax?.disputeFlag);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.disputeFlag || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.disputeFlag || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('industry', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3504,16 +4991,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.industry);
                                           const v3 = normalize(b.Equifax?.industry);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.industry || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.industry || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('termType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">Term Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">Term Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3531,16 +5018,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.termType);
                                           const v3 = normalize(b.Equifax?.termType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">{accountGroup.bureaus.Experian.termType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.termType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('pastDue', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                         </svg>
@@ -3563,7 +5050,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.pastDue);
                                           const v3 = normalize(b.Equifax?.pastDue);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
                                         <span className={`font-semibold ${parseInt(accountGroup.bureaus.Experian.pastDue || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -3573,8 +5060,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                     </div>
                                   )}
                                   {shouldShowField('highBalance', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
@@ -3597,16 +5084,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.highBalance);
                                           const v3 = normalize(b.Equifax?.highBalance);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700 dark:text-foreground">${parseInt(accountGroup.bureaus.Experian.highBalance || 0).toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.Experian.highBalance || 0).toLocaleString()}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('worstStatus', activeTab) && (
                                     <div className="flex justify-between items-center py-1">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
@@ -3629,18 +5116,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.TransUnion?.worstStatus);
                                           const v3 = normalize(b.Equifax?.worstStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Experian.worstStatus}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Experian.worstStatus}</span>
                                       </div>
                                     </div>
                                   )}
                                 </div>
                                 
                                 {shouldShowField('payStatusHistory', activeTab) && accountGroup.bureaus.Experian.payStatusHistory && accountGroup.bureaus.Experian.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 dark:text-foreground mb-2 flex items-center justify-between">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-700">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2 flex items-center justify-between">
                                       <span>Payment History:</span>
                                       {activeTab === 'credit-repair' && (() => {
                                         const b = accountGroup.bureaus;
@@ -3658,15 +5145,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                         const v2 = normalize(b.TransUnion?.payStatusHistory);
                                         const v3 = normalize(b.Equifax?.payStatusHistory);
                                         const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                         return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                       })()}
                                     </div>
-                                    <div className="text-xs font-mono bg-card p-2 rounded border border-border overflow-x-auto">
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700 overflow-x-auto">
                                       {accountGroup.bureaus.Experian.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.Experian.payStatusHistoryStartDate && accountGroup.bureaus.Experian.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.Experian.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -3684,7 +5171,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* TransUnion Column */}
-                        <div className="text-left bg-card rounded-lg p-4 border border-border">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.TransUnion ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -3693,29 +5180,41 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.TransUnion.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-700'
                                   }`}
                                 >
                                   {accountGroup.bureaus.TransUnion.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100">
-                                  <div className="font-bold text-xl text-foreground">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
-                                  <div className="text-muted-foreground text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
-                                  {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
+                                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 border border-purple-100 dark:from-purple-950/40 dark:to-pink-950/40 dark:border-purple-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.TransUnion.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.TransUnion.limit).toLocaleString()}</div>
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
                                     <div className="space-y-1 mt-1">
-                                      <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.TransUnion.utilization)}`}>
-                                        {accountGroup.bureaus.TransUnion.utilization}% Paid
-                                      </div>
-                                      <div className={`font-bold text-sm ${getUtilizationColor(100 - accountGroup.bureaus.TransUnion.utilization)}`}>
-                                        {100 - accountGroup.bureaus.TransUnion.utilization}% Remaining
-                                      </div>
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.TransUnion.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.TransUnion.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.TransUnion.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   ) : (
                                     <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.TransUnion.utilization)}`}>
@@ -3726,19 +5225,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 
                                 <div className="space-y-2 text-xs">
                                   {shouldShowField('paymentHistory', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         Payment:
                                       </span>
-                                      <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.paymentHistory}</span>
+                                      <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.paymentHistory}</span>
                                     </div>
                                   )}
                                   {shouldShowField('reported', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -3761,16 +5260,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.reported);
                                           const v3 = normalize(b.Equifax?.reported);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.reported ? new Date(accountGroup.bureaus.TransUnion.reported).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.reported ? new Date(accountGroup.bureaus.TransUnion.reported).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('opened', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -3793,16 +5292,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.opened);
                                           const v3 = normalize(b.Equifax?.opened);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.opened ? new Date(accountGroup.bureaus.TransUnion.opened).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.opened ? new Date(accountGroup.bureaus.TransUnion.opened).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('dateAccountStatus', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10" />
                                         </svg>
@@ -3825,16 +5324,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.dateAccountStatus);
                                           const v3 = normalize(b.Equifax?.dateAccountStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.dateAccountStatus ? new Date(accountGroup.bureaus.TransUnion.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.dateAccountStatus ? new Date(accountGroup.bureaus.TransUnion.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditorName', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3852,16 +5351,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.creditorName || b.Experian?.CreditorName || b.Experian?.creditor);
                                           const v3 = normalize(b.Equifax?.creditorName || b.Equifax?.CreditorName || b.Equifax?.creditor);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.creditorName || accountGroup.bureaus.TransUnion.CreditorName || accountGroup.bureaus.TransUnion.creditor || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.creditorName || accountGroup.bureaus.TransUnion.CreditorName || accountGroup.bureaus.TransUnion.creditor || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountNumber', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                         </svg>
@@ -3884,16 +5383,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountNumber);
                                           const v3 = normalize(b.Equifax?.accountNumber);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.accountNumber || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.accountNumber || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('designator', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                         </svg>
@@ -3916,16 +5415,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.designator);
                                           const v3 = normalize(b.Equifax?.designator);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.designator}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.designator}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountTypeDescription', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3943,16 +5442,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountTypeDescription);
                                           const v3 = normalize(b.Equifax?.accountTypeDescription);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.accountTypeDescription || accountGroup.type}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.accountTypeDescription || accountGroup.type}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3970,16 +5469,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountType);
                                           const v3 = normalize(b.Equifax?.accountType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.accountType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.accountType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -3997,16 +5496,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.creditType);
                                           const v3 = normalize(b.Equifax?.creditType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.creditType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.creditType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('paymentFrequency', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4024,16 +5523,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.paymentFrequency);
                                           const v3 = normalize(b.Equifax?.paymentFrequency);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.paymentFrequency || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.paymentFrequency || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountCondition', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4051,16 +5550,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountCondition);
                                           const v3 = normalize(b.Equifax?.accountCondition);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.accountCondition || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.accountCondition || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('disputeFlag', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4078,16 +5577,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.disputeFlag);
                                           const v3 = normalize(b.Equifax?.disputeFlag);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.disputeFlag || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.disputeFlag || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('industry', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4105,16 +5604,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.industry);
                                           const v3 = normalize(b.Equifax?.industry);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.industry || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.industry || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('termType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">Term Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">Term Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4132,16 +5631,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.termType);
                                           const v3 = normalize(b.Equifax?.termType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.termType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.termType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('pastDue', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                         </svg>
@@ -4164,7 +5663,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.pastDue);
                                           const v3 = normalize(b.Equifax?.pastDue);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
                                         <span className={`font-semibold ${parseInt(accountGroup.bureaus.TransUnion.pastDue || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -4174,8 +5673,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                     </div>
                                   )}
                                   {shouldShowField('highBalance', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
@@ -4198,16 +5697,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.highBalance);
                                           const v3 = normalize(b.Equifax?.highBalance);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.TransUnion.highBalance || 0).toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.TransUnion.highBalance || 0).toLocaleString()}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('worstStatus', activeTab) && (
                                     <div className="flex justify-between items-center py-1">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
@@ -4230,18 +5729,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.worstStatus);
                                           const v3 = normalize(b.Equifax?.worstStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.TransUnion.worstStatus}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.TransUnion.worstStatus}</span>
                                       </div>
                                     </div>
                                   )}
                                 </div>
                                 
                                 {shouldShowField('payStatusHistory', activeTab) && accountGroup.bureaus.TransUnion.payStatusHistory && accountGroup.bureaus.TransUnion.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2 flex items-center justify-between">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-700">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2 flex items-center justify-between">
                                       <span>Payment History:</span>
                                       {activeTab === 'credit-repair' && (() => {
                                         const b = accountGroup.bureaus;
@@ -4259,15 +5758,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                         const v2 = normalize(b.Experian?.payStatusHistory);
                                         const v3 = normalize(b.Equifax?.payStatusHistory);
                                         const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                         return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                       })()}
                                     </div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700 overflow-x-auto">
                                       {accountGroup.bureaus.TransUnion.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.TransUnion.payStatusHistoryStartDate && accountGroup.bureaus.TransUnion.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.TransUnion.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -4285,7 +5784,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         </div>
 
                         {/* Equifax Column */}
-                        <div className="text-left bg-card rounded-lg p-4 border border-border">
+                        <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
                           {accountGroup.bureaus.Equifax ? (
                             <div className="space-y-3">
                               <div className="flex items-center justify-between">
@@ -4294,29 +5793,41 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                   className={`text-xs font-medium px-3 py-1 ${
                                     accountGroup.bureaus.Equifax.status === 'Open' 
                                       ? 'bg-green-100 text-green-800 border-green-200' 
-                                      : 'bg-gray-100 text-gray-700 border-gray-200'
+                                      : 'bg-gray-100 text-gray-700 dark:text-slate-200 border-gray-200 dark:border-slate-700'
                                   }`}
                                 >
                                   {accountGroup.bureaus.Equifax.status}
                                 </Badge>
-                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 font-medium">
+                                <div className="flex items-center justify-center gap-2 text-xs text-gray-500 dark:text-slate-400 font-medium">
                                   <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-4 w-auto" />
                                   
                                 </div>
                               </div>
                               
                               <div className="space-y-2">
-                                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100">
-                                  <div className="font-bold text-xl text-foreground">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
-                                  <div className="text-muted-foreground text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
-                                  {accountGroup.type && (accountGroup.type.toLowerCase().includes('installment') || accountGroup.type.toLowerCase().includes('loan')) ? (
+                                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-100 dark:from-green-950/40 dark:to-emerald-950/40 dark:border-green-900/40">
+                                  <div className="font-bold text-xl text-gray-800 dark:text-white">${parseInt(accountGroup.bureaus.Equifax.balance).toLocaleString()}</div>
+                                  <div className="text-gray-600 dark:text-slate-300 text-sm">of ${parseInt(accountGroup.bureaus.Equifax.limit).toLocaleString()}</div>
+                                  {accountGroup.type && (
+                                    accountGroup.type.toLowerCase().includes('installment') ||
+                                    accountGroup.type.toLowerCase().includes('loan') ||
+                                    accountGroup.type.toLowerCase().includes('mortgage') ||
+                                    accountGroup.type.toLowerCase().includes('real estate')
+                                  ) ? (
                                     <div className="space-y-1 mt-1">
-                                      <div className={`font-bold text-sm ${getUtilizationColor(accountGroup.bureaus.Equifax.utilization)}`}>
-                                        {accountGroup.bureaus.Equifax.utilization}% Paid
-                                      </div>
-                                      <div className={`font-bold text-sm ${getUtilizationColor(100 - accountGroup.bureaus.Equifax.utilization)}`}>
-                                        {100 - accountGroup.bureaus.Equifax.utilization}% Remaining
-                                      </div>
+                                      {(() => {
+                                        const bal = parseFloat(accountGroup.bureaus.Equifax.balance) || 0;
+                                        const orig = parseFloat(accountGroup.bureaus.Equifax.highBalance) || 0;
+                                        const base = orig > 0 ? orig : (parseFloat(accountGroup.bureaus.Equifax.limit) || 0);
+                                        const paid = base > 0 ? Math.round(((base - bal) / base) * 100) : 0;
+                                        const remaining = base > 0 ? 100 - paid : 0;
+                                        return (
+                                          <>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(paid)}`}>{paid}% Paid</div>
+                                            <div className={`font-bold text-sm ${getUtilizationColor(remaining)}`}>{remaining}% Remaining</div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   ) : (
                                     <div className={`font-bold text-lg mt-1 ${getUtilizationColor(accountGroup.bureaus.Equifax.utilization)}`}>
@@ -4327,19 +5838,19 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                 
                                 <div className="space-y-2 text-xs">
                                   {shouldShowField('paymentHistory', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                         </svg>
                                         Payment:
                                       </span>
-                                      <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.paymentHistory}</span>
+                                      <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.paymentHistory}</span>
                                     </div>
                                   )}
                                   {shouldShowField('reported', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -4362,16 +5873,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.reported);
                                           const v3 = normalize(b.TransUnion?.reported);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.reported ? new Date(accountGroup.bureaus.Equifax.reported).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.reported ? new Date(accountGroup.bureaus.Equifax.reported).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('opened', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                         </svg>
@@ -4394,16 +5905,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.opened);
                                           const v3 = normalize(b.TransUnion?.opened);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.opened ? new Date(accountGroup.bureaus.Equifax.opened).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.opened ? new Date(accountGroup.bureaus.Equifax.opened).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('dateAccountStatus', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10" />
                                         </svg>
@@ -4426,16 +5937,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.dateAccountStatus);
                                           const v3 = normalize(b.TransUnion?.dateAccountStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.dateAccountStatus ? new Date(accountGroup.bureaus.Equifax.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.dateAccountStatus ? new Date(accountGroup.bureaus.Equifax.dateAccountStatus).toLocaleDateString() : 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditorName', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Building2 className="w-3 h-3 text-gray-400" /> Creditor:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4453,16 +5964,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.creditorName || b.Experian?.CreditorName || b.Experian?.creditor);
                                           const v3 = normalize(b.TransUnion?.creditorName || b.TransUnion?.CreditorName || b.TransUnion?.creditor);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.creditorName || accountGroup.bureaus.Equifax.CreditorName || accountGroup.bureaus.Equifax.creditor || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.creditorName || accountGroup.bureaus.Equifax.CreditorName || accountGroup.bureaus.Equifax.creditor || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountNumber', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                                         </svg>
@@ -4485,16 +5996,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountNumber);
                                           const v3 = normalize(b.TransUnion?.accountNumber);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.accountNumber || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.accountNumber || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('designator', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                         </svg>
@@ -4517,16 +6028,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.designator);
                                           const v3 = normalize(b.TransUnion?.designator);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.designator}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.designator}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountTypeDescription', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><ScrollText className="w-3 h-3 text-gray-400" /> Type (Desc):</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4544,16 +6055,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountTypeDescription);
                                           const v3 = normalize(b.TransUnion?.accountTypeDescription);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.accountTypeDescription || accountGroup.type}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.accountTypeDescription || accountGroup.type}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><BadgeCheck className="w-3 h-3 text-gray-400" /> Account Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4571,16 +6082,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountType);
                                           const v3 = normalize(b.TransUnion?.accountType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.accountType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.accountType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('creditType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Wallet className="w-3 h-3 text-gray-400" /> Credit Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4598,16 +6109,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.creditType);
                                           const v3 = normalize(b.TransUnion?.creditType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.creditType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.creditType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('paymentFrequency', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Clock className="w-3 h-3 text-gray-400" /> Payment Frequency:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4625,16 +6136,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.paymentFrequency);
                                           const v3 = normalize(b.TransUnion?.paymentFrequency);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.paymentFrequency || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.paymentFrequency || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('accountCondition', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Gauge className="w-3 h-3 text-gray-400" /> Condition:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4652,16 +6163,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.accountCondition);
                                           const v3 = normalize(b.TransUnion?.accountCondition);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.accountCondition || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.accountCondition || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('disputeFlag', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3 text-gray-400" /> Dispute:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4679,16 +6190,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.disputeFlag);
                                           const v3 = normalize(b.TransUnion?.disputeFlag);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.disputeFlag || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.disputeFlag || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('industry', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1"><Briefcase className="w-3 h-3 text-gray-400" /> Industry:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4706,16 +6217,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.industry);
                                           const v3 = normalize(b.TransUnion?.industry);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.industry || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.industry || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('termType', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">Term Type:</span>
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">Term Type:</span>
                                       <div className="flex items-center gap-2">
                                         {activeTab === 'credit-repair' && (() => {
                                           const b = accountGroup.bureaus;
@@ -4733,16 +6244,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.termType);
                                           const v3 = normalize(b.TransUnion?.termType);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.termType || 'N/A'}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.termType || 'N/A'}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('pastDue', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                                         </svg>
@@ -4765,7 +6276,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.pastDue);
                                           const v3 = normalize(b.TransUnion?.pastDue);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
                                         <span className={`font-semibold ${parseInt(accountGroup.bureaus.Equifax.pastDue || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -4775,8 +6286,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                     </div>
                                   )}
                                   {shouldShowField('highBalance', activeTab) && (
-                                    <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                    <div className="flex justify-between items-center py-1 border-b border-gray-100 dark:border-slate-800">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                                         </svg>
@@ -4799,16 +6310,16 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.highBalance);
                                           const v3 = normalize(b.TransUnion?.highBalance);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">${parseInt(accountGroup.bureaus.Equifax.highBalance || 0).toLocaleString()}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">${parseInt(accountGroup.bureaus.Equifax.highBalance || 0).toLocaleString()}</span>
                                       </div>
                                     </div>
                                   )}
                                   {shouldShowField('worstStatus', activeTab) && (
                                     <div className="flex justify-between items-center py-1">
-                                      <span className="text-gray-500 font-medium flex items-center gap-1">
+                                      <span className="text-gray-500 dark:text-slate-400 font-medium flex items-center gap-1">
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
@@ -4831,18 +6342,18 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                           const v2 = normalize(b.Experian?.worstStatus);
                                           const v3 = normalize(b.TransUnion?.worstStatus);
                                           const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                          const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                           return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                         })()}
-                                        <span className="font-semibold text-gray-700">{accountGroup.bureaus.Equifax.worstStatus}</span>
+                                        <span className="font-semibold text-gray-700 dark:text-slate-200">{accountGroup.bureaus.Equifax.worstStatus}</span>
                                       </div>
                                     </div>
                                   )}
                                 </div>
                                 
                                 {shouldShowField('payStatusHistory', activeTab) && accountGroup.bureaus.Equifax.payStatusHistory && accountGroup.bureaus.Equifax.payStatusHistory !== 'N/A' && (
-                                  <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                                    <div className="font-semibold text-xs text-gray-700 mb-2 flex items-center justify-between">
+                                  <div className="mt-3 bg-gray-50 dark:bg-slate-800 rounded-lg p-3 border border-gray-200 dark:border-slate-700">
+                                    <div className="font-semibold text-xs text-gray-700 dark:text-slate-200 mb-2 flex items-center justify-between">
                                       <span>Payment History:</span>
                                       {activeTab === 'credit-repair' && (() => {
                                         const b = accountGroup.bureaus;
@@ -4860,15 +6371,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                                         const v2 = normalize(b.Experian?.payStatusHistory);
                                         const v3 = normalize(b.TransUnion?.payStatusHistory);
                                         const m = v1 !== null && v2 !== null && v3 !== null && v1 === v2 && v2 === v3;
-                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 border border-amber-200';
+                                        const cls = m ? 'px-1.5 py-0.5 text-[10px] rounded bg-green-50 text-green-700 dark:text-green-400 border border-green-200' : 'px-1.5 py-0.5 text-[10px] rounded bg-amber-50 text-amber-700 dark:text-amber-400 border border-amber-200';
                                         return <span className={cls}>{m ? 'Match' : 'Not match'}</span>;
                                       })()}
                                     </div>
-                                    <div className="text-xs font-mono bg-white p-2 rounded border border-gray-200 overflow-x-auto">
+                                    <div className="text-xs font-mono bg-white dark:bg-slate-900 p-2 rounded border border-gray-200 dark:border-slate-700 overflow-x-auto">
                                       {accountGroup.bureaus.Equifax.payStatusHistory}
                                     </div>
                                     {accountGroup.bureaus.Equifax.payStatusHistoryStartDate && accountGroup.bureaus.Equifax.payStatusHistoryStartDate !== 'N/A' && (
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                                         From: {new Date(accountGroup.bureaus.Equifax.payStatusHistoryStartDate).toLocaleDateString()}
                                       </div>
                                     )}
@@ -4884,6 +6395,130 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                             </div>
                           )}
                         </div>
+
+                        {/* Credit Repair Analysis */}
+                        {activeTab === 'credit-repair' && (
+                          <div className="text-left bg-white rounded-lg p-4 border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
+                            {(() => {
+                              const up = (s: string) => s.toUpperCase();
+                              const trimCollapse = (s: string) => s.replace(/\s+/g, ' ').trim();
+                              const removePunctExceptHyphen = (s: string) => s.replace(/[^\w\s-]/g, '');
+                              const digitsOnly = (s: string) => s.replace(/\D/g, '');
+                              const canonicalCreditor = (s: string) => {
+                                const t = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                if (/navyfederal|navyfcu/.test(t)) return 'NAVY FEDERAL CREDIT UNION';
+                                if (/creditone|crdtonebnk/.test(t)) return 'CREDIT ONE BANK';
+                                if (/jpmcb|chase|jpmmorgan/.test(t)) return 'CHASE';
+                                if (/americanexpress|amex/.test(t)) return 'AMERICAN EXPRESS';
+                                if (/discover/.test(t)) return 'DISCOVER';
+                                if (/capitalone|capone/.test(t)) return 'CAPITAL ONE';
+                                if (/synchrony|syncb/.test(t)) return 'SYNCHRONY BANK';
+                                if (/citi(bank)?/.test(t)) return 'CITIBANK';
+                                if (/wellsfargo/.test(t)) return 'WELLS FARGO';
+                                if (/barclays/.test(t)) return 'BARCLAYS';
+                                return up(trimCollapse(removePunctExceptHyphen(String(s ?? '').trim())));
+                              };
+                              const parseDate = (s: any) => {
+                                const raw = String(s ?? '').trim();
+                                if (!raw) return null;
+                                const d = new Date(raw);
+                                if (isNaN(d.getTime())) {
+                                  const dd = digitsOnly(raw);
+                                  if (dd.length === 8) {
+                                    const y = dd.slice(0,4);
+                                    const m = dd.slice(4,6);
+                                    const day = dd.slice(6,8);
+                                    const d2 = new Date(`${y}-${m}-${day}T00:00:00Z`);
+                                    return isNaN(d2.getTime()) ? null : d2;
+                                  }
+                                  return null;
+                                }
+                                return d;
+                              };
+                              const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0,10) : '');
+                              const bureauNameById: Record<string, string> = { '1': 'TransUnion', '2': 'Experian', '3': 'Equifax' };
+                              const lawset = {
+                                FCRA: ["§602","§603","§604(a–f)","§605","§605A","§605B","§606","§607(a)","§607(b)","§607(c)","§609(a)(1)","§609(a)(2)","§609(a)(3)","§611(a–e)","§615","§616","§617","§623(a)(1)","§623(a)(2)","§623(a)(5)","§623(a)(7)","§623(b)"],
+                                FACTA: ["§112","§113","§151","§153","§315"],
+                                GLBA: ["§501(a)–(b)","§502(a)–(b)","§503–§504"],
+                                Metro2: ["ALL Metro 2 Account Reporting Standards","ALL Portfolio Type Standards","ALL Status and Special Comment Rules","ALL DOFD and Compliance Condition Rules","ALL Payment Rating and Current Status Rules"],
+                                Regulatory: ["CFPB Accuracy & Integrity Rule","CFPB Furnisher Rule","OCC, FDIC, NCUA accuracy guidelines","FTC Misrepresentation Doctrine"],
+                                Other: ["UDAAP","UCC Article 9 (obligation attachment)","Bankruptcy Abuse Prevention and Consumer Protection Act"]
+                              };
+                              const creditor = canonicalCreditor(accountGroup.creditor || '');
+                              const accNum = String(accountGroup.accountNumber || '');
+                              const digits = digitsOnly(accNum);
+                              let tradelineKey = '';
+                              if (digits.length >= 4) {
+                                const last4 = digits.slice(-4);
+                                tradelineKey = `${creditor}|${last4}`;
+                              } else {
+                                const type = up(trimCollapse(String(accountGroup.type || '')));
+                                const openedVals = Object.values(accountGroup.bureaus || {}).map((b: any) => b.opened).filter(Boolean);
+                                const earliest = openedVals.length ? openedVals.map(parseDate).filter(Boolean as any as (x: any) => x).sort((a: any, b: any) => (a as Date).getTime() - (b as Date).getTime())[0] : null;
+                                tradelineKey = `${creditor}|${type}|${fmtDate(earliest as any)}`;
+                              }
+                              const item = Array.isArray(acctEvalResult?.accounts) ? acctEvalResult.accounts.find((x: any) => x.tradeline_key === tradelineKey) : null;
+                              if (!item) {
+                                return (
+                                  <div className="text-sm text-muted-foreground">
+                                    No evaluation data for this account
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <Badge
+                                      variant={item.account_status === 'Negative' ? 'destructive' : 'default'}
+                                      className={`text-xs font-medium px-3 py-1 ${item.account_status === 'Negative' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-green-100 text-green-800 border-green-200'}`}
+                                    >
+                                      {item.account_status}
+                                    </Badge>
+                                    <span className="text-xs text-gray-500 dark:text-slate-400">{item.account_type_output}</span>
+                                  </div>
+                                  {item.violations && item.violations.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {item.violations.map((v: any, idx: number) => (
+                                        <div key={idx} className="rounded-md border border-red-200 bg-red-50 p-2 text-sm dark:border-red-900 dark:bg-red-950/40">
+                                          <div className="font-semibold text-red-700 dark:text-red-300">{v.field}</div>
+                                          <div className="text-red-800 dark:text-red-200">{v.reason}</div>
+                                          {v.what_mismatched && (
+                                            <div className="mt-1 grid grid-cols-1 gap-1">
+                                              {Object.entries(v.what_mismatched).map(([bid, val]) => (
+                                                <div key={bid} className="flex items-center justify-between">
+                                                  <span className="text-xs text-gray-600 dark:text-slate-300">{bureauNameById[bid] || `Bureau ${bid}`}</span>
+                                                  <span className="text-xs font-medium text-gray-900 dark:text-white">{val === null || val === undefined || val === '' ? '—' : String(val)}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                          {v.laws?.FULL_ACCOUNT_LAWSET && (
+                                            <details className="mt-2">
+                                              <summary className="cursor-pointer text-xs text-indigo-700">Applicable law set</summary>
+                                              <div className="mt-1 text-xs space-y-1">
+                                                {Object.entries(lawset).map(([cat, list]) => (
+                                                  <div key={cat}>
+                                                    <div className="font-semibold text-gray-700">{cat}</div>
+                                                    <div className="text-gray-600">{(list as string[]).join(', ')}</div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </details>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="rounded-md border border-green-200 bg-green-50 p-2 text-sm text-green-800">
+                                      No violations detected
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                     </div>
                     );
@@ -4893,6 +6528,1372 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             })()}
           </CardContent>
         </Card>
+        
+        
+
+      {/* Funding Application Modal */}
+      <Dialog open={showFundingModal} onOpenChange={setShowFundingModal}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">
+              {fundingType === 'personal' ? 'Personal' : fundingType === 'business' ? 'Business' : 'Both'} Funding Application
+            </DialogTitle>
+          </DialogHeader>
+
+          {!fundingOption ? (
+            // Enhanced Funding Option Selection
+            <div className="space-y-8 py-6">
+              <div className="space-y-3 max-w-3xl mx-auto">
+                <h4 className="text-lg font-semibold">What are you looking for?</h4>
+                <div className="flex flex-wrap gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('Credit Card')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('Credit Card'); else next.delete('Credit Card');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>Credit cards</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('SBA Loan')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('SBA Loan'); else next.delete('SBA Loan');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>SBA loans</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={selectedProductTypes.includes('Line of Credit')}
+                      onCheckedChange={(v) => {
+                        setSelectedProductTypes((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add('Line of Credit'); else next.delete('Line of Credit');
+                          return Array.from(next);
+                        });
+                      }}
+                    />
+                    <span>Lines of credit</span>
+                  </label>
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
+                  <DollarSign className="h-10 w-10 text-white" />
+                </div>
+                <h3 className="text-3xl font-bold mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                  Choose Your Funding Path
+                </h3>
+                <p className="text-gray-600 max-w-2xl mx-auto text-lg leading-relaxed">
+                  Select the option that best fits your needs and let us help you secure the funding you deserve
+                </p>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+                <Card 
+                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-blue-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-blue-50"
+                  onClick={() => {
+                    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+                    const infer = (inq: any) => {
+                      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
+                      if (b) return String(b);
+                      const id = inq?.BureauId;
+                      if (id === 1) return 'TransUnion';
+                      if (id === 2) return 'Equifax';
+                      if (id === 3) return 'Experian';
+                      return '';
+                    };
+                    const ib = {
+                      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
+                      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
+                      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
+                    };
+                    navigate(`/funding/apply/${fundingType}`, { state: { clientId: clientId ? Number(clientId) : undefined, productTypes: selectedProductTypes, inquiriesByBureau: ib, goal: fundingType } });
+                    setShowFundingModal(false);
+                  }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-indigo-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <CardContent className="p-8 text-center relative z-10">
+                    <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-500 shadow-xl">
+                      <Users className="h-12 w-12 text-white" />
+                    </div>
+                    <h4 className="text-2xl font-bold mb-4 text-gray-800 group-hover:text-blue-700 transition-colors duration-300">Done For You</h4>
+                    <p className="text-gray-600 text-base mb-6 leading-relaxed">
+                      Our funding experts handle everything for you. Complete application assistance, document preparation, and personalized guidance throughout the entire process.
+                    </p>
+                    <div className="space-y-3 mb-8">
+                      <div className="flex items-center text-sm text-green-600 justify-center">
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                        <span>Expert application assistance</span>
+                      </div>
+                      <div className="flex items-center text-sm text-green-600 justify-center">
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                        <span>Document preparation help</span>
+                      </div>
+                      <div className="flex items-center text-sm text-green-600 justify-center">
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                        <span>Personalized guidance</span>
+                      </div>
+                      <div className="flex items-center text-sm text-green-600 justify-center">
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                        <span>Higher approval rates</span>
+                      </div>
+                    </div>
+                    <Button className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-4 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 text-lg">
+                      <Star className="h-5 w-5 mr-2" />
+                      Choose Premium Service
+                    </Button>
+                    <div className="mt-4 text-xs text-blue-600 font-medium">
+                      ⭐ Most Popular Choice
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card 
+                  className="cursor-pointer hover:shadow-2xl transition-all duration-500 border-2 hover:border-green-500 hover:scale-105 group relative overflow-hidden bg-gradient-to-br from-white to-green-50"
+                  onClick={() => {
+                    performGoToDiyFunding((fundingType as any) || 'both');
+                    setShowFundingModal(false);
+                  }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 to-emerald-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <CardContent className="p-8 text-center relative z-10">
+                    <div className="w-24 h-24 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-500 shadow-xl">
+                      <FileText className="h-12 w-12 text-white" />
+                    </div>
+                    <h4 className="text-2xl font-bold mb-4 text-gray-800 group-hover:text-green-700 transition-colors duration-300">DIY Funding</h4>
+                    <p className="text-gray-600 text-base mb-6 leading-relaxed">
+                      Take control of your funding journey. Complete the application yourself with our comprehensive step-by-step guidance and resources.
+                    </p>
+                    <div className="space-y-3 mb-8">
+                      <div className="flex items-center text-sm text-green-600 justify-center">
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                        <span>Step-by-step guidance</span>
+                      </div>
+                      <div className="flex items-center text-sm text-green-600 justify-center">
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                        <span>Resource library access</span>
+                      </div>
+                      <div className="flex items-center text-sm text-green-600 justify-center">
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                        <span>Self-paced completion</span>
+                      </div>
+                      <div className="flex items-center text-sm text-green-600 justify-center">
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
+                        <span>Complete control</span>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      className="w-full border-2 border-green-500 text-green-600 hover:bg-green-500 hover:text-white font-semibold py-4 rounded-xl transition-all duration-300 text-lg hover:shadow-lg"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        performGoToDiyFunding((fundingType as any) || 'both');
+                        setShowFundingModal(false);
+                      }}
+                    >
+                      <Zap className="h-5 w-5 mr-2" />
+                      Choose Self-Service
+                    </Button>
+                    <div className="mt-4 text-xs text-green-600 font-medium">
+                      💪 For Independent Users
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : fundingOption === 'diy' ? (
+            // DIY Cards Display - Show appropriate component based on funding type
+            fundingType === 'business' ? (
+              <BusinessCardsDisplay onClose={() => setFundingOption(null)} />
+            ) : (
+              <PersonalCardsDisplay onClose={() => setFundingOption(null)} />
+            )
+            ) : (
+              // Enhanced 4-Step Form (only show for Done For You option)
+              fundingOption === 'done-for-you' && (
+                <div className="space-y-8 py-6">
+                {/* Enhanced Step Navigation with Progress Bar */}
+                <div className="relative mb-12">
+                  <div className="flex items-center justify-between mb-8">
+                    {[
+                      { step: 1, title: 'Business Info', icon: Building2, color: 'blue', description: 'Company details' },
+                      { step: 2, title: 'Personal Info', icon: User, color: 'indigo', description: 'Guarantor details' },
+                      { step: 3, title: 'Employment', icon: Building, color: 'purple', description: 'Work information' },
+                      { step: 4, title: 'Financial', icon: DollarSign, color: 'green', description: 'Banking & credit' }
+                    ].map((item, index) => {
+                      const isActive = currentStep === item.step;
+                      const isCompleted = currentStep > item.step;
+                      const IconComponent = item.icon;
+                      
+                      return (
+                        <div key={item.step} className="flex items-center relative">
+                          <div className="flex flex-col items-center">
+                            <div 
+                              className={`w-20 h-20 rounded-full flex items-center justify-center font-bold text-lg transition-all duration-500 shadow-lg ${
+                                isCompleted 
+                                  ? `bg-gradient-to-br from-${item.color}-500 to-${item.color}-600 text-white ring-4 ring-${item.color}-200` 
+                                  : isActive
+                                  ? `bg-gradient-to-br from-${item.color}-500 to-${item.color}-600 text-white ring-4 ring-${item.color}-300 animate-pulse`
+                                  : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                              }`}
+                            >
+                              {isCompleted ? (
+                                <CheckCircle className="h-10 w-10" />
+                              ) : (
+                                <IconComponent className="h-10 w-10" />
+                              )}
+                            </div>
+                            <div className="mt-4 text-center">
+                              <div className={`text-base font-bold transition-colors duration-300 ${
+                                isActive || isCompleted ? `text-${item.color}-600` : 'text-gray-500'
+                              }`}>
+                                Step {item.step}
+                              </div>
+                              <div className={`text-sm font-semibold transition-colors duration-300 ${
+                                isActive || isCompleted ? `text-${item.color}-600` : 'text-gray-400'
+                              }`}>
+                                {item.title}
+                              </div>
+                              <div className={`text-xs transition-colors duration-300 ${
+                                isActive || isCompleted ? `text-${item.color}-500` : 'text-gray-400'
+                              }`}>
+                                {item.description}
+                              </div>
+                            </div>
+                          </div>
+                          {index < 3 && (
+                            <div className="flex-1 mx-6 relative">
+                              <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all duration-1000 ease-out ${
+                                    currentStep > item.step 
+                                      ? 'bg-gradient-to-r from-blue-500 to-green-500 w-full' 
+                                      : 'bg-gray-200 w-0'
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Overall Progress Bar */}
+                  <div className="w-full bg-gray-200 rounded-full h-3 mb-8 shadow-inner">
+                    <div 
+                      className="bg-gradient-to-r from-blue-500 via-purple-500 to-green-500 h-3 rounded-full transition-all duration-1000 ease-out shadow-lg"
+                      style={{ width: `${(currentStep / 4) * 100}%` }}
+                    />
+                  </div>
+                  
+                  {/* Step Counter */}
+                  <div className="text-center">
+                    <div className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-full border border-blue-200">
+                      <div className="text-sm font-semibold text-gray-700">
+                        Step {currentStep} of 4 • {Math.round((currentStep / 4) * 100)}% Complete
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Enhanced Step 1: Business Information */}
+                {currentStep === 1 && (
+                  <div className="space-y-8 animate-fadeIn">
+                    <div className="text-center mb-8">
+                      <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                        <Building2 className="h-8 w-8 text-white" />
+                      </div>
+                      <h3 className="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                        Business Information
+                      </h3>
+                      <p className="text-gray-600">Tell us about your business and funding needs</p>
+                    </div>
+                    
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="titlePosition" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <User className="h-4 w-4 mr-2 text-blue-500" />
+                          Title / Position *
+                        </Label>
+                        <Input
+                          id="titlePosition"
+                          value={formData.titlePosition}
+                          onChange={(e) => setFormData({...formData, titlePosition: e.target.value})}
+                          placeholder="e.g., CEO, Owner, Manager"
+                          className={`h-12 border-2 rounded-lg transition-all duration-300 hover:border-gray-300 ${
+                            formErrors.titlePosition 
+                              ? 'border-red-500 focus:border-red-500 bg-red-50' 
+                              : 'border-gray-200 focus:border-blue-500'
+                          }`}
+                        />
+                        {formErrors.titlePosition && (
+                          <div className="flex items-center text-red-600 text-sm mt-1 animate-fadeIn">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {formErrors.titlePosition}
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="fundingAmount" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <DollarSign className="h-4 w-4 mr-2 text-green-500" />
+                          Amount of Funding Requested *
+                        </Label>
+                        <Input
+                          id="fundingAmount"
+                          type="number"
+                          value={formData.fundingAmount}
+                          onChange={(e) => setFormData({...formData, fundingAmount: e.target.value})}
+                          placeholder="$50,000"
+                          className={`h-12 border-2 rounded-lg transition-all duration-300 hover:border-gray-300 ${
+                            formErrors.fundingAmount 
+                              ? 'border-red-500 focus:border-red-500 bg-red-50' 
+                              : 'border-gray-200 focus:border-green-500'
+                          }`}
+                        />
+                        {formErrors.fundingAmount && (
+                          <div className="flex items-center text-red-600 text-sm mt-1 animate-fadeIn">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {formErrors.fundingAmount}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="intendedUse" className="text-sm font-semibold text-gray-700 flex items-center">
+                        <FileText className="h-4 w-4 mr-2 text-purple-500" />
+                        Intended Use of Funds *
+                      </Label>
+                      <Textarea
+                        id="intendedUse"
+                        value={formData.intendedUse}
+                        onChange={(e) => setFormData({...formData, intendedUse: e.target.value})}
+                        placeholder="Describe how you plan to use the funds (e.g., equipment purchase, inventory, expansion)"
+                        className={`min-h-[100px] border-2 rounded-lg transition-all duration-300 hover:border-gray-300 resize-none ${
+                          formErrors.intendedUse 
+                            ? 'border-red-500 focus:border-red-500 bg-red-50' 
+                            : 'border-gray-200 focus:border-purple-500'
+                        }`}
+                      />
+                      {formErrors.intendedUse && (
+                        <div className="flex items-center text-red-600 text-sm mt-1 animate-fadeIn">
+                          <AlertCircle className="h-4 w-4 mr-1" />
+                          {formErrors.intendedUse}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="businessName" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Building className="h-4 w-4 mr-2 text-indigo-500" />
+                          Business Name *
+                        </Label>
+                        <Input
+                          id="businessName"
+                          value={formData.businessName}
+                          onChange={(e) => setFormData({...formData, businessName: e.target.value})}
+                          placeholder="Your Business Name LLC"
+                          className={`h-12 border-2 rounded-lg transition-all duration-300 hover:border-gray-300 ${
+                            formErrors.businessName 
+                              ? 'border-red-500 focus:border-red-500 bg-red-50' 
+                              : 'border-gray-200 focus:border-indigo-500'
+                          }`}
+                        />
+                        {formErrors.businessName && (
+                          <div className="flex items-center text-red-600 text-sm mt-1 animate-fadeIn">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {formErrors.businessName}
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="businessPhone" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Phone className="h-4 w-4 mr-2 text-blue-500" />
+                          Business Phone *
+                        </Label>
+                        <Input
+                          id="businessPhone"
+                          value={formData.businessPhone}
+                          onChange={(e) => setFormData({...formData, businessPhone: e.target.value})}
+                          placeholder="(555) 123-4567"
+                          className={`h-12 border-2 rounded-lg transition-all duration-300 hover:border-gray-300 ${
+                            formErrors.businessPhone 
+                              ? 'border-red-500 focus:border-red-500 bg-red-50' 
+                              : 'border-gray-200 focus:border-blue-500'
+                          }`}
+                        />
+                        {formErrors.businessPhone && (
+                          <div className="flex items-center text-red-600 text-sm mt-1 animate-fadeIn">
+                            <AlertCircle className="h-4 w-4 mr-1" />
+                            {formErrors.businessPhone}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="businessEmail" className="text-sm font-semibold text-gray-700 flex items-center">
+                        <Mail className="h-4 w-4 mr-2 text-red-500" />
+                        Business Email *
+                      </Label>
+                      <Input
+                        id="businessEmail"
+                        type="email"
+                        value={formData.businessEmail}
+                        onChange={(e) => setFormData({...formData, businessEmail: e.target.value})}
+                        placeholder="business@company.com"
+                        className={`h-12 border-2 rounded-lg transition-all duration-300 hover:border-gray-300 ${
+                          formErrors.businessEmail 
+                            ? 'border-red-500 focus:border-red-500 bg-red-50' 
+                            : 'border-gray-200 focus:border-red-500'
+                        }`}
+                      />
+                      {formErrors.businessEmail && (
+                        <div className="flex items-center text-red-600 text-sm mt-1 animate-fadeIn">
+                          <AlertCircle className="h-4 w-4 mr-1" />
+                          {formErrors.businessEmail}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="businessAddress" className="text-sm font-semibold text-gray-700 flex items-center">
+                        <MapPin className="h-4 w-4 mr-2 text-orange-500" />
+                        Business Address *
+                      </Label>
+                      <Input
+                        id="businessAddress"
+                        value={formData.businessAddress}
+                        onChange={(e) => setFormData({...formData, businessAddress: e.target.value})}
+                        placeholder="123 Business Street"
+                        className={`h-12 border-2 rounded-lg transition-all duration-300 hover:border-gray-300 ${
+                          formErrors.businessAddress 
+                            ? 'border-red-500 focus:border-red-500 bg-red-50' 
+                            : 'border-gray-200 focus:border-orange-500'
+                        }`}
+                      />
+                      {formErrors.businessAddress && (
+                        <div className="flex items-center text-red-600 text-sm mt-1 animate-fadeIn">
+                          <AlertCircle className="h-4 w-4 mr-1" />
+                          {formErrors.businessAddress}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="city" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <MapPin className="h-4 w-4 mr-2 text-teal-500" />
+                          City *
+                        </Label>
+                        <Input
+                          id="city"
+                          value={formData.city}
+                          onChange={(e) => setFormData({...formData, city: e.target.value})}
+                          placeholder="New York"
+                          className="h-12 border-2 border-gray-200 focus:border-teal-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="state" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <MapPin className="h-4 w-4 mr-2 text-cyan-500" />
+                          State *
+                        </Label>
+                        <Input
+                          id="state"
+                          value={formData.state}
+                          onChange={(e) => setFormData({...formData, state: e.target.value})}
+                          placeholder="NY"
+                          className="h-12 border-2 border-gray-200 focus:border-cyan-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="zip" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Hash className="h-4 w-4 mr-2 text-pink-500" />
+                          ZIP *
+                        </Label>
+                        <Input
+                          id="zip"
+                          value={formData.zip}
+                          onChange={(e) => setFormData({...formData, zip: e.target.value})}
+                          placeholder="10001"
+                          className="h-12 border-2 border-gray-200 focus:border-pink-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="dateCommenced" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Calendar className="h-4 w-4 mr-2 text-violet-500" />
+                          Date Business Commenced *
+                        </Label>
+                        <Input
+                          id="dateCommenced"
+                          type="date"
+                          value={formData.dateCommenced}
+                          onChange={(e) => setFormData({...formData, dateCommenced: e.target.value})}
+                          className="h-12 border-2 border-gray-200 focus:border-violet-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="businessWebsite" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Globe className="h-4 w-4 mr-2 text-emerald-500" />
+                          Business Website
+                        </Label>
+                        <Input
+                          id="businessWebsite"
+                          value={formData.businessWebsite}
+                          onChange={(e) => setFormData({...formData, businessWebsite: e.target.value})}
+                          placeholder="https://www.yourwebsite.com"
+                          className="h-12 border-2 border-gray-200 focus:border-emerald-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="businessIndustry" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Briefcase className="h-4 w-4 mr-2 text-amber-500" />
+                          Business Industry *
+                        </Label>
+                        <Input
+                          id="businessIndustry"
+                          value={formData.businessIndustry}
+                          onChange={(e) => setFormData({...formData, businessIndustry: e.target.value})}
+                          placeholder="e.g., Technology, Retail, Healthcare"
+                          className="h-12 border-2 border-gray-200 focus:border-amber-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="entityType" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Building2 className="h-4 w-4 mr-2 text-rose-500" />
+                          Entity Type *
+                        </Label>
+                        <Select value={formData.entityType} onValueChange={(value) => setFormData({...formData, entityType: value})}>
+                          <SelectTrigger className="h-12 border-2 border-gray-200 focus:border-rose-500 rounded-lg transition-all duration-300 hover:border-gray-300">
+                            <SelectValue placeholder="Select entity type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="LLC">LLC</SelectItem>
+                            <SelectItem value="Corporation">Corporation</SelectItem>
+                            <SelectItem value="Partnership">Partnership</SelectItem>
+                            <SelectItem value="Sole Proprietorship">Sole Proprietorship</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="incorporationState" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <MapPin className="h-4 w-4 mr-2 text-lime-500" />
+                          Incorporation State *
+                        </Label>
+                        <Input
+                          id="incorporationState"
+                          value={formData.incorporationState}
+                          onChange={(e) => setFormData({...formData, incorporationState: e.target.value})}
+                          placeholder="Delaware"
+                          className="h-12 border-2 border-gray-200 focus:border-lime-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="numberOfEmployees" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <Users className="h-4 w-4 mr-2 text-sky-500" />
+                          Number of Employees *
+                        </Label>
+                        <Input
+                          id="numberOfEmployees"
+                          type="number"
+                          value={formData.numberOfEmployees}
+                          onChange={(e) => setFormData({...formData, numberOfEmployees: e.target.value})}
+                          placeholder="5"
+                          className="h-12 border-2 border-gray-200 focus:border-sky-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="ein" className="text-sm font-semibold text-gray-700 flex items-center">
+                        <Hash className="h-4 w-4 mr-2 text-slate-500" />
+                        EIN # *
+                      </Label>
+                      <Input
+                        id="ein"
+                        value={formData.ein}
+                        onChange={(e) => setFormData({...formData, ein: e.target.value})}
+                        placeholder="12-3456789"
+                        className="h-12 border-2 border-gray-200 focus:border-slate-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                      />
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="monthlyGrossSales" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <TrendingUp className="h-4 w-4 mr-2 text-green-500" />
+                          Current Gross Monthly Sales *
+                        </Label>
+                        <Input
+                          id="monthlyGrossSales"
+                          type="number"
+                          value={formData.monthlyGrossSales}
+                          onChange={(e) => setFormData({...formData, monthlyGrossSales: e.target.value})}
+                          placeholder="$25,000"
+                          className="h-12 border-2 border-gray-200 focus:border-green-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="projectedAnnualRevenue" className="text-sm font-semibold text-gray-700 flex items-center">
+                          <BarChart3 className="h-4 w-4 mr-2 text-blue-500" />
+                          Projected Gross Annual Revenue *
+                        </Label>
+                        <Input
+                          id="projectedAnnualRevenue"
+                          type="number"
+                          value={formData.projectedAnnualRevenue}
+                          onChange={(e) => setFormData({...formData, projectedAnnualRevenue: e.target.value})}
+                          placeholder="$300,000"
+                          className="h-12 border-2 border-gray-200 focus:border-blue-500 rounded-lg transition-all duration-300 hover:border-gray-300"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 2: Personal Guarantor Information */}
+                {currentStep === 2 && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold mb-4">Personal Guarantor Information</h3>
+                    
+                    <div className="grid md:grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor="firstName">First Name *</Label>
+                        <Input
+                          id="firstName"
+                          value={formData.firstName}
+                          onChange={(e) => setFormData({...formData, firstName: e.target.value})}
+                          placeholder="Enter first name"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="middleName">Middle Name</Label>
+                        <Input
+                          id="middleName"
+                          value={formData.middleName}
+                          onChange={(e) => setFormData({...formData, middleName: e.target.value})}
+                          placeholder="Enter middle name"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="lastName">Last Name *</Label>
+                        <Input
+                          id="lastName"
+                          value={formData.lastName}
+                          onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+                          placeholder="Enter last name"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="dateOfBirth">Date of Birth *</Label>
+                        <Input
+                          id="dateOfBirth"
+                          type="date"
+                          value={formData.dateOfBirth}
+                          onChange={(e) => setFormData({...formData, dateOfBirth: e.target.value})}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="birthCity">Birth City *</Label>
+                        <Input
+                          id="birthCity"
+                          value={formData.birthCity}
+                          onChange={(e) => setFormData({...formData, birthCity: e.target.value})}
+                          placeholder="Enter birth city"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="ssn">SSN *</Label>
+                        <Input
+                          id="ssn"
+                          value={formData.ssn}
+                          onChange={(e) => setFormData({...formData, ssn: e.target.value})}
+                          placeholder="Enter SSN"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="mothersMaidenName">Mother's Maiden Name *</Label>
+                        <Input
+                          id="mothersMaidenName"
+                          value={formData.mothersMaidenName}
+                          onChange={(e) => setFormData({...formData, mothersMaidenName: e.target.value})}
+                          placeholder="Enter mother's maiden name"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="homeAddress">Home Address *</Label>
+                      <Input
+                        id="homeAddress"
+                        value={formData.homeAddress}
+                        onChange={(e) => setFormData({...formData, homeAddress: e.target.value})}
+                        placeholder="Enter home address"
+                      />
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-4">
+                      <div>
+                        <Label htmlFor="personalCity">City *</Label>
+                        <Input
+                          id="personalCity"
+                          value={formData.personalCity}
+                          onChange={(e) => setFormData({...formData, personalCity: e.target.value})}
+                          placeholder="Enter city"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="personalState">State *</Label>
+                        <Input
+                          id="personalState"
+                          value={formData.personalState}
+                          onChange={(e) => setFormData({...formData, personalState: e.target.value})}
+                          placeholder="Enter state"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="personalZip">ZIP *</Label>
+                        <Input
+                          id="personalZip"
+                          value={formData.personalZip}
+                          onChange={(e) => setFormData({...formData, personalZip: e.target.value})}
+                          placeholder="Enter ZIP code"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="homePhone">Home Phone</Label>
+                        <Input
+                          id="homePhone"
+                          value={formData.homePhone}
+                          onChange={(e) => setFormData({...formData, homePhone: e.target.value})}
+                          placeholder="Enter home phone"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="mobilePhone">Mobile Phone *</Label>
+                        <Input
+                          id="mobilePhone"
+                          value={formData.mobilePhone}
+                          onChange={(e) => setFormData({...formData, mobilePhone: e.target.value})}
+                          placeholder="Enter mobile phone"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label>Housing Status *</Label>
+                      <RadioGroup 
+                        value={formData.housingStatus} 
+                        onValueChange={(value) => setFormData({...formData, housingStatus: value})}
+                        className="flex gap-6 mt-2"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="rent" id="rent" />
+                          <Label htmlFor="rent">Rent</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="own" id="own" />
+                          <Label htmlFor="own">Own</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="other" id="other" />
+                          <Label htmlFor="other">Other</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="monthlyHousingPayment">Monthly Housing Payment *</Label>
+                        <Input
+                          id="monthlyHousingPayment"
+                          type="number"
+                          value={formData.monthlyHousingPayment}
+                          onChange={(e) => setFormData({...formData, monthlyHousingPayment: e.target.value})}
+                          placeholder="Enter monthly payment"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="yearsAtAddress">Years at Current Address *</Label>
+                        <Input
+                          id="yearsAtAddress"
+                          type="number"
+                          value={formData.yearsAtAddress}
+                          onChange={(e) => setFormData({...formData, yearsAtAddress: e.target.value})}
+                          placeholder="Enter years at address"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="driversLicense">Driver's License # *</Label>
+                        <Input
+                          id="driversLicense"
+                          value={formData.driversLicense}
+                          onChange={(e) => setFormData({...formData, driversLicense: e.target.value})}
+                          placeholder="Enter driver's license number"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="issuingState">Issuing State *</Label>
+                        <Input
+                          id="issuingState"
+                          value={formData.issuingState}
+                          onChange={(e) => setFormData({...formData, issuingState: e.target.value})}
+                          placeholder="Enter issuing state"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="issueDate">Issue Date *</Label>
+                        <Input
+                          id="issueDate"
+                          type="date"
+                          value={formData.issueDate}
+                          onChange={(e) => setFormData({...formData, issueDate: e.target.value})}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="expirationDate">Expiration Date *</Label>
+                        <Input
+                          id="expirationDate"
+                          type="date"
+                          value={formData.expirationDate}
+                          onChange={(e) => setFormData({...formData, expirationDate: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 3: Employment Information */}
+                {currentStep === 3 && (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold mb-4">Employment Information</h3>
+                    
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="currentEmployer">Current Employer *</Label>
+                        <Input
+                          id="currentEmployer"
+                          value={formData.currentEmployer}
+                          onChange={(e) => setFormData({...formData, currentEmployer: e.target.value})}
+                          placeholder="Enter current employer"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="position">Position *</Label>
+                        <Input
+                          id="position"
+                          value={formData.position}
+                          onChange={(e) => setFormData({...formData, position: e.target.value})}
+                          placeholder="Enter position"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="yearsAtEmployer">Years at Current Employer *</Label>
+                        <Input
+                          id="yearsAtEmployer"
+                          type="number"
+                          value={formData.yearsAtEmployer}
+                          onChange={(e) => setFormData({...formData, yearsAtEmployer: e.target.value})}
+                          placeholder="Enter years at employer"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="employerPhone">Employer Phone *</Label>
+                        <Input
+                          id="employerPhone"
+                          value={formData.employerPhone}
+                          onChange={(e) => setFormData({...formData, employerPhone: e.target.value})}
+                          placeholder="Enter employer phone"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="employerAddress">Employer Address *</Label>
+                      <Input
+                        id="employerAddress"
+                        value={formData.employerAddress}
+                        onChange={(e) => setFormData({...formData, employerAddress: e.target.value})}
+                        placeholder="Enter employer address"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 4: Financial Information */}
+                {currentStep === 4 && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-semibold mb-4">Financial Information</h3>
+                    
+                    {/* Banking & Credit Information */}
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-gray-800">Banking & Credit Information</h4>
+                      
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="personalBankName">Personal Bank Name *</Label>
+                          <Input
+                            id="personalBankName"
+                            value={formData.personalBankName}
+                            onChange={(e) => setFormData({...formData, personalBankName: e.target.value})}
+                            placeholder="Enter personal bank name"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="personalBankBalance">Personal Bank Avg. Balance *</Label>
+                          <Input
+                            id="personalBankBalance"
+                            type="number"
+                            value={formData.personalBankBalance}
+                            onChange={(e) => setFormData({...formData, personalBankBalance: e.target.value})}
+                            placeholder="Enter average balance"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="businessBankName">Business Bank Name *</Label>
+                          <Input
+                            id="businessBankName"
+                            value={formData.businessBankName}
+                            onChange={(e) => setFormData({...formData, businessBankName: e.target.value})}
+                            placeholder="Enter business bank name"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="businessBankBalance">Business Bank Avg. Balance *</Label>
+                          <Input
+                            id="businessBankBalance"
+                            type="number"
+                            value={formData.businessBankBalance}
+                            onChange={(e) => setFormData({...formData, businessBankBalance: e.target.value})}
+                            placeholder="Enter average balance"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Financial Snapshot */}
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-gray-800">Financial Snapshot</h4>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <Label>Are you a U.S. Citizen? *</Label>
+                          <RadioGroup 
+                            value={formData.usCitizen} 
+                            onValueChange={(value) => setFormData({...formData, usCitizen: value})}
+                            className="flex gap-6 mt-2"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="yes" id="citizen-yes" />
+                              <Label htmlFor="citizen-yes">Yes</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="no" id="citizen-no" />
+                              <Label htmlFor="citizen-no">No</Label>
+                            </div>
+                          </RadioGroup>
+                        </div>
+
+                        <div>
+                          <Label>Savings Account? *</Label>
+                          <RadioGroup 
+                            value={formData.savingsAccount} 
+                            onValueChange={(value) => setFormData({...formData, savingsAccount: value})}
+                            className="flex gap-6 mt-2"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="yes" id="savings-yes" />
+                              <Label htmlFor="savings-yes">Yes</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="no" id="savings-no" />
+                              <Label htmlFor="savings-no">No</Label>
+                            </div>
+                          </RadioGroup>
+                        </div>
+
+                        <div>
+                          <Label>Investment Accounts? *</Label>
+                          <RadioGroup 
+                            value={formData.investmentAccounts} 
+                            onValueChange={(value) => setFormData({...formData, investmentAccounts: value})}
+                            className="flex gap-6 mt-2"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="yes" id="investment-yes" />
+                              <Label htmlFor="investment-yes">Yes</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="no" id="investment-no" />
+                              <Label htmlFor="investment-no">No</Label>
+                            </div>
+                          </RadioGroup>
+                        </div>
+
+                        <div>
+                          <Label>Military Affiliation (you or family)? *</Label>
+                          <RadioGroup 
+                            value={formData.militaryAffiliation} 
+                            onValueChange={(value) => setFormData({...formData, militaryAffiliation: value})}
+                            className="flex gap-6 mt-2"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="yes" id="military-yes" />
+                              <Label htmlFor="military-yes">Yes</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="no" id="military-no" />
+                              <Label htmlFor="military-no">No</Label>
+                            </div>
+                          </RadioGroup>
+                        </div>
+
+                        <div>
+                          <Label>Do you have other income? *</Label>
+                          <RadioGroup 
+                            value={formData.otherIncome} 
+                            onValueChange={(value) => setFormData({...formData, otherIncome: value})}
+                            className="flex gap-6 mt-2"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="yes" id="income-yes" />
+                              <Label htmlFor="income-yes">Yes</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="no" id="income-no" />
+                              <Label htmlFor="income-no">No</Label>
+                            </div>
+                          </RadioGroup>
+                        </div>
+
+                        <div>
+                          <Label>Do you have other assets? *</Label>
+                          <RadioGroup 
+                            value={formData.otherAssets} 
+                            onValueChange={(value) => setFormData({...formData, otherAssets: value})}
+                            className="flex gap-6 mt-2"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="yes" id="assets-yes" />
+                              <Label htmlFor="assets-yes">Yes</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="no" id="assets-no" />
+                              <Label htmlFor="assets-no">No</Label>
+                            </div>
+                          </RadioGroup>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Banks to Ignore */}
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-gray-800">Banks to Ignore (Optional)</h4>
+                      <div>
+                        <Label htmlFor="banksToIgnore">Banks to Ignore (Type bank name and press Enter to add)</Label>
+                        <Input
+                          id="banksToIgnore"
+                          placeholder="Enter bank name and press Enter to add..."
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter') {
+                              const value = e.currentTarget.value.trim();
+                              if (value && !formData.banksToIgnore.includes(value)) {
+                                setFormData({
+                                  ...formData, 
+                                  banksToIgnore: [...formData.banksToIgnore, value]
+                                });
+                                e.currentTarget.value = '';
+                              }
+                            }
+                          }}
+                        />
+                        {formData.banksToIgnore.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {formData.banksToIgnore.map((bank, index) => (
+                              <div key={index} className="bg-gray-100 px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                                {bank}
+                                <button
+                                  onClick={() => {
+                                    setFormData({
+                                      ...formData,
+                                      banksToIgnore: formData.banksToIgnore.filter((_, i) => i !== index)
+                                    });
+                                  }}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-sm text-gray-600 mt-2">
+                          Specify any banks you want to exclude from funding consideration. This is optional.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Document Upload Section */}
+                    <div className="space-y-4">
+                      <h4 className="font-medium text-gray-800">Required Documents</h4>
+                      <p className="text-sm text-gray-600">Please upload the following documents in PDF format (max 10MB each):</p>
+                      
+                      {/* Driver License Upload */}
+                      <div className="space-y-2">
+                        <Label htmlFor="driverLicense">Driver License *</Label>
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                          <input
+                            type="file"
+                            id="driverLicense"
+                            accept=".pdf"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.type !== 'application/pdf') {
+                                  alert('Please upload a PDF file');
+                                  return;
+                                }
+                                if (file.size > 10 * 1024 * 1024) {
+                                  alert('File size must be less than 10MB');
+                                  return;
+                                }
+                                setFormData({...formData, driverLicenseFile: file});
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <label htmlFor="driverLicense" className="cursor-pointer">
+                            <div className="flex flex-col items-center">
+                              <svg className="w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                              </svg>
+                              <span className="text-sm text-gray-600">
+                                {formData.driverLicenseFile ? formData.driverLicenseFile.name : 'Click to upload Driver License (PDF)'}
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* EIN Confirmation Letter Upload */}
+                      <div className="space-y-2">
+                        <Label htmlFor="einConfirmation">EIN Confirmation Letter *</Label>
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                          <input
+                            type="file"
+                            id="einConfirmation"
+                            accept=".pdf"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.type !== 'application/pdf') {
+                                  alert('Please upload a PDF file');
+                                  return;
+                                }
+                                if (file.size > 10 * 1024 * 1024) {
+                                  alert('File size must be less than 10MB');
+                                  return;
+                                }
+                                setFormData({...formData, einConfirmationFile: file});
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <label htmlFor="einConfirmation" className="cursor-pointer">
+                            <div className="flex flex-col items-center">
+                              <svg className="w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                              </svg>
+                              <span className="text-sm text-gray-600">
+                                {formData.einConfirmationFile ? formData.einConfirmationFile.name : 'Click to upload EIN Confirmation Letter (PDF)'}
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Articles from State Upload */}
+                      <div className="space-y-2">
+                        <Label htmlFor="articlesFromState">Articles from State *</Label>
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                          <input
+                            type="file"
+                            id="articlesFromState"
+                            accept=".pdf"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (file.type !== 'application/pdf') {
+                                  alert('Please upload a PDF file');
+                                  return;
+                                }
+                                if (file.size > 10 * 1024 * 1024) {
+                                  alert('File size must be less than 10MB');
+                                  return;
+                                }
+                                setFormData({...formData, articlesFromStateFile: file});
+                              }
+                            }}
+                            className="hidden"
+                          />
+                          <label htmlFor="articlesFromState" className="cursor-pointer">
+                            <div className="flex flex-col items-center">
+                              <svg className="w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                              </svg>
+                              <span className="text-sm text-gray-600">
+                                {formData.articlesFromStateFile ? formData.articlesFromStateFile.name : 'Click to upload Articles from State (PDF)'}
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Navigation Buttons */}
+                <div className="flex justify-between items-center pt-6 border-t border-gray-200">
+                  <Button 
+                    variant="outline" 
+                    className="group relative overflow-hidden px-6 py-3 border-2 border-gray-300 hover:border-blue-500 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 bg-white hover:bg-blue-50"
+                    onClick={() => handleStepNavigation('back')}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ArrowLeft className="w-4 h-4 transition-transform duration-300 group-hover:-translate-x-1" />
+                      <span className="font-medium">
+                        {currentStep === 1 ? 'Back to Options' : 'Previous'}
+                      </span>
+                    </div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  </Button>
+                  
+                  {/* Step indicator in center */}
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <span className="font-medium">Step {currentStep} of 4</span>
+                    <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-500 ease-out"
+                        style={{ width: `${(currentStep / 4) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  <Button 
+                    className={`group relative overflow-hidden px-6 py-3 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 ${
+                      currentStep === 4 
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700' 
+                        : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700'
+                    } ${isSubmitting ? 'opacity-75 cursor-not-allowed' : ''}`}
+                    onClick={() => {
+                      if (currentStep === 4) {
+                        handleFormSubmission();
+                      } else {
+                        handleStepNavigation('forward');
+                      }
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    <div className="flex items-center gap-2">
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span className="font-medium">Processing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-medium">
+                            {currentStep === 4 ? 'Submit Application' : 'Next'}
+                          </span>
+                          {currentStep === 4 ? (
+                            <CheckCircle2 className="w-4 h-4 transition-transform duration-300 group-hover:scale-110" />
+                          ) : (
+                            <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    
+                    {/* Ripple effect */}
+                    <div className="absolute inset-0 overflow-hidden">
+                      <div className="absolute inset-0 bg-white/30 transform scale-0 group-active:scale-100 transition-transform duration-200 rounded-full"></div>
+                    </div>
+                  </Button>
+                </div>
+              </div>
+            )
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Eligibility Audit Modal */}
+      <Dialog open={showEligibilityAuditModal} onOpenChange={setShowEligibilityAuditModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Run Funding Eligibility Audit</DialogTitle>
+            <DialogDescription>
+              Analyze current underwriting criteria and update client fundable status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-3">
+            <Button size="lg" onClick={runEligibilityAudit} disabled={auditRunning}>
+              {auditRunning ? 'Running...' : 'Run Audit'}
+            </Button>
+            <Button variant="outline" onClick={() => setShowEligibilityAuditModal(false)}>
+              Dismiss
+            </Button>
+          </div>
+          {auditResult && (
+            <p className="text-sm text-muted-foreground mt-2">{auditResult}</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
 
     </ClientLayout>
   );

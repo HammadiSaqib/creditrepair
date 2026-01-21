@@ -1,4 +1,7 @@
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { clientsApi, warMachineApi } from "@/lib/api";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -46,8 +49,9 @@ import { TrialCreditReportWrapper, TrialScoreWrapper, TrialSensitiveWrapper } fr
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { shouldShowField, tabConfig } from "@/utils/fieldCategorization";
-import { calculateUtilization as calculateAccountUtilization } from "../../utils/utilizationCalculator.js";
+import { calculateAccountUtilization } from "../../utils/utilizationCalculator.js";
 import {
+  Gauge,
   FileText,
   Search,
   Download,
@@ -112,16 +116,623 @@ import {
   Banknote,
   ScrollText,
   Lock,
-  Gauge,
   BadgeCheck,
+  Settings,
+  Gavel,
 } from "lucide-react";
 import FundingProjectionsCalculator from '../../utils/fundingProjections.js';
 import GapAnalyzer from '../../utils/gapAnalyzer.js';
 import PersonalCardsDisplay from '../../components/PersonalCardsDisplay';
 import BusinessCardsDisplay from '../../components/BusinessCardsDisplay';
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
-import { clientsApi } from "@/lib/api";
 import { useAuthContext } from "@/contexts/AuthContext";
+
+interface DebtConsolidationViewProps {
+  accounts: any[];
+  payoffPlans?: any[];
+  onSavePlan?: (plan: any) => Promise<void>;
+  clientId?: string | number;
+}
+
+const getOrdinalSuffix = (day: number) => {
+    if (day > 3 && day < 21) return 'th';
+    switch (day % 10) {
+      case 1:  return "st";
+      case 2:  return "nd";
+      case 3:  return "rd";
+      default: return "th";
+    }
+};
+
+
+
+const getNextReminderDate = (day: number) => {
+    const today = new Date();
+    let nextDate = new Date(today.getFullYear(), today.getMonth(), day);
+    
+    // If the date for this month has passed, move to next month
+    if (nextDate < today) {
+        nextDate = new Date(today.getFullYear(), today.getMonth() + 1, day);
+    }
+    return nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientId }: DebtConsolidationViewProps) => {
+  const [targetUtilization, setTargetUtilization] = useState(0);
+  const [payoffMonths, setPayoffMonths] = useState(12);
+  const [remindersSet, setRemindersSet] = useState(false);
+  
+  // Gamification
+  const [points, setPoints] = useState(1250);
+  
+  // Edit State
+  const [editingAccount, setEditingAccount] = useState<any>(null);
+  const [editForm, setEditForm] = useState({
+    targetUtilization: 0,
+    payoffTimelineMonths: 12,
+    paymentDate: 1,
+    reminderEnabled: false,
+    trackEnabled: false
+  });
+
+  const handleEditClick = (account: any) => {
+    const existingPlan = payoffPlans.find(p => p.account_id === String(account.id));
+    setEditingAccount(account);
+    setEditForm({
+      targetUtilization: existingPlan?.target_utilization ?? 0,
+      payoffTimelineMonths: existingPlan?.payoff_timeline_months ?? 12,
+      paymentDate: existingPlan?.payment_date ?? 1,
+      reminderEnabled: !!existingPlan?.reminder_enabled,
+      trackEnabled: !!existingPlan?.track_enabled
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAccount(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!onSavePlan || !clientId || !editingAccount) return;
+    
+    try {
+      await onSavePlan({
+        client_id: Number(clientId),
+        account_id: String(editingAccount.id),
+        account_name: editingAccount.name,
+        target_utilization: Number(editForm.targetUtilization),
+        payoff_timeline_months: Number(editForm.payoffTimelineMonths),
+        payment_date: Number(editForm.paymentDate),
+        reminder_enabled: Boolean(editForm.reminderEnabled),
+        track_enabled: Boolean(editForm.trackEnabled)
+      });
+      setEditingAccount(null);
+      toast.success("Payoff plan updated successfully");
+    } catch (error) {
+      toast.error("Failed to update payoff plan");
+    }
+  };
+  
+  const calculateAge = (dateString: string) => {
+    if (!dateString) return "N/A";
+    const openDate = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - openDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const years = Math.floor(diffDays / 365);
+    const months = Math.floor((diffDays % 365) / 30);
+    return `${years}y ${months}m`;
+  };
+
+  const revolvingAccounts = useMemo(() => {
+    if (!accounts) return [];
+    const isRevolving = (acc: any) => {
+      const t = String(acc.type || '').toLowerCase();
+      const at = String(acc.AccountType || acc.AccountTypeDescription || '').toLowerCase();
+      return t.includes('credit') || t.includes('revolving') || at.includes('revolving') || acc.type === 'Credit Card';
+    };
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const clean = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const canonical = (s: any) => {
+      const t = clean(s);
+      if (/navyfederal|navyfcu/.test(t)) return 'navy federal credit union';
+      if (/creditone|crdtonebnk/.test(t)) return 'credit one bank';
+      if (/jpmcb|chase/.test(t)) return 'chase';
+      if (/americanexpress|amex/.test(t)) return 'american express';
+      if (/discover/.test(t)) return 'discover';
+      return norm(s);
+    };
+    const last4 = (s: any) => String(s || '').replace(/\D/g, '').slice(-4);
+    const raw = accounts.filter(isRevolving);
+    const groups = new Map<string, any>();
+    raw.forEach((acc: any, index: number) => {
+      const nameRaw = acc.creditor || acc.CreditorName || acc.name;
+      const nameKey = canonical(nameRaw);
+      const num4 = last4(acc.accountNumber || acc.AccountNumber);
+      const fallback = String(acc.DateOpened || acc.opened || '').slice(0, 7);
+      const effLimit = Number(acc.limit ?? acc.CreditLimit ?? acc.HighBalance ?? 0);
+      const bucket = effLimit > 0 ? Math.round(effLimit / 100) * 100 : 0;
+      const key = `${nameKey}|${num4 || bucket || fallback}`;
+      const balance = Number(acc.balance ?? acc.Balance ?? acc.CurrentBalance ?? 0);
+      const limit = Number(acc.limit ?? acc.CreditLimit ?? acc.HighBalance ?? 0);
+      const opened = acc.DateOpened || acc.opened || '';
+      const existing = groups.get(key);
+      if (!existing) {
+        groups.set(key, {
+          id: acc.id ?? index,
+          name: nameRaw || 'Unknown Creditor',
+          balance,
+          limit,
+          opened
+        });
+      } else {
+        if (balance > (existing.balance ?? 0)) existing.balance = balance;
+        if (limit > (existing.limit ?? 0)) existing.limit = limit;
+        const openedDate = new Date(opened);
+        const existingDate = new Date(existing.opened || opened);
+        if (opened && !isNaN(openedDate.getTime()) && (isNaN(existingDate.getTime()) || openedDate < existingDate)) {
+          existing.opened = opened;
+        }
+      }
+    });
+    const unique = Array.from(groups.values());
+    return unique
+      .map((acc: any, index: number) => {
+        const plan = payoffPlans.find(p => p.account_id === String(acc.id ?? index));
+        const balance = Number(acc.balance || 0);
+        const limit = Number(acc.limit || 0);
+        const baseMin = Math.max(25, balance * 0.02);
+        const minPayment = balance <= 50 ? balance : Math.min(balance, baseMin);
+        return {
+          id: acc.id ?? index,
+          name: acc.name,
+          balance,
+          limit,
+          utilization: limit > 0 ? (balance / limit) * 100 : 0,
+          age: calculateAge(acc.opened),
+          apr: 0.24,
+          minPayment,
+          plan
+        };
+      })
+      .filter(a => a.balance > 0 && a.limit > 0)
+      .sort((a, b) => a.balance - b.balance);
+  }, [accounts, payoffPlans]);
+
+  const totalDebt = revolvingAccounts.reduce((sum, acc) => sum + acc.balance, 0);
+
+  const eligibleAccounts = useMemo(() => {
+    return revolvingAccounts.filter(a => a.limit > 0 && a.balance > 0);
+  }, [revolvingAccounts]);
+
+  const monthlyBudget = useMemo(() => {
+    return eligibleAccounts.reduce((sum, acc) => sum + acc.minPayment, 0) + 1;
+  }, [eligibleAccounts]);
+
+  const snowballPlan = useMemo(() => {
+    const sorted = eligibleAccounts.slice().sort((a, b) => a.balance - b.balance);
+    let extra = 1;
+    const out = [] as any[];
+    for (const acc of sorted) {
+      const monthlyPay = acc.minPayment + extra;
+      const months = monthlyPay > 0 ? Math.ceil(acc.balance / monthlyPay) : 0;
+      out.push({ id: acc.id, name: acc.name, minPayment: acc.minPayment, extraPayment: extra, payoffMonths: months });
+      extra += acc.minPayment;
+    }
+    return out;
+  }, [eligibleAccounts]);
+
+  const oneMonth = useMemo(() => {
+    const updatedBalances: Record<string, number> = {};
+    const payments = eligibleAccounts.map(acc => ({ id: acc.id, minPayment: Math.min(acc.balance, acc.minPayment), extraPayment: 0, totalPayment: 0, balance: acc.balance }));
+    for (const p of payments) {
+      p.totalPayment = p.minPayment;
+      updatedBalances[String(p.id)] = Math.max(0, p.balance - p.minPayment);
+    }
+    if (eligibleAccounts.length > 0) {
+      const smallest = eligibleAccounts[0];
+      const ps = payments.find(x => x.id === smallest.id);
+      if (ps) {
+        const extraPay = Math.min(updatedBalances[String(ps.id)], 1);
+        ps.extraPayment = extraPay;
+        ps.totalPayment += extraPay;
+        updatedBalances[String(ps.id)] = Math.max(0, updatedBalances[String(ps.id)] - extraPay);
+      }
+    }
+    return { payments, updatedBalances };
+  }, [eligibleAccounts]);
+
+  const smallDebtOptions = useMemo(() => {
+    const out: Record<string, { months: number; monthly: number }[]> = {};
+    for (const acc of eligibleAccounts) {
+      if (acc.balance < 500) {
+        const opts = [] as { months: number; monthly: number }[];
+        for (let m = 1; m <= 6; m++) {
+          const monthly = Math.ceil(acc.balance / m);
+          opts.push({ months: m, monthly });
+        }
+        out[String(acc.id)] = opts;
+      }
+    }
+    return out;
+  }, [eligibleAccounts]);
+
+  const handlePayoffVerify = () => {
+    setPoints(prev => prev + 100);
+    // In a real app, this would show a toast or confetti
+  };
+
+  const calculatePayoffToTarget = (balance: number, limit: number, targetPercent: number) => {
+    const targetBalance = limit * (targetPercent / 100);
+    const amountToPay = balance - targetBalance;
+    return Math.max(0, amountToPay);
+  };
+
+  return (
+    <div className="space-y-6">
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <Card className="bg-gradient-to-br from-rose-500 to-pink-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">${totalDebt.toLocaleString()}</div>
+             <div className="text-rose-100 font-medium">Total Revolving Debt</div>
+           </CardContent>
+         </Card>
+         <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">${Math.ceil(monthlyBudget).toLocaleString()}/mo</div>
+             <div className="text-indigo-100 font-medium">Target Monthly Payment</div>
+           </CardContent>
+         </Card>
+         <Card className="bg-gradient-to-br from-yellow-50 to-orange-600 text-white border-0 shadow-lg">
+           <CardContent className="pt-6">
+             <div className="text-3xl font-bold">{points.toLocaleString()}</div>
+             <div className="text-yellow-100 font-medium">Reward Points</div>
+           </CardContent>
+         </Card>
+       </div>
+
+       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+         <Card className="lg:col-span-1 shadow-md border-slate-200 dark:border-slate-800">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-rose-500" />
+                {editingAccount ? `Configure: ${editingAccount.name}` : "Plan Configuration"}
+             </CardTitle>
+             <CardDescription>
+                {editingAccount ? "Update payoff settings for this account" : "Customize your payoff strategy"}
+             </CardDescription>
+           </CardHeader>
+           <CardContent className="space-y-8">
+             {editingAccount ? (
+                <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label>Target Utilization (%)</Label>
+                        <div className="flex items-center gap-4">
+                            <input 
+                                type="range" 
+                                min="0" 
+                                max="100" 
+                                step="1"
+                                value={editForm.targetUtilization} 
+                                onChange={(e) => setEditForm({...editForm, targetUtilization: Number(e.target.value)})}
+                                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                            <span className="w-12 text-right font-bold">{editForm.targetUtilization}%</span>
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                        <Label>Payoff Timeline (Months)</Label>
+                        <div className="flex items-center gap-4">
+                            <input 
+                                type="range" 
+                                min="1" 
+                                max="36" 
+                                step="1"
+                                value={editForm.payoffTimelineMonths} 
+                                onChange={(e) => setEditForm({...editForm, payoffTimelineMonths: Number(e.target.value)})}
+                                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                            />
+                            <span className="w-12 text-right font-bold">{editForm.payoffTimelineMonths}</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label>Payment Date (Day of Month)</Label>
+                        <Input 
+                            type="number" 
+                            min="1" 
+                            max="31" 
+                            value={editForm.paymentDate}
+                            onChange={(e) => setEditForm({...editForm, paymentDate: Number(e.target.value)})}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between space-x-2 pt-4 border-t">
+                        <Label htmlFor="reminder-mode" className="flex flex-col space-y-1">
+                            <span>Enable Payment Reminders</span>
+                            <span className="font-normal text-xs text-muted-foreground">
+                                Send monthly email reminders
+                            </span>
+                        </Label>
+                        {editForm.reminderEnabled ? (
+                            <div className="flex gap-2">
+                                <Button 
+                                    size="sm" 
+                                    variant="destructive" 
+                                    onClick={() => setEditForm({
+                                        ...editForm,
+                                        reminderEnabled: false,
+                                        trackEnabled: false
+                                    })}
+                                >
+                                    Stop Reminder
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                    onClick={() => setEditForm({
+                                        ...editForm,
+                                        reminderEnabled: false,
+                                        trackEnabled: false
+                                    })}
+                                >
+                                    Payment Clear
+                                </Button>
+                            </div>
+                        ) : (
+                            <Switch
+                                id="reminder-mode"
+                                checked={editForm.reminderEnabled}
+                                onCheckedChange={(checked) => setEditForm({
+                                    ...editForm, 
+                                    reminderEnabled: checked,
+                                    trackEnabled: checked 
+                                })}
+                            />
+                        )}
+                    </div>
+                    {editForm.reminderEnabled && (
+                        <div className="flex flex-col gap-2">
+                            <div className="text-xs text-muted-foreground bg-green-50 p-2 rounded border border-green-100 flex items-center gap-2">
+                                <CheckCircle2 className="h-3 w-3 text-green-600" />
+                                <span className="text-green-700">Reminders active for the {editForm.paymentDate}{getOrdinalSuffix(editForm.paymentDate)} of each month</span>
+                            </div>
+                            <div className="text-xs font-medium text-indigo-600 pl-7">
+                                Next upcoming reminder: {getNextReminderDate(editForm.paymentDate)}
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex gap-2 pt-4">
+                        <Button className="flex-1" onClick={handleSaveEdit}>
+                            {editForm.reminderEnabled && payoffPlans.some(p => p.account_id === String(editingAccount.id) && p.reminder_enabled) 
+                                ? "Update Reminder" 
+                                : "Save"}
+                        </Button>
+                        <Button variant="outline" className="flex-1" onClick={handleCancelEdit}>Cancel</Button>
+                    </div>
+                </div>
+             ) : (
+               <div className="space-y-4">
+                 <div className="flex items-center justify-between mb-4">
+                    <Label className="text-base font-semibold">Active Reminders</Label>
+                    <Badge variant="outline" className="text-muted-foreground">{payoffPlans.filter(p => p.reminder_enabled).length} Active</Badge>
+                 </div>
+                 
+                 {payoffPlans.filter(p => p.reminder_enabled).length > 0 ? (
+                    <div className="space-y-3">
+                        {payoffPlans.filter(p => p.reminder_enabled).map((plan, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                                <div>
+                                    <div className="font-medium text-sm">{plan.account_name}</div>
+                                    <div className="text-xs text-muted-foreground">Payment Date: {plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xs font-medium text-indigo-600">Next: {getNextReminderDate(plan.payment_date)}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                 ) : (
+                    <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg bg-slate-50/50">
+                        <div className="flex justify-center mb-2">
+                            <Clock className="h-8 w-8 text-slate-300" />
+                        </div>
+                        <div className="mb-4">No active reminders.</div>
+                        <Select onValueChange={(value) => {
+                            const account = revolvingAccounts.find(a => String(a.id) === value);
+                            if (account) handleEditClick(account);
+                        }}>
+                            <SelectTrigger className="w-[200px] mx-auto bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
+                                <SelectValue placeholder="Select account to configure" />
+                            </SelectTrigger>
+                            <SelectContent className="dark:bg-slate-900 dark:border-slate-700">
+                                {revolvingAccounts.map((acc) => (
+                                    <SelectItem key={acc.id} value={String(acc.id)}>
+                                        {acc.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                 )}
+               </div>
+             )}
+           </CardContent>
+         </Card>
+
+         <Card className="lg:col-span-2 shadow-md border-slate-200 dark:border-slate-800 dark:bg-card">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <LineChart className="w-5 h-5 text-indigo-500" />
+                Snowball Payoff Schedule
+             </CardTitle>
+             <CardDescription>Focus extra payments on the smallest balance first</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="rounded-md border overflow-x-auto">
+               <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[150px]">Account</TableHead>
+                    <TableHead>Limit</TableHead>
+                    <TableHead>Balance</TableHead>
+                    <TableHead>Minimum Payment</TableHead>
+                    <TableHead>Payoff Time</TableHead>
+                    <TableHead>Percent Progress</TableHead>
+                    <TableHead>Updated Balance</TableHead>
+                    <TableHead>Plan Options</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                 <TableBody>
+                  {eligibleAccounts.length > 0 ? eligibleAccounts.map((acc, idx) => {
+                    const planRec = snowballPlan.find(p => p.id === acc.id);
+                    const pm = oneMonth.payments.find(p => p.id === acc.id);
+                    const progressPct = pm && acc.balance > 0 ? Math.min(100, ((pm.totalPayment / acc.balance) * 100)) : 0;
+                    const updated = oneMonth.updatedBalances[String(acc.id)] ?? acc.balance;
+                    return (
+                      <TableRow key={idx} className={acc.plan?.track_enabled ? "bg-green-50/50" : ""}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-rose-100 rounded-full text-rose-600">
+                               <CreditCard className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <div>{acc.name}</div>
+                              {acc.plan?.track_enabled && (
+                                <div className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                  <CheckCircle2 className="h-3 w-3" />
+                                  Track Enabled
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>${acc.limit.toLocaleString()}</TableCell>
+                        <TableCell>${acc.balance.toLocaleString()}</TableCell>
+                        <TableCell className="font-bold">${Math.ceil(acc.minPayment).toLocaleString()}</TableCell>
+                        <TableCell>{planRec?.payoffMonths || 0} months</TableCell>
+                        <TableCell>
+                          <div className="text-xs font-medium">
+                            {progressPct.toFixed(1)}%
+                          </div>
+                        </TableCell>
+                        <TableCell>${Math.ceil(updated).toLocaleString()}</TableCell>
+                        <TableCell>
+                          {smallDebtOptions[String(acc.id)] ? (
+                            <div className="flex flex-wrap gap-1">
+                              {smallDebtOptions[String(acc.id)].map((opt, i) => (
+                                <Badge key={i} variant="outline" className="text-xs">
+                                  {opt.months}m ${opt.monthly}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleEditClick(acc)}>
+                               <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                           </Button>
+                           <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={handlePayoffVerify}>
+                               <CheckCircle2 className="h-5 w-5 text-slate-300 hover:text-green-500 transition-colors" />
+                           </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }) : (
+                    <TableRow>
+                       <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                           No revolving accounts found.
+                       </TableCell>
+                    </TableRow>
+                  )}
+                 </TableBody>
+               </Table>
+             </div>
+             
+            
+           </CardContent>
+         </Card>
+       </div>
+       
+       <Card className="shadow-md border-slate-200 dark:border-slate-800 dark:bg-card">
+           <CardHeader>
+             <CardTitle className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-green-600" />
+                Saved Payoff Plans
+             </CardTitle>
+             <CardDescription>View all your saved debt payoff strategies and reminders</CardDescription>
+           </CardHeader>
+           <CardContent>
+             <div className="rounded-md border overflow-x-auto">
+               <Table>
+                 <TableHeader>
+                   <TableRow>
+                     <TableHead>Account Name</TableHead>
+                     <TableHead>Target Utilization</TableHead>
+                     <TableHead>Payoff Timeline</TableHead>
+                     <TableHead>Payment Date</TableHead>
+                     <TableHead>Reminders</TableHead>
+                     <TableHead>Tracking</TableHead>
+                     <TableHead>Actions</TableHead>
+                   </TableRow>
+                 </TableHeader>
+                 <TableBody>
+                   {payoffPlans.length > 0 ? payoffPlans.map((plan, idx) => (
+                     <TableRow key={idx}>
+                       <TableCell className="font-medium">{plan.account_name}</TableCell>
+                       <TableCell>{plan.target_utilization}%</TableCell>
+                       <TableCell>{plan.payoff_timeline_months} months</TableCell>
+                       <TableCell>{plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</TableCell>
+                       <TableCell>
+                         {plan.reminder_enabled ? (
+                           <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-green-200">Active</Badge>
+                         ) : (
+                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         {plan.track_enabled ? (
+                           <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200">Enabled</Badge>
+                         ) : (
+                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         <Button 
+                           size="sm" 
+                           variant="ghost" 
+                           onClick={() => {
+                             const account = revolvingAccounts.find(a => String(a.id) === plan.account_id) || { id: plan.account_id, name: plan.account_name };
+                             handleEditClick(account);
+                           }}
+                         >
+                           <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                         </Button>
+                       </TableCell>
+                     </TableRow>
+                   )) : (
+                     <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No saved payoff plans found.
+                        </TableCell>
+                     </TableRow>
+                   )}
+                 </TableBody>
+               </Table>
+             </div>
+           </CardContent>
+         </Card>
+       
+    </div>
+  );
+};
+
+const PERSONAL_INFO_MODE_OPTIONS = { normal: 'normal', credit_repair: 'credit_repair' } as const;
 
 // Import the same detailed report data from Reports.tsx for consistency
 const detailedReport = {
@@ -668,18 +1279,379 @@ const detailedReport = {
 };
 
 export default function CreditReport() {
+  const { userProfile } = useAuthContext();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("analysis");
+  const [activeTab, setActiveTab] = useState("overview");
   const [reportData, setReportData] = useState(detailedReport);
   const [apiData, setApiData] = useState<any>(null);
   const [qualifyView, setQualifyView] = useState<'cards' | 'table'>('table');
+  const [refreshAuditNonce, setRefreshAuditNonce] = useState(0);
+  const [isRerunningAudit, setIsRerunningAudit] = useState(false);
   const [eligibilityBureau, setEligibilityBureau] = useState<'all' | 'tu' | 'ex' | 'eq'>('all');
   const analysisRef = useRef<HTMLDivElement>(null);
+  const [personalInfoMode, setPersonalInfoMode] = useState<'normal' | 'credit_repair'>('normal');
+  const [smPiLoading, setSmPiLoading] = useState(false);
+  const [smPiResult, setSmPiResult] = useState<any | null>(null);
+  const [smPiError, setSmPiError] = useState<string | null>(null);
+  const [lawEngineAutoMode, setLawEngineAutoMode] = useState(false);
+  const [lawEngineNoticeOpen, setLawEngineNoticeOpen] = useState(false);
+  const [pendingLawEngineTab, setPendingLawEngineTab] = useState<string | null>(null);
+  const [fundingAuditNoticeOpen, setFundingAuditNoticeOpen] = useState(false);
+  const [pendingFundingAuditTab, setPendingFundingAuditTab] = useState<string | null>(null);
+  const creditReportTabs = ['overview', 'personal', 'inquiries', 'public', 'accounts'] as const;
+  type CreditReportTab = (typeof creditReportTabs)[number];
+  const isLawEngineView = lawEngineAutoMode && (creditReportTabs as readonly string[]).includes(activeTab);
+
+  const requestEnableLawEngine = (tab?: CreditReportTab) => {
+    const nextTab = tab ?? ((creditReportTabs as readonly string[]).includes(activeTab as any) ? (activeTab as any) : 'overview');
+    if (lawEngineAutoMode) {
+      setActiveTab(nextTab);
+      return;
+    }
+    setPendingLawEngineTab(nextTab);
+    setLawEngineNoticeOpen(true);
+  };
+
+  const acknowledgeLawEngineNotice = () => {
+    setLawEngineNoticeOpen(false);
+    setLawEngineAutoMode(true);
+    if (pendingLawEngineTab) setActiveTab(pendingLawEngineTab);
+    setPendingLawEngineTab(null);
+  };
+
+  const requestOpenFundingAudit = () => {
+    setPendingFundingAuditTab('funding');
+    setFundingAuditNoticeOpen(true);
+  };
+
+  const acknowledgeFundingAuditNotice = () => {
+    setFundingAuditNoticeOpen(false);
+    if (pendingFundingAuditTab) setActiveTab(pendingFundingAuditTab);
+    setPendingFundingAuditTab(null);
+  };
+
+  const handleActiveTabChange = (nextTab: string) => {
+    if (nextTab === 'funding') {
+      requestOpenFundingAudit();
+      return;
+    }
+    setActiveTab(nextTab);
+  };
+
+  useEffect(() => {
+    if (!(creditReportTabs as readonly string[]).includes(activeTab as any)) {
+      setLawEngineAutoMode(false);
+    }
+  }, [activeTab]);
   
+  const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
+  const { clientId: urlClientId } = useParams<{ clientId: string }>();
+  const clientId = urlClientId || searchParams.get("clientId") || userProfile?.id;
+
+  const fetchPayoffPlans = async () => {
+    if (!clientId) return;
+    try {
+      const response = await clientsApi.getDebtPayoffPlans(Number(clientId));
+      setPayoffPlans(response.data);
+    } catch (error) {
+      console.error("Failed to fetch payoff plans:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchPayoffPlans();
+  }, [clientId]);
+
+  const handleSavePayoffPlan = async (plan: any) => {
+    try {
+      await clientsApi.saveDebtPayoffPlan(plan);
+      fetchPayoffPlans();
+    } catch (error) {
+      throw error;
+    }
+  };
+
   // Subscription status for tab access control
   const subscriptionStatus = useSubscriptionStatus();
 
+  const employmentMismatch = useMemo(() => {
+    if (!smPiResult?.debug?.trigger_hits) return false;
+    try {
+      return smPiResult.debug.trigger_hits.some((h: any) => String(h?.trigger) === 'EMPLOYMENT_INCONSISTENT');
+    } catch {
+      return false;
+    }
+  }, [smPiResult]);
+
+  const buildSmPiPayload = () => {
+    const nameFor = (bureauId: number) => {
+      const names = apiData?.Name?.filter((n: any) => Number(n.BureauId) === Number(bureauId)) || [];
+      const primary = names.find((n: any) => (n.NameType || '') === 'Primary') || names[0];
+      if (!primary) return null;
+      const parts = [primary.FirstName || '', primary.Middle || '', primary.LastName || ''].filter(Boolean);
+      const full = parts.join(' ').trim();
+      return full || null;
+    };
+    const aliasesFor = (bureauId: number) => {
+      const names = apiData?.Name?.filter((n: any) => Number(n.BureauId) === Number(bureauId)) || [];
+      return names
+        .filter((n: any) => /(aka|alias|also known as|former)/i.test(String(n.NameType || '')))
+        .map((n: any) => `${n.FirstName || ''} ${n.Middle || ''} ${n.LastName || ''}`.trim())
+        .filter(Boolean);
+    };
+    const dobFor = (bureauId: number) => {
+      const dob = apiData?.DOB?.find((d: any) => Number(d.BureauId) === Number(bureauId))?.DOB;
+      return dob || (reportData?.personalInfo?.dateOfBirth || null);
+    };
+    const addressesFor = (bureauId: number) => {
+      const addresses = apiData?.Address?.filter((a: any) => Number(a.BureauId) === Number(bureauId)) || [];
+      const toText = (a: any) => `${a.StreetAddress || ''}, ${a.City || ''}, ${a.State || ''} ${a.Zip || ''}`.replace(/^,\s*|,\s*$/, '').trim();
+      const current = addresses.filter((a: any) => String(a.AddressType || '').toLowerCase() === 'current').map(toText).filter(Boolean);
+      const previous = addresses.filter((a: any) => String(a.AddressType || '').toLowerCase() !== 'current').map(toText).filter(Boolean);
+      // Fallback to mocked personalInfo addresses if API empty
+      if (addresses.length === 0 && Array.isArray(reportData?.personalInfo?.addresses)) {
+        const arr = reportData.personalInfo.addresses;
+        current.push(
+          ...arr.filter((x: any) => String(x.type || '').toLowerCase() === 'current')
+              .map((x: any) => `${x.street || ''}, ${x.city || ''}, ${x.state || ''} ${x.zip || ''}`.replace(/^,\s*|,\s*$/, '').trim())
+              .filter(Boolean)
+        );
+        previous.push(
+          ...arr.filter((x: any) => String(x.type || '').toLowerCase() !== 'current')
+              .map((x: any) => `${x.street || ''}, ${x.city || ''}, ${x.state || ''} ${x.zip || ''}`.replace(/^,\s*|,\s*$/, '').trim())
+              .filter(Boolean)
+        );
+      }
+      return { current, previous };
+    };
+    const employmentFor = (bureauId: number) => {
+      const employers = (reportData as any)?.personalInfo?.employers || [];
+      const list = employers.filter((e: any) => Number(e.bureauId) === Number(bureauId));
+      const toText = (e: any) => [e.name || '', e.position || ''].filter(Boolean).join(' - ');
+      return list.map(toText).filter(Boolean);
+    };
+    const phones = ((reportData as any)?.personalInfo?.phoneNumbers || [])
+      .map((p: any) => p.number)
+      .filter(Boolean);
+    const ssn = (reportData as any)?.personalInfo?.ssn || null;
+    const BID = { equifax: 1, transunion: 2, experian: 3 };
+    const exAddr = addressesFor(BID.experian);
+    const tuAddr = addressesFor(BID.transunion);
+    const eqAddr = addressesFor(BID.equifax);
+    return {
+      consumer_id: String(clientId || ''),
+      pi: {
+        experian: {
+          full_name: nameFor(BID.experian),
+          aka_names: aliasesFor(BID.experian),
+          dob: dobFor(BID.experian),
+          ssn,
+          current_addresses: exAddr.current,
+          previous_addresses: exAddr.previous,
+          phones,
+          employment: employmentFor(BID.experian),
+        },
+        transunion: {
+          full_name: nameFor(BID.transunion),
+          aka_names: aliasesFor(BID.transunion),
+          dob: dobFor(BID.transunion),
+          ssn,
+          current_addresses: tuAddr.current,
+          previous_addresses: tuAddr.previous,
+          phones,
+          employment: employmentFor(BID.transunion),
+        },
+        equifax: {
+          full_name: nameFor(BID.equifax),
+          aka_names: aliasesFor(BID.equifax),
+          dob: dobFor(BID.equifax),
+          ssn,
+          current_addresses: eqAddr.current,
+          previous_addresses: eqAddr.previous,
+          phones,
+          employment: employmentFor(BID.equifax),
+        },
+      },
+      options: { strict_mode: true, normalize: true },
+    };
+  };
+
+  const handleRunSmPiEngine = async () => {
+    try {
+      setSmPiLoading(true);
+      setSmPiError(null);
+      const payload = buildSmPiPayload();
+      const resp = await warMachineApi.runSmPiSuperEngine(payload);
+      const data = resp?.data;
+      setSmPiResult(data?.result || data);
+      toast.success('SM PI Super engine completed');
+    } catch (err: any) {
+      console.error('SM PI Super engine error:', err);
+      setSmPiError('Failed to run engine');
+      toast.error('Failed to run SM PI Super engine');
+    } finally {
+      setSmPiLoading(false);
+    }
+  };
+
+  const buildInquiriesPayload = () => {
+    const list = (apiData as any)?.reportData?.reportData?.Inquiries ?? (apiData as any)?.reportData?.Inquiries ?? (apiData as any)?.Inquiries ?? [];
+    const group = {
+      experian: [] as any[],
+      transunion: [] as any[],
+      equifax: [] as any[],
+    };
+    for (const inq of list) {
+      const b = Number(inq?.BureauId);
+      const item = {
+        creditor_name: inq?.CreditorName ?? null,
+        date: inq?.DateInquiry ?? null,
+        type: inq?.InquiryType === 'I' ? 'HARD' : inq?.InquiryType === 'S' ? 'SOFT' : String(inq?.InquiryType || '').toUpperCase() || null,
+        industry: inq?.Industry ?? null,
+      };
+      if (b === 2) group.experian.push(item);
+      else if (b === 1) group.transunion.push(item);
+      else group.equifax.push(item);
+    }
+    return {
+      consumer_id: String(clientId || ''),
+      inquiries: group,
+      options: { strict_mode: true, normalize: true, window_months: 12 },
+    };
+  };
+
+  const [inqReviewLoading, setInqReviewLoading] = useState(false);
+  const [inqReviewError, setInqReviewError] = useState<string | null>(null);
+  const [inqReviewResult, setInqReviewResult] = useState<any>(null);
+
+  const handleRunInquiriesReview = async () => {
+    try {
+      setInqReviewLoading(true);
+      setInqReviewError(null);
+      const payload = buildInquiriesPayload();
+      const resp = await warMachineApi.runInquiriesReview(payload);
+      const data = resp?.data;
+      setInqReviewResult(data?.result || data);
+      toast.success('War Machine Inquiries Review completed');
+    } catch (err: any) {
+      console.error('Inquiries Review engine error:', err);
+      setInqReviewError('Failed to Run Law Engine Inquiries');
+      toast.error('Failed to Run Law Engine Inquiries Review');
+    } finally {
+      setInqReviewLoading(false);
+    }
+  };
+  const buildAccountsEvalPayload = () => {
+    const accountsList =
+      (apiData as any)?.reportData?.reportData?.Accounts ??
+      (apiData as any)?.reportData?.Accounts ??
+      (apiData as any)?.Accounts ??
+      [];
+    const pick = (...vals: any[]) => {
+      for (const v of vals) {
+        if (v === undefined || v === null) continue;
+        const s = String(v).trim();
+        if (!s || s.toLowerCase() === 'n/a') continue;
+        return s;
+      }
+      return null;
+    };
+    const normalizedAccountsList = Array.isArray(accountsList)
+      ? accountsList.map((acc: any) => ({
+          ...acc,
+          CreditorName: pick(
+            acc?.CreditorName,
+            acc?.Creditor,
+            acc?.creditor,
+            acc?.SubscriberName,
+            acc?.Subscriber,
+            acc?.company,
+            acc?.Company,
+          ),
+          AccountNumber: pick(
+            acc?.AccountNumber,
+            acc?.accountNumber,
+            acc?.MaskAccountNumber,
+            acc?.maskAccountNumber,
+            acc?.MaskedAccountNumber,
+            acc?.maskedAccountNumber,
+          ),
+        }))
+      : [];
+    return {
+      version: '1.0',
+      case_id: String(clientId || ''),
+      consumer_id: String(clientId || ''),
+      normalize: true,
+      match_strategy: 'strict',
+      bureau_ids: [1, 2, 3],
+      data: { Accounts: normalizedAccountsList },
+    };
+  };
+  const [acctEvalLoading, setAcctEvalLoading] = useState(false);
+  const [acctEvalError, setAcctEvalError] = useState<string | null>(null);
+  const [acctEvalResult, setAcctEvalResult] = useState<any>(null);
+  const [prEvalLoading, setPrEvalLoading] = useState(false);
+  const [prEvalError, setPrEvalError] = useState<string | null>(null);
+  const [prEvalResult, setPrEvalResult] = useState<any>(null);
+  const handleRunAccountsEval = async () => {
+    try {
+      setAcctEvalLoading(true);
+      setAcctEvalError(null);
+      const payload = buildAccountsEvalPayload();
+      const resp = await warMachineApi.runAccountsEval(payload);
+      const data = resp?.data;
+      setAcctEvalResult(data?.result || data);
+      toast.success('War Machine Accounts Evaluation completed');
+    } catch (err: any) {
+      console.error('Accounts Eval engine error:', err);
+      setAcctEvalError('Failed to run Accounts Law Engine');
+      toast.error('Failed to run Accounts Law Engine');
+    } finally {
+      setAcctEvalLoading(false);
+    }
+  };
+  const handleRunPublicRecordsEval = async () => {
+    try {
+      setPrEvalLoading(true);
+      setPrEvalError(null);
+      const publicRecords =
+        (apiData as any)?.PublicRecords ??
+        (reportData as any)?.publicRecords ??
+        [];
+      const payload = {
+        version: '1.0',
+        case_id: String(clientId || ''),
+        consumer_id: String(clientId || ''),
+        normalize: true,
+        bureau_ids: [1, 2, 3],
+        data: { PublicRecords: publicRecords },
+      };
+      const resp = await warMachineApi.runPublicRecordsEval(payload);
+      const data = resp?.data;
+      setPrEvalResult(data?.result || data);
+      toast.success('Public Records Evaluation completed');
+    } catch (err: any) {
+      setPrEvalError('Failed to run Public Records Law Engine');
+      toast.error('Failed to run Public Records Law Engine');
+    } finally {
+      setPrEvalLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!lawEngineAutoMode) return;
+    if (activeTab === 'personal') {
+      if (!smPiResult && !smPiLoading) handleRunSmPiEngine();
+    } else if (activeTab === 'inquiries') {
+      if (!inqReviewResult && !inqReviewLoading) handleRunInquiriesReview();
+    } else if (activeTab === 'public') {
+      if (!prEvalResult && !prEvalLoading) handleRunPublicRecordsEval();
+    } else if (activeTab === 'accounts') {
+      if (subscriptionStatus.hasActiveSubscription && !acctEvalResult && !acctEvalLoading) handleRunAccountsEval();
+    }
+  }, [activeTab, lawEngineAutoMode]);
   // Global helper: read underwriting flag for a bureau/key
   // This is used by the Basic (table) header indicator so it must be in component scope
   const getCriteriaFlag = (bureau: number, key: string) =>
@@ -816,10 +1788,9 @@ export default function CreditReport() {
     return Boolean(isFundingEligible) || localEligible;
   }, [reportData, apiData, isFundingEligible]);
 
-const { userProfile } = useAuthContext();
-const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
-  || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
-  || 'https://www.m2ficoforge.com/';
+  const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
+    || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
+    || 'https://www.m2ficoforge.com/';
   
   // Bureau card tabs state - each account group has its own tab state
   const [bureauTabs, setBureauTabs] = useState<Record<string, string>>({});
@@ -839,8 +1810,72 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   
   // Funding application modal states
   const [showFundingModal, setShowFundingModal] = useState(false);
-  const [fundingType, setFundingType] = useState<'personal' | 'business' | null>(null);
+  const [fundingType, setFundingType] = useState<'personal' | 'business' | 'both' | null>(null);
   const [fundingOption, setFundingOption] = useState<'done-for-you' | 'diy' | null>(null);
+  const [selectedProductTypes, setSelectedProductTypes] = useState<string[]>(['Credit Card','SBA Loan','Line of Credit']);
+  const [fundingEstimateNoticeOpen, setFundingEstimateNoticeOpen] = useState(false);
+  const [pendingFundingGoal, setPendingFundingGoal] = useState<'personal' | 'business' | 'both' | null>(null);
+
+  const performGoToDiyFunding = (goal: 'personal' | 'business' | 'both' = 'both') => {
+    const inquiriesList = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+    const infer = (inq: any) => {
+      const b = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName;
+      if (b) return String(b);
+      const id = inq?.BureauId;
+      if (id === 1) return 'TransUnion';
+      if (id === 2) return 'Equifax';
+      if (id === 3) return 'Experian';
+      return '';
+    };
+    const ib = {
+      Experian: inquiriesList.filter((i: any) => infer(i) === 'Experian').length,
+      Equifax: inquiriesList.filter((i: any) => infer(i) === 'Equifax').length,
+      TransUnion: inquiriesList.filter((i: any) => infer(i) === 'TransUnion').length,
+    };
+    const maxPullsPerBureau = 4;
+    const headroomByBureau: Record<'Experian' | 'Equifax' | 'TransUnion', number> = {
+      Experian: Math.max(0, maxPullsPerBureau - Number(ib.Experian || 0)),
+      Equifax: Math.max(0, maxPullsPerBureau - Number(ib.Equifax || 0)),
+      TransUnion: Math.max(0, maxPullsPerBureau - Number(ib.TransUnion || 0)),
+    };
+    const maxSuggestedSlots = 4;
+    const maxSlotsPerBureau = 2;
+    const preferredOrder: Array<keyof typeof headroomByBureau> = ['Experian', 'Equifax', 'TransUnion'];
+    const bureauSlotCounts: Record<'Experian' | 'Equifax' | 'TransUnion', number> = {
+      Experian: 0,
+      Equifax: 0,
+      TransUnion: 0,
+    };
+    let remaining = maxSuggestedSlots;
+    for (const bureau of preferredOrder) {
+      if (remaining <= 0) break;
+      const headroom = headroomByBureau[bureau];
+      const alloc = Math.max(0, Math.min(maxSlotsPerBureau, Number(headroom || 0), remaining));
+      bureauSlotCounts[bureau] = alloc;
+      remaining -= alloc;
+    }
+    navigate(`/funding/diy/${goal}`, {
+      state: {
+        clientId: clientId ? Number(clientId) : undefined,
+        productTypes: selectedProductTypes,
+        inquiriesByBureau: ib,
+        bureauSlotCounts,
+        goal,
+      },
+    });
+  };
+
+  const goToDiyFunding = (goal: 'personal' | 'business' | 'both' = 'both') => {
+    setPendingFundingGoal(goal);
+    setFundingEstimateNoticeOpen(true);
+  };
+
+  const acknowledgeFundingEstimateNotice = () => {
+    const goal = pendingFundingGoal ?? 'both';
+    setFundingEstimateNoticeOpen(false);
+    setPendingFundingGoal(null);
+    performGoToDiyFunding(goal);
+  };
   
   // DIY Cards visibility states (for page section instead of modal)
   const [showDIYSection, setShowDIYSection] = useState(false);
@@ -849,6 +1884,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   const [currentStep, setCurrentStep] = useState(1);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Eligibility audit modal state
+  const [showEligibilityAuditModal, setShowEligibilityAuditModal] = useState(false);
+  const [auditRunning, setAuditRunning] = useState(false);
+  const [auditResult, setAuditResult] = useState<string | null>(null);
+  const [clientRecord, setClientRecord] = useState<any>(null);
   const [formData, setFormData] = useState({
     // Business Information
     titlePosition: '',
@@ -968,7 +2009,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       if (!utilizationByBureau[bureauId]) return;
 
       // Revolving accounts (credit cards, lines of credit)
-      if (account.CreditType === 'Revolving Account' || account.AccountTypeDescription === 'Revolving Account') {
+      if (
+        account.CreditType === 'Revolving Account' ||
+        account.AccountTypeDescription === 'Revolving Account' ||
+        String(account.CreditType || '').toLowerCase().includes('credit card') ||
+        String(account.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+        String(account.AccountType || '').toLowerCase().includes('credit card')
+      ) {
         // All revolving accounts
         utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
         utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
@@ -994,6 +2041,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
           utilizationByBureau[bureauId].installmentDebt += currentBalance;
         }
       }
+    });
+
+    Object.keys(utilizationByBureau).forEach((key) => {
+      const b: any = (utilizationByBureau as any)[key];
+      const openLimit = b.openRevolvingLimit || 0;
+      const allLimit = b.allRevolvingLimit || 0;
+      b.openRevolvingUtilization = openLimit > 0 ? (b.openRevolvingBalance / openLimit) * 100 : null;
+      b.allRevolvingUtilization = allLimit > 0 ? (b.allRevolvingBalance / allLimit) * 100 : null;
     });
 
     return utilizationByBureau;
@@ -1272,12 +2327,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       if (!el) return;
       const html2pdf = (await import('html2pdf.js')).default;
       const opt = {
-        margin: [10, 10],
+        margin: [15, 15],
         filename: 'CreditReport-Analysis.pdf',
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
+        html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css'], avoid: ['.pdf-avoid-break', '.analysis-pdf-root > *'] }
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['.pdf-avoid-break', '.analysis-pdf-root > *'] }
       } as any;
       await (html2pdf() as any).set(opt).from(el).save();
     } catch (err) {
@@ -1440,7 +2495,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             totalRevolvingBalance += balance;
             totalRevolvingLimit += limit;
           }
-        } else if (accountType.toLowerCase().includes('installment') || accountType.toLowerCase().includes('loan')) {
+        } else if (
+          accountType.toLowerCase().includes('installment') ||
+          accountType.toLowerCase().includes('loan') ||
+          accountType.toLowerCase().includes('mortgage') ||
+          (account.Industry && String(account.Industry).toLowerCase().includes('real estate'))
+        ) {
           totalInstallmentUtilization += utilization;
           installmentAccountCount++;
         }
@@ -1553,7 +2613,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     const openRevolvingAccounts = accounts.filter((account: any) => {
       const accountType = account.CreditType || account.type || account.AccountType || '';
       const status = account.AccountStatus || account.status || '';
-      return accountType.toLowerCase().includes('revolving') && 
+      return (accountType.toLowerCase().includes('revolving') || accountType.toLowerCase().includes('credit card')) &&
              (status.toLowerCase() === 'open' || status.toLowerCase() === 'current');
     });
     
@@ -1659,7 +2719,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     // Filter only open revolving accounts with positive limits - using correct field names from API
     const openRevolvingAccounts = accounts.filter(acc => {
       const isOpen = acc.AccountStatus === 'Open';
-      const isRevolving = acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account';
+      const isRevolving = (
+        acc.CreditType === 'Revolving Account' ||
+        acc.AccountTypeDescription === 'Revolving Account' ||
+        String(acc.CreditType || '').toLowerCase().includes('credit card') ||
+        String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
+        String(acc.AccountType || '').toLowerCase().includes('credit card')
+      );
       const hasLimit = parseFloat(acc.CreditLimit || '0') > 0;
       
       if (acc.CreditorName && acc.CreditorName.includes('CAPITAL')) {
@@ -1959,10 +3025,105 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     fundingProjection: calculateFundingProjections()
   };
 
-  const { clientId: urlClientId } = useParams<{ clientId: string }>();
-  // Align clientId resolution with other client pages: prefer authenticated user ID
-  const clientId = userProfile?.id?.toString() || urlClientId || searchParams.get("clientId");
   const clientName = searchParams.get("clientName") || "Client";
+  const reportHistory = Array.isArray((reportData as any)?.reportHistory) ? (reportData as any).reportHistory : [];
+
+  const parseLooseDate = (value: any) => {
+    try {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const s = String(value);
+      const normalized = s.includes(' ') && !s.includes('T') ? s.replace(' ', 'T') : s;
+      const d = new Date(normalized);
+      return Number.isFinite(d.getTime()) ? d : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const formatMonthDay = (value: any) => {
+    const d = parseLooseDate(value);
+    return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'N/A';
+  };
+
+  const formatIsoDate = (value: any) => {
+    const d = parseLooseDate(value);
+    return d ? d.toISOString().slice(0, 10) : 'N/A';
+  };
+
+  const getHistoryDateValue = (row: any) =>
+    row?.created_at || row?.report_date || row?.date || row?.reportDate || row?.reportDateTime || null;
+
+  const getHistoryJson = (row: any) => row?.data || row?.reportData || row?.report_data || null;
+
+  const getReportDateFromJson = (json: any) => {
+    try {
+      if (!json) return null;
+      const root = (json as any)?.reportData || (json as any)?.report_data || json;
+      const direct =
+        (root as any)?.report_date ??
+        (root as any)?.reportDate ??
+        (root as any)?.ReportDate ??
+        (root as any)?.DateReported ??
+        (root as any)?.date ??
+        null;
+      const directParsed = parseLooseDate(direct);
+      if (directParsed) return directParsed;
+
+      const scoreArray = (root as any)?.Score || (root as any)?.reportData?.Score || null;
+      if (Array.isArray(scoreArray) && scoreArray.length > 0) {
+        const dates = scoreArray
+          .map((s: any) => s?.DateReported || s?.DateUpdated || s?.date || s?.Date || null)
+          .map(parseLooseDate)
+          .filter(Boolean) as Date[];
+        if (dates.length > 0) {
+          return dates.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), dates[0]);
+        }
+      }
+
+      const bureauDates = (root as any)?.bureauDates || (root as any)?.BureauDates || null;
+      if (bureauDates) {
+        const dates = [
+          bureauDates?.experian,
+          bureauDates?.transunion,
+          bureauDates?.equifax,
+          bureauDates?.Experian,
+          bureauDates?.TransUnion,
+          bureauDates?.Equifax,
+        ]
+          .map(parseLooseDate)
+          .filter(Boolean) as Date[];
+        if (dates.length > 0) {
+          return dates.reduce((max, d) => (d.getTime() > max.getTime() ? d : max), dates[0]);
+        }
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const getHistoryReportDateValue = (row: any) => getReportDateFromJson(getHistoryJson(row)) || getHistoryDateValue(row);
+
+  const getHistoryBureauScore = (row: any, bureau: 'experian' | 'transunion' | 'equifax') => {
+    const direct =
+      row?.[`${bureau}_score`] ??
+      row?.scores?.[bureau] ??
+      row?.data?.scores?.[bureau] ??
+      row?.data?.reportData?.scores?.[bureau] ??
+      null;
+    const num = Number(direct);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const getScoreDelta = (bureau: 'experian' | 'transunion' | 'equifax') => {
+    const current = Number((reportData as any)?.scores?.[bureau]);
+    const previous = reportHistory.length > 1 ? getHistoryBureauScore(reportHistory[1], bureau) : null;
+    if (!Number.isFinite(current)) return null;
+    if (previous === null) return null;
+    return current - previous;
+  };
 
   // Transform API account data to match frontend structure
   const transformApiAccounts = (apiAccounts: any[]) => {
@@ -1981,8 +3142,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       // Map BureauId to bureau name
       const getBureauName = (bureauId: number) => {
         switch (bureauId) {
-          case 1: return 'Experian';
-          case 2: return 'TransUnion';
+          case 1: return 'TransUnion';
+          case 2: return 'Experian';
           case 3: return 'Equifax';
           default: return 'Unknown';
         }
@@ -2072,13 +3233,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     const passCount = [tuCriteria, expCriteria, eqCriteria].filter(Boolean).length;
     
     if (passCount === 3) {
-      return 'bg-green-50 border-green-200'; // All pass - light green
+      return 'bg-green-50 border-green-200 dark:bg-green-900/50 dark:border-green-800 dark:text-white'; // All pass - light green
     } else if (passCount === 2) {
-      return 'bg-yellow-50 border-yellow-200'; // 2 pass - light yellow
+      return 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/50 dark:border-yellow-800 dark:text-white'; // 2 pass - light yellow
     } else if (passCount === 1) {
-      return 'bg-orange-50 border-orange-200'; // 1 pass - light orange
+      return 'bg-orange-50 border-orange-200 dark:bg-orange-900/50 dark:border-orange-800 dark:text-white'; // 1 pass - light orange
     } else {
-      return 'bg-red-50 border-red-200'; // None pass - light red
+      return 'bg-red-50 border-red-200 dark:bg-red-900/50 dark:border-red-800 dark:text-white'; // None pass - light red
     }
   };
 
@@ -2098,6 +3259,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         try {
           const clientResp = await clientsApi.getClient(clientId);
           dbSSNLastFour = clientResp?.data?.ssn_last_four || null;
+          setClientRecord(clientResp?.data || null);
+          const shouldShowAudit = !clientResp?.data?.fundable_status
+            || searchParams.get('newReport') === 'true'
+            || searchParams.get('fresh') === 'true';
+          if (shouldShowAudit) {
+            setShowEligibilityAuditModal(true);
+          }
         } catch (clientErr) {
           console.warn('Failed to fetch client data for SSN last four:', clientErr);
         }
@@ -2172,6 +3340,30 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             });
             console.log('🔍 DEBUG: Extracted scores from API:', scores);
             console.log('🔍 DEBUG: Extracted score types from API:', scoreTypes);
+          } else if (data.data.reportData.Scores && Array.isArray(data.data.reportData.Scores)) {
+            const scoreData = data.data.reportData.Scores;
+            scoreData.forEach((score: any) => {
+              if (score.BureauId === 1) {
+                scores.transunion = score.Score;
+                scoreTypes.transunion = score.ScoreType || "FICO";
+              }
+              if (score.BureauId === 2) {
+                scores.experian = score.Score;
+                scoreTypes.experian = score.ScoreType || "FICO";
+              }
+              if (score.BureauId === 3) {
+                scores.equifax = score.Score;
+                scoreTypes.equifax = score.ScoreType || "FICO";
+              }
+            });
+            console.log('🔍 DEBUG: Extracted scores from API (Scores fallback):', scores);
+            console.log('🔍 DEBUG: Extracted score types from API (Scores fallback):', scoreTypes);
+          } else if (data.data.scores && typeof data.data.scores === 'object') {
+            const s = data.data.scores as any;
+            scores.experian = String(s.experian ?? scores.experian);
+            scores.equifax = String(s.equifax ?? scores.equifax);
+            scores.transunion = String(s.transunion ?? scores.transunion);
+            console.log('🔍 DEBUG: Extracted scores from API (scores object fallback):', scores);
           } else {
             console.log('🔍 DEBUG: Using fallback scores:', scores);
             console.log('🔍 DEBUG: Using fallback score types:', scoreTypes);
@@ -2224,16 +3416,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               }));
           };
 
-          // Transform collections from accounts with negative indicators
+          // Transform true collection accounts (not just late payments)
           const transformApiCollections = (accounts) => {
             return accounts
-              .filter(account => 
-                account.AccountStatus === 'Closed' && 
-                account.CurrentBalance > 0 ||
-                account.PaymentStatus?.includes('Late') ||
-                account.WorstPayStatus?.includes('Late') ||
-                account.AmountPastDue > 0
-              )
+              .filter(account => {
+                const paymentStatus = String(account.PaymentStatus || '').toLowerCase();
+                const accountType = String(account.AccountType || account.AccountTypeDescription || account.CreditType || '').toLowerCase();
+                const condition = String(account.AccountCondition || account.AccountStatus || '').toLowerCase();
+                const isCollectionLike =
+                  paymentStatus.includes('collection') ||
+                  accountType.includes('collection') ||
+                  condition.includes('collection');
+                const hasBalance =
+                  Number(account.CurrentBalance || 0) > 0 ||
+                  Number(account.AmountPastDue || 0) > 0;
+                return isCollectionLike && hasBalance;
+              })
               .map((account, index) => ({
                 id: index + 1,
                 agency: account.CreditorName || 'Unknown Agency',
@@ -2255,9 +3453,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
           // Extract bureau-specific dates from Score array
           const getBureauDate = (bureauId) => {
-            const scoreEntry = data.data.reportData.Score?.find(s => s.BureauId === bureauId);
-            if (scoreEntry?.DateScore) {
-              return new Date(scoreEntry.DateScore).toLocaleDateString('en-US', {
+            const scoreArray = data.data.reportData.Score || data.data.reportData.Scores;
+            const scoreEntry = Array.isArray(scoreArray) ? scoreArray.find((s: any) => s.BureauId === bureauId) : null;
+            const ds = scoreEntry?.DateScore || scoreEntry?.DateReported || scoreEntry?.DateUpdated || null;
+            if (ds) {
+              return new Date(ds).toLocaleDateString('en-US', {
                 year: 'numeric',
                 month: 'short',
                 day: 'numeric'
@@ -2310,13 +3510,31 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               if (!utilizationByBureau[bureauId]) return;
 
               // Revolving accounts (credit cards, lines of credit)
-              if (account.CreditType === 'Revolving Account' || account.AccountTypeDescription === 'Revolving Account') {
+              const at = String(account.AccountType || '').toLowerCase();
+              const ad = String(account.AccountTypeDescription || '').toLowerCase();
+              const ct = String(account.CreditType || '').toLowerCase();
+              const ind = String(account.Industry || '').toLowerCase();
+              if (
+                at.includes('revolving') ||
+                ad.includes('revolving') ||
+                ct.includes('revolving') ||
+                at.includes('credit card') ||
+                ad.includes('credit card') ||
+                ct.includes('credit card') ||
+                ad.includes('charge account') ||
+                ad.includes('flexible spending credit card') ||
+                ind.includes('bank credit cards')
+              ) {
                 // All revolving accounts
                 utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
                 utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
                 
                 // Open revolving accounts only
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].openRevolvingBalance += currentBalance;
                   utilizationByBureau[bureauId].openRevolvingLimit += creditLimit || highBalance;
                 }
@@ -2325,14 +3543,22 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               // Real estate debt (mortgages)
               if (account.AccountType === 'Mortgage' || account.Industry?.includes('Real Estate') || 
                   account.CreditorName?.toLowerCase().includes('mortgage')) {
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].realEstateDebt += currentBalance;
                 }
               }
               
               // Installment debt (auto loans, personal loans, etc.)
               if (account.CreditType === 'Installment Account' || account.AccountTypeDescription === 'Installment Account') {
-                if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+                if (
+                  account.AccountStatus === 'Open' ||
+                  account.AccountStatus === 'Current' ||
+                  account.AccountCondition === 'Open'
+                ) {
                   utilizationByBureau[bureauId].installmentDebt += currentBalance;
                 }
               }
@@ -2429,30 +3655,75 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
               // Check accounts for this bureau
               const bureauAccounts = apiData.reportData?.Accounts?.filter((acc: any) => acc.BureauId === bureauId) || [];
-              
-              const openRevolvingAccounts = bureauAccounts.filter((acc: any) => 
-                (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account') && 
-                (acc.AccountStatus === 'Open' || acc.AccountStatus === 'Current')
-              );
-              
-              criteria[bureauId].minFiveOpenRevolving = openRevolvingAccounts.length >= 5;
+              const openPrimaryRevolving = bureauAccounts.filter((acc: any) => {
+                const at = String(acc.AccountType || '').toLowerCase();
+                const ad = String(acc.AccountTypeDescription || '').toLowerCase();
+                const ct = String(acc.CreditType || '').toLowerCase();
+                const ind = String(acc.Industry || '').toLowerCase();
+                const isRevolving =
+                  at.includes('revolving') ||
+                  ad.includes('revolving') ||
+                  ct.includes('revolving') ||
+                  at.includes('credit card') ||
+                  ad.includes('credit card') ||
+                  ct.includes('credit card') ||
+                  ad.includes('charge account') ||
+                  ad.includes('flexible spending credit card') ||
+                  ind.includes('bank credit cards');
+                const isOpen =
+                  acc.AccountStatus === 'Open' ||
+                  acc.AccountStatus === 'Current' ||
+                  acc.AccountCondition === 'Open';
+                const designator = String(acc.AccountDesignator || '').toLowerCase();
+                const isPrimary = !designator.includes('authorized');
+                return isRevolving && isOpen && isPrimary;
+              });
+              const withGoodHistory = openPrimaryRevolving.filter((acc: any) => {
+                if (!acc.DateOpened) return false;
+                const opened = new Date(acc.DateOpened);
+                if (isNaN(opened.getTime())) return false;
+                const months = Math.floor((Date.now() - opened.getTime()) / (1000 * 60 * 60 * 24 * 30));
+                const payHist = String(acc.PayStatusHistory || '').toUpperCase();
+                const recent = payHist.slice(-24);
+                const negInHist = /[DLB]/.test(recent);
+                const negStatus =
+                  String(acc.PaymentStatus || '').toLowerCase().includes('late') ||
+                  String(acc.WorstPayStatus || '').toLowerCase().includes('late') ||
+                  (parseFloat(acc.AmountPastDue) || 0) > 0;
+                return months >= 24 && !negInHist && !negStatus;
+              });
+              criteria[bureauId].minFiveOpenRevolving = withGoodHistory.length >= 5;
 
               // Check for 3+ year old credit card with $5K+ limit
-              const qualifyingCard = openRevolvingAccounts.find((acc: any) => {
+              const qualifyingCards = openPrimaryRevolving.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
-                const yearsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
+                const yearsOld = (Date.now() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
                 const creditLimit = parseFloat(acc.CreditLimit) || 0;
                 return yearsOld >= 3 && creditLimit >= 5000;
               });
-              criteria[bureauId].creditCard3YearsOld5KLimit = !!qualifyingCard;
+              criteria[bureauId].creditCard3YearsOld5KLimit = qualifyingCards.length >= 3;
 
               // Check unsecured accounts opened in past 12 months
               const recentUnsecuredAccounts = bureauAccounts.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
                 const monthsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
-                return monthsOld <= 12 && (acc.CreditType === 'Revolving Account' || acc.AccountTypeDescription === 'Revolving Account');
+                const at = String(acc.AccountType || '').toLowerCase();
+                const ad = String(acc.AccountTypeDescription || '').toLowerCase();
+                const ct = String(acc.CreditType || '').toLowerCase();
+                const ind = String(acc.Industry || '').toLowerCase();
+                const isRevolving =
+                  at.includes('revolving') ||
+                  ad.includes('revolving') ||
+                  ct.includes('revolving') ||
+                  at.includes('credit card') ||
+                  ad.includes('credit card') ||
+                  ct.includes('credit card') ||
+                  ad.includes('charge account') ||
+                  ad.includes('flexible spending credit card') ||
+                  ind.includes('bank credit cards');
+                return monthsOld <= 12 && isRevolving;
               });
               criteria[bureauId].maxFourUnsecuredIn12Months = recentUnsecuredAccounts.length <= 4;
 
@@ -2502,8 +3773,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               ) || [];
               criteria[bureauId].noInquiries = bureauInquiries.length === 0;
 
-              // Check bankruptcies (simplified - would need more detailed bankruptcy data)
-              criteria[bureauId].noBankruptcies = true; // Assume no bankruptcies for now
+              const bureauPublicRecords = apiData.reportData?.PublicRecords?.filter((rec: any) => rec.BureauId === bureauId) || [];
+              const hasBankruptcy = bureauPublicRecords.some((rec: any) => {
+                const cls = String(rec.Classification || '').toLowerCase();
+                const typ = String(rec.Type || '').toLowerCase();
+                return cls.includes('bankruptcy') || typ.includes('bankruptcy');
+              });
+              criteria[bureauId].noBankruptcies = !hasBankruptcy;
             });
 
             return criteria;
@@ -2517,8 +3793,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             scores: scores,
             scoreTypes: scoreTypes,
             bureauDates: {
-              experian: getBureauDate(1),
-              transunion: getBureauDate(2), 
+              experian: getBureauDate(2),
+              transunion: getBureauDate(1),
               equifax: getBureauDate(3)
             },
             previousScores: detailedReport.previousScores, // Keep mock previous scores for now
@@ -2539,9 +3815,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               purpose: inquiry.Industry || 'Unknown Purpose',
               type: inquiry.InquiryType === 'I' ? 'Hard' : 'Soft',
               date: inquiry.DateInquiry || new Date().toISOString().split('T')[0],
-              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : 'Equifax'
+              bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : inquiry.BureauId === 3 ? 'Equifax' : 'Unknown'
             })),
-            publicRecords: apiData?.PublicRecords || [],
+            publicRecords: (data.data.reportData.PublicRecords || []),
             // Keep the original structure for other data
             creditUtilization: detailedReport.creditUtilization,
             debtUtilization: debtUtilization, // Add calculated debt utilization
@@ -2586,7 +3862,60 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             if (historyResponse.ok) {
               const historyData = await historyResponse.json();
               console.log('🔍 DEBUG: Report history data:', historyData);
-              transformedData.reportHistory = historyData.data || [];
+              const rawHistory = Array.isArray(historyData?.data) ? historyData.data : [];
+
+              const tokenForFetch = freshToken || token;
+              const fetchReportJson = async (reportPath: any) => {
+                if (!reportPath || typeof reportPath !== 'string') return null;
+                try {
+                  const resp = await fetch(`/api/credit-reports/json-file?path=${encodeURIComponent(reportPath)}`, {
+                    method: 'GET',
+                    headers: {
+                      'Authorization': `Bearer ${tokenForFetch}`,
+                      'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                  });
+                  if (!resp.ok) return null;
+                  const json = await resp.json();
+                  return json?.data ?? null;
+                } catch {
+                  return null;
+                }
+              };
+
+              const latestRow = rawHistory.length > 0 ? rawHistory[0] : null;
+              const previousRow = rawHistory.length > 1 ? rawHistory[1] : null;
+              const oldestRow = rawHistory.length > 0 ? rawHistory[rawHistory.length - 1] : null;
+
+              const dataById = new Map<any, any>();
+              const dataByPath = new Map<string, any>();
+              const rowsToFetch = [latestRow, previousRow, oldestRow].filter(Boolean) as any[];
+
+              try {
+                for (const row of rowsToFetch) {
+                  const reportPath = row?.report_path;
+                  if (!reportPath || typeof reportPath !== 'string') continue;
+                  if (dataByPath.has(reportPath)) {
+                    const cached = dataByPath.get(reportPath);
+                    if (row?.id != null && cached) dataById.set(row.id, cached);
+                    continue;
+                  }
+                  const json = await fetchReportJson(reportPath);
+                  if (json) {
+                    dataByPath.set(reportPath, json);
+                    if (row?.id != null) dataById.set(row.id, json);
+                  }
+                }
+              } catch (e) {
+                console.warn('Failed to load report JSON for history compare:', e);
+              }
+
+              transformedData.reportHistory = rawHistory.map((h: any) => {
+                if (h?.id != null && dataById.has(h.id)) return { ...h, data: dataById.get(h.id) };
+                if (typeof h?.report_path === 'string' && dataByPath.has(h.report_path)) return { ...h, data: dataByPath.get(h.report_path) };
+                return h;
+              });
             } else {
               const errorText = await historyResponse.text();
               console.warn('Failed to fetch report history:', historyResponse.status, errorText);
@@ -2691,14 +4020,66 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         // Keep using mock data on error
       } finally {
         setLoading(false);
+        setIsRerunningAudit(false);
       }
     };
 
     fetchCreditReport();
-  }, [clientId]);
+  }, [clientId, refreshAuditNonce]);
+
+  const runEligibilityAudit = async () => {
+    if (!clientId) return;
+    try {
+      setAuditRunning(true);
+      const qc: any = (reportData as any)?.qualificationCriteria || {};
+      const getInquiryCountByName = (name: string) => {
+        try {
+          const listA = (reportData as any)?.inquiries || [];
+          if (Array.isArray(listA) && listA.length > 0) {
+            return listA.filter((inq: any) => String(inq?.bureau) === name && (String(inq?.type).toLowerCase() === 'hard' || String(inq?.InquiryType) === 'I')).length;
+          }
+          const rawB = (apiData as any)?.reportData?.reportData?.Inquiries || (apiData as any)?.reportData?.Inquiries || [];
+          const mapId = (n: string) => n === 'TransUnion' ? 1 : (n === 'Experian' ? 2 : 3);
+          return rawB.filter((inq: any) => Number(inq?.BureauId) === mapId(name) && String(inq?.InquiryType) === 'I').length;
+        } catch {
+          return 0;
+        }
+      };
+      const inquiriesUnderLimit = (name: string) => getInquiryCountByName(name) < 4;
+      const isPass = (c: any, name: string) => Boolean(c?.score700Plus || c?.score730Plus)
+        && Boolean(c?.openRevolvingUnder30)
+        && Boolean(c?.allRevolvingUnder30)
+        && Boolean(c?.minFiveOpenRevolving)
+        && Boolean(c?.creditCard3YearsOld5KLimit)
+        && Boolean(c?.maxFourUnsecuredIn12Months)
+        && Boolean(inquiriesUnderLimit(name))
+        && Boolean(c?.noCollections)
+        && Boolean(c?.noChargeOffs)
+        && Boolean(c?.noLatePayments)
+        && Boolean(c?.noBankruptcies)
+        && Boolean(c?.noCollectionsLiensJudgements);
+      const fundable_in_tu = isPass(qc?.[1], 'TransUnion');
+      const fundable_in_ex = isPass(qc?.[3], 'Experian');
+      const fundable_in_eq = isPass(qc?.[2], 'Equifax');
+      const fundable_status = (fundable_in_tu || fundable_in_ex || fundable_in_eq) ? 'fundable' : 'not_fundable';
+      await clientsApi.updateClient(String(clientId), {
+        fundable_in_tu,
+        fundable_in_ex,
+        fundable_in_eq,
+        fundable_status
+      });
+      setAuditResult(fundable_status === 'fundable' ? 'Client is fundable. Status saved.' : 'Client is not fundable. Status saved.');
+      setShowEligibilityAuditModal(false);
+    } catch (err) {
+      console.error('Eligibility audit update failed:', err);
+      setAuditResult('Failed to save audit result');
+    } finally {
+      setAuditRunning(false);
+    }
+  };
 
   const getScoreChange = (current: number, previous: number) => {
-    const change = current - previous;
+    const change = current - 700;
     return {
       value: change,
       isPositive: change >= 0,
@@ -2710,13 +4091,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
   const getAccountStatusColor = (status: string) => {
     switch (status) {
       case "Open":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-slate-800 dark:text-blue-300 dark:border-slate-700";
       case "Closed":
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-foreground border-border";
       case "Charge Off":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "bg-red-100 text-red-800 border-red-200 dark:bg-slate-800 dark:text-red-300 dark:border-slate-700";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-foreground border-border";
     }
   };
 
@@ -2767,30 +4148,128 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
       title={`Credit Report - ${clientName}`}
       description="Detailed credit report analysis and information"
     >
+      <Dialog
+        open={lawEngineNoticeOpen}
+        onOpenChange={(open) => {
+          setLawEngineNoticeOpen(open);
+          if (!open) setPendingLawEngineTab(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Law Engine Notice</DialogTitle>
+            <DialogDescription>
+              This feature uses automated software algorithms to generate outputs and recommendations.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              Please independently review and verify all information before using it in any communication, dispute, or decision.
+            </p>
+            <p>This content is provided for educational purposes only.</p>
+            <p>
+              Score Machine does not provide legal advice, and we do not assume responsibility for outcomes resulting from the use
+              of Law Engine outputs.
+            </p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeLawEngineNotice}>Acknowledge &amp; Activate</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fundingAuditNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingAuditNoticeOpen(open);
+          if (!open) setPendingFundingAuditTab(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Audit Notice</DialogTitle>
+            <DialogDescription>
+              This tab provides automated educational estimates and general information.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>This content is provided for educational purposes only and is not financial, credit, or legal advice.</p>
+            <p>Results are estimates and are not a guarantee of approval, limits, rates, or terms from any lender.</p>
+            <p>Please verify all details independently and consult qualified professionals for decisions.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingAuditNotice}>Acknowledge &amp; Continue</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={fundingEstimateNoticeOpen}
+        onOpenChange={(open) => {
+          setFundingEstimateNoticeOpen(open);
+          if (!open) setPendingFundingGoal(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Funding Estimate Notice</DialogTitle>
+            <DialogDescription>
+              Funding amounts and terms shown are estimates generated by our software.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              These figures are not a guarantee of approval, rates, limits, or final terms. Banks and lenders make the final
+              decision based on their underwriting criteria.
+            </p>
+            <p>Please verify all details with the lender before applying.</p>
+          </div>
+          <div className="mt-6 flex justify-end">
+            <Button onClick={acknowledgeFundingEstimateNotice}>Acknowledge &amp; Continue</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Header Navigation */}
       <div className="mb-6">
+        <Button
+          variant="outline"
+          onClick={() => navigate("/reports")}
+          className="mb-4"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Reports
+        </Button>
 
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold gradient-text-primary">
+            <h1 className="text-3xl font-bold text-foreground">
               {clientName}
             </h1>
             <p className="text-muted-foreground">Credit Report Analysis</p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={downloadAnalysisPdf} disabled={activeTab !== 'analysis'}>
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
             
+            <Button size="sm" variant="default">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
           </div>
         </div>
       </div>
-        {/* Comprehensive Credit Analysis Report */}
+
           <div ref={analysisRef} className="analysis-pdf-root space-y-8">
           {/* Header Section */}
-          <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-8 border-0 shadow-lg">
+          <div className="bg-card rounded-2xl p-8 border-0 shadow-lg pdf-avoid-break">
             <div className="text-center">
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
+              <h1 className="text-4xl font-bold text-foreground mb-2">
                 My Credit Analysis
               </h1>
-              <p className="text-xl text-gray-600 mb-6">
+              <p className="text-xl text-muted-foreground mb-6">
                 Company Profile • Understanding Your Credit • How Credit Affects
                 You
               </p>
@@ -2821,7 +4300,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 </div>
                 <div className="bg-white rounded-lg p-4 border border-blue-200">
                   <div className="text-sm text-gray-600">
-                    Credit Repair Journey
+                    Funding Journey
                   </div>
                   <div className="text-lg font-bold text-blue-600">✓ Ready</div>
                 </div>
@@ -2829,24 +4308,23 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
             </div>
           </div>
 
-          {/* Understanding Your Credit Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-gray-50 to-blue-50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-2xl font-bold text-gray-800 dark:text-foreground">
+          {/* Understanding Your Credit Section Header */}
+          <div className="bg-card rounded-2xl p-6 border-0 shadow-lg pdf-avoid-break">
+              <div className="flex items-center gap-2 text-2xl font-bold text-foreground mb-2">
                 <Info className="h-8 w-8 text-blue-600" />
                 Understanding Your Credit
-              </CardTitle>
-              <CardDescription className="text-lg text-muted-foreground">
+              </div>
+              <div className="text-lg text-muted-foreground">
                 Introduction to Credit Bureaus and Credit Reports
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-8">
+              </div>
+          </div>
+
               {/* What Are Credit Bureaus */}
-              <div className="bg-card rounded-xl p-6 border border-border shadow-sm">
-                <h3 className="text-xl font-bold text-foreground mb-4">
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break">
+                <h3 className="text-xl font-bold text-gray-800 mb-4">
                   What Are Credit Bureaus?
                 </h3>
-                <p className="text-muted-foreground mb-4">
+                <p className="text-gray-700 mb-4">
                   Credit bureaus, also known as credit reporting agencies, are
                   organizations that play a critical role in the financial
                   landscape. Their primary function is to collect and maintain
@@ -2857,7 +4335,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                   <div className="bg-blue-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-6 bg-blue-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-sm font-bold">
+                    <div className="w-12 h-6 bg-blue-600 rounded text-white flex items-center justify-center mx-auto pb-4 mb-3 text-sm font-bold">
                       EQ
                     </div>
                     <h4 className="font-semibold text-blue-800">Equifax</h4>
@@ -2866,7 +4344,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </p>
                   </div>
                   <div className="bg-green-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-6 bg-green-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-sm font-bold">
+                    <div className="w-12 h-6 bg-green-600 rounded text-white flex items-center justify-center mx-auto pb-4 mb-3 text-sm font-bold">
                       EX
                     </div>
                     <h4 className="font-semibold text-green-800">Experian</h4>
@@ -2875,7 +4353,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </p>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-6 bg-purple-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-sm font-bold">
+                    <div className="w-12 h-6 bg-purple-600 rounded text-white flex items-center justify-center mx-auto pb-4 mb-3 text-sm font-bold">
                       TU
                     </div>
                     <h4 className="font-semibold text-purple-800">
@@ -2889,7 +4367,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </div>
 
               {/* What Is in My Credit Report */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break">
                 <h3 className="text-xl font-bold text-gray-800 mb-4">
                   What Is in My Credit Report?
                 </h3>
@@ -2983,7 +4461,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </div>
 
               {/* Why Is a Credit Report Important */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break pb-5">
                 <h3 className="text-xl font-bold text-gray-800 mb-4">
                   Why Is a Credit Report Important?
                 </h3>
@@ -3027,30 +4505,27 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+  
+            {/* How Credit Affects You Section Header */}
+            <div className="bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+                <div className="flex items-center gap-2 text-2xl font-bold text-green-800 mb-2">
+                  <Target className="h-8 w-8 text-green-600" />
+                  How Credit Affects You
+                </div>
+                <div className="text-lg text-green-700">
+                  The Importance of Credit in Everyday Life and Major Decisions
+                </div>
+            </div>
 
-          {/* How Credit Affects You Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-2xl font-bold text-green-800">
-                <Target className="h-8 w-8 text-green-600" />
-                How Credit Affects You
-              </CardTitle>
-              <CardDescription className="text-lg text-green-700">
-                The Importance of Credit in Everyday Life and Major Decisions
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-8">
               {/* Everyday Life Impact */}
-              <div className="bg-white rounded-xl p-6 border border-green-200 shadow-sm">
+              <div className="bg-white rounded-xl p-6 border border-green-200 shadow-sm pdf-avoid-break">
                 <h3 className="text-xl font-bold text-gray-800 mb-6">
                   The Importance of Credit in Everyday Life
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="text-center">
-                    <Building2 className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+                    <Building2 className="h-12 w-12 text-blue-600 mr-5 mx-auto mb-4" />
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Renting an Apartment
                     </h4>
@@ -3061,7 +4536,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
 
                   <div className="text-center">
-                    <CreditCard className="h-12 w-12 text-green-600 mx-auto mb-4" />
+                    <CreditCard className="h-12 w-12 text-green-600 mr-4 mx-auto mb-4" />
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Buying a Car
                     </h4>
@@ -3072,7 +4547,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
 
                   <div className="text-center">
-                    <Wallet className="h-12 w-12 text-purple-600 mx-auto mb-4" />
+                    <Wallet className="h-12 w-12 text-purple-600 mr-3 mx-auto mb-4" />
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Everyday Purchases
                     </h4>
@@ -3083,7 +4558,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
 
                   <div className="text-center">
-                    <Zap className="h-12 w-12 text-orange-600 mx-auto mb-4" />
+                    <Zap className="h-12 w-12 text-orange-600 pr-3 mx-auto mb-4" />
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Utility Services
                     </h4>
@@ -3177,67 +4652,77 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+  
+            {/* Your Current Credit Status Header */}
+            <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+                <div className="flex items-center gap-2 text-2xl font-bold text-blue-800 mb-2">
+                  <BarChart3 className="h-8 w-8 text-blue-600" />
+                  Your Current Credit Status
+                </div>
+                <div className="text-lg text-blue-700">
+                  Overview of Your Credit Scores and Detailed Analysis
+                </div>
+            </div>
 
-          {/* Your Current Credit Status */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl sm:text-2xl md:text-3xl font-bold text-blue-800">
-                <BarChart3 className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-blue-600" />
-                Your Current Credit Status
-              </CardTitle>
-              <CardDescription className="text-sm sm:text-base md:text-lg text-blue-700">
-                Overview of Your Credit Scores and Detailed Analysis
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6 sm:space-y-8">
               {/* Current Credit Scores */}
-              <div className="bg-white rounded-xl p-4 sm:p-6 border border-blue-200 shadow-sm">
-                <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-4 sm:mb-6">
+              <div className="bg-white rounded-xl p-6 border border-blue-200 shadow-sm pdf-avoid-break">
+                <h3 className="text-xl font-bold text-gray-800 mb-6">
                   Overview of Your Credit Scores
                 </h3>
-                <p className="text-gray-700 mb-4 sm:mb-6">
+                <p className="text-gray-700 mb-6">
                   Credit scores are numerical representations of your
                   creditworthiness, derived from the data in your credit report.
                   These scores range from 300 to 850, with various ranges
                   representing different levels of credit health.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                   <div className="text-center">
-                    <div className="w-14 h-7 sm:w-16 sm:h-8 bg-blue-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-xs sm:text-sm font-bold">
+                    <div className="w-16 h-8 bg-blue-600 rounded text-white flex items-center justify-center mx-auto mb-5 text-sm font-bold">
                       TU
                     </div>
-                    <div className="text-3xl sm:text-4xl md:text-5xl font-bold text-blue-600 mb-2">
-                      769
+                    <div className="text-4xl font-bold text-blue-600 mb-2">
+                      {(() => {
+                        const v = reportData?.scores?.transunion;
+                        const n = parseInt(v);
+                        return isNaN(n) ? 'N/A' : n;
+                      })()}
                     </div>
-                    <div className="text-xs sm:text-sm text-gray-600 mb-1">TransUnion</div>
-                    <div className="text-[11px] sm:text-xs text-blue-600">2024-10-31</div>
+                    <div className="text-sm text-gray-600 mb-1">TransUnion</div>
+                    <div className="text-xs text-blue-600">{reportData?.bureauDates?.transunion || 'N/A'}</div>
                   </div>
                   <div className="text-center">
-                    <div className="w-14 h-7 sm:w-16 sm:h-8 bg-green-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-xs sm:text-sm font-bold">
+                    <div className="w-16 h-8 bg-green-600 rounded text-white flex items-center justify-center mx-auto mb-5 text-sm font-bold">
                       EX
                     </div>
-                    <div className="text-3xl sm:text-4xl md:text-5xl font-bold text-green-600 mb-2">
-                      775
+                    <div className="text-4xl font-bold text-green-600 mb-2">
+                      {(() => {
+                        const v = reportData?.scores?.experian;
+                        const n = parseInt(v);
+                        return isNaN(n) ? 'N/A' : n;
+                      })()}
                     </div>
-                    <div className="text-xs sm:text-sm text-gray-600 mb-1">Experian</div>
-                    <div className="text-[11px] sm:text-xs text-green-600">2024-10-31</div>
+                    <div className="text-sm text-gray-600 mb-1">Experian</div>
+                    <div className="text-xs text-green-600">{reportData?.bureauDates?.experian || 'N/A'}</div>
                   </div>
                   <div className="text-center">
-                    <div className="w-14 h-7 sm:w-16 sm:h-8 bg-purple-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-xs sm:text-sm font-bold">
+                    <div className="w-16 h-8 bg-purple-600 rounded text-white flex items-center justify-center mx-auto mb-5 text-sm font-bold">
                       EQ
                     </div>
-                    <div className="text-3xl sm:text-4xl md:text-5xl font-bold text-purple-600 mb-2">
-                      772
+                    <div className="text-4xl font-bold text-purple-600 mb-2">
+                      {(() => {
+                        const v = reportData?.scores?.equifax;
+                        const n = parseInt(v);
+                        return isNaN(n) ? 'N/A' : n;
+                      })()}
                     </div>
-                    <div className="text-xs sm:text-sm text-gray-600 mb-1">Equifax</div>
-                    <div className="text-[11px] sm:text-xs text-purple-600">2024-10-31</div>
+                    <div className="text-sm text-gray-600 mb-1">Equifax</div>
+                    <div className="text-xs text-purple-600">{reportData?.bureauDates?.equifax || 'N/A'}</div>
                   </div>
                 </div>
 
                 {/* Score Factors */}
-                <div className="bg-gray-50 rounded-lg p-4 sm:p-6">
+                <div className="bg-gray-50 rounded-lg p-6 pdf-avoid-break">
                   <h4 className="text-lg font-semibold text-gray-800 mb-4">
                     Factors Influencing Your Credit Scores
                   </h4>
@@ -3247,11 +4732,45 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         Payment History (35%)
                       </span>
                       <div className="flex items-center gap-2">
-                        <div className="w-20 sm:w-24 md:w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="w-full h-full bg-green-500"></div>
+                        <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          {(() => {
+                            const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                            const lateCount = accounts.filter((account: any) => {
+                              const paymentHistory = (account.PaymentHistory || account.paymentHistory || '').toString();
+                              const status = (account.PaymentStatus || account.AccountStatus || account.status || '').toString().toLowerCase();
+                              const hasNumericLate = typeof paymentHistory === 'string' && (paymentHistory.includes('30') || paymentHistory.includes('60') || paymentHistory.includes('90') || paymentHistory.includes('120'));
+                              const hasLateKeyword = status.includes('late') || status.includes('past due') || status.includes('delinquent');
+                              return hasNumericLate || hasLateKeyword;
+                            }).length;
+                            const label = lateCount === 0 ? 'Excellent' : lateCount <= 2 ? 'Good' : lateCount <= 5 ? 'Fair' : 'Poor';
+                            const width = label === 'Excellent' ? 'w-full' : label === 'Good' ? 'w-4/5' : label === 'Fair' ? 'w-3/5' : 'w-2/5';
+                            const color = label === 'Poor' ? 'bg-red-500' : label === 'Fair' ? 'bg-orange-500' : 'bg-green-500';
+                            return <div className={`${width} h-full ${color}`}></div>;
+                          })()}
                         </div>
-                        <span className="text-sm font-medium text-green-600">
-                          Excellent
+                        <span className={`text-sm font-medium ${(() => {
+                          const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                          const lateCount = accounts.filter((account: any) => {
+                            const paymentHistory = (account.PaymentHistory || account.paymentHistory || '').toString();
+                            const status = (account.PaymentStatus || account.AccountStatus || account.status || '').toString().toLowerCase();
+                            const hasNumericLate = typeof paymentHistory === 'string' && (paymentHistory.includes('30') || paymentHistory.includes('60') || paymentHistory.includes('90') || paymentHistory.includes('120'));
+                            const hasLateKeyword = status.includes('late') || status.includes('past due') || status.includes('delinquent');
+                            return hasNumericLate || hasLateKeyword;
+                          }).length;
+                          const label = lateCount === 0 ? 'Excellent' : lateCount <= 2 ? 'Good' : lateCount <= 5 ? 'Fair' : 'Poor';
+                          return label === 'Poor' ? 'text-red-600' : label === 'Fair' ? 'text-orange-600' : 'text-green-600';
+                        })()}`}>
+                          {(() => {
+                            const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                            const lateCount = accounts.filter((account: any) => {
+                              const paymentHistory = (account.PaymentHistory || account.paymentHistory || '').toString();
+                              const status = (account.PaymentStatus || account.AccountStatus || account.status || '').toString().toLowerCase();
+                              const hasNumericLate = typeof paymentHistory === 'string' && (paymentHistory.includes('30') || paymentHistory.includes('60') || paymentHistory.includes('90') || paymentHistory.includes('120'));
+                              const hasLateKeyword = status.includes('late') || status.includes('past due') || status.includes('delinquent');
+                              return hasNumericLate || hasLateKeyword;
+                            }).length;
+                            return lateCount === 0 ? 'Excellent' : lateCount <= 2 ? 'Good' : lateCount <= 5 ? 'Fair' : 'Poor';
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -3260,11 +4779,75 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         Credit Utilization (30%)
                       </span>
                       <div className="flex items-center gap-2">
-                        <div className="w-20 sm:w-24 md:w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="w-full h-full bg-green-500"></div>
+                        <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          {(() => {
+                            const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                            const revolvingAccounts = accounts.filter((account: any) => {
+                              const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
+                              const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
+                              const isRevolving = type.includes('revolving') || type.includes('credit card');
+                              const isOpen = status ? status.includes('open') : true;
+                              return isRevolving && isOpen;
+                            });
+                            const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
+                              const balance = parseFloat(account.CurrentBalance || account.balance || '0');
+                              return sum + (isNaN(balance) ? 0 : balance);
+                            }, 0);
+                            const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
+                              const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
+                              return sum + (isNaN(limit) ? 0 : limit);
+                            }, 0);
+                            const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
+                            const u = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
+                            const label = u < 10 ? 'Excellent' : u < 30 ? 'Good' : u < 50 ? 'Fair' : 'Poor';
+                            const width = label === 'Excellent' ? 'w-full' : label === 'Good' ? 'w-4/5' : label === 'Fair' ? 'w-3/5' : 'w-2/5';
+                            const color = label === 'Poor' ? 'bg-red-500' : label === 'Fair' ? 'bg-orange-500' : 'bg-green-500';
+                            return <div className={`${width} h-full ${color}`}></div>;
+                          })()}
                         </div>
-                        <span className="text-sm font-medium text-green-600">
-                          Excellent
+                        <span className={`text-sm font-medium ${(() => {
+                          const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                          const revolvingAccounts = accounts.filter((account: any) => {
+                            const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
+                            const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
+                            const isRevolving = type.includes('revolving') || type.includes('credit card');
+                            const isOpen = status ? status.includes('open') : true;
+                            return isRevolving && isOpen;
+                          });
+                          const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
+                            const balance = parseFloat(account.CurrentBalance || account.balance || '0');
+                            return sum + (isNaN(balance) ? 0 : balance);
+                          }, 0);
+                          const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
+                            const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
+                            return sum + (isNaN(limit) ? 0 : limit);
+                          }, 0);
+                          const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
+                          const u = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
+                          const label = u < 10 ? 'Excellent' : u < 30 ? 'Good' : u < 50 ? 'Fair' : 'Poor';
+                          return label === 'Poor' ? 'text-red-600' : label === 'Fair' ? 'text-orange-600' : 'text-green-600';
+                        })()}`}>
+                          {(() => {
+                            const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                            const revolvingAccounts = accounts.filter((account: any) => {
+                              const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
+                              const status = (account.AccountStatus || account.status || account.Status || account.OpenClosed || '').toLowerCase();
+                              const isRevolving = type.includes('revolving') || type.includes('credit card');
+                              const isOpen = status ? status.includes('open') : true;
+                              return isRevolving && isOpen;
+                            });
+                            const totalBalance = revolvingAccounts.reduce((sum: number, account: any) => {
+                              const balance = parseFloat(account.CurrentBalance || account.balance || '0');
+                              return sum + (isNaN(balance) ? 0 : balance);
+                            }, 0);
+                            const totalLimit = revolvingAccounts.reduce((sum: number, account: any) => {
+                              const limit = parseFloat(account.CreditLimit || account.limit || account.creditLimit || '0');
+                              return sum + (isNaN(limit) ? 0 : limit);
+                            }, 0);
+                            const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
+                            const u = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
+                            return u < 10 ? 'Excellent' : u < 30 ? 'Good' : u < 50 ? 'Fair' : 'Poor';
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -3273,24 +4856,128 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         Length of Credit History (15%)
                       </span>
                       <div className="flex items-center gap-2">
-                        <div className="w-20 sm:w-24 md:w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="w-4/5 h-full bg-green-500"></div>
+                        <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          {(() => {
+                            const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                            const currentDate = new Date();
+                            let totalMonths = 0;
+                            let validAccounts = 0;
+                            accounts.forEach((account: any) => {
+                              const dateOpened = account.DateOpened || account.dateOpened || account.opened;
+                              if (dateOpened) {
+                                const openDate = new Date(dateOpened);
+                                if (!isNaN(openDate.getTime())) {
+                                  const monthsDiff = (currentDate.getFullYear() - openDate.getFullYear()) * 12 + (currentDate.getMonth() - openDate.getMonth());
+                                  if (monthsDiff >= 0) {
+                                    totalMonths += monthsDiff;
+                                    validAccounts++;
+                                  }
+                                }
+                              }
+                            });
+                            const avgMonths = validAccounts > 0 ? Math.round(totalMonths / validAccounts) : 0;
+                            const label = avgMonths >= 108 ? 'Excellent' : avgMonths >= 60 ? 'Very Good' : avgMonths >= 36 ? 'Good' : 'Fair';
+                            const width = label === 'Excellent' ? 'w-full' : label === 'Very Good' ? 'w-4/5' : label === 'Good' ? 'w-3/5' : 'w-2/5';
+                            const color = label === 'Fair' ? 'bg-orange-500' : 'bg-green-500';
+                            return <div className={`${width} h-full ${color}`}></div>;
+                          })()}
                         </div>
-                        <span className="text-sm font-medium text-green-600">
-                          Very Good
+                        <span className={`text-sm font-medium ${(() => {
+                          const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                          const currentDate = new Date();
+                          let totalMonths = 0;
+                          let validAccounts = 0;
+                          accounts.forEach((account: any) => {
+                            const dateOpened = account.DateOpened || account.dateOpened || account.opened;
+                            if (dateOpened) {
+                              const openDate = new Date(dateOpened);
+                              if (!isNaN(openDate.getTime())) {
+                                const monthsDiff = (currentDate.getFullYear() - openDate.getFullYear()) * 12 + (currentDate.getMonth() - openDate.getMonth());
+                                if (monthsDiff >= 0) {
+                                  totalMonths += monthsDiff;
+                                  validAccounts++;
+                                }
+                              }
+                            }
+                          });
+                          const avgMonths = validAccounts > 0 ? Math.round(totalMonths / validAccounts) : 0;
+                          const label = avgMonths >= 108 ? 'Excellent' : avgMonths >= 60 ? 'Very Good' : avgMonths >= 36 ? 'Good' : 'Fair';
+                          return label === 'Fair' ? 'text-orange-600' : 'text-green-600';
+                        })()}`}>
+                          {(() => {
+                            const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                            const currentDate = new Date();
+                            let totalMonths = 0;
+                            let validAccounts = 0;
+                            accounts.forEach((account: any) => {
+                              const dateOpened = account.DateOpened || account.dateOpened || account.opened;
+                              if (dateOpened) {
+                                const openDate = new Date(dateOpened);
+                                if (!isNaN(openDate.getTime())) {
+                                  const monthsDiff = (currentDate.getFullYear() - openDate.getFullYear()) * 12 + (currentDate.getMonth() - openDate.getMonth());
+                                  if (monthsDiff >= 0) {
+                                    totalMonths += monthsDiff;
+                                    validAccounts++;
+                                  }
+                                }
+                              }
+                            });
+                            const avgMonths = validAccounts > 0 ? Math.round(totalMonths / validAccounts) : 0;
+                            return avgMonths >= 108 ? 'Excellent' : avgMonths >= 60 ? 'Very Good' : avgMonths >= 36 ? 'Good' : 'Fair';
+                          })()}
                         </span>
                       </div>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-gray-700">
-                        Credit Mix (10%)
+                        Credit Mix (5%)
                       </span>
                       <div className="flex items-center gap-2">
-                        <div className="w-20 sm:w-24 md:w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="w-4/5 h-full bg-blue-500"></div>
+                        <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          {(() => {
+                            const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                            let hasRevolving = false;
+                            let hasInstallment = false;
+                            let hasMortgage = false;
+                            accounts.forEach((acc: any) => {
+                              const type = (acc.CreditType || acc.AccountType || acc.AccountTypeDescription || '').toLowerCase();
+                              if (type.includes('revolving') || type.includes('credit card')) hasRevolving = true;
+                              if (type.includes('installment') || type.includes('loan')) hasInstallment = true;
+                              if (type.includes('mortgage') || (acc.Industry && String(acc.Industry).toLowerCase().includes('real estate'))) hasMortgage = true;
+                            });
+                            const mixScore = hasRevolving && hasInstallment && hasMortgage ? 'Excellent' : (hasRevolving && hasInstallment) ? 'Good' : hasRevolving || hasInstallment ? 'Fair' : 'Poor';
+                            const width = mixScore === 'Excellent' ? 'w-full' : mixScore === 'Good' ? 'w-4/5' : mixScore === 'Fair' ? 'w-3/5' : 'w-2/5';
+                            const color = mixScore === 'Poor' ? 'bg-red-500' : mixScore === 'Fair' ? 'bg-orange-500' : 'bg-blue-500';
+                            return <div className={`${width} h-full ${color}`}></div>;
+                          })()}
                         </div>
-                        <span className="text-sm font-medium text-blue-600">
-                          Good
+                        <span className={`text-sm font-medium ${(() => {
+                          const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                          let hasRevolving = false;
+                          let hasInstallment = false;
+                          let hasMortgage = false;
+                          accounts.forEach((acc: any) => {
+                            const type = (acc.CreditType || acc.AccountType || acc.AccountTypeDescription || '').toLowerCase();
+                            if (type.includes('revolving') || type.includes('credit card')) hasRevolving = true;
+                            if (type.includes('installment') || type.includes('loan')) hasInstallment = true;
+                            if (type.includes('mortgage') || (acc.Industry && String(acc.Industry).toLowerCase().includes('real estate'))) hasMortgage = true;
+                          });
+                          const mixScore = hasRevolving && hasInstallment && hasMortgage ? 'Excellent' : (hasRevolving && hasInstallment) ? 'Good' : hasRevolving || hasInstallment ? 'Fair' : 'Poor';
+                          return mixScore === 'Poor' ? 'text-red-600' : mixScore === 'Fair' ? 'text-orange-600' : 'text-blue-600';
+                        })()}`}>
+                          {(() => {
+                            const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
+                            let hasRevolving = false;
+                            let hasInstallment = false;
+                            let hasMortgage = false;
+                            accounts.forEach((acc: any) => {
+                              const type = (acc.CreditType || acc.AccountType || acc.AccountTypeDescription || '').toLowerCase();
+                              if (type.includes('revolving') || type.includes('credit card')) hasRevolving = true;
+                              if (type.includes('installment') || type.includes('loan')) hasInstallment = true;
+                              if (type.includes('mortgage') || (acc.Industry && String(acc.Industry).toLowerCase().includes('real estate'))) hasMortgage = true;
+                            });
+                            return (hasRevolving && hasInstallment && hasMortgage) ? 'Excellent' : (hasRevolving && hasInstallment) ? 'Good' : (hasRevolving || hasInstallment) ? 'Fair' : 'Poor';
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -3299,11 +4986,45 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         New Credit (10%)
                       </span>
                       <div className="flex items-center gap-2">
-                        <div className="w-20 sm:w-24 md:w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="w-3/5 h-full bg-green-500"></div>
+                        <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          {(() => {
+                            const inquiries = Array.isArray(reportData.inquiries) ? reportData.inquiries : [];
+                            const twelveMonthsAgo = new Date();
+                            twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+                            const recentHard = inquiries.filter((inq: any) => {
+                              const d = new Date(inq.date || inq.Date || inq.InquiryDate || inq.created_at);
+                              const isHard = String(inq.type || inq.Type || inq.InquiryType || '').toLowerCase().includes('hard') || !inq.type;
+                              return !isNaN(d.getTime()) && d >= twelveMonthsAgo && isHard;
+                            }).length;
+                            const label = recentHard <= 2 ? 'Excellent' : recentHard <= 4 ? 'Good' : recentHard <= 6 ? 'Fair' : 'Poor';
+                            const width = label === 'Excellent' ? 'w-full' : label === 'Good' ? 'w-4/5' : label === 'Fair' ? 'w-3/5' : 'w-2/5';
+                            const color = label === 'Poor' ? 'bg-red-500' : label === 'Fair' ? 'bg-orange-500' : 'bg-green-500';
+                            return <div className={`${width} h-full ${color}`}></div>;
+                          })()}
                         </div>
-                        <span className="text-sm font-medium text-green-600">
-                          Good
+                        <span className={`text-sm font-medium ${(() => {
+                          const inquiries = Array.isArray(reportData.inquiries) ? reportData.inquiries : [];
+                          const twelveMonthsAgo = new Date();
+                          twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+                          const recentHard = inquiries.filter((inq: any) => {
+                            const d = new Date(inq.date || inq.Date || inq.InquiryDate || inq.created_at);
+                            const isHard = String(inq.type || inq.Type || inq.InquiryType || '').toLowerCase().includes('hard') || !inq.type;
+                            return !isNaN(d.getTime()) && d >= twelveMonthsAgo && isHard;
+                          }).length;
+                          const label = recentHard <= 2 ? 'Excellent' : recentHard <= 4 ? 'Good' : recentHard <= 6 ? 'Fair' : 'Poor';
+                          return label === 'Poor' ? 'text-red-600' : label === 'Fair' ? 'text-orange-600' : 'text-green-600';
+                        })()}`}>
+                          {(() => {
+                            const inquiries = Array.isArray(reportData.inquiries) ? reportData.inquiries : [];
+                            const twelveMonthsAgo = new Date();
+                            twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+                            const recentHard = inquiries.filter((inq: any) => {
+                              const d = new Date(inq.date || inq.Date || inq.InquiryDate || inq.created_at);
+                              const isHard = String(inq.type || inq.Type || inq.InquiryType || '').toLowerCase().includes('hard') || !inq.type;
+                              return !isNaN(d.getTime()) && d >= twelveMonthsAgo && isHard;
+                            }).length;
+                            return recentHard <= 2 ? 'Excellent' : recentHard <= 4 ? 'Good' : recentHard <= 6 ? 'Fair' : 'Poor';
+                          })()}
                         </span>
                       </div>
                     </div>
@@ -3312,9 +5033,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               </div>
 
               {/* Analysis Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                <div className="bg-white rounded-xl p-4 sm:p-6 border border-blue-200 shadow-sm">
-                  <h4 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl p-6 border border-blue-200 shadow-sm">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">
                     Analysis of Negative Entries
                   </h4>
                   <div className="space-y-3">
@@ -3355,11 +5076,11 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       return (
                         <>
                           <div className="flex justify-between items-center">
-                            <span className="text-xs sm:text-sm text-gray-700">Inquiries:</span>
+                            <span className="text-sm text-gray-700">Inquiries:</span>
                             <span className={`font-bold ${inqColor}`}>{inqCount}</span>
                           </div>
                           <div className="flex justify-between items-center">
-                            <span className="text-xs sm:text-sm text-gray-700">Late Payments:</span>
+                            <span className="text-sm text-gray-700">Late Payments:</span>
                             <span className={`font-bold ${lateColor}`}>{lateCount}</span>
                           </div>
                           <div className="flex justify-between items-center">
@@ -3376,12 +5097,12 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
                 </div>
 
-                <div className="bg-white rounded-xl p-4 sm:p-6 border border-blue-200 shadow-sm">
-                  <h4 className="text-base sm:text-lg font-semibold text-gray-800 mb-4">
+                <div className="bg-white rounded-xl p-6 border border-blue-200 shadow-sm">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">
                     Credit Utilization Overview
                   </h4>
                   <div className="text-center mb-4">
-                    <div className={`text-2xl sm:text-3xl md:text-4xl font-bold ${(() => {
+                    <div className={`text-3xl font-bold ${(() => {
                       const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
                       const revolvingAccounts = accounts.filter((account: any) => {
                         const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
@@ -3424,13 +5145,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                         return safeUtilization;
                       })()}%
                     </div>
-                    <div className="text-xs sm:text-sm text-gray-600">
+                    <div className="text-sm text-gray-600">
                       Overall Credit Utilization
                     </div>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs sm:text-sm text-gray-700">
+                      <span className="text-sm text-gray-700">
                         High Utilization Accounts:
                       </span>
                       <span className={`font-bold ${(() => {
@@ -3487,8 +5208,8 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                       const utilization = totalLimit > 0 ? Math.round((totalBalance / totalLimit) * 100) : 0;
                       const safeUtilization = isNaN(utilization) || !isFinite(utilization) ? 0 : utilization;
                       return safeUtilization <= 30 ? 'bg-green-50' : 'bg-red-50';
-                    })()} rounded-lg p-2 sm:p-3 text-center`}>
-                      <div className={`text-xs sm:text-sm font-medium ${(() => {
+                    })()} rounded-lg p-2 text-center`}>
+                      <div className={`text-sm font-medium ${(() => {
                         const accounts = Array.isArray(reportData.accounts) ? reportData.accounts : [];
                         const revolvingAccounts = accounts.filter((account: any) => {
                           const type = (account.CreditType || account.type || account.AccountType || '').toLowerCase();
@@ -3535,29 +5256,26 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
                 </div>
               </div>
-          </CardContent>
-          </Card>
-
-          {/* Inquiries - Recent Inquiries */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-orange-50 via-yellow-50 to-amber-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl sm:text-2xl md:text-3xl font-bold text-orange-800">
-                <Search className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-orange-600" />
-                Recent Inquiries
-              </CardTitle>
-              <CardDescription className="text-sm sm:text-base md:text-lg text-orange-700">
-                Latest inquiries reported across bureaus
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-white rounded-xl border border-orange-200 overflow-x-auto">
-                <Table className="w-full min-w-[640px] text-xs sm:text-sm">
+  
+            {/* Inquiries - Recent Inquiries Header */}
+            <div className="bg-gradient-to-br from-orange-50 via-yellow-50 to-amber-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+                <div className="flex items-center gap-2 text-2xl font-bold text-orange-800 mb-2">
+                  <Search className="h-8 w-8 text-orange-600" />
+                  Recent Inquiries
+                </div>
+                <div className="text-lg text-orange-700">
+                  Latest inquiries reported across bureaus
+                </div>
+            </div>
+  
+              <div className="bg-white rounded-xl border border-orange-200 overflow-x-auto pdf-avoid-break">
+                <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="whitespace-nowrap">Creditor Name</TableHead>
-                      <TableHead className="whitespace-nowrap">Bureau</TableHead>
-                      <TableHead className="whitespace-nowrap">Date Inquiry</TableHead>
-                      <TableHead className="whitespace-nowrap">Industry</TableHead>
+                      <TableHead>Creditor Name</TableHead>
+                      <TableHead>Bureau</TableHead>
+                      <TableHead>Date Inquiry</TableHead>
+                      <TableHead>Industry</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -3599,7 +5317,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           const industry = inq.Industry || inq.purpose || inq.InquiryType || 'N/A';
                           return (
                             <TableRow key={`inq-${idx}`}>
-                              <TableCell className="font-medium text-gray-800 break-words">{creditor}</TableCell>
+                              <TableCell className="font-medium text-gray-800">{creditor}</TableCell>
                               <TableCell>{bureau}</TableCell>
                               <TableCell>{dateStr}</TableCell>
                               <TableCell>{industry}</TableCell>
@@ -3616,31 +5334,27 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </TableBody>
                 </Table>
               </div>
-            </CardContent>
-          </Card>
+            {/* Negative Aspects - Bad Accounts Header */}
+            <div className="bg-gradient-to-br from-red-50 via-rose-50 to-pink-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+                <div className="flex items-center gap-2 text-2xl font-bold text-red-800 mb-2">
+                  <ThumbsDown className="h-8 w-8 text-red-600" />
+                  Bad Accounts
+                </div>
+                <div className="text-lg text-red-700">
+                  Accounts in collections, charge-off, delinquent, or past-due status
+                </div>
+            </div>
 
-          {/* Negative Aspects - Bad Accounts */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-red-50 via-rose-50 to-pink-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl sm:text-2xl md:text-3xl font-bold text-red-800">
-                <ThumbsDown className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-red-600" />
-                Bad Accounts
-              </CardTitle>
-              <CardDescription className="text-sm sm:text-base md:text-lg text-red-700">
-                Accounts in collections, charge-off, delinquent, or past-due status
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-white rounded-xl border border-red-200 overflow-x-auto">
-                <Table className="w-full min-w-[720px] text-xs sm:text-sm">
+              <div className="bg-white rounded-xl border border-red-200 overflow-x-auto pdf-avoid-break">
+                <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="whitespace-nowrap">Account Number</TableHead>
-                      <TableHead className="whitespace-nowrap">Creditor Name</TableHead>
-                      <TableHead className="whitespace-nowrap">Bureau</TableHead>
-                      <TableHead className="whitespace-nowrap">Date Opened</TableHead>
-                      <TableHead className="whitespace-nowrap text-right">Current Balance</TableHead>
-                      <TableHead className="whitespace-nowrap text-right">Credit Limit</TableHead>
+                      <TableHead>Account Number</TableHead>
+                      <TableHead>Creditor Name</TableHead>
+                      <TableHead>Bureau</TableHead>
+                      <TableHead>Date Opened</TableHead>
+                      <TableHead className="text-right">Current Balance</TableHead>
+                      <TableHead className="text-right">Credit Limit</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -3724,31 +5438,27 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </TableBody>
                 </Table>
               </div>
-            </CardContent>
-          </Card>
+            {/* Positive Aspects - Good Standing Accounts Header */}
+            <div className="bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+                <div className="flex items-center gap-2 text-2xl font-bold text-green-800 mb-2">
+                  <ThumbsUp className="h-8 w-8 text-green-600" />
+                  Good Standing Accounts
+                </div>
+                <div className="text-lg text-green-700">
+                  Open/current accounts in good standing
+                </div>
+            </div>
 
-          {/* Positive Aspects - Good Standing Accounts */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl sm:text-2xl md:text-3xl font-bold text-green-800">
-                <ThumbsUp className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-green-600" />
-                Good Standing Accounts
-              </CardTitle>
-              <CardDescription className="text-sm sm:text-base md:text-lg text-green-700">
-                Open/current accounts in good standing
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-white rounded-xl border border-green-200 overflow-x-auto">
-                <Table className="w-full min-w-[720px] text-xs sm:text-sm">
+              <div className="bg-white rounded-xl border border-green-200 overflow-x-auto pdf-avoid-break">
+                <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="whitespace-nowrap">Account Number</TableHead>
-                      <TableHead className="whitespace-nowrap">Creditor Name</TableHead>
-                      <TableHead className="whitespace-nowrap">Bureau</TableHead>
-                      <TableHead className="whitespace-nowrap">Date Opened</TableHead>
-                      <TableHead className="whitespace-nowrap text-right">Current Balance</TableHead>
-                      <TableHead className="whitespace-nowrap text-right">Credit Limit</TableHead>
+                      <TableHead>Account Number</TableHead>
+                      <TableHead>Creditor Name</TableHead>
+                      <TableHead>Bureau</TableHead>
+                      <TableHead>Date Opened</TableHead>
+                      <TableHead className="text-right">Current Balance</TableHead>
+                      <TableHead className="text-right">Credit Limit</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -3833,32 +5543,27 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </TableBody>
                 </Table>
               </div>
-            </CardContent>
-          </Card>
+            {/* Common Mistakes Header */}
+            <div className="bg-gradient-to-br from-orange-50 via-red-50 to-pink-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+                <div className="flex items-center gap-2 text-2xl font-bold text-orange-800 mb-2">
+                  <AlertTriangle className="h-8 w-8 text-orange-600" />
+                  How to Avoid Common Pitfalls in Credit Management
+                </div>
+                <div className="text-lg text-orange-700">
+                  Essential tips and strategies to ensure you maintain optimal credit health
+                </div>
+            </div>
 
-          {/* Common Mistakes and How to Avoid Them */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-orange-50 via-red-50 to-pink-50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-xl sm:text-2xl md:text-3xl font-bold text-orange-800">
-                <AlertTriangle className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-orange-600" />
-                How to Avoid Common Pitfalls in Credit Management
-              </CardTitle>
-              <CardDescription className="text-sm sm:text-base md:text-lg text-orange-700">
-                Essential tips and strategies to ensure you maintain optimal
-                credit health
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                <div className="space-y-3 sm:space-y-4">
-                  <div className="bg-white rounded-lg p-3 sm:p-4 border border-orange-200">
-                    <div className="flex items-start gap-2 sm:gap-3">
-                      <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6 text-green-600 mt-1" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pdf-avoid-break">
+                <div className="space-y-4">
+                  <div className="bg-white rounded-lg p-4 border border-orange-200">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="h-6 w-6 text-green-600 mt-1" />
                       <div>
                         <h4 className="font-semibold text-gray-800 mb-2">
                           Regularly Review Your Credit Report
                         </h4>
-                        <p className="text-xs sm:text-sm text-gray-600">
+                        <p className="text-sm text-gray-600">
                           Check your credit report at least once a year to
                           identify inaccuracies or outdated information that
                           might be affecting your score.
@@ -3867,14 +5572,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-lg p-3 sm:p-4 border border-orange-200">
-                    <div className="flex items-start gap-2 sm:gap-3">
-                      <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600 mt-1" />
+                  <div className="bg-white rounded-lg p-4 border border-orange-200">
+                    <div className="flex items-start gap-3">
+                      <Clock className="h-6 w-6 text-blue-600 mt-1" />
                       <div>
                         <h4 className="font-semibold text-gray-800 mb-2">
                           Avoid Late Payments
                         </h4>
-                        <p className="text-xs sm:text-sm text-gray-600">
+                        <p className="text-sm text-gray-600">
                           Set up payment reminders or automatic payments to
                           ensure you always pay bills on time. Payment history
                           is the most significant factor in your credit score.
@@ -3883,14 +5588,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-lg p-3 sm:p-4 border border-orange-200">
-                    <div className="flex items-start gap-2 sm:gap-3">
-                      <CreditCard className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600 mt-1" />
+                  <div className="bg-white rounded-lg p-4 border border-orange-200">
+                    <div className="flex items-start gap-3">
+                      <CreditCard className="h-6 w-6 text-purple-600 mt-1" />
                       <div>
                         <h4 className="font-semibold text-gray-800 mb-2">
                           Manage Your Credit Utilization
                         </h4>
-                        <p className="text-xs sm:text-sm text-gray-600">
+                        <p className="text-sm text-gray-600">
                           Keep credit card balances below 30% of your credit
                           limits to demonstrate responsible credit management to
                           lenders.
@@ -3900,15 +5605,15 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
                 </div>
 
-                <div className="space-y-3 sm:space-y-4">
-                  <div className="bg-white rounded-lg p-3 sm:p-4 border border-orange-200">
-                    <div className="flex items-start gap-2 sm:gap-3">
-                      <Search className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600 mt-1" />
+                <div className="space-y-4">
+                  <div className="bg-white rounded-lg p-4 border border-orange-200">
+                    <div className="flex items-start gap-3">
+                      <Search className="h-6 w-6 text-orange-600 mt-1" />
                       <div>
                         <h4 className="font-semibold text-gray-800 mb-2">
                           Apply for New Credit Sparingly
                         </h4>
-                        <p className="text-xs sm:text-sm text-gray-600">
+                        <p className="text-sm text-gray-600">
                           Be strategic about applying for new credit. Space out
                           applications to minimize the impact of hard inquiries
                           on your credit score.
@@ -3917,14 +5622,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-lg p-3 sm:p-4 border border-orange-200">
-                    <div className="flex items-start gap-2 sm:gap-3">
-                      <Shield className="h-5 w-5 sm:h-6 sm:w-6 text-teal-600 mt-1" />
+                  <div className="bg-white rounded-lg p-4 border border-orange-200">
+                    <div className="flex items-start gap-3">
+                      <Shield className="h-6 w-6 text-teal-600 mt-1" />
                       <div>
                         <h4 className="font-semibold text-gray-800 mb-2">
                           Keep Old Credit Accounts Open
                         </h4>
-                        <p className="text-xs sm:text-sm text-gray-600">
+                        <p className="text-sm text-gray-600">
                           Maintain older credit accounts to benefit from a
                           longer credit history, which positively influences
                           your credit score.
@@ -3933,14 +5638,14 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                     </div>
                   </div>
 
-                  <div className="bg-white rounded-lg p-3 sm:p-4 border border-orange-200">
-                    <div className="flex items-start gap-2 sm:gap-3">
-                      <BarChart className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-600 mt-1" />
+                  <div className="bg-white rounded-lg p-4 border border-orange-200">
+                    <div className="flex items-start gap-3">
+                      <BarChart className="h-6 w-6 text-indigo-600 mt-1" />
                       <div>
                         <h4 className="font-semibold text-gray-800 mb-2">
                           Diversify Your Credit Portfolio
                         </h4>
-                        <p className="text-xs sm:text-sm text-gray-600">
+                        <p className="text-sm text-gray-600">
                           Having a variety of credit types can improve your
                           credit score by showing lenders your ability to handle
                           different types of credit responsibly.
@@ -3950,14 +5655,33 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                   </div>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-
+  
           </div>
-
+  
         
 
-
+      {/* Eligibility Audit Modal */}
+      <Dialog open={showEligibilityAuditModal} onOpenChange={setShowEligibilityAuditModal}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Run Funding Eligibility Audit</DialogTitle>
+            <DialogDescription>
+              Analyze current underwriting criteria and update client fundable status.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-3">
+            <Button size="lg" onClick={runEligibilityAudit} disabled={auditRunning}>
+              {auditRunning ? 'Running...' : 'Run Audit'}
+            </Button>
+            <Button variant="outline" onClick={() => setShowEligibilityAuditModal(false)}>
+              Dismiss
+            </Button>
+          </div>
+          {auditResult && (
+            <p className="text-sm text-muted-foreground mt-2">{auditResult}</p>
+          )}
+        </DialogContent>
+      </Dialog>
 
 
     </ClientLayout>

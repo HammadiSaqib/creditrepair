@@ -60,6 +60,7 @@ import employeesRoutes from "./routes/employees.js";
 import debtPayoffRoutes from "./routes/debtPayoff.js";
 import shopRoutes from "./routes/shop.js";
 import testimonialsRoutes, { publicTestimonialsRoutes } from "./routes/testimonials.js";
+import { emailService } from "./services/emailService.js";
 
 import { reminderService } from "./services/reminderService.js";
 
@@ -298,6 +299,51 @@ export async function createServer() {
   app.use("/api/auth", authRoutes);
   app.use("/api/blog", blogRoutes);
   app.use("/api/newsletter", newsletterRoutes);
+  app.post("/api/contact", async (req, res) => {
+    try {
+      const { name, email, phone, message } = req.body || {};
+      const safeName = String(name || "").trim();
+      const safeEmail = String(email || "").trim();
+      const safePhone = String(phone || "").trim();
+      const safeMessage = String(message || "").trim();
+      if (!safeName || !safeEmail || !safePhone || !safeMessage) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const html = `
+        <h2>New Contact Request</h2>
+        <p><strong>Name:</strong> ${safeName}</p>
+        <p><strong>Email:</strong> ${safeEmail}</p>
+        <p><strong>Phone:</strong> ${safePhone}</p>
+        <p><strong>Message:</strong></p>
+        <p>${safeMessage.replace(/\n/g, "<br />")}</p>
+      `;
+      const text = [
+        "New Contact Request",
+        `Name: ${safeName}`,
+        `Email: ${safeEmail}`,
+        `Phone: ${safePhone}`,
+        "Message:",
+        safeMessage
+      ].join("\n");
+
+      const sent = await emailService.sendEmail({
+        to: "support@thescoremachine.com",
+        subject: "New Contact Request",
+        html,
+        text
+      });
+
+      if (!sent) {
+        return res.status(500).json({ error: "Failed to send message" });
+      }
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Failed to send contact message:", error);
+      return res.status(500).json({ error: "Failed to send message" });
+    }
+  });
   app.use("/api/profile", profileUploadRoutes);
 
   // =============================================================================

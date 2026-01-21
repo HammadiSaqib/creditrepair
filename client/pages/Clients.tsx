@@ -424,6 +424,21 @@ const getScoreChange = (current: number, previous: number) => {
     }
   };
 
+  const handleEditClient = (clientId: number) => {
+    navigate(`/clients/${clientId}`, { state: { openEdit: true } });
+  };
+
+  const handleViewReports = (client: ClientData) => {
+    if (client.manuallyAdded) {
+      toast({
+        title: "No Reports Available",
+        description: "This client was added manually and does not have a credit report JSON.",
+      });
+      return;
+    }
+    navigate(`/credit-report/${client.id}`);
+  };
+
   useEffect(() => {
     fetchClients();
   }, [pagination.page, searchTerm, statusFilter]);
@@ -881,10 +896,6 @@ const getScoreChange = (current: number, previous: number) => {
                   <SelectItem value="login-disabled">Login Disabled</SelectItem>
                 </SelectContent>
               </Select>
-            <Button variant="outline" size="sm">
-              <Filter className="h-4 w-4 mr-2" />
-              More Filters
-            </Button>
             <Button size="sm" onClick={() => setShowAddClientManual(true)}>
               <UserPlus className="h-4 w-4 mr-2" />
               Add Client Manually
@@ -1145,11 +1156,21 @@ const getScoreChange = (current: number, previous: number) => {
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Profile
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditClient(client.id);
+                                }}
+                              >
                                 <Edit className="h-4 w-4 mr-2" />
                                 Edit Client
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewReports(client);
+                                }}
+                              >
                                 <FileText className="h-4 w-4 mr-2" />
                                 View Reports
                               </DropdownMenuItem>

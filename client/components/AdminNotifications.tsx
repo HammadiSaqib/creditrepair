@@ -36,12 +36,19 @@ interface NotificationData {
   total: number;
 }
 
-const AdminNotifications: React.FC = () => {
+interface AdminNotificationsProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+const AdminNotifications: React.FC<AdminNotificationsProps> = ({ open, onOpenChange }) => {
   const { userProfile } = useAuthContext();
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpenInternal, setIsOpenInternal] = useState(false);
+  const isOpen = open ?? isOpenInternal;
+  const setIsOpen = onOpenChange ?? setIsOpenInternal;
   const canView = !!userProfile && ['admin', 'super_admin', 'user', 'employee', 'funding_manager'].includes(userProfile.role);
 
   // Fetch notifications
@@ -163,17 +170,6 @@ const AdminNotifications: React.FC = () => {
     return `${Math.floor(diffInMinutes / 1440)}d ago`;
   };
 
-  // Handle notification click
-  const handleNotificationClick = (notification: AdminNotification) => {
-    if (!notification.is_read) {
-      markAsRead(notification.id);
-    }
-    
-    if (notification.action_url) {
-      window.location.href = notification.action_url;
-    }
-  };
-
   // Fetch notifications on component mount and when dropdown opens
   useEffect(() => {
     fetchNotifications();
@@ -253,33 +249,32 @@ const AdminNotifications: React.FC = () => {
               {notifications.map((notification) => (
                 <DropdownMenuItem
                   key={notification.id}
-                  className={`flex flex-col items-start p-3 cursor-pointer hover:bg-muted/50 ${
+                  className={`flex flex-col items-start p-3 cursor-default hover:bg-muted/50 text-slate-900 dark:text-slate-100 data-[highlighted]:text-slate-900 dark:data-[highlighted]:text-slate-100 ${
                     !notification.is_read ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''
                   }`}
-                  onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="flex items-start justify-between w-full">
                     <div className="flex items-start gap-2 flex-1">
                       {getNotificationIcon(notification.type)}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <p className="text-sm font-medium truncate">
+                          <p className="text-sm font-medium truncate text-slate-900 dark:text-slate-100">
                             {notification.title}
                           </p>
                           {!notification.is_read && (
                             <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground line-clamp-2">
+                        <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2">
                           {notification.message}
                         </p>
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
                             {formatTimeAgo(notification.created_at)}
                           </span>
                           <div className={`w-1 h-1 rounded-full ${getPriorityColor(notification.priority)}`}></div>
                           {notification.sender_first_name && (
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs text-slate-500 dark:text-slate-400">
                               by {notification.sender_first_name} {notification.sender_last_name}
                             </span>
                           )}
@@ -305,10 +300,7 @@ const AdminNotifications: React.FC = () => {
                       variant="outline"
                       size="sm"
                       className="mt-2 h-6 text-xs"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        window.location.href = notification.action_url!;
-                      }}
+                      disabled
                     >
                       {notification.action_text}
                     </Button>

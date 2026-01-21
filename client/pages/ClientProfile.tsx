@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -100,6 +100,7 @@ interface ClientData {
 export default function ClientProfile() {
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const [client, setClient] = useState<ClientData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,6 +118,13 @@ export default function ClientProfile() {
   const [selectedFundingType, setSelectedFundingType] = useState<"personal" | "business" | "both" | "">("");
   const [selectedFundingMethod, setSelectedFundingMethod] = useState<"diy" | "dfy" | "">("");
   const [startWithType, setStartWithType] = useState<"personal" | "business">("personal");
+
+  useEffect(() => {
+    const state = location.state as { openEdit?: boolean } | null;
+    if (state?.openEdit) {
+      setShowEditForm(true);
+    }
+  }, [location.state]);
 
   const isManuallyAddedClient = useMemo(() => {
     if (!client) return false;

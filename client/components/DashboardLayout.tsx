@@ -15,8 +15,8 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
-import AdminNotifications from "./AdminNotifications";
 import AdminContractPrompt from "./AdminContractPrompt";
+import AdminNotifications from "./AdminNotifications";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -32,6 +32,7 @@ export default function DashboardLayout({
   onAddClient,
 }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const { userProfile } = useAuthContext();
   const { hasActiveSubscription } = useSubscriptionStatus();
   
@@ -154,7 +155,7 @@ export default function DashboardLayout({
               </div>
 
               {/* Notifications */}
-              <AdminNotifications />
+              <AdminNotifications open={notificationsOpen} onOpenChange={setNotificationsOpen} />
 
               {/* Admin Onboarding Agreement Prompt */}
               <AdminContractPrompt />
@@ -276,7 +277,7 @@ export default function DashboardLayout({
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setNotificationsOpen(true)}>
                     <Bell className="h-4 w-4 mr-2" />
                     Notifications
                   </DropdownMenuItem>

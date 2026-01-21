@@ -581,12 +581,7 @@ export default function Dashboard() {
   };
 
   const handleFilterClients = () => {
-    // TODO: Implement client filtering functionality
-    console.log("Filter clients clicked");
-    toast({
-      title: "Coming Soon",
-      description: "Client filtering functionality will be available soon!",
-    });
+    navigate("/clients");
   };
 
   const handleViewProfile = (clientId: number) => {
@@ -616,9 +611,7 @@ export default function Dashboard() {
   };
 
   const handleViewReports = (clientId: number) => {
-    // TODO: Navigate to client reports
-    console.log("View reports for client:", clientId);
-    navigate(`/reports?client=${clientId}`);
+    navigate(`/credit-report?clientId=${clientId}`);
   };
 
   const handleSubmitClient = async (e: React.FormEvent) => {
@@ -1437,7 +1430,7 @@ export default function Dashboard() {
                                     View Profile
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
-                                    onClick={() => handleEditClient(client.id)}
+                                    onClick={() => handleViewReports(client.id)}
                                   >
                                     <FileText className="h-4 w-4 mr-2" />
                                     View Reports

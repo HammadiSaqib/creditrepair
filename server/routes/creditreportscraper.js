@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import { fetchCreditReport, PLATFORMS } from '../services/scrapers/index.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { getDatabaseAdapter } from '../database/databaseAdapter.js';
+import { emailService } from '../services/emailService.js';
 
 const router = express.Router();
 
@@ -206,7 +207,7 @@ router.post('/scrape', authenticateToken, async (req, res) => {
             const savePromise = dbUtil.saveCreditReport(historyData);
             const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('DB save timeout')), timeoutMs));
             const result = await Promise.race([savePromise, timeoutPromise]);
-
+            
             updateJob(jobId, { status: 'completed', progress: 100, reportId: result.insertId, result: {
               convertedReportPath: reportData.converted_report_path || null,
               filePath: reportData.filePath || null,
@@ -216,6 +217,64 @@ router.post('/scrape', authenticateToken, async (req, res) => {
             }, finishedAt: new Date().toISOString() });
             try { ws?.broadcastToStream?.('scrape_jobs', 'scrape_job_done', { jobId, status: 'completed', reportId: result.insertId }); } catch {}
             if (updateJob(jobId, {}).userId) { try { ws?.broadcastToUser?.(updateJob(jobId, {}).userId, 'scrape_job_done', { jobId, reportId: result.insertId }); } catch {} }
+            
+            const hasScores = experianScore !== null || equifaxScore !== null || transunionScore !== null;
+            let rawReportDate = null;
+            if (reportData && reportData.reportData && reportData.reportData.ReportDate) {
+              rawReportDate = reportData.reportData.ReportDate;
+            } else if (reportData && Array.isArray(reportData.CreditReport) && reportData.CreditReport[0] && reportData.CreditReport[0].DateReport) {
+              rawReportDate = reportData.CreditReport[0].DateReport;
+            }
+            const hasRealReportDate = !!rawReportDate;
+            const numericClientId = clientId && clientId !== 'unknown' ? parseInt(String(clientId), 10) : NaN;
+            if (hasScores && hasRealReportDate && !isNaN(numericClientId) && req.user && req.user.email) {
+              try {
+                const clientRows = await dbUtil.executeQuery(
+                  'SELECT first_name, last_name FROM clients WHERE id = ? LIMIT 1',
+                  [numericClientId]
+                );
+                const clientRow = Array.isArray(clientRows) && clientRows.length ? clientRows[0] : null;
+                const clientName = clientRow ? `${clientRow.first_name || ''} ${clientRow.last_name || ''}`.trim() : `Client #${numericClientId}`;
+                const formattedDate = (() => {
+                  try {
+                    const d = new Date(rawReportDate);
+                    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+                  } catch {}
+                  return String(rawReportDate);
+                })();
+                const scoresSummaryParts = [];
+                if (experianScore !== null) scoresSummaryParts.push(`Experian: ${experianScore}`);
+                if (equifaxScore !== null) scoresSummaryParts.push(`Equifax: ${equifaxScore}`);
+                if (transunionScore !== null) scoresSummaryParts.push(`TransUnion: ${transunionScore}`);
+                const scoresSummary = scoresSummaryParts.join(' | ');
+                const html = `
+                  <p>A new credit report has been scraped successfully.</p>
+                  <p><strong>Client:</strong> ${clientName}</p>
+                  <p><strong>Client ID:</strong> ${numericClientId}</p>
+                  <p><strong>Platform:</strong> ${platform}</p>
+                  <p><strong>Report Date:</strong> ${formattedDate}</p>
+                  <p><strong>Scores:</strong> ${scoresSummary || 'N/A'}</p>
+                `;
+                const textLines = [
+                  'A new credit report has been scraped successfully.',
+                  `Client: ${clientName}`,
+                  `Client ID: ${numericClientId}`,
+                  `Platform: ${platform}`,
+                  `Report Date: ${formattedDate}`,
+                  `Scores: ${scoresSummary || 'N/A'}`
+                ];
+                emailService.sendEmail({
+                  to: req.user.email,
+                  subject: `New credit report for ${clientName || 'client'} (${String(platform)})`,
+                  html,
+                  text: textLines.join('\n')
+                }).catch(err => {
+                  console.error('Failed to send credit report admin email:', err);
+                });
+              } catch (e) {
+                console.error('Error preparing credit report admin email:', e);
+              }
+            }
           } catch (dbErr) {
             updateJob(jobId, { status: 'failed', progress: 100, error: String(dbErr && dbErr.message || dbErr) });
             try { ws?.broadcastToStream?.('scrape_jobs', 'scrape_job_error', { jobId, error: String(dbErr && dbErr.message || dbErr) }); } catch {}
@@ -1869,7 +1928,64 @@ const toDDMMYYYY = (s) => {
       console.log('Successfully saved report to database with ID:', result.insertId);
       console.log('Saved report history to database');
       
-      // Store the report ID for potential client ID updates later
+      const hasScores = experianScore !== null || equifaxScore !== null || transunionScore !== null;
+      let rawReportDate = null;
+      if (reportData && reportData.reportData && reportData.reportData.ReportDate) {
+        rawReportDate = reportData.reportData.ReportDate;
+      } else if (reportData && Array.isArray(reportData.CreditReport) && reportData.CreditReport[0] && reportData.CreditReport[0].DateReport) {
+        rawReportDate = reportData.CreditReport[0].DateReport;
+      }
+      const hasRealReportDate = !!rawReportDate;
+      const numericClientId = clientId && clientId !== 'unknown' ? parseInt(String(clientId), 10) : NaN;
+      if (hasScores && hasRealReportDate && !isNaN(numericClientId) && req.user && req.user.email) {
+        try {
+          const clientRows = await dbUtil.executeQuery(
+            'SELECT first_name, last_name FROM clients WHERE id = ? LIMIT 1',
+            [numericClientId]
+          );
+          const clientRow = Array.isArray(clientRows) && clientRows.length ? clientRows[0] : null;
+          const clientName = clientRow ? `${clientRow.first_name || ''} ${clientRow.last_name || ''}`.trim() : `Client #${numericClientId}`;
+          const formattedDate = (() => {
+            try {
+              const d = new Date(rawReportDate);
+              if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+            } catch {}
+            return String(rawReportDate);
+          })();
+          const scoresSummaryParts = [];
+          if (experianScore !== null) scoresSummaryParts.push(`Experian: ${experianScore}`);
+          if (equifaxScore !== null) scoresSummaryParts.push(`Equifax: ${equifaxScore}`);
+          if (transunionScore !== null) scoresSummaryParts.push(`TransUnion: ${transunionScore}`);
+          const scoresSummary = scoresSummaryParts.join(' | ');
+          const html = `
+            <p>A new credit report has been scraped successfully.</p>
+            <p><strong>Client:</strong> ${clientName}</p>
+            <p><strong>Client ID:</strong> ${numericClientId}</p>
+            <p><strong>Platform:</strong> ${platform}</p>
+            <p><strong>Report Date:</strong> ${formattedDate}</p>
+            <p><strong>Scores:</strong> ${scoresSummary || 'N/A'}</p>
+          `;
+          const textLines = [
+            'A new credit report has been scraped successfully.',
+            `Client: ${clientName}`,
+            `Client ID: ${numericClientId}`,
+            `Platform: ${platform}`,
+            `Report Date: ${formattedDate}`,
+            `Scores: ${scoresSummary || 'N/A'}`
+          ];
+          emailService.sendEmail({
+            to: req.user.email,
+            subject: `New credit report for ${clientName || 'client'} (${String(platform)})`,
+            html,
+            text: textLines.join('\n')
+          }).catch(err => {
+            console.error('Failed to send credit report admin email:', err);
+          });
+        } catch (e) {
+          console.error('Error preparing credit report admin email:', e);
+        }
+      }
+      
       const reportId = result.insertId;
       
       try { clearInterval(__keepAlive); } catch {}

@@ -15,22 +15,34 @@ import Footer from '@/components/Footer';
 export default function Contact() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  const handleScrollToForm = () => {
+    const target = document.getElementById("contact-form");
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
     setSuccess(false);
+    if (!name.trim() || !email.trim() || !message.trim() || !phone.trim()) {
+      setError("Please fill out all required fields.");
+      return;
+    }
+    setLoading(true);
 
     try {
       const response = await fetch("/api/contact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, message }),
+        body: JSON.stringify({ name, email, phone, message }),
       });
 
       if (!response.ok) {
@@ -40,6 +52,7 @@ export default function Contact() {
       setSuccess(true);
       setName("");
       setEmail("");
+      setPhone("");
       setMessage("");
     } catch (err) {
       setError("Failed to send message. Please try again.");
@@ -96,12 +109,13 @@ export default function Contact() {
             
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="bg-white text-ocean-blue hover:bg-white/90 font-semibold px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
+              <Button
+                size="lg"
+                className="bg-white text-ocean-blue hover:bg-white/90 font-semibold px-8 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+                onClick={handleScrollToForm}
+              >
                 Contact Us
                 <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-              <Button size="lg" variant="outline" className="border-white/30 text-black hover:bg-white/10 font-semibold px-8 py-3 rounded-xl backdrop-blur-sm">
-                Schedule Demo
               </Button>
             </div>
           </div>
@@ -109,7 +123,7 @@ export default function Contact() {
       </section>
 
       {/* Contact Section */}
-      <section className="py-20 relative">
+      <section id="contact-form" className="py-20 relative">
         <div className="container mx-auto px-4">
           <div className="grid lg:grid-cols-3 gap-12">
             {/* Left: Enhanced Quick Contact */}
@@ -268,8 +282,15 @@ export default function Contact() {
                             <Input placeholder="Company or team name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
                           </div>
                           <div className="space-y-2">
-                            <Label className="text-sm font-medium text-gray-700">Phone (optional)</Label>
-                            <Input placeholder="+1 (555) 000-0000" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Label className="text-sm font-medium text-gray-700">Phone</Label>
+                            <Input
+                              type="tel"
+                              value={phone}
+                              onChange={(e) => setPhone(e.target.value)}
+                              placeholder="+1 (555) 000-0000"
+                              className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11"
+                              required
+                            />
                           </div>
                         </div>
                         <Button 
@@ -473,8 +494,11 @@ export default function Contact() {
                       </div>
                     </div>
                     
-                    <Button className="w-full bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-medium py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200">
-                      Contact Support
+                    <Button
+                      asChild
+                      className="w-full bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-medium py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
+                    >
+                      <a href="tel:4752598768">Contact Support</a>
                     </Button>
                   </div>
                 </div>

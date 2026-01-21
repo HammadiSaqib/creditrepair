@@ -5,6 +5,7 @@ import { Client } from '../database/enhancedSchema.js';
 import { AuthRequest } from '../middleware/securityMiddleware.js';
 import { sanitizeInput, validatePasswordStrength } from '../config/security.js';
 import { validateClientQuota } from '../utils/planValidation.js';
+import { emailService } from '../services/emailService.js';
 
 // Enhanced validation schemas with comprehensive rules
 const clientObjectSchema = z.object({
@@ -412,6 +413,34 @@ export async function createClient(req: AuthRequest, res: Response) {
         req.get('User-Agent')
       )
     ]);
+    
+    if (req.user && req.user.email) {
+      const adminEmail = req.user.email;
+      const clientName = `${clientData.first_name} ${clientData.last_name}`.trim();
+      const createdAt = new Date().toISOString();
+      const html = `
+        <p>A new client has been added to your account.</p>
+        <p><strong>Client:</strong> ${clientName}</p>
+        <p><strong>Email:</strong> ${clientData.email}</p>
+        <p><strong>Status:</strong> ${clientData.status}</p>
+        <p><strong>Created At:</strong> ${createdAt}</p>
+      `;
+      const text = [
+        'A new client has been added to your account.',
+        `Client: ${clientName}`,
+        `Email: ${clientData.email}`,
+        `Status: ${clientData.status}`,
+        `Created At: ${createdAt}`
+      ].join('\n');
+      emailService.sendEmail({
+        to: adminEmail,
+        subject: `New client added: ${clientName}`,
+        html,
+        text
+      }).catch(error => {
+        console.error('Failed to send new client admin email:', error);
+      });
+    }
     
     res.status(201).json({
       success: true,

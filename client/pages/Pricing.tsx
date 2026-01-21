@@ -389,7 +389,6 @@ export default function Pricing() {
   };
 
   const handleSelectPlan = (plan: PricingPlan) => {
-    // Redirect to registration page with selected plan
     const planData = {
       id: plan.id,
       name: plan.name,
@@ -397,11 +396,13 @@ export default function Pricing() {
       billing_cycle: plan.billing_cycle
     };
     
-    // Store plan data in sessionStorage for the registration page
     sessionStorage.setItem('selectedPlan', JSON.stringify(planData));
     
-    // Navigate to registration page
     navigate('/register');
+  };
+
+  const handleViewDemo = () => {
+    window.open('https://www.youtube.com/watch?v=4KwPYMarpbo', '_blank', 'noopener,noreferrer');
   };
 
   if (loading) {
@@ -437,6 +438,8 @@ export default function Pricing() {
     );
   }
 
+  const heroPlan = plans.find((plan) => plan.id === popularPlanId) ?? plans[0];
+
   return (
     <div className="min-h-screen bg-white">
       <Helmet>
@@ -461,7 +464,7 @@ export default function Pricing() {
           <div className="text-center space-y-8">
             <Badge 
               variant="secondary" 
-              className="bg-gradient-to-r from-blue-600/10 to-emerald-600/10 text-blue-600 border-blue-600/20"
+              className="bg-gradient-to-r from-blue-600/10 to-emerald-600/10 text-white border-blue-600/20"
             >
               <Zap className="w-4 h-4 mr-2" />
               Plans that unlock your Toolkit
@@ -482,6 +485,8 @@ export default function Pricing() {
               <Button
                 size="lg"
                 className="text-lg px-8 py-6 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 shadow-xl"
+                onClick={() => heroPlan && handleSelectPlan(heroPlan)}
+                disabled={!heroPlan}
               >
                 Subscribe & Unlock
               </Button>
@@ -489,6 +494,7 @@ export default function Pricing() {
                 size="lg"
                 variant="outline"
                 className="text-lg px-8 py-6 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
+                onClick={handleViewDemo}
               >
                 View Demo
               </Button>

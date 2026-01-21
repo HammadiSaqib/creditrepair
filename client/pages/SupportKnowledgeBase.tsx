@@ -528,8 +528,8 @@ export default function SupportKnowledgeBase() {
   };
   
   const handleUpdateArticle = async () => {
-    if (!user || user.role !== 'admin' || !selectedArticle) {
-      toast.error('Only administrators can update articles');
+    if (!user || (user.role !== 'admin' && user.role !== 'support') || !selectedArticle) {
+      toast.error('Only administrators or support can update articles');
       return;
     }
     if (isUpdating) return;
@@ -571,8 +571,8 @@ export default function SupportKnowledgeBase() {
   };
   
   const handleUpdateFaq = async () => {
-    if (!user || user.role !== 'admin' || !selectedFaq) {
-      toast.error('Only administrators can update FAQs');
+    if (!user || (user.role !== 'admin' && user.role !== 'support') || !selectedFaq) {
+      toast.error('Only administrators or support can update FAQs');
       return;
     }
     if (isUpdating) return;

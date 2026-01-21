@@ -529,6 +529,9 @@ async function createMySQLTables(): Promise<void> {
       company_name VARCHAR(255),
       phone VARCHAR(20) NULL,
       address TEXT NULL,
+      city VARCHAR(100) NULL,
+      state VARCHAR(50) NULL,
+      zip_code VARCHAR(10) NULL,
       role ENUM('user', 'admin', 'support', 'super_admin', 'funding_manager') NOT NULL DEFAULT 'user',
       status ENUM('active', 'inactive', 'locked', 'pending') NOT NULL DEFAULT 'active',
       email_verified BOOLEAN NOT NULL DEFAULT FALSE,
@@ -1856,6 +1859,48 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  address column already exists');
     } else {
       console.log('⚠️  Error adding address column:', error.message);
+    }
+  }
+
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN city VARCHAR(100) NULL
+    `);
+    console.log('✅ Added city column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  city column already exists');
+    } else {
+      console.log('⚠️  Error adding city column:', error.message);
+    }
+  }
+
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN state VARCHAR(50) NULL
+    `);
+    console.log('✅ Added state column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  state column already exists');
+    } else {
+      console.log('⚠️  Error adding state column:', error.message);
+    }
+  }
+
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN zip_code VARCHAR(10) NULL
+    `);
+    console.log('✅ Added zip_code column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  zip_code column already exists');
+    } else {
+      console.log('⚠️  Error adding zip_code column:', error.message);
     }
   }
 

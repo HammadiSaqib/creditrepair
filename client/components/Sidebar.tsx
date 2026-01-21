@@ -49,6 +49,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [clientCount, setClientCount] = useState<number>(0);
   const [reportCount, setReportCount] = useState<number>(0);
+  const [searchQuery, setSearchQuery] = useState("");
   const subscriptionStatus = useSubscriptionStatus();
   const { userProfile } = useAuthContext();
   const { hasPermission } = usePagePermissions();
@@ -158,6 +159,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
   ];
 
   const isActive = (href: string) => location.pathname === href;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
 
   // Detect small screens and keep it in sync with resize
   useEffect(() => {
@@ -250,6 +252,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
           }
           return true;
         })
+        .filter(item => !normalizedQuery || item.name.toLowerCase().includes(normalizedQuery))
         .map(item => ({
           ...item,
           // Primary control via usePagePermissions
@@ -330,7 +333,8 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
     }
   };
 
-  const widthClass = isSmallScreen ? 'w-64' : (collapsed ? 'w-16' : 'w-64');
+  const isCollapsed = collapsed && !isSmallScreen;
+  const widthClass = isSmallScreen ? 'w-64' : (isCollapsed ? 'w-16' : 'w-64');
   const translateClass = isSmallScreen ? (isMobileOpen ? 'translate-x-0' : '-translate-x-full') : 'translate-x-0';
   const visibilityClass = isSmallScreen ? (isMobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none') : 'opacity-100';
 
@@ -385,7 +389,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
       )}
 
       <div
-        className={`${widthClass} ${translateClass} ${visibilityClass} transform transition-transform duration-300 ease-in-out bg-white dark:bg-slate-900 border-r border-border/40 dark:border-slate-700 flex flex-col shadow-lg fixed left-0 top-0 h-screen z-[1000] overflow-hidden min-w-[16rem] min-h-0 ${className ?? ''}`}
+        className={`${widthClass} ${translateClass} ${visibilityClass} transform transition-transform duration-300 ease-in-out bg-white dark:bg-slate-900 border-r border-border/40 dark:border-slate-700 flex flex-col shadow-lg fixed left-0 top-0 h-screen z-[1000] overflow-hidden ${isCollapsed ? 'min-w-[4rem]' : 'min-w-[16rem]'} min-h-0 ${className ?? ''}`}
       >
       {/* Header */}
       <div className="p-4 border-b border-border/40 dark:border-slate-700">
@@ -435,6 +439,8 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
             <input
               type="text"
               placeholder="Search..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
               className="w-full pl-10 pr-4 py-2 text-sm border border-border/40 dark:border-slate-700 rounded-lg bg-gradient-light focus:outline-none focus:ring-2 focus:ring-ocean-blue/20 focus:border-ocean-blue/40"
             />
           </div>
@@ -492,7 +498,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
             return (
               <div
                 key={item.name}
-                className="flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 cursor-not-allowed opacity-40 hover:opacity-60 relative group"
+                className={`flex items-center py-2.5 rounded-lg transition-all duration-200 cursor-not-allowed opacity-40 hover:opacity-60 relative group ${isCollapsed ? 'justify-center px-2' : 'space-x-3 px-3'}`}
                 title="Upgrade your subscription to access this feature"
               >
                 {content}
@@ -510,7 +516,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
             <Link
               key={item.name}
               to={item.href}
-              className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${
+              className={`flex items-center py-2.5 rounded-lg transition-all duration-200 group ${isCollapsed ? 'justify-center px-2' : 'space-x-3 px-3'} ${
                 active
                   ? "gradient-primary text-white shadow-lg"
                   : "text-slate-600 dark:text-slate-400 hover:bg-gradient-soft hover:text-foreground"
