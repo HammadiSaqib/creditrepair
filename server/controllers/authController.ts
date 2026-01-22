@@ -1157,6 +1157,7 @@ export class AuthController {
         last_name: user.last_name,
         company_name: user.company_name,
         credit_repair_url: user.credit_repair_url || null,
+        onboarding_slug: user.onboarding_slug || null,
         phone: user.phone,
         address: user.address,
         city: user.city,
@@ -1236,6 +1237,7 @@ export class AuthController {
         last_name: z.string().min(1).optional(),
         company_name: z.string().nullable().optional(),
         credit_repair_url: z.string().optional(),
+        onboarding_slug: z.string().optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
         address: z.string().optional(),
@@ -1259,6 +1261,20 @@ export class AuthController {
       
       // Separate password fields from profile fields
       const { current_password, new_password, ...profileUpdates } = data;
+
+      if (typeof (profileUpdates as any).onboarding_slug !== 'undefined') {
+        const role = req.user!.role;
+        if (!['admin', 'super_admin'].includes(role)) {
+          return res.status(403).json({ error: 'Insufficient permissions to update onboarding link' });
+        }
+        const rawSlug = String((profileUpdates as any).onboarding_slug || '');
+        let normalizedSlug = rawSlug.trim().toLowerCase();
+        normalizedSlug = normalizedSlug.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+        if (!normalizedSlug || normalizedSlug.length > 80) {
+          return res.status(400).json({ error: 'Onboarding slug must be 1-80 characters and URL-safe' });
+        }
+        (profileUpdates as any).onboarding_slug = normalizedSlug;
+      }
       
       // Handle password change if provided
       if (new_password) {
@@ -1392,6 +1408,7 @@ export class AuthController {
           last_name: updatedUser.last_name,
           company_name: updatedUser.company_name,
           credit_repair_url: updatedUser.credit_repair_url,
+          onboarding_slug: updatedUser.onboarding_slug || null,
           phone: updatedUser.phone,
           address: updatedUser.address,
           city: updatedUser.city,
@@ -1404,6 +1421,12 @@ export class AuthController {
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: 'Validation error', details: error.errors });
+      }
+      if ((error as any)?.code === 'ER_DUP_ENTRY' && String((error as any)?.message || '').includes('uniq_onboarding_slug')) {
+        return res.status(409).json({ error: 'Onboarding slug is already in use' });
+      }
+      if ((error as any)?.code === 'SQLITE_CONSTRAINT') {
+        return res.status(409).json({ error: 'Onboarding slug is already in use' });
       }
       console.error('Profile update error:', error);
       res.status(500).json({ error: 'Internal server error' });

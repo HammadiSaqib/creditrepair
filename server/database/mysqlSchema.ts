@@ -545,6 +545,7 @@ async function createMySQLTables(): Promise<void> {
     avatar VARCHAR(500) NULL,
     stripe_customer_id VARCHAR(255) NULL,
     credit_repair_url VARCHAR(500) NULL,
+    onboarding_slug VARCHAR(190) NULL,
     nmi_merchant_id VARCHAR(255) NULL,
     nmi_public_key VARCHAR(500) NULL,
     nmi_api_key VARCHAR(500) NULL,
@@ -560,6 +561,7 @@ async function createMySQLTables(): Promise<void> {
       INDEX idx_status (status),
       INDEX idx_created_at (created_at),
       INDEX idx_stripe_customer_id (stripe_customer_id),
+      UNIQUE KEY uniq_onboarding_slug (onboarding_slug),
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
       FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -1976,6 +1978,32 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  credit_repair_url column already exists');
     } else {
       console.log('⚠️  Error adding credit_repair_url column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN onboarding_slug VARCHAR(190) NULL
+    `);
+    console.log('✅ Added onboarding_slug column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  onboarding_slug column already exists');
+    } else {
+      console.log('⚠️  Error adding onboarding_slug column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD UNIQUE KEY uniq_onboarding_slug (onboarding_slug)
+    `);
+    console.log('✅ Added uniq_onboarding_slug key to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_KEYNAME') {
+      console.log('ℹ️  uniq_onboarding_slug key already exists');
+    } else {
+      console.log('⚠️  Error adding uniq_onboarding_slug key:', error.message);
     }
   }
   try {

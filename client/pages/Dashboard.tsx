@@ -74,7 +74,7 @@ import {
   Building2,
   CreditCard,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { clientsApi, analyticsApi, apiRequest, api, creditReportScraperApi, authApi } from "@/lib/api";
 import axios from 'axios';
@@ -202,11 +202,25 @@ export default function Dashboard() {
   });
   const [showDashboardPassword, setShowDashboardPassword] = useState(false);
   const creditReportRegisterUrl = "https://member.myscoreiq.com/get-fico-max.aspx?offercode=432135JQ";
+  const clientLoginUrl = `${window.location.origin}/member/login`;
+  const [clientIntakeLink, setClientIntakeLink] = useState("");
+  const [isGeneratingIntakeLink, setIsGeneratingIntakeLink] = useState(false);
+  const onboardingSlug = (userProfile?.onboarding_slug || "").trim();
+  const onboardingIntakeLink = useMemo(() => {
+    if (!onboardingSlug) return "";
+    return `${window.location.origin}/client-intake/${encodeURIComponent(onboardingSlug)}`;
+  }, [onboardingSlug]);
 
   useEffect(() => {
     fetchDashboardData();
     checkAffiliateAccess();
   }, []);
+
+  useEffect(() => {
+    if (onboardingIntakeLink) {
+      setClientIntakeLink(onboardingIntakeLink);
+    }
+  }, [onboardingIntakeLink]);
 
   // Open email verification modal ONLY after purchase (active subscription)
   useEffect(() => {
@@ -601,6 +615,55 @@ export default function Dashboard() {
     try {
       await navigator.clipboard.writeText(creditReportRegisterUrl);
       toast({ title: "Link copied", description: "Credit report link copied to clipboard" });
+    } catch (e) {
+      toast({ title: "Copy failed", description: "Please copy the link manually", variant: "destructive" });
+    }
+  };
+
+  const handleCopyClientLoginLink = async () => {
+    try {
+      await navigator.clipboard.writeText(clientLoginUrl);
+      toast({ title: "Link copied", description: "Client login link copied to clipboard" });
+    } catch (e) {
+      toast({ title: "Copy failed", description: "Please copy the link manually", variant: "destructive" });
+    }
+  };
+
+  const handleGenerateClientIntakeLink = async () => {
+    setIsGeneratingIntakeLink(true);
+    try {
+      if (onboardingIntakeLink) {
+        setClientIntakeLink(onboardingIntakeLink);
+        toast({ title: "Onboarding link ready", description: "Share this link with your client." });
+        return;
+      }
+      const response = await clientsApi.getClientIntakeToken();
+      const token = response.data?.token || response.data?.data?.token;
+      if (!token) {
+        throw new Error("Unable to generate onboarding link.");
+      }
+      const link = `${window.location.origin}/client-intake?token=${encodeURIComponent(token)}`;
+      setClientIntakeLink(link);
+      toast({ title: "Onboarding link ready", description: "Share this link with your client." });
+    } catch (e: any) {
+      toast({
+        title: "Unable to generate link",
+        description: e?.response?.data?.error || e?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingIntakeLink(false);
+    }
+  };
+
+  const handleCopyClientIntakeLink = async () => {
+    if (!clientIntakeLink) {
+      toast({ title: "Generate a link first", description: "Create an onboarding link to copy." });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(clientIntakeLink);
+      toast({ title: "Link copied", description: "Client onboarding link copied to clipboard" });
     } catch (e) {
       toast({ title: "Copy failed", description: "Please copy the link manually", variant: "destructive" });
     }
@@ -1219,6 +1282,69 @@ export default function Dashboard() {
               <div className="flex items-center gap-3">
                 <Button onClick={handleOpenCreditReportLink} className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90">
                   Register Now
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-emerald-50/50 dark:from-slate-800 dark:to-slate-700 mb-8">
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+              <div className="space-y-1">
+                <div className="text-xl font-bold gradient-text-primary">Client Login Link</div>
+                <div className="text-sm text-gray-700 dark:text-gray-300">Share this link with clients to access their login page.</div>
+              </div>
+              <div className="flex-1 min-w-[280px]">
+                <Label htmlFor="client-login-link" className="text-sm font-medium">Client Login Link</Label>
+                <div className="mt-2 flex items-center gap-2">
+                  <Input id="client-login-link" value={clientLoginUrl} readOnly className="font-mono text-xs bg-slate-50 dark:bg-slate-800" />
+                  <Button
+                    size="sm"
+                    className="gradient-primary hover:opacity-90"
+                    onClick={handleCopyClientLoginLink}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-emerald-50/50 dark:from-slate-800 dark:to-slate-700 mb-8">
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+              <div className="space-y-1">
+                <div className="text-xl font-bold gradient-text-primary">Client Onboarding Link</div>
+                <div className="text-sm text-gray-700 dark:text-gray-300">Share this link to collect client credentials and start onboarding.</div>
+              </div>
+              <div className="flex-1 min-w-[280px]">
+                <Label htmlFor="client-intake-link" className="text-sm font-medium">Client Onboarding Link</Label>
+                <div className="mt-2 flex items-center gap-2">
+                  <Input
+                    id="client-intake-link"
+                    value={clientIntakeLink}
+                    readOnly
+                    placeholder="Generate a link to share"
+                    className="font-mono text-xs bg-slate-50 dark:bg-slate-800"
+                  />
+                  <Button
+                    size="sm"
+                    className="gradient-primary hover:opacity-90"
+                    onClick={handleCopyClientIntakeLink}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={handleGenerateClientIntakeLink}
+                  disabled={isGeneratingIntakeLink}
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-500/90 hover:to-teal-500/90"
+                >
+                  {isGeneratingIntakeLink ? "Generating..." : onboardingSlug ? "Use Saved Onboarding Link" : "Generate Onboarding Link"}
                 </Button>
               </div>
             </div>

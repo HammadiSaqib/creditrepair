@@ -96,6 +96,8 @@ import {
   getClients,
   getClient,
   createClient,
+  createClientIntakeToken,
+  submitClientIntake,
   updateClient,
   deleteClient,
   getClientStats,
@@ -465,6 +467,9 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // =============================================================================
   app.use("/api/contracts", contractsRoutes);
   app.use("/api/contracts-admin", contractsAdminRoutes);
+
+  app.post("/api/clients/intake", submitClientIntake);
+  app.post("/api/clients/intake-token", authenticateToken, requireSignedAdminContract, createClientIntakeToken);
 
   // Enforce contract signing for admin-specific REST endpoints
   // Clients

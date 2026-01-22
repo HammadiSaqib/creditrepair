@@ -208,6 +208,7 @@ async function createTables() {
       address TEXT,
       avatar TEXT,
       credit_repair_url TEXT,
+      onboarding_slug TEXT,
       role TEXT DEFAULT 'agent' CHECK (role IN ('admin', 'manager', 'agent', 'funding_manager')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -221,6 +222,14 @@ async function createTables() {
     await runQuery(`ALTER TABLE users ADD COLUMN credit_repair_url TEXT`);
   } catch (err) {
     // Column may already exist; ignore errors
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN onboarding_slug TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_onboarding_slug ON users (onboarding_slug)`);
+  } catch (err) {
   }
 
   // Clients table

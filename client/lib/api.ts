@@ -188,6 +188,7 @@ export const authApi = {
     zip_code?: string;
     // Custom credit repair URL override
     credit_repair_url?: string;
+    onboarding_slug?: string;
     // NMI gateway fields
     nmi_merchant_id?: string;
     nmi_public_key?: string;
@@ -253,6 +254,9 @@ export const clientsApi = {
   getDebtPayoffPlans: (clientId: number) => api.get(`/api/debt-payoff/${clientId}`),
   saveDebtPayoffPlan: (plan: any) => api.post('/api/debt-payoff', plan),
   deleteDebtPayoffPlan: (id: number) => api.delete(`/api/debt-payoff/${id}`),
+  getClientIntakeToken: () => api.post('/api/clients/intake-token'),
+  submitClientIntake: (data: { token?: string; slug?: string; platform: string; email: string; password: string; ssnLast4?: string }) =>
+    api.post('/api/clients/intake', data),
 };
 
 // Disputes API

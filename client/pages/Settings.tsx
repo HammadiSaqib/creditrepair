@@ -119,6 +119,8 @@ export default function Settings() {
   const DEFAULT_CREDIT_REPAIR_URL = "https://www.m2ficoforge.com/";
   const [creditRepairUrl, setCreditRepairUrl] = useState<string>("");
   const [savingCreditRepair, setSavingCreditRepair] = useState(false);
+  const [onboardingSlug, setOnboardingSlug] = useState("");
+  const [savingOnboardingSlug, setSavingOnboardingSlug] = useState(false);
 
   // Password state
   const [currentPassword, setCurrentPassword] = useState("");
@@ -160,6 +162,10 @@ export default function Settings() {
     setCreditRepairUrl(userProfile?.credit_repair_url || "");
   }, [userProfile?.credit_repair_url]);
 
+  useEffect(() => {
+    setOnboardingSlug(userProfile?.onboarding_slug || "");
+  }, [userProfile?.onboarding_slug]);
+
   const effectiveCreditRepairUrl = useMemo(() => {
     const envUrl = import.meta.env.VITE_CREDIT_REPAIR_URL as string | undefined;
     const profileUrl = (userProfile?.credit_repair_url || "").trim();
@@ -172,6 +178,24 @@ export default function Settings() {
     if (/^https?:\/\//i.test(trimmed)) return trimmed;
     return `https://${trimmed}`;
   };
+
+  const normalizeSlug = (value: string) => {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return "";
+    return trimmed
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+  };
+
+  const onboardingLink = useMemo(() => {
+    const profileSlug = (userProfile?.onboarding_slug || "").trim();
+    const candidate = normalizeSlug(onboardingSlug) || profileSlug;
+    if (!candidate) return "";
+    return `${window.location.origin}/client-intake/${encodeURIComponent(candidate)}`;
+  }, [onboardingSlug, userProfile?.onboarding_slug]);
+  const canEditOnboardingSlug = userProfile?.role === "admin" || userProfile?.role === "super_admin";
 
   const handleSaveCreditRepair = async () => {
     try {
@@ -237,6 +261,53 @@ export default function Settings() {
       });
     } finally {
       setSavingCreditRepair(false);
+    }
+  };
+
+  const handleSaveOnboardingSlug = async () => {
+    try {
+      setSavingOnboardingSlug(true);
+      const normalized = normalizeSlug(onboardingSlug);
+      if (!normalized) {
+        toast({
+          title: "Missing slug",
+          description: onboardingSlug.trim()
+            ? "Use letters, numbers, and hyphens only."
+            : "Enter a URL-safe slug before saving.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (normalized.length > 80) {
+        toast({
+          title: "Slug too long",
+          description: "Use 80 characters or fewer.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const res = await authApi.updateProfile({ onboarding_slug: normalized });
+      if ((res as any)?.error) {
+        toast({
+          title: "Error",
+          description: (res as any)?.error || "Failed to save onboarding slug",
+          variant: "destructive",
+        });
+        return;
+      }
+      await refreshProfile();
+      toast({
+        title: "Saved",
+        description: "Onboarding link updated successfully",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.response?.data?.error || "Failed to update onboarding link",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingOnboardingSlug(false);
     }
   };
 
@@ -1168,6 +1239,73 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+
+          {canEditOnboardingSlug ? (
+            <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="gradient-text-primary flex items-center">
+                  <Globe className="h-5 w-5 mr-2" />
+                  Client Onboarding Link
+                </CardTitle>
+                <CardDescription>
+                  Set a custom slug for your persistent client intake link
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="onboardingSlug">Custom Slug</Label>
+                    <Input
+                      id="onboardingSlug"
+                      placeholder="your-company"
+                      value={onboardingSlug}
+                      onChange={(e) => setOnboardingSlug(e.target.value)}
+                      className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Use letters, numbers, and hyphens only
+                    </p>
+                  </div>
+                  <div className="border border-border/40 rounded-md p-3">
+                    <div className="text-sm text-muted-foreground">Onboarding Link</div>
+                    {onboardingLink ? (
+                      <a
+                        href={onboardingLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm break-all text-ocean-blue hover:underline"
+                      >
+                        {onboardingLink}
+                      </a>
+                    ) : (
+                      <div className="text-sm text-muted-foreground">
+                        Save a slug to generate your link
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    className="gradient-primary hover:opacity-90"
+                    onClick={handleSaveOnboardingSlug}
+                    disabled={savingOnboardingSlug}
+                  >
+                    {savingOnboardingSlug ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Link
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
 
         </TabsContent>
 

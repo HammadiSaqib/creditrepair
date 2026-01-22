@@ -1,11 +1,15 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import jwt from 'jsonwebtoken';
 import { runQuery, getQuery, allQuery } from '../database/databaseAdapter.js';
 import { format } from 'date-fns';
 import { executeTransaction } from '../database/mysqlConfig.js';
 import { Client } from '../database/schema.js';
 import { AuthRequest } from '../middleware/authMiddleware.js';
 import { validateClientQuota } from '../utils/planValidation.js';
+import { ENV_CONFIG } from '../config/environment.js';
+import { fetchCreditReport } from '../services/scrapers/index.js';
+import { saveCreditReport } from '../database/dbConnection.js';
 
 // Validation schemas
 const clientSchema = z.object({
@@ -38,6 +42,12 @@ const clientSchema = z.object({
 });
 
 const updateClientSchema = clientSchema.partial();
+const clientIntakeSchema = z.object({
+  platform: z.string().min(1),
+  email: z.string().email('Invalid email format'),
+  password: z.string().min(1),
+  ssnLast4: z.string().optional()
+});
 
 function normalizeDateInput(input?: string | null): string | null {
   try {
@@ -50,6 +60,112 @@ function normalizeDateInput(input?: string | null): string | null {
     if (!isNaN(d.getTime())) return format(d, 'yyyy-MM-dd');
   } catch {}
   return null;
+}
+
+function normalizeSlug(value: string) {
+  const trimmed = String(value || '').trim().toLowerCase();
+  if (!trimmed) return '';
+  return trimmed
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function fallbackNameFromEmail(email: string) {
+  const emailLocal = (email || '').split('@')[0] || '';
+  const parts = emailLocal.replace(/[^a-zA-Z._\-\s]/g, ' ').split(/[._\-\s]+/).filter(Boolean);
+  const cap = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  if (parts.length >= 2) {
+    return { firstName: cap(parts[0]), lastName: cap(parts[1]) };
+  }
+  if (parts.length === 1) {
+    return { firstName: cap(parts[0]), lastName: "Unknown" };
+  }
+  return { firstName: "Unknown", lastName: "Client" };
+}
+
+function extractClientFromReport(rawReport: any, email: string) {
+  const reportData = rawReport?.reportData || rawReport;
+  let firstName = "";
+  let lastName = "";
+  let dateOfBirth = "";
+  let address = "";
+  let city = "";
+  let state = "";
+  let zipCode = "";
+  let creditScore = 0;
+  let experianScore = 0;
+  let equifaxScore = 0;
+  let transunionScore = 0;
+
+  if (reportData?.Name && Array.isArray(reportData.Name) && reportData.Name.length > 0) {
+    const primaryName = reportData.Name.find((name: any) => name.NameType === "Primary") || reportData.Name[0];
+    firstName = primaryName?.FirstName || "";
+    lastName = primaryName?.LastName || "";
+  }
+
+  if (reportData?.DOB && Array.isArray(reportData.DOB) && reportData.DOB.length > 0) {
+    dateOfBirth = reportData.DOB[0]?.DOB || "";
+  }
+
+  if (reportData?.Address && Array.isArray(reportData.Address) && reportData.Address.length > 0) {
+    const currentAddress = reportData.Address.find((addr: any) => addr.AddressType === "Current") || reportData.Address[0];
+    address = currentAddress?.StreetAddress || "";
+    city = currentAddress?.City || "";
+    state = currentAddress?.State || "";
+    zipCode = currentAddress?.Zip || "";
+  }
+
+  if (reportData?.Score && Array.isArray(reportData.Score) && reportData.Score.length > 0) {
+    reportData.Score.forEach((scoreData: any) => {
+      const score = parseInt(scoreData?.Score, 10);
+      if (score && score > 0) {
+        switch (scoreData?.BureauId) {
+          case 1:
+            transunionScore = score;
+            break;
+          case 2:
+            experianScore = score;
+            break;
+          case 3:
+            equifaxScore = score;
+            break;
+        }
+      }
+    });
+    creditScore = Math.max(experianScore, equifaxScore, transunionScore);
+  }
+
+  if (!firstName && !lastName) {
+    const fallback = fallbackNameFromEmail(email);
+    firstName = fallback.firstName;
+    lastName = fallback.lastName;
+  }
+
+  return {
+    firstName,
+    lastName,
+    dateOfBirth,
+    address,
+    city,
+    state,
+    zipCode,
+    creditScore,
+    experianScore,
+    equifaxScore,
+    transunionScore
+  };
+}
+
+function resolveReportData(scraperResult: any) {
+  return scraperResult?.reportData?.reportData
+    || scraperResult?.reportData
+    || scraperResult?.data?.reportData
+    || scraperResult?.data
+    || scraperResult?.report?.reportData
+    || scraperResult?.report
+    || null;
 }
 
 // Get all clients for the authenticated user (or all clients for funding managers)
@@ -321,6 +437,212 @@ export async function createClient(req: AuthRequest, res: Response) {
       return res.status(400).json({ error: 'Validation error', details: error.errors });
     }
     console.error('Error creating client:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+export async function createClientIntakeToken(req: AuthRequest, res: Response) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+  if (!['admin', 'super_admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Not authorized' });
+  }
+  const token = jwt.sign(
+    {
+      adminId: req.user.id,
+      email: req.user.email,
+      role: req.user.role,
+      scope: 'client_intake'
+    },
+    ENV_CONFIG.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+  res.json({ token, expiresIn: '7d' });
+}
+
+export async function submitClientIntake(req: Request, res: Response) {
+  try {
+    const token = String((req.query as any)?.token || (req.body as any)?.token || '');
+    const rawSlug = String((req.query as any)?.slug || (req.body as any)?.slug || '').trim();
+    const slug = normalizeSlug(rawSlug);
+    let adminId: number | null = null;
+    if (token) {
+      let payload: any;
+      try {
+        payload = jwt.verify(token, ENV_CONFIG.JWT_SECRET);
+      } catch {
+        return res.status(401).json({ error: 'Invalid or expired intake token' });
+      }
+      if (!payload?.adminId || payload?.scope !== 'client_intake') {
+        return res.status(403).json({ error: 'Invalid intake token scope' });
+      }
+      adminId = Number(payload.adminId);
+    } else if (rawSlug && !slug) {
+      return res.status(400).json({ error: 'Invalid onboarding slug' });
+    } else if (slug) {
+      const adminRecord = await getQuery(
+        "SELECT id FROM users WHERE onboarding_slug = ? AND role IN ('admin','super_admin') LIMIT 1",
+        [slug]
+      );
+      if (!adminRecord?.id) {
+        return res.status(404).json({ error: 'Onboarding link not found' });
+      }
+      adminId = Number(adminRecord.id);
+    } else {
+      return res.status(401).json({ error: 'Intake token required' });
+    }
+    if (!adminId) {
+      return res.status(403).json({ error: 'Invalid intake token scope' });
+    }
+
+    const intakeData = clientIntakeSchema.parse(req.body);
+    const scraperOptions: any = {
+      saveHtml: false,
+      takeScreenshots: false,
+      outputDir: './scraper-output'
+    };
+    if (intakeData.ssnLast4) {
+      scraperOptions.ssnLast4 = intakeData.ssnLast4;
+    }
+
+    const scraperResult = await fetchCreditReport(
+      intakeData.platform,
+      intakeData.email,
+      intakeData.password,
+      scraperOptions
+    );
+
+    const reportData = resolveReportData(scraperResult);
+    const extracted = extractClientFromReport(reportData, intakeData.email);
+    const hadReportInfo = Boolean(extracted.firstName || extracted.lastName || extracted.dateOfBirth || extracted.address || extracted.creditScore);
+    const notesMessage = hadReportInfo
+      ? `Client created via intake with credit report scraping from ${intakeData.platform}. Bureau Scores - Experian: ${extracted.experianScore || 'N/A'}, Equifax: ${extracted.equifaxScore || 'N/A'}, TransUnion: ${extracted.transunionScore || 'N/A'}`
+      : `Client created via intake without attached report due to temporary scraper error on ${intakeData.platform}.`;
+
+    const result = await executeTransaction(async (connection) => {
+      const quotaValidation = await validateClientQuota(adminId);
+      if (!quotaValidation.canAdd) {
+        throw new Error(JSON.stringify({
+          status: 403,
+          error: 'Client quota exceeded',
+          message: quotaValidation.error,
+          planLimits: quotaValidation.planLimits
+        }));
+      }
+      const [insertResult] = await connection.execute(`
+        INSERT INTO clients (
+          user_id, first_name, last_name, email, phone, address, city, state, zip_code, ssn_last_four,
+          date_of_birth, employment_status, annual_income, status, credit_score,
+          experian_score, equifax_score, transunion_score, previous_credit_score, notes, 
+          platform, platform_email, platform_password, created_by, updated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        adminId,
+        extracted.firstName || null,
+        extracted.lastName || null,
+        intakeData.email,
+        null,
+        extracted.address || null,
+        extracted.city || null,
+        extracted.state || null,
+        extracted.zipCode || null,
+        intakeData.ssnLast4 || null,
+        normalizeDateInput(extracted.dateOfBirth) || null,
+        null,
+        null,
+        'active',
+        extracted.creditScore || null,
+        extracted.experianScore || null,
+        extracted.equifaxScore || null,
+        extracted.transunionScore || null,
+        null,
+        notesMessage,
+        intakeData.platform || null,
+        intakeData.email || null,
+        intakeData.password || null,
+        adminId,
+        adminId
+      ]);
+      return insertResult;
+    });
+
+    const insertedId = (result as any)?.insertId;
+    const newClient = await getQuery(
+      'SELECT * FROM clients WHERE id = ?',
+      [insertedId]
+    );
+
+    try {
+      const { updateCreditReportClientId } = await import('../database/dbConnection.js');
+      await updateCreditReportClientId(insertedId.toString());
+    } catch {}
+
+    if (insertedId) {
+      try {
+        await saveCreditReport({
+          client_id: String(insertedId),
+          platform: intakeData.platform,
+          report_path: scraperResult?.filePath || reportData?.filePath || null,
+          status: 'completed',
+          credit_score: extracted.creditScore || null,
+          experian_score: extracted.experianScore || null,
+          equifax_score: extracted.equifaxScore || null,
+          transunion_score: extracted.transunionScore || null,
+          report_date: null,
+          notes: notesMessage
+        });
+      } catch {}
+    }
+
+    await runQuery(`
+      INSERT INTO activities (user_id, client_id, type, description)
+      VALUES (?, ?, ?, ?)
+    `, [
+      adminId,
+      insertedId,
+      'client_added',
+      `New client added: ${extracted.firstName} ${extracted.lastName}${intakeData.platform ? ` (via ${intakeData.platform})` : ''}`
+    ]);
+
+    await runQuery(`
+      INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description, ip_address, user_agent, session_id)
+      VALUES (?, 'create', 'client', ?, ?, ?, ?, ?)
+    `, [
+      adminId,
+      insertedId,
+      `New client added: ${extracted.firstName} ${extracted.lastName}${intakeData.platform ? ` (via ${intakeData.platform})` : ''}`,
+      (req as any).ip || null,
+      req.get('User-Agent') || null,
+      null
+    ]);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        client: newClient,
+        clientId: insertedId,
+        clientName: `${extracted.firstName} ${extracted.lastName}`.trim()
+      }
+    });
+  } catch (error: any) {
+    if (error instanceof Error && error.message.startsWith('{')) {
+      try {
+        const errorData = JSON.parse(error.message);
+        if (errorData.status === 403) {
+          return res.status(403).json({
+            success: false,
+            error: errorData.error,
+            message: errorData.message,
+            planLimits: errorData.planLimits
+          });
+        }
+      } catch {}
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: error.errors });
+    }
+    console.error('Error submitting client intake:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 }

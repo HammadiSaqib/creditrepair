@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -79,6 +80,7 @@ import {
   Lock,
   Unlock,
   RefreshCw,
+  Copy,
 } from "lucide-react";
 
 // Type definitions for client data
@@ -187,6 +189,7 @@ const getScoreChange = (current: number, previous: number) => {
   const [isAddingClient, setIsAddingClient] = useState<boolean>(false);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [showInlinePassword, setShowInlinePassword] = useState(false);
+  const clientLoginUrl = `${window.location.origin}/member/login`;
 
   // Fetch clients from backend
   const fetchClients = async () => {
@@ -437,6 +440,15 @@ const getScoreChange = (current: number, previous: number) => {
       return;
     }
     navigate(`/credit-report/${client.id}`);
+  };
+
+  const handleCopyClientLoginLink = async () => {
+    try {
+      await navigator.clipboard.writeText(clientLoginUrl);
+      toast({ title: "Link copied", description: "Client login link copied to clipboard" });
+    } catch (error) {
+      toast({ title: "Copy failed", description: "Please copy the link manually", variant: "destructive" });
+    }
   };
 
   useEffect(() => {
@@ -869,6 +881,17 @@ const getScoreChange = (current: number, previous: number) => {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3 mb-6">
+            <div className="flex-1 min-w-[260px]">
+              <Label htmlFor="client-login-link" className="text-sm font-medium">Client Login Link</Label>
+              <div className="mt-2 flex items-center gap-2">
+                <Input id="client-login-link" value={clientLoginUrl} readOnly className="font-mono text-xs bg-slate-50 dark:bg-slate-800" />
+                <Button size="sm" className="gradient-primary hover:opacity-90" onClick={handleCopyClientLoginLink}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
           {/* Search and Filters */}
           <div className="flex flex-col lg:flex-row gap-4 mb-6">
             <div className="relative flex-1 max-w-md">

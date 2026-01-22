@@ -27,6 +27,7 @@ const ClientProfile = React.lazy(() => import("./pages/ClientProfile"));
 const FundingRequests = React.lazy(() => import("./pages/funding-manager/FundingRequests"));
 const Reports = React.lazy(() => import("./pages/Reports"));
 const CreditReport = React.lazy(() => import("./pages/CreditReport"));
+const ClientIntake = React.lazy(() => import("./pages/ClientIntake"));
 const CreditReportScraperPage = React.lazy(() => import("./pages/credit-reports/scraper"));
 const ScraperLogs = React.lazy(() => import("./components/ScraperLogs"));
 const Disputes = React.lazy(() => import("./pages/Disputes"));
@@ -217,6 +218,8 @@ const App = () => {
           <Route path="/sitemap" element={<Sitemap />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/client-intake/:slug" element={<ClientIntake />} />
+          <Route path="/client-intake" element={<ClientIntake />} />
           <Route path="/super-admin/login" element={<SuperAdminLogin />} />
           <Route path="/support/login" element={<SupportLogin />} />
           <Route path="/affiliate/login" element={<AffiliateLogin />} />

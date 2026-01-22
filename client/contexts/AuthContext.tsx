@@ -14,6 +14,7 @@ interface UserProfile {
   email_verified?: boolean;
   // Custom credit repair URL override
   credit_repair_url?: string;
+  onboarding_slug?: string;
   // NMI gateway settings (privileged roles only)
   nmi_merchant_id?: string;
   nmi_public_key?: string;
