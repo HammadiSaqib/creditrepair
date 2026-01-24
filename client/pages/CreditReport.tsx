@@ -8165,10 +8165,21 @@ export default function CreditReport() {
                   return [y, m].filter(Boolean).join(', ');
                 };
 
+                const resolveOwnership = (value: any): string => {
+                  const text = String(value || '').toLowerCase();
+                  if (text.includes('joint') || text.includes('co-borrower') || text.includes('co-maker') || text.includes('co signer') || text.includes('co-signer')) {
+                    return 'Joint';
+                  }
+                  if (text.includes('authorized')) {
+                    return 'Authorized';
+                  }
+                  return 'Primary';
+                };
+
                 const apiAccounts = (apiData as any)?.reportData?.reportData?.Accounts;
                 const sampleAccounts = (reportData as any)?.accounts;
 
-                let accounts: Array<{ creditor: string; accountNumber?: string; limit: number; balance: number; opened?: any }> = [];
+                let accounts: Array<{ creditor: string; accountNumber?: string; ownership?: string; limit: number; balance: number; opened?: any }> = [];
 
                 if (Array.isArray(apiAccounts) && apiAccounts.length > 0) {
                   accounts = apiAccounts
@@ -8185,6 +8196,7 @@ export default function CreditReport() {
                     .map((acc: any) => ({
                       creditor: acc.CreditorName || acc.Creditor || '—',
                       accountNumber: acc.AccountNumber || acc.MaskAccountNumber,
+                      ownership: resolveOwnership(acc.AccountDesignator || acc.AccountOwnership || acc.Responsibility || acc.OwnershipType),
                       limit: parseFloat(acc.CreditLimit) || parseFloat(acc.HighBalance) || 0,
                       balance: parseFloat(acc.CurrentBalance) || 0,
                       opened: acc.DateOpened || acc.DateReported || acc.OpenDate || acc.dateOpened
@@ -8199,6 +8211,7 @@ export default function CreditReport() {
                     .map((acc: any) => ({
                       creditor: acc.creditorName || acc.creditor || '—',
                       accountNumber: acc.accountNumber,
+                      ownership: resolveOwnership(acc.ownership || acc.accountOwnership),
                       limit: Number(acc.creditLimit ?? acc.limit ?? 0),
                       balance: Number(acc.balance ?? 0),
                       opened: acc.opened || acc.dateOpened
@@ -8237,6 +8250,7 @@ export default function CreditReport() {
                       <TableHeader>
                         <TableRow className="dark:border-slate-700">
                           <TableHead className="dark:text-white">Account</TableHead>
+                          <TableHead className="dark:text-white">Ownership</TableHead>
                           <TableHead className="text-right dark:text-white">Limit</TableHead>
                           <TableHead className="text-right dark:text-white">Balance</TableHead>
                           <TableHead className="text-right dark:text-white">Utilization</TableHead>
@@ -8278,6 +8292,7 @@ export default function CreditReport() {
                                 <div className="font-medium text-gray-800 dark:text-white">{acc.creditor}</div>
                                 <div className="text-xs text-muted-foreground">{acc.accountNumber || ''}</div>
                               </TableCell>
+                              <TableCell className="text-sm text-slate-700 dark:text-slate-300">{acc.ownership || 'Primary'}</TableCell>
                               <TableCell className="text-right font-semibold text-blue-700 dark:text-blue-400">{formatCurrency(acc.limit)}</TableCell>
                               <TableCell className="text-right font-semibold text-purple-700 dark:text-purple-400">{formatCurrency(acc.balance)}</TableCell>
                               <TableCell className={`text-right font-semibold rounded-md px-2 ${utilStyles}`}>{formatPercent(util)}</TableCell>
