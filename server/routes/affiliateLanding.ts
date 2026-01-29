@@ -270,6 +270,7 @@ router.get('/affiliate/:id/info', async (req, res) => {
           a.company_name,
           a.total_referrals,
           a.commission_rate,
+          a.logo_url,
           a.status,
           u.first_name as admin_first_name,
           u.last_name as admin_last_name,
@@ -289,6 +290,7 @@ router.get('/affiliate/:id/info', async (req, res) => {
           a.company_name,
           a.total_referrals,
           a.commission_rate,
+          a.logo_url,
           a.status,
           u.first_name as admin_first_name,
           u.last_name as admin_last_name,
@@ -309,6 +311,7 @@ router.get('/affiliate/:id/info', async (req, res) => {
             a.company_name,
             a.total_referrals,
             a.commission_rate,
+            a.logo_url,
             a.status,
             u.first_name as admin_first_name,
             u.last_name as admin_last_name,
@@ -337,6 +340,7 @@ router.get('/affiliate/:id/info', async (req, res) => {
         companyName: a.company_name,
         totalReferrals: a.total_referrals,
         commissionRate: a.commission_rate,
+        logoUrl: a.logo_url,
         adminName: `${a.admin_first_name} ${a.admin_last_name}`,
         adminCompany: a.admin_company_name,
         status: a.status
@@ -363,6 +367,7 @@ router.get('/referral/:username', async (req, res) => {
         a.company_name,
         a.total_referrals,
         a.commission_rate,
+        a.logo_url,
         a.status
       FROM affiliates a
       WHERE (a.email = ? OR a.referral_slug = ? OR LOWER(CONCAT(a.first_name, a.last_name)) = LOWER(?) OR LOWER(REPLACE(CONCAT(a.first_name, ' ', a.last_name), ' ', '')) = LOWER(?)) 
@@ -383,6 +388,7 @@ router.get('/referral/:username', async (req, res) => {
           a.company_name,
           a.total_referrals,
           a.commission_rate,
+          a.logo_url,
           a.status
         FROM affiliates a
         WHERE (a.email = ? OR LOWER(CONCAT(a.first_name, a.last_name)) = LOWER(?) OR LOWER(REPLACE(CONCAT(a.first_name, ' ', a.last_name), ' ', '')) = LOWER(?)) 
@@ -421,6 +427,7 @@ router.get('/referral/:username', async (req, res) => {
         email: affiliateData.email,
         totalReferrals: affiliateData.total_referrals,
         commissionRate: affiliateData.commission_rate,
+        logoUrl: affiliateData.logo_url,
         status: affiliateData.status
       }
     });

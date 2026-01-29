@@ -114,6 +114,22 @@ async function addMissingColumns() {
         throw error;
       }
     }
+
+    // Add logo_url column
+    try {
+      await connection.execute(`
+        ALTER TABLE affiliates 
+        ADD COLUMN logo_url VARCHAR(500) NULL
+        AFTER avatar
+      `);
+      console.log('✅ logo_url column added successfully');
+    } catch (error) {
+      if (error.code === 'ER_DUP_FIELDNAME') {
+        console.log('ℹ️ logo_url column already exists');
+      } else {
+        throw error;
+      }
+    }
     
     // Add paid_referrals_count column
     try {

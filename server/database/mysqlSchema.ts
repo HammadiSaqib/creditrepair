@@ -481,6 +481,19 @@ export async function initializeMySQLDatabase(): Promise<void> {
     } catch (e) {
     }
     
+    try {
+      const cols = await executeQuery(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'affiliates'`
+      );
+      const existing = new Set((cols as any[]).map((r: any) => r.COLUMN_NAME));
+      const alters: string[] = [];
+      if (!existing.has('logo_url')) alters.push('ADD COLUMN logo_url VARCHAR(500)');
+      if (alters.length) {
+        await executeQuery(`ALTER TABLE affiliates ${alters.join(', ')}`);
+      }
+    } catch (e) {
+    }
+    
     // Seed database with initial data (optional)
     if (ENV_CONFIG.SEED_DEMO_DATA) {
       await seedMySQLDatabase();
@@ -1583,6 +1596,7 @@ async function createMySQLTables(): Promise<void> {
       state VARCHAR(50),
       zip_code VARCHAR(10),
       avatar VARCHAR(500),
+      logo_url VARCHAR(500),
       plan_type ENUM('free', 'paid_partner') NOT NULL DEFAULT 'free',
       paid_referrals_count INT NOT NULL DEFAULT 0,
       commission_rate DECIMAL(5,2) NOT NULL DEFAULT 10.00,
@@ -2655,6 +2669,7 @@ export interface SupportGeneralSettings {
     state?: string;
     zip_code?: string;
     avatar?: string;
+    logo_url?: string;
     referral_slug?: string;
     plan_type: 'free' | 'paid_partner';
     paid_referrals_count: number;

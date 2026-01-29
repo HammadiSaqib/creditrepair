@@ -71,7 +71,7 @@ router.get('/settings', authenticateToken, requireAffiliateRole, async (req, res
     const profileQuery = `
       SELECT 
         id, email, first_name, last_name, company_name, phone, 
-        address, city, state, zip_code, status, email_verified${hasSlug ? ', referral_slug' : ', NULL as referral_slug'}
+        address, city, state, zip_code, status, email_verified, logo_url${hasSlug ? ', referral_slug' : ', NULL as referral_slug'}
       FROM affiliates 
       WHERE id = ?
     `;

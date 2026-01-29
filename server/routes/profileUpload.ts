@@ -76,6 +76,36 @@ const gatewayUpload = multer({
   }
 });
 
+const affiliateLogoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.resolve(process.cwd(), 'uploads/affiliate-logos');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'affiliate-logo-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const affiliateLogoUpload = multer({
+  storage: affiliateLogoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only JPEG, JPG, PNG, and GIF files are allowed.'));
+    }
+  }
+});
+
 // Upload avatar endpoint
 router.post('/upload-avatar', authenticateToken, upload.single('avatar'), async (req: AuthRequest, res: Response) => {
   console.log('🔄 Avatar upload endpoint called');
@@ -166,6 +196,39 @@ router.post('/upload-gateway-logo', authenticateToken, gatewayUpload.single('gat
   } catch (error) {
     console.error('Error uploading gateway logo:', error);
     res.status(500).json({ message: 'Error uploading gateway logo' });
+  }
+});
+
+router.post('/upload-affiliate-logo', authenticateToken, affiliateLogoUpload.single('affiliate_logo'), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+    if (userRole !== 'affiliate') {
+      return res.status(403).json({ message: 'Only affiliates can upload a logo' });
+    }
+
+    const baseUrl = getServerBaseUrl(req);
+    const logoUrl = `${baseUrl}/uploads/affiliate-logos/${req.file.filename}`;
+
+    await runQuery(
+      'UPDATE affiliates SET logo_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [logoUrl, userId]
+    );
+
+    res.json({
+      message: 'Affiliate logo uploaded successfully',
+      logoUrl
+    });
+  } catch (error) {
+    console.error('Error uploading affiliate logo:', error);
+    res.status(500).json({ message: 'Error uploading affiliate logo' });
   }
 });
 

@@ -75,6 +75,7 @@ interface Affiliate {
   city?: string;
   state?: string;
   zip_code?: string;
+  logo_url?: string;
   commission_rate: number;
   total_earnings: number;
   total_referrals: number;
@@ -838,6 +839,7 @@ const AffiliateManagement: React.FC = () => {
                     <TableHead>Status</TableHead>
                     <TableHead>Joined</TableHead>
                     <TableHead>Last Month Payment</TableHead>
+                    <TableHead>Logo URL</TableHead>
                     <TableHead>Referral Link</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -845,14 +847,14 @@ const AffiliateManagement: React.FC = () => {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8">
+                      <TableCell colSpan={10} className="text-center py-8">
                         <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
                         Loading affiliates...
                       </TableCell>
                     </TableRow>
                   ) : filteredAffiliates.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                         No affiliates found
                       </TableCell>
                     </TableRow>
@@ -917,6 +919,17 @@ const AffiliateManagement: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           {renderLastMonthPaymentCell(affiliate.id)}
+                        </TableCell>
+                        <TableCell>
+                          {affiliate.logo_url ? (
+                            <Input
+                              value={affiliate.logo_url}
+                              readOnly
+                              className="font-mono text-xs bg-slate-50 dark:bg-slate-800"
+                            />
+                          ) : (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">

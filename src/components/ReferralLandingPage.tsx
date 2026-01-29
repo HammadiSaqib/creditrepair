@@ -24,6 +24,7 @@ interface AffiliateData {
   email: string;
   totalReferrals: number;
   commissionRate: number;
+  logoUrl?: string;
   status: string;
 }
 
@@ -109,6 +110,12 @@ const ReferralLandingPage: React.FC = () => {
   const ctaRef = React.useRef<HTMLDivElement>(null);
   const slugOrId = (affiliateId && affiliateId.trim().length > 0) ? affiliateId : (affiliate?.id ? String(affiliate.id) : '');
   const referralLink = slugOrId ? `${window.location.origin}/ref/${slugOrId}` : `${window.location.origin}/ref`;
+  const heroImageSrc = affiliate?.logoUrl && affiliate.logoUrl.trim().length > 0
+    ? affiliate.logoUrl
+    : "https://images.pexels.com/photos/7688336/pexels-photo-7688336.jpeg";
+  const heroImageClassName = affiliate?.logoUrl && affiliate.logoUrl.trim().length > 0
+    ? "w-full h-auto object-contain bg-white"
+    : "w-full h-auto object-cover";
 
   useGSAP(() => {
     const el = ctaRef.current;
@@ -424,9 +431,9 @@ const ReferralLandingPage: React.FC = () => {
             <div className="relative perspective-1000">
                <div className="relative rounded-[2.5rem] overflow-hidden shadow-2xl border-[8px] border-white bg-white transform transition-transform hover:scale-[1.02] duration-500">
                   <img
-                    src="https://images.pexels.com/photos/7688336/pexels-photo-7688336.jpeg"
+                    src={heroImageSrc}
                     alt="Dashboard Preview"
-                    className="w-full h-auto object-cover"
+                    className={heroImageClassName}
                   />
                   {/* Overlay Gradient */}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 to-transparent"></div>

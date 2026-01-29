@@ -230,6 +230,16 @@ export const authApi = {
       },
     });
   },
+
+  uploadAffiliateLogo: (file: File) => {
+    const formData = new FormData();
+    formData.append('affiliate_logo', file);
+    return api.post('/api/profile/upload-affiliate-logo', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
   
   verifyToken: () => api.get('/api/auth/verify'),
   
