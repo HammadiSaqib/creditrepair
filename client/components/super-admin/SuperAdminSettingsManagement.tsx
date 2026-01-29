@@ -57,13 +57,23 @@ interface StripeConfig {
   updated_at: string;
 }
 
+interface AffiliateCommissionSettings {
+  level2_rate_free: string;
+  level2_rate_paid: string;
+}
+
 const SuperAdminSettingsManagement: React.FC = () => {
   const { toast } = useToast();
   const { refreshProfile } = useAuthContext();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [stripeConfig, setStripeConfig] = useState<StripeConfig[]>([]);
+  const [affiliateCommissionSettings, setAffiliateCommissionSettings] = useState<AffiliateCommissionSettings>({
+    level2_rate_free: '',
+    level2_rate_paid: ''
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [affiliateCommissionSaving, setAffiliateCommissionSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showSecrets, setShowSecrets] = useState<{[key: string]: boolean}>({});
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -84,6 +94,7 @@ const SuperAdminSettingsManagement: React.FC = () => {
   useEffect(() => {
     fetchUserProfile();
     fetchStripeConfig();
+    fetchAffiliateCommissionSettings();
   }, []);
 
   const fetchUserProfile = async () => {
@@ -180,6 +191,20 @@ const SuperAdminSettingsManagement: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching Stripe config:', error);
+    }
+  };
+
+  const fetchAffiliateCommissionSettings = async () => {
+    try {
+      const response = await superAdminApi.getAffiliateCommissionSettings();
+      if (response.data?.success && response.data.settings) {
+        setAffiliateCommissionSettings({
+          level2_rate_free: String(response.data.settings.level2_rate_free ?? ''),
+          level2_rate_paid: String(response.data.settings.level2_rate_paid ?? '')
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching affiliate commission settings:', error);
     }
   };
 
@@ -299,6 +324,48 @@ const SuperAdminSettingsManagement: React.FC = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAffiliateCommissionSave = async () => {
+    const level2Free = Number(affiliateCommissionSettings.level2_rate_free);
+    const level2Paid = Number(affiliateCommissionSettings.level2_rate_paid);
+    if (!Number.isFinite(level2Free) || !Number.isFinite(level2Paid)) {
+      toast({
+        title: "Error",
+        description: "Commission rates must be valid numbers",
+        variant: "destructive"
+      });
+      return;
+    }
+    try {
+      setAffiliateCommissionSaving(true);
+      const response = await superAdminApi.updateAffiliateCommissionSettings({
+        level2_rate_free: level2Free,
+        level2_rate_paid: level2Paid
+      });
+      if (response.data?.success) {
+        toast({
+          title: "Success",
+          description: "Affiliate commission settings updated",
+        });
+        await fetchAffiliateCommissionSettings();
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to update affiliate commission settings",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error updating affiliate commission settings:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update affiliate commission settings",
+        variant: "destructive"
+      });
+    } finally {
+      setAffiliateCommissionSaving(false);
     }
   };
 
@@ -683,6 +750,53 @@ const SuperAdminSettingsManagement: React.FC = () => {
                   <p className="text-gray-500">No Stripe configuration found</p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Affiliate Commission Settings
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="affiliate-level2-rate-free">Level 2 Commission Rate (Free) (%)</Label>
+                  <Input
+                    id="affiliate-level2-rate-free"
+                    type="number"
+                    value={affiliateCommissionSettings.level2_rate_free}
+                    onChange={(e) => setAffiliateCommissionSettings(prev => ({ ...prev, level2_rate_free: e.target.value }))}
+                    placeholder="2"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="affiliate-level2-rate-paid">Level 2 Commission Rate (Paid) (%)</Label>
+                  <Input
+                    id="affiliate-level2-rate-paid"
+                    type="number"
+                    value={affiliateCommissionSettings.level2_rate_paid}
+                    onChange={(e) => setAffiliateCommissionSettings(prev => ({ ...prev, level2_rate_paid: e.target.value }))}
+                    placeholder="5"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={handleAffiliateCommissionSave} disabled={affiliateCommissionSaving}>
+                  {affiliateCommissionSaving ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4 mr-2" />
+                      Save Settings
+                    </>
+                  )}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

@@ -623,19 +623,20 @@ router.get('/dashboard/commissions', authenticateToken, requireAffiliateRole, as
   }
 });
 
-// POST /api/affiliate/dashboard/generate-link - Generate affiliate tracking link
+// POST /api/affiliate/dashboard/generate-link - Generate affiliate tracking link(s)
 router.post('/dashboard/generate-link', authenticateToken, requireAffiliateRole, async (req, res) => {
   try {
     const affiliateId = await resolveAffiliateId(req);
     if (!affiliateId) {
       return res.status(404).json({ error: 'Affiliate not found for this user' });
     }
-    const { campaign, customCode } = req.body;
+    const { campaign, customCode, linkType } = req.body;
     
     // Generate unique tracking code
     const trackingCode = customCode || `AFF${affiliateId}_${Date.now()}`;
     const baseUrl = process.env.FRONTEND_URL || 'https://creditrepairpro.com';
-    const affiliateLink = `${baseUrl}/signup?ref=${trackingCode}&campaign=${campaign || 'general'}&affiliate=${affiliateId}`;
+    const productLink = `${baseUrl}/ref/${affiliateId}?campaign=${campaign || 'general'}&code=${trackingCode}`;
+    const affiliateOnlyLink = `${baseUrl}/join-affiliate?ref=${affiliateId}&campaign=${campaign || 'general'}&code=${trackingCode}`;
     
     // Log link generation
     securityLogger.logSecurityEvent('affiliate_link_generated', {
@@ -645,10 +646,33 @@ router.post('/dashboard/generate-link', authenticateToken, requireAffiliateRole,
       ip: req.ip
     });
     
-    res.json({
+    if (linkType === 'affiliate_only') {
+      return res.json({
+        success: true,
+        data: {
+          link: affiliateOnlyLink,
+          trackingCode,
+          campaign: campaign || 'general',
+          type: 'affiliate_only'
+        }
+      });
+    }
+    if (linkType === 'product') {
+      return res.json({
+        success: true,
+        data: {
+          link: productLink,
+          trackingCode,
+          campaign: campaign || 'general',
+          type: 'product'
+        }
+      });
+    }
+    return res.json({
       success: true,
       data: {
-        link: affiliateLink,
+        productLink,
+        affiliateOnlyLink,
         trackingCode,
         campaign: campaign || 'general'
       }
@@ -795,6 +819,125 @@ router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, re
   } catch (error) {
     console.error('Error fetching referrals:', error);
     res.status(500).json({ error: 'Failed to fetch referrals' });
+  }
+});
+
+router.get('/referrals/child', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
+    const pageParam = parseInt(req.query.page as string);
+    const limitParam = parseInt(req.query.limit as string);
+    const safeLimit = Number.isFinite(limitParam) ? Math.max(1, Math.min(100, limitParam)) : 50;
+    const safePage = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
+    const safeOffset = (safePage - 1) * safeLimit;
+
+    const summaryQuery = `
+      SELECT 
+        COUNT(*) as total_referrals,
+        COALESCE(SUM(ac.commission_amount), 0) +
+        COALESCE(SUM(CASE 
+          WHEN ac.id IS NULL AND child.parent_commission_rate > 0 AND ar.commission_rate > 0
+            THEN (ar.commission_amount * child.parent_commission_rate / ar.commission_rate)
+          ELSE 0
+        END), 0) as total_commission
+      FROM affiliate_referrals ar
+      JOIN affiliates child ON child.id = ar.affiliate_id
+      LEFT JOIN affiliate_commissions ac ON ac.referral_id = ar.id AND ac.affiliate_id = ?
+      WHERE child.parent_affiliate_id = ?
+    `;
+
+    const query = `
+      SELECT 
+        ar.id as referral_id,
+        ar.referred_user_id,
+        ar.status as referral_status,
+        ar.commission_amount as referral_commission_amount,
+        ar.commission_rate as referral_commission_rate,
+        ar.referral_date,
+        ar.conversion_date,
+        ar.payment_date,
+        child.id as child_affiliate_id,
+        child.first_name as child_first_name,
+        child.last_name as child_last_name,
+        child.email as child_email,
+        child.parent_commission_rate as child_parent_commission_rate,
+        u.first_name as customer_first_name,
+        u.last_name as customer_last_name,
+        u.email as customer_email,
+        ac.id as commission_id,
+        ac.order_value,
+        ac.commission_rate,
+        ac.commission_amount,
+        ac.status as commission_status,
+        ac.product,
+        ac.order_date,
+        ac.payment_date as commission_payment_date
+      FROM affiliate_referrals ar
+      JOIN affiliates child ON child.id = ar.affiliate_id
+      JOIN users u ON u.id = ar.referred_user_id
+      LEFT JOIN affiliate_commissions ac ON ac.referral_id = ar.id AND ac.affiliate_id = ?
+      WHERE child.parent_affiliate_id = ?
+      ORDER BY COALESCE(ac.order_date, ar.referral_date) DESC
+      LIMIT ${safeLimit} OFFSET ${safeOffset}
+    `;
+
+    const [summaryRows, rows] = await Promise.all([
+      executeQuery(summaryQuery, [affiliateId, affiliateId]),
+      executeQuery(query, [affiliateId, affiliateId])
+    ]);
+
+    const summary = {
+      totalReferrals: summaryRows[0]?.total_referrals || 0,
+      totalCommission: parseFloat(summaryRows[0]?.total_commission) || 0
+    };
+
+      const transformed = rows.map((row: any) => {
+      const childCommissionRate = parseFloat(row.referral_commission_rate) || 0;
+      const childCommissionAmount = parseFloat(row.referral_commission_amount) || 0;
+      const childOrderValue = childCommissionRate > 0 ? (childCommissionAmount * 100) / childCommissionRate : 0;
+      const fallbackParentRate = parseFloat(row.child_parent_commission_rate) || 0;
+      const parentCommissionRate = parseFloat(row.commission_rate) || fallbackParentRate;
+      const parentCommissionAmount = parseFloat(row.commission_amount) || (parentCommissionRate > 0 ? (childOrderValue * parentCommissionRate) / 100 : 0);
+      const parentOrderValue = parseFloat(row.order_value) || childOrderValue;
+      const normalizedReferralStatus = String(row.referral_status || '').toLowerCase();
+      const normalizedCommissionStatus = String(row.commission_status || '').toLowerCase();
+      const status = normalizedReferralStatus === 'paid' || normalizedCommissionStatus === 'paid'
+        ? 'paid'
+        : normalizedReferralStatus === 'approved' || normalizedCommissionStatus === 'approved'
+          ? 'approved'
+          : (row.commission_status || row.referral_status);
+
+      return {
+        id: row.commission_id || row.referral_id,
+        childAffiliateId: row.child_affiliate_id,
+        childAffiliateName: `${row.child_first_name || ''} ${row.child_last_name || ''}`.trim() || row.child_email || 'Unknown',
+        customerName: `${row.customer_first_name || ''} ${row.customer_last_name || ''}`.trim() || 'Unknown',
+        customerEmail: row.customer_email || '',
+        product: row.product || 'Referral',
+        orderValue: parentOrderValue,
+        commissionRate: parentCommissionRate,
+        commissionAmount: parentCommissionAmount,
+        childCommissionRate,
+        childCommissionAmount,
+        childOrderValue,
+        status,
+        orderDate: row.order_date || row.referral_date,
+        paymentDate: row.commission_payment_date || row.payment_date,
+        level: 2
+      };
+    });
+
+    res.json({
+      success: true,
+      data: transformed,
+      summary
+    });
+  } catch (error) {
+    console.error('Error fetching child affiliate referrals:', error);
+    res.status(500).json({ error: 'Failed to fetch child affiliate referrals' });
   }
 });
 

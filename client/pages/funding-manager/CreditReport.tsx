@@ -655,7 +655,7 @@ export default function CreditReport() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
-  const [reportData, setReportData] = useState(detailedReport);
+  const [reportData, setReportData] = useState<any>(detailedReport);
   const [apiData, setApiData] = useState<any>(null);
   const [qualifyView, setQualifyView] = useState<'cards' | 'table'>('cards');
   

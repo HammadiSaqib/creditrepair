@@ -35,6 +35,13 @@ interface ReferralLink {
   expiresAt?: string;
 }
 
+interface GeneratedLinks {
+  productLink?: string;
+  affiliateOnlyLink?: string;
+  trackingCode: string;
+  campaign: string;
+}
+
 interface LinkStats {
   totalLinks: number;
   activeLinks: number;
@@ -98,9 +105,9 @@ export default function AffiliateLinks() {
 
 
   // Social sharing functions
-  const shareOnPlatform = (platform: string, url: string) => {
+  const shareOnPlatform = (platform: string, url: string, message?: string) => {
     const encodedUrl = encodeURIComponent(url);
-    const text = encodeURIComponent("Check out this amazing funding service!");
+    const text = encodeURIComponent(message || "Check out this amazing funding service!");
     
     let shareUrl = '';
     
@@ -153,6 +160,17 @@ export default function AffiliateLinks() {
     return `${window.location.origin}/ref/affiliate${Date.now()}`;
   };
 
+  const generateAffiliateInviteLink = () => {
+    if (affiliateInfo && affiliateInfo.referral_slug) {
+      return `${window.location.origin}/join-affiliate?ref=${affiliateInfo.referral_slug}`;
+    }
+    if (affiliateInfo && (affiliateInfo.id || affiliateInfo.affiliate_id)) {
+      const id = String(affiliateInfo.id ?? affiliateInfo.affiliate_id);
+      return `${window.location.origin}/join-affiliate?ref=${id}`;
+    }
+    return `${window.location.origin}/join-affiliate`;
+  };
+
   const copyPersonalizedLink = async () => {
     const link = generatePersonalizedLink();
     if (link) {
@@ -161,6 +179,25 @@ export default function AffiliateLinks() {
         toast({
           title: "Success",
           description: "Personalized referral link copied to clipboard!"
+        });
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to copy link to clipboard",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+
+  const copyAffiliateInviteLink = async () => {
+    const link = generateAffiliateInviteLink();
+    if (link) {
+      try {
+        await navigator.clipboard.writeText(link);
+        toast({
+          title: "Success",
+          description: "Affiliate invite link copied to clipboard!"
         });
       } catch (error) {
         toast({
@@ -196,8 +233,8 @@ export default function AffiliateLinks() {
       <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Your Affiliate Link</h1>
-          <p className="text-gray-600 mt-1">Share your personalized affiliate link to earn commissions</p>
+          <h1 className="text-3xl font-bold">Your Referral Links</h1>
+          <p className="text-gray-600 mt-1">Share your product link or invite new affiliates under you</p>
         </div>
       </div>
 
@@ -206,10 +243,10 @@ export default function AffiliateLinks() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
-            Your Affiliate Link
+            Your Referral Links
           </CardTitle>
           <CardDescription>
-            Share this link to earn commissions when people sign up
+            Share your product link to earn commissions or invite new affiliates under you
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -220,11 +257,14 @@ export default function AffiliateLinks() {
                   <p className="text-yellow-800">Loading your personalized affiliate link...</p>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <code className="text-blue-800 font-mono text-lg break-all">
-                      {generatePersonalizedLink()}
-                    </code>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Product Referral Link</Label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <code className="text-blue-800 font-mono text-lg break-all">
+                        {generatePersonalizedLink()}
+                      </code>
+                    </div>
                   </div>
                 </div>
               )}
@@ -251,9 +291,49 @@ export default function AffiliateLinks() {
                )}
             </div>
 
+            <div className="space-y-3">
+              {!affiliateInfo ? (
+                <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <p className="text-yellow-800">Loading your affiliate invite link...</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Affiliate Invite Link</Label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
+                      <code className="text-emerald-800 font-mono text-lg break-all">
+                        {generateAffiliateInviteLink()}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {affiliateInfo && (
+                <div className="flex justify-end gap-2">
+                  <Button
+                    size="lg"
+                    onClick={copyAffiliateInviteLink}
+                    className="flex items-center gap-2"
+                  >
+                    <Copy className="h-5 w-5" />
+                    Copy Invite Link
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={() => window.open(generateAffiliateInviteLink(), '_blank')}
+                    className="flex items-center gap-2"
+                  >
+                    <ExternalLink className="h-5 w-5" />
+                    Preview
+                  </Button>
+                </div>
+              )}
+            </div>
+
             {/* Social Sharing */}
             <div className="space-y-3">
-              <Label className="text-sm font-medium">Share on Social Media</Label>
+              <Label className="text-sm font-medium">Share Product Link</Label>
               <div className="flex flex-wrap gap-3">
                 <Button
                   variant="outline"
@@ -282,6 +362,44 @@ export default function AffiliateLinks() {
                 <Button
                   variant="outline"
                   onClick={() => shareOnPlatform('whatsapp', generatePersonalizedLink())}
+                  className="flex items-center gap-2"
+                >
+                  <MessageCircle className="h-5 w-5" />
+                  WhatsApp
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Share Affiliate Invite Link</Label>
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => shareOnPlatform('facebook', generateAffiliateInviteLink(), "Join our affiliate program")}
+                  className="flex items-center gap-2"
+                >
+                  <Facebook className="h-5 w-5" />
+                  Facebook
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => shareOnPlatform('twitter', generateAffiliateInviteLink(), "Join our affiliate program")}
+                  className="flex items-center gap-2"
+                >
+                  <Twitter className="h-5 w-5" />
+                  Twitter
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => shareOnPlatform('linkedin', generateAffiliateInviteLink(), "Join our affiliate program")}
+                  className="flex items-center gap-2"
+                >
+                  <Linkedin className="h-5 w-5" />
+                  LinkedIn
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => shareOnPlatform('whatsapp', generateAffiliateInviteLink(), "Join our affiliate program")}
                   className="flex items-center gap-2"
                 >
                   <MessageCircle className="h-5 w-5" />

@@ -492,6 +492,8 @@ export async function seedSuperAdminData(): Promise<void> {
         { key: 'security.session_timeout', value: '3600', type: 'number', category: 'security', description: 'Session timeout in seconds', is_public: false },
         { key: 'security.max_login_attempts', value: '5', type: 'number', category: 'security', description: 'Maximum login attempts before lockout', is_public: false },
         { key: 'billing.currency', value: 'USD', type: 'string', category: 'billing', description: 'Default currency', is_public: true },
+        { key: 'affiliate.commission_level2_rate_free', value: '2', type: 'number', category: 'billing', description: 'Affiliate level 2 commission rate (%) for FREE affiliates', is_public: false },
+        { key: 'affiliate.commission_level2_rate_paid', value: '5', type: 'number', category: 'billing', description: 'Affiliate level 2 commission rate (%) for PAID affiliates', is_public: false },
         { key: 'notifications.email_enabled', value: 'true', type: 'boolean', category: 'notifications', description: 'Enable email notifications', is_public: false },
         { key: 'features.community_enabled', value: 'true', type: 'boolean', category: 'features', description: 'Enable community features', is_public: true },
         { key: 'features.calendar_enabled', value: 'true', type: 'boolean', category: 'features', description: 'Enable calendar features', is_public: true }

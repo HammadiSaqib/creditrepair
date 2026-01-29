@@ -600,7 +600,9 @@ export default function Affiliate() {
       });
       
       if (response.data && response.data.success) {
-        setGeneratedLink(response.data.data.link);
+        const data = response.data.data;
+        const linkOut = typeof data === 'string' ? data : (data.link || data.productLink || data.affiliateOnlyLink);
+        setGeneratedLink(linkOut);
         toast({
           title: "Success",
           description: "Affiliate link generated successfully!",

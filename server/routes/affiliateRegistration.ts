@@ -65,16 +65,47 @@ router.post('/register', async (req, res) => {
     // Generate unique affiliate code
     const affiliateCode = crypto.randomBytes(8).toString('hex').toUpperCase();
 
-    // Create affiliate with active status
+    // Resolve parent affiliate from referral param if provided
+    let parentAffiliateId: number | null = null;
+    try {
+      const refRaw = (req.query.ref || (req.body?.referrerAffiliateId as any) || '').toString().trim();
+      if (refRaw) {
+        const parsed = parseInt(refRaw, 10);
+        if (!Number.isNaN(parsed)) {
+          const parentRows = await runQuery(`SELECT id FROM affiliates WHERE id = ? AND status != 'suspended'`, [parsed]);
+          if (parentRows && parentRows.length > 0) {
+            parentAffiliateId = parsed;
+          }
+        } else {
+          const colRes: any[] = await runQuery(
+            `SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'affiliates' AND COLUMN_NAME = 'referral_slug'`,
+            []
+          );
+          const hasReferralSlug = !!colRes && ((colRes[0]?.cnt || 0) > 0);
+          if (hasReferralSlug) {
+            const parentRows = await runQuery(
+              `SELECT id FROM affiliates WHERE referral_slug = ? AND status != 'suspended' LIMIT 1`,
+              [refRaw]
+            );
+            if (parentRows && parentRows.length > 0) {
+              parentAffiliateId = parentRows[0].id;
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // Create affiliate with active status (default free plan)
     const insertQuery = `
       INSERT INTO affiliates (
-        admin_id, email, password_hash, first_name, last_name, 
+        admin_id, parent_affiliate_id, email, password_hash, first_name, last_name, 
         commission_rate, status, email_verified, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'active', TRUE, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', TRUE, NOW(), NOW())
     `;
 
     const result = await runQuery(insertQuery, [
       adminId,
+      parentAffiliateId,
       email,
       hashedPassword,
       firstName,

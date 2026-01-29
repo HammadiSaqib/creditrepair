@@ -1807,11 +1807,26 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
               if (affiliateIdEffective) {
                 const affRows = await executeQuery(
-                  'SELECT commission_rate FROM affiliates WHERE id = ? AND status = "active" LIMIT 1',
+                  'SELECT plan_type, paid_referrals_count FROM affiliates WHERE id = ? AND status = "active" LIMIT 1',
                   [affiliateIdEffective]
                 ) as any[];
-                const commissionRate = affRows && affRows.length > 0 ? parseFloat(affRows[0].commission_rate) || 0 : 0;
+                const planType = affRows && affRows.length > 0 ? String(affRows[0].plan_type || 'free') : 'free';
+                const paidReferralsCount = affRows && affRows.length > 0 ? Number(affRows[0].paid_referrals_count || 0) : 0;
+                const affiliateTypeAtPayout = (planType === 'paid_partner' || planType === 'pro' || planType === 'premium' || planType === 'partner') ? 'paid' : 'free';
+                const commissionRate = affiliateTypeAtPayout === 'paid'
+                  ? (paidReferralsCount >= 100 ? 25 : 20)
+                  : (paidReferralsCount >= 100 ? 15 : 10);
                 const commissionAmount = (txnRows[0].amount * commissionRate) / 100;
+                let subscriptionId: string | null = null;
+                try {
+                  const subRows = await executeQuery(
+                    `SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = 'active' LIMIT 1`,
+                    [txnRows[0].user_id]
+                  ) as any[];
+                  if (subRows && subRows.length > 0 && subRows[0].stripe_subscription_id) {
+                    subscriptionId = String(subRows[0].stripe_subscription_id);
+                  }
+                } catch {}
 
                 // Update or insert referral
                 const pendingRef = await executeQuery(
@@ -1874,18 +1889,34 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                     await executeQuery(
                       `UPDATE affiliate_commissions 
                        SET customer_name = ?, customer_email = ?, order_value = ?, commission_rate = ?, commission_amount = ?,
+                           commission_level = 1, affiliate_type_at_payout = ?, payer_user_id = ?, subscription_id = ?,
                            status = 'paid', payment_date = NOW(), updated_at = NOW()
                        WHERE id = ?`,
-                      [customerName, customerEmail, txnRows[0].amount, commissionRate, commissionAmount, existingComm[0].id]
+                      [customerName, customerEmail, txnRows[0].amount, commissionRate, commissionAmount, affiliateTypeAtPayout, txnRows[0].user_id, subscriptionId, existingComm[0].id]
                     );
                   } else {
                     await executeQuery(
                       `INSERT INTO affiliate_commissions (
                          affiliate_id, referral_id, customer_id, customer_name, customer_email,
                          order_value, commission_rate, commission_amount, status, tier, product,
+                         commission_level, affiliate_type_at_payout, subscription_id, payer_user_id,
                          order_date, payment_date, tracking_code, commission_type, created_at, updated_at
-                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'Bronze', 'Subscription', NOW(), NOW(), ?, 'signup', NOW(), NOW())`,
-                      [affiliateIdEffective, referralIdToUse, txnRows[0].user_id, customerName, customerEmail, txnRows[0].amount, commissionRate, commissionAmount, paymentIntent.id]
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'Bronze', 'Subscription', ?, ?, ?, ?, NOW(), NOW(), ?, 'signup', NOW(), NOW())`,
+                      [
+                        affiliateIdEffective,
+                        referralIdToUse,
+                        txnRows[0].user_id,
+                        customerName,
+                        customerEmail,
+                        txnRows[0].amount,
+                        commissionRate,
+                        commissionAmount,
+                        1,
+                        affiliateTypeAtPayout,
+                        subscriptionId,
+                        txnRows[0].user_id,
+                        paymentIntent.id
+                      ]
                     );
                   }
                 }
@@ -2076,10 +2107,15 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 
               if (affiliateIdEffective && userId) {
                 const affRows = await executeQuery(
-                  'SELECT commission_rate FROM affiliates WHERE id = ? AND status = "active" LIMIT 1',
+                  'SELECT plan_type, paid_referrals_count FROM affiliates WHERE id = ? AND status = "active" LIMIT 1',
                   [affiliateIdEffective]
                 ) as any[];
-                const commissionRate = affRows && affRows.length > 0 ? parseFloat(affRows[0].commission_rate) || 0 : 0;
+                const planType = affRows && affRows.length > 0 ? String(affRows[0].plan_type || 'free') : 'free';
+                const paidReferralsCount = affRows && affRows.length > 0 ? Number(affRows[0].paid_referrals_count || 0) : 0;
+                const affiliateTypeAtPayout = (planType === 'paid_partner' || planType === 'pro' || planType === 'premium' || planType === 'partner') ? 'paid' : 'free';
+                const commissionRate = affiliateTypeAtPayout === 'paid'
+                  ? (paidReferralsCount >= 100 ? 25 : 20)
+                  : (paidReferralsCount >= 100 ? 15 : 10);
                 const commissionAmount = (amount * commissionRate) / 100;
 
                 // Update existing pending referral or create a new one
@@ -2145,18 +2181,34 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
                     await executeQuery(
                       `UPDATE affiliate_commissions 
                        SET customer_name = ?, customer_email = ?, order_value = ?, commission_rate = ?, commission_amount = ?,
+                           commission_level = 1, affiliate_type_at_payout = ?, payer_user_id = ?, subscription_id = ?,
                            status = 'paid', payment_date = NOW(), updated_at = NOW()
                        WHERE id = ?`,
-                      [customerName, customerEmail, amount, commissionRate, commissionAmount, existingComm[0].id]
+                      [customerName, customerEmail, amount, commissionRate, commissionAmount, affiliateTypeAtPayout, userId, stripeSubscriptionId, existingComm[0].id]
                     );
                   } else {
                     await executeQuery(
                       `INSERT INTO affiliate_commissions (
                          affiliate_id, referral_id, customer_id, customer_name, customer_email,
                          order_value, commission_rate, commission_amount, status, tier, product,
+                         commission_level, affiliate_type_at_payout, subscription_id, payer_user_id,
                          order_date, payment_date, tracking_code, commission_type, created_at, updated_at
-                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'Bronze', 'Subscription', NOW(), NOW(), ?, 'signup', NOW(), NOW())`,
-                      [affiliateIdEffective, referralIdToUse, userId, customerName, customerEmail, amount, commissionRate, commissionAmount, String(session.id)]
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'Bronze', 'Subscription', ?, ?, ?, ?, NOW(), NOW(), ?, 'signup', NOW(), NOW())`,
+                      [
+                        affiliateIdEffective,
+                        referralIdToUse,
+                        userId,
+                        customerName,
+                        customerEmail,
+                        amount,
+                        commissionRate,
+                        commissionAmount,
+                        1,
+                        affiliateTypeAtPayout,
+                        stripeSubscriptionId,
+                        userId,
+                        String(session.id)
+                      ]
                     );
                   }
                 }

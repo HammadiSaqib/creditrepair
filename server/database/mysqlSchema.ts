@@ -81,6 +81,8 @@ export interface Client {
   platform?: string;
   platform_email?: string;
   platform_password?: string;
+  created_via?: string;
+  integration_id?: number;
   created_at: string;
   updated_at: string;
   created_by: number;
@@ -459,6 +461,8 @@ export async function initializeMySQLDatabase(): Promise<void> {
       if (!existing.has('platform')) alters.push('ADD COLUMN platform VARCHAR(50) NULL');
       if (!existing.has('platform_email')) alters.push('ADD COLUMN platform_email VARCHAR(255) NULL');
       if (!existing.has('platform_password')) alters.push('ADD COLUMN platform_password VARCHAR(255) NULL');
+      if (!existing.has('created_via')) alters.push('ADD COLUMN created_via VARCHAR(20) NULL');
+      if (!existing.has('integration_id')) alters.push('ADD COLUMN integration_id INT NULL');
       if (!existing.has('payment_status')) alters.push("ADD COLUMN payment_status ENUM('paid','unpaid') NOT NULL DEFAULT 'paid'");
       if (!existing.has('credit_score')) alters.push('ADD COLUMN credit_score INT NULL');
       if (!existing.has('previous_credit_score')) alters.push('ADD COLUMN previous_credit_score INT NULL');
@@ -533,6 +537,9 @@ async function createMySQLTables(): Promise<void> {
       state VARCHAR(50) NULL,
       zip_code VARCHAR(10) NULL,
       role ENUM('user', 'admin', 'support', 'super_admin', 'funding_manager') NOT NULL DEFAULT 'user',
+      account_type ENUM('admin','affiliate_only') NOT NULL DEFAULT 'admin',
+      referred_by_user_id INT NULL,
+      referral_source ENUM('product_link','affiliate_link') NULL,
       status ENUM('active', 'inactive', 'locked', 'pending') NOT NULL DEFAULT 'active',
       email_verified BOOLEAN NOT NULL DEFAULT FALSE,
       failed_login_attempts INT NOT NULL DEFAULT 0,
@@ -558,12 +565,15 @@ async function createMySQLTables(): Promise<void> {
       created_by INT NULL,
       updated_by INT NULL,
       INDEX idx_email (email),
+      INDEX idx_referred_by_user_id (referred_by_user_id),
+      INDEX idx_referral_source (referral_source),
       INDEX idx_status (status),
       INDEX idx_created_at (created_at),
       INDEX idx_stripe_customer_id (stripe_customer_id),
       UNIQUE KEY uniq_onboarding_slug (onboarding_slug),
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (referred_by_user_id) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
     // Employees table: links an employee user to their parent admin
@@ -579,6 +589,67 @@ async function createMySQLTables(): Promise<void> {
       INDEX idx_user_id (user_id),
       FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS admin_integrations (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      admin_id INT NOT NULL,
+      provider ENUM('ghl') NOT NULL DEFAULT 'ghl',
+      name VARCHAR(255) NULL,
+      access_token VARCHAR(500) NOT NULL,
+      location_id VARCHAR(255) NULL,
+      integration_hash VARCHAR(255) NOT NULL,
+      outbound_url VARCHAR(500) NULL,
+      business_record_id VARCHAR(255) NULL,
+      custom_field_credit_score VARCHAR(255) NULL,
+      custom_field_experian_score VARCHAR(255) NULL,
+      custom_field_equifax_score VARCHAR(255) NULL,
+      custom_field_transunion_score VARCHAR(255) NULL,
+      custom_field_report_date VARCHAR(255) NULL,
+      field_mappings JSON NULL,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_by INT NULL,
+      updated_by INT NULL,
+      UNIQUE KEY uniq_integration_hash (integration_hash),
+      INDEX idx_admin_id (admin_id),
+      INDEX idx_provider (provider),
+      INDEX idx_is_active (is_active),
+      FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS integration_activity_logs (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      integration_id INT NOT NULL,
+      admin_id INT NOT NULL,
+      direction ENUM('inbound','outbound') NOT NULL,
+      event_type VARCHAR(100) NOT NULL,
+      status ENUM('success','failed') NOT NULL,
+      message TEXT NULL,
+      client_id INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_integration_id (integration_id),
+      INDEX idx_admin_id (admin_id),
+      INDEX idx_direction (direction),
+      INDEX idx_status (status),
+      INDEX idx_created_at (created_at),
+      FOREIGN KEY (integration_id) REFERENCES admin_integrations(id) ON DELETE CASCADE,
+      FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS integration_webhook_events (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      integration_id INT NOT NULL,
+      idempotency_key VARCHAR(255) NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_integration_event (integration_id, idempotency_key),
+      INDEX idx_integration_id (integration_id),
+      INDEX idx_created_at (created_at),
+      FOREIGN KEY (integration_id) REFERENCES admin_integrations(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
     // Support team members table
@@ -707,6 +778,8 @@ async function createMySQLTables(): Promise<void> {
       platform ENUM('myfreescorenow','identityiq','smartcredit','myscoreiq','transunion','experian','equifax','creditkarma','other'),
       platform_email VARCHAR(255),
       platform_password VARCHAR(255),
+      created_via VARCHAR(20) NULL,
+      integration_id INT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       created_by INT NOT NULL,
@@ -717,6 +790,7 @@ async function createMySQLTables(): Promise<void> {
       INDEX idx_payment_status (payment_status),
       INDEX idx_created_at (created_at),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (integration_id) REFERENCES admin_integrations(id) ON DELETE SET NULL,
       FOREIGN KEY (created_by) REFERENCES users(id),
       FOREIGN KEY (updated_by) REFERENCES users(id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -1618,6 +1692,10 @@ async function createMySQLTables(): Promise<void> {
       status ENUM('pending', 'approved', 'paid', 'rejected') NOT NULL DEFAULT 'pending',
       tier VARCHAR(50) NOT NULL DEFAULT 'Bronze',
       product VARCHAR(255) NOT NULL,
+      commission_level TINYINT NOT NULL DEFAULT 1,
+      affiliate_type_at_payout ENUM('free', 'paid') NOT NULL DEFAULT 'free',
+      payer_user_id INT NOT NULL,
+      subscription_id VARCHAR(255) NULL,
       order_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       approval_date DATETIME NULL,
       payment_date DATETIME NULL,
@@ -1631,11 +1709,15 @@ async function createMySQLTables(): Promise<void> {
       INDEX idx_referral_id (referral_id),
       INDEX idx_status (status),
       INDEX idx_tier (tier),
+      INDEX idx_commission_level (commission_level),
+      INDEX idx_payer_user_id (payer_user_id),
+      INDEX idx_affiliate_type_at_payout (affiliate_type_at_payout),
       INDEX idx_order_date (order_date),
       INDEX idx_tracking_code (tracking_code),
       FOREIGN KEY (affiliate_id) REFERENCES affiliates(id) ON DELETE CASCADE,
       FOREIGN KEY (referral_id) REFERENCES affiliate_referrals(id) ON DELETE SET NULL,
-      FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (payer_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
     // Commission tiers table for tier management
@@ -1962,6 +2044,80 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  must_change_password column already exists');
     } else {
       console.log('⚠️  Error adding must_change_password column:', error.message);
+    }
+  }
+
+  // Add affiliate-only tracking columns if missing
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN account_type ENUM('admin','affiliate_only') NOT NULL DEFAULT 'admin'
+    `);
+    console.log('✅ Added account_type column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  account_type column already exists');
+    } else {
+      console.log('⚠️  Error adding account_type column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN referred_by_user_id INT NULL
+    `);
+    console.log('✅ Added referred_by_user_id column to users table');
+    try {
+      await executeQuery(`CREATE INDEX idx_referred_by_user_id ON users(referred_by_user_id)`);
+      console.log('✅ Added idx_referred_by_user_id index');
+    } catch (idxErr: any) {
+      if (idxErr.code === 'ER_DUP_KEYNAME') {
+        console.log('ℹ️  idx_referred_by_user_id index already exists');
+      } else {
+        console.log('⚠️  Error adding idx_referred_by_user_id index:', idxErr.message);
+      }
+    }
+    try {
+      await executeQuery(`
+        ALTER TABLE users 
+        ADD CONSTRAINT fk_users_referred_by FOREIGN KEY (referred_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+      `);
+      console.log('✅ Added fk_users_referred_by foreign key');
+    } catch (fkErr: any) {
+      if (fkErr.code === 'ER_DUP_KEYNAME') {
+        console.log('ℹ️  fk_users_referred_by already exists');
+      } else {
+        console.log('⚠️  Error adding fk_users_referred_by:', fkErr.message);
+      }
+    }
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  referred_by_user_id column already exists');
+    } else {
+      console.log('⚠️  Error adding referred_by_user_id column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN referral_source ENUM('product_link','affiliate_link') NULL
+    `);
+    console.log('✅ Added referral_source column to users table');
+    try {
+      await executeQuery(`CREATE INDEX idx_referral_source ON users(referral_source)`);
+      console.log('✅ Added idx_referral_source index');
+    } catch (idxErr: any) {
+      if (idxErr.code === 'ER_DUP_KEYNAME') {
+        console.log('ℹ️  idx_referral_source index already exists');
+      } else {
+        console.log('⚠️  Error adding idx_referral_source index:', idxErr.message);
+      }
+    }
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  referral_source column already exists');
+    } else {
+      console.log('⚠️  Error adding referral_source column:', error.message);
     }
   }
 
@@ -2562,6 +2718,10 @@ export interface AffiliateCommission {
   status: 'pending' | 'approved' | 'paid' | 'rejected';
   tier: string;
   product: string;
+  commission_level: number;
+  affiliate_type_at_payout: 'free' | 'paid';
+  payer_user_id: number;
+  subscription_id?: string | null;
   order_date: string;
   approval_date?: string;
   payment_date?: string;

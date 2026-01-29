@@ -60,6 +60,7 @@ import employeesRoutes from "./routes/employees.js";
 import debtPayoffRoutes from "./routes/debtPayoff.js";
 import shopRoutes from "./routes/shop.js";
 import testimonialsRoutes, { publicTestimonialsRoutes } from "./routes/testimonials.js";
+import integrationsRoutes from "./routes/integrations.js";
 import { emailService } from "./services/emailService.js";
 
 import { reminderService } from "./services/reminderService.js";
@@ -98,6 +99,7 @@ import {
   createClient,
   createClientIntakeToken,
   submitClientIntake,
+  submitGhlWebhook,
   updateClient,
   deleteClient,
   getClientStats,
@@ -434,6 +436,7 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // SUPPORT SETTINGS ROUTES
   // =============================================================================
   app.use("/api/support/settings", supportSettingsRoutes);
+  app.use("/api/integrations", integrationsRoutes);
 
   // =============================================================================
   // KNOWLEDGE BASE ROUTES
@@ -469,6 +472,7 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.use("/api/contracts-admin", contractsAdminRoutes);
 
   app.post("/api/clients/intake", submitClientIntake);
+  app.post("/api/webhooks/ghl/:integration_hash", submitGhlWebhook);
   app.post("/api/clients/intake-token", authenticateToken, requireSignedAdminContract, createClientIntakeToken);
 
   // Enforce contract signing for admin-specific REST endpoints

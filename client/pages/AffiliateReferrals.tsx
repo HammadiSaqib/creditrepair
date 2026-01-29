@@ -54,6 +54,25 @@ interface Referral {
   transactionId?: string;
 }
 
+interface ChildReferral {
+  id: string;
+  childAffiliateId?: number;
+  childAffiliateName: string;
+  customerName: string;
+  customerEmail: string;
+  product: string;
+  orderValue: number;
+  commissionRate: number;
+  commissionAmount: number;
+  childOrderValue?: number;
+  childCommissionRate?: number;
+  childCommissionAmount?: number;
+  status: "pending" | "approved" | "paid" | "rejected";
+  orderDate: string;
+  paymentDate?: string;
+  level: number;
+}
+
 interface ReferralStats {
   totalReferrals: number;
   pendingReferrals: number;
@@ -63,9 +82,19 @@ interface ReferralStats {
   avgLifetimeValue: number;
 }
 
+interface ChildReferralSummary {
+  totalReferrals: number;
+  totalCommission: number;
+}
+
 export default function AffiliateReferrals() {
   const { toast } = useToast();
   const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [childReferrals, setChildReferrals] = useState<ChildReferral[]>([]);
+  const [childSummary, setChildSummary] = useState<ChildReferralSummary>({
+    totalReferrals: 0,
+    totalCommission: 0
+  });
   const [stats, setStats] = useState<ReferralStats>({
     totalReferrals: 0,
     pendingReferrals: 0,
@@ -95,6 +124,12 @@ export default function AffiliateReferrals() {
         setReferrals(referralsResponse.data.data);
       }
 
+      const childReferralsResponse = await affiliateApi.getChildReferrals();
+      if (childReferralsResponse.data && childReferralsResponse.data.success) {
+        setChildReferrals(childReferralsResponse.data.data || []);
+        setChildSummary(childReferralsResponse.data.summary || { totalReferrals: 0, totalCommission: 0 });
+      }
+
       // Fetch referral stats
       const statsResponse = await affiliateApi.getReferralStats();
       if (statsResponse.data && statsResponse.data.success) {
@@ -109,6 +144,21 @@ export default function AffiliateReferrals() {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getChildStatusColor = (status: string) => {
+    switch (status) {
+      case "paid":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+      case "approved":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+      case "pending":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+      case "rejected":
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
     }
   };
 
@@ -136,6 +186,15 @@ export default function AffiliateReferrals() {
     if (normalized === "expired") return "Expired";
     return status;
   };
+
+  const formatChildStatusLabel = (status: string) => {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "paid") return "Paid";
+    if (normalized === "approved") return "Approved";
+    if (normalized === "pending") return "Pending";
+    if (normalized === "rejected") return "Rejected";
+    return status;
+  };
   const getTierColor = (tier: string) => {
     switch (tier) {
       case "basic":
@@ -156,6 +215,14 @@ export default function AffiliateReferrals() {
     const matchesStatus = statusFilter === "all" || referral.status === statusFilter;
     const matchesTier = tierFilter === "all" || referral.tier === tierFilter;
     return matchesSearch && matchesStatus && matchesTier;
+  });
+
+  const filteredChildReferrals = childReferrals.filter((referral) => {
+    const matchesSearch = (referral.childAffiliateName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (referral.customerName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (referral.customerEmail?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (referral.product?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+    return matchesSearch;
   });
 
   const handleFollowUp = async (referralId: string) => {
@@ -449,6 +516,123 @@ export default function AffiliateReferrals() {
                             <Button variant="ghost" size="sm">
                               <ExternalLink className="h-4 w-4" />
                             </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
+              <div>
+                <CardTitle>Child Affiliate Referrals</CardTitle>
+                <CardDescription>
+                  Track referrals and earnings coming from your child affiliates
+                </CardDescription>
+              </div>
+              <div className="flex flex-col items-end text-sm">
+                <div className="text-muted-foreground">
+                  Total child referrals: <span className="font-medium text-foreground">{(childSummary.totalReferrals || 0).toLocaleString()}</span>
+                </div>
+                <div className="text-muted-foreground">
+                  Total earnings from child referrals: <span className="font-medium text-foreground">${(childSummary.totalCommission || 0).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Child Affiliate</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Plan</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Order Date</TableHead>
+                    <TableHead>Commission</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell colSpan={6}>
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
+                            <div className="space-y-2">
+                              <div className="w-32 h-4 bg-gray-200 rounded animate-pulse"></div>
+                              <div className="w-24 h-3 bg-gray-200 rounded animate-pulse"></div>
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : filteredChildReferrals.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8">
+                        <div className="flex flex-col items-center space-y-2">
+                          <Users className="h-8 w-8 text-gray-400" />
+                          <p className="text-gray-500">No child affiliate referrals found</p>
+                          <p className="text-sm text-gray-400">
+                            {searchTerm
+                              ? "Try adjusting your search"
+                              : "Invite affiliates under you to start tracking their referrals"}
+                          </p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredChildReferrals.map((referral) => (
+                      <TableRow key={referral.id}>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="font-medium">{referral.childAffiliateName}</div>
+                            <div className="text-sm text-muted-foreground">ID: {referral.childAffiliateId ?? "-"}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="font-medium">{referral.customerName}</div>
+                            <div className="text-sm text-muted-foreground">{referral.customerEmail}</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="font-medium">{referral.product}</div>
+                            <div className="text-sm text-muted-foreground">
+                              ${referral.orderValue.toLocaleString()} · {referral.commissionRate.toFixed(2)}%
+                            </div>
+                            {typeof referral.childCommissionRate === "number" && typeof referral.childOrderValue === "number" ? (
+                              <div className="text-xs text-muted-foreground">
+                                Child: ${referral.childOrderValue.toLocaleString()} · {referral.childCommissionRate.toFixed(2)}%
+                              </div>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getChildStatusColor(referral.status)}>
+                            {formatChildStatusLabel(referral.status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">{referral.orderDate}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="font-medium text-green-600">
+                              You: ${referral.commissionAmount.toLocaleString()}
+                            </div>
+                            {typeof referral.childCommissionAmount === "number" ? (
+                              <div className="text-xs text-muted-foreground">
+                                Child: ${referral.childCommissionAmount.toLocaleString()}
+                              </div>
+                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>

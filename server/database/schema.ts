@@ -10,6 +10,9 @@ export interface User {
   first_name: string;
   last_name: string;
   company_name?: string;
+  account_type?: "admin" | "affiliate_only";
+  referred_by_user_id?: number;
+  referral_source?: "product_link" | "affiliate_link";
   role: "admin" | "manager" | "agent" | "funding_manager";
   created_at: string;
   updated_at: string;
@@ -209,11 +212,15 @@ async function createTables() {
       avatar TEXT,
       credit_repair_url TEXT,
       onboarding_slug TEXT,
+      account_type TEXT DEFAULT 'admin' CHECK (account_type IN ('admin','affiliate_only')),
+      referred_by_user_id INTEGER,
+      referral_source TEXT CHECK (referral_source IN ('product_link','affiliate_link')),
       role TEXT DEFAULT 'agent' CHECK (role IN ('admin', 'manager', 'agent', 'funding_manager')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_login DATETIME,
-      is_active BOOLEAN DEFAULT 1
+      is_active BOOLEAN DEFAULT 1,
+      FOREIGN KEY (referred_by_user_id) REFERENCES users (id)
     )
   `);
 
@@ -231,6 +238,80 @@ async function createTables() {
     await runQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_onboarding_slug ON users (onboarding_slug)`);
   } catch (err) {
   }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN account_type TEXT DEFAULT 'admin'`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN referred_by_user_id INTEGER`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN referral_source TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`CREATE INDEX IF NOT EXISTS idx_users_referred_by_user_id ON users (referred_by_user_id)`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`CREATE INDEX IF NOT EXISTS idx_users_referral_source ON users (referral_source)`);
+  } catch (err) {
+  }
+
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS admin_integrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_id INTEGER NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'ghl',
+      name TEXT,
+      access_token TEXT NOT NULL,
+      location_id TEXT,
+      integration_hash TEXT NOT NULL UNIQUE,
+      outbound_url TEXT,
+      business_record_id TEXT,
+      custom_field_credit_score TEXT,
+      custom_field_experian_score TEXT,
+      custom_field_equifax_score TEXT,
+      custom_field_transunion_score TEXT,
+      custom_field_report_date TEXT,
+      field_mappings TEXT,
+      is_active BOOLEAN DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by INTEGER,
+      updated_by INTEGER,
+      FOREIGN KEY (admin_id) REFERENCES users (id)
+    )
+  `);
+
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS integration_activity_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      integration_id INTEGER NOT NULL,
+      admin_id INTEGER NOT NULL,
+      direction TEXT NOT NULL CHECK (direction IN ('inbound','outbound')),
+      event_type TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('success','failed')),
+      message TEXT,
+      client_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (integration_id) REFERENCES admin_integrations (id),
+      FOREIGN KEY (admin_id) REFERENCES users (id),
+      FOREIGN KEY (client_id) REFERENCES clients (id)
+    )
+  `);
+
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS integration_webhook_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      integration_id INTEGER NOT NULL,
+      idempotency_key TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (integration_id, idempotency_key),
+      FOREIGN KEY (integration_id) REFERENCES admin_integrations (id)
+    )
+  `);
 
   // Clients table
   await runQuery(`
@@ -260,9 +341,12 @@ async function createTables() {
       platform TEXT,
       platform_email TEXT,
       platform_password TEXT,
+      created_via TEXT,
+      integration_id INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users (id)
+      FOREIGN KEY (user_id) REFERENCES users (id),
+      FOREIGN KEY (integration_id) REFERENCES admin_integrations (id)
     )
   `);
 
@@ -307,6 +391,14 @@ async function createTables() {
   }
   try {
     await runQuery(`ALTER TABLE clients ADD COLUMN platform_password TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN created_via TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE clients ADD COLUMN integration_id INTEGER`);
   } catch (err) {
   }
 

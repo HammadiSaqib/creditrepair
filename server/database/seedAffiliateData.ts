@@ -167,8 +167,9 @@ export async function seedAffiliateCommissions(): Promise<void> {
         `INSERT INTO affiliate_commissions (
           affiliate_id, customer_id, customer_name, customer_email, 
           order_value, commission_rate, commission_amount, status, 
-          tier, product, order_date, payment_date, commission_type, tracking_code
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          tier, product, commission_level, affiliate_type_at_payout, payer_user_id, subscription_id,
+          order_date, payment_date, commission_type, tracking_code
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           commission.affiliate_id,
           commission.customer_id,
@@ -180,6 +181,10 @@ export async function seedAffiliateCommissions(): Promise<void> {
           commission.status,
           commission.tier,
           commission.product,
+          1,
+          'paid',
+          commission.customer_id,
+          null,
           commission.order_date,
           commission.payment_date,
           commission.commission_type,

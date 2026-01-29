@@ -8,7 +8,7 @@ import { Label } from '../components/ui/label';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Loader2, Users, DollarSign, TrendingUp, CheckCircle, ArrowRight, Sparkles, CreditCard, Shield, Award, Star, Building2, Handshake, Layers, Info, HelpCircle, BarChart3, Eye, EyeOff } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import SiteHeader from '@/components/SiteHeader';
 import Footer from '@/components/Footer';
 
@@ -27,6 +27,8 @@ interface VerificationData {
 
 const JoinAffiliate: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const referralAffiliateId = new URLSearchParams(location.search).get('ref');
   const [formData, setFormData] = useState<FormData>({
     email: '',
     firstName: '',
@@ -106,7 +108,8 @@ const JoinAffiliate: React.FC = () => {
           email: formData.email,
           firstName: formData.firstName,
           lastName: formData.lastName,
-          password: formData.password
+          password: formData.password,
+          referrerAffiliateId: referralAffiliateId || undefined
         }),
       });
 

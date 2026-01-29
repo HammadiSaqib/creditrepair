@@ -49,6 +49,9 @@ const TABLE_MAPPINGS: TableMapping[] = [
       'last_login_ip': 'last_login_ip',
       'last_login_user_agent': 'last_login_user_agent',
       'password_changed_at': 'password_changed_at',
+      'account_type': 'account_type',
+      'referred_by_user_id': 'referred_by_user_id',
+      'referral_source': 'referral_source',
       'created_at': 'created_at',
       'updated_at': 'updated_at',
       'created_by': 'created_by',
@@ -559,4 +562,4 @@ export async function migrateSQLiteToMySQL(sqliteDbPath?: string): Promise<Migra
 }
 
 // Export migration result interface
-export { MigrationResult };
+export type { MigrationResult };

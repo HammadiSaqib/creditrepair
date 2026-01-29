@@ -23,7 +23,6 @@ import {
 import { superAdminApi } from '../../lib/api';
 import { 
   Search, 
-  Filter, 
   Eye, 
   UserCheck, 
   Download, 
@@ -40,17 +39,12 @@ import {
 
 interface Client {
   id: string;
-  user_id: string;
   first_name: string;
   last_name: string;
   email: string;
   phone: string;
-  status: 'active' | 'inactive' | 'completed' | 'on_hold';
+  status: 'active' | 'inactive' | 'locked' | 'pending';
   created_at: string;
-  admin_name?: string;
-  admin_email?: string;
-  admin_title?: string;
-  admin_department?: string;
 }
 
 interface ClientStats {
@@ -73,7 +67,6 @@ const UserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [adminFilter, setAdminFilter] = useState<string>('all');
 
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -81,25 +74,24 @@ const UserManagement: React.FC = () => {
   const itemsPerPage = 15;
 
   useEffect(() => {
-    fetchClients();
-    fetchClientStats();
-  }, [currentPage, searchTerm, statusFilter, adminFilter]);
+    fetchUsers();
+    fetchUserStats();
+  }, [currentPage, searchTerm, statusFilter]);
 
-  const fetchClients = async () => {
+  const fetchUsers = async () => {
     try {
       setLoading(true);
-      const response = await superAdminApi.getClients({
+      const response = await superAdminApi.getUsers({
         page: currentPage,
         limit: itemsPerPage,
         search: searchTerm,
-        status: statusFilter === 'all' ? undefined : statusFilter,
-        admin: adminFilter === 'all' ? undefined : adminFilter
+        status: statusFilter === 'all' ? undefined : statusFilter
       });
       
       if (response.data) {
         setClients(response.data.clients || response.data.data || response.data);
         if (response.data.pagination) {
-          setTotalPages(response.data.pagination.totalPages);
+          setTotalPages(response.data.pagination.pages || response.data.pagination.totalPages);
         } else {
           setTotalPages(Math.ceil((response.data.total || response.data.length) / itemsPerPage));
         }
@@ -112,9 +104,9 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const fetchClientStats = async () => {
+  const fetchUserStats = async () => {
     try {
-      const response = await superAdminApi.getClients();
+      const response = await superAdminApi.getUsers({ limit: 500 });
       const clientsData = response.data?.clients || response.data?.data || response.data || [];
       
       const today = new Date().toDateString();
@@ -125,8 +117,8 @@ const UserManagement: React.FC = () => {
       setClientStats({
         totalClients: response.data?.pagination?.total || clientsData.length,
         activeClients: clientsData.filter((c: Client) => c.status === 'active').length,
-        completedClients: clientsData.filter((c: Client) => c.status === 'completed').length,
-        onHoldClients: clientsData.filter((c: Client) => c.status === 'on_hold').length,
+        completedClients: clientsData.filter((c: Client) => c.status === 'inactive').length,
+        onHoldClients: clientsData.filter((c: Client) => c.status === 'locked').length,
         newClientsToday: newToday
       });
     } catch (error) {
@@ -140,8 +132,8 @@ const UserManagement: React.FC = () => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800';
       case 'inactive': return 'bg-gray-100 text-gray-800';
-      case 'completed': return 'bg-blue-100 text-blue-800';
-      case 'on_hold': return 'bg-yellow-100 text-yellow-800';
+      case 'locked': return 'bg-red-100 text-red-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -190,24 +182,24 @@ const UserManagement: React.FC = () => {
           {/* Client Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <StatCard
-              title="Total Clients"
+              title="Total Users"
               value={(clientStats.totalClients || 0).toLocaleString()}
               icon={Users}
             />
             <StatCard
-              title="Active Clients"
+              title="Active Users"
               value={(clientStats.activeClients || 0).toLocaleString()}
               icon={UserCheck}
               trend="up"
             />
             <StatCard
-              title="Completed"
+              title="Inactive"
               value={clientStats.completedClients}
               icon={CheckCircle}
               trend="up"
             />
             <StatCard
-              title="On Hold"
+              title="Locked"
               value={clientStats.onHoldClients}
               icon={Pause}
             />
@@ -227,7 +219,7 @@ const UserManagement: React.FC = () => {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                     <Input
-                      placeholder="Search clients..."
+                      placeholder="Search users..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                       className="pl-10"
@@ -242,30 +234,18 @@ const UserManagement: React.FC = () => {
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="active">Active</SelectItem>
                     <SelectItem value="inactive">Inactive</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="on_hold">On Hold</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={adminFilter} onValueChange={setAdminFilter}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Filter by admin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Admins</SelectItem>
-                    {/* Dynamic admin options will be populated from client data */}
-                    {Array.from(new Set(clients.map(client => client.admin_name).filter(Boolean))).map(adminName => (
-                      <SelectItem key={adminName} value={adminName}>{adminName}</SelectItem>
-                    ))}
+                    <SelectItem value="locked">Locked</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </CardContent>
           </Card>
 
-          {/* Clients Table */}
+          {/* Users Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Client Management</CardTitle>
+              <CardTitle>User Management</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -275,7 +255,6 @@ const UserManagement: React.FC = () => {
                     <TableHead>Email</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Admin</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -283,14 +262,14 @@ const UserManagement: React.FC = () => {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
-                        Loading clients...
+                      <TableCell colSpan={6} className="text-center py-8">
+                        Loading users...
                       </TableCell>
                     </TableRow>
                   ) : clients.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8">
-                        No clients found
+                      <TableCell colSpan={6} className="text-center py-8">
+                        No users found
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -317,14 +296,6 @@ const UserManagement: React.FC = () => {
                           <Badge className={getClientStatusBadgeColor(client.status)}>
                             {client.status.replace('_', ' ').toUpperCase()}
                           </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{client.admin_name || 'N/A'}</div>
-                            {client.admin_title && (
-                              <div className="text-sm text-muted-foreground">{client.admin_title}</div>
-                            )}
-                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center space-x-2">

@@ -796,15 +796,17 @@ export class AuthController {
       const userResult = await executeQuery(
         `INSERT INTO users (
           email, password_hash, first_name, last_name, company_name, role, 
-          email_verified, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, FALSE, 'active', NOW(), NOW())`,
+          email_verified, status, account_type, referral_source, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, FALSE, 'active', ?, ?, NOW(), NOW())`,
         [
           userData.email,
           hashedPassword,
           userData.first_name,
           userData.last_name,
           userData.company_name || null,
-          userData.role || 'admin'
+          userData.role || 'admin',
+          'admin',
+          (req.body?.affiliate_id || userData.referral_affiliate_id) ? 'product_link' : null
         ]
       );
       

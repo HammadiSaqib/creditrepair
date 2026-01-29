@@ -49,6 +49,111 @@ const shopUpload = multer({
   }
 });
 
+const affiliateCommissionSettingsSchema = z.object({
+  level2_rate_free: z.coerce.number().min(0).max(100),
+  level2_rate_paid: z.coerce.number().min(0).max(100)
+});
+
+async function getAffiliateCommissionSettings(db: any): Promise<{ level2_rate_free: number; level2_rate_paid: number }> {
+  const defaults = { level2_rate_free: 2, level2_rate_paid: 5 };
+  try {
+    const rows = await db.allQuery(
+      `SELECT setting_key, setting_value FROM system_settings WHERE setting_key IN (?, ?, ?)`,
+      [
+        'affiliate.commission_level2_rate_free',
+        'affiliate.commission_level2_rate_paid',
+        'affiliate.commission_level2_rate'
+      ]
+    );
+    const byKey = new Map<string, string>();
+    for (const row of rows || []) {
+      if (row?.setting_key && typeof row.setting_value !== 'undefined') {
+        byKey.set(row.setting_key, String(row.setting_value));
+      }
+    }
+    const fallbackLevel2 = byKey.has('affiliate.commission_level2_rate') ? Number(byKey.get('affiliate.commission_level2_rate')) : undefined;
+    const level2_rate_free = byKey.has('affiliate.commission_level2_rate_free')
+      ? Number(byKey.get('affiliate.commission_level2_rate_free'))
+      : (typeof fallbackLevel2 === 'number' ? fallbackLevel2 : defaults.level2_rate_free);
+    const level2_rate_paid = byKey.has('affiliate.commission_level2_rate_paid')
+      ? Number(byKey.get('affiliate.commission_level2_rate_paid'))
+      : (typeof fallbackLevel2 === 'number' ? fallbackLevel2 : defaults.level2_rate_paid);
+    return {
+      level2_rate_free: Number.isFinite(level2_rate_free) ? level2_rate_free : defaults.level2_rate_free,
+      level2_rate_paid: Number.isFinite(level2_rate_paid) ? level2_rate_paid : defaults.level2_rate_paid
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+async function upsertAffiliateCommissionSettings(
+  db: any,
+  userId: number,
+  settings: { level2_rate_free: number; level2_rate_paid: number }
+): Promise<void> {
+  const rows = [
+    {
+      key: 'affiliate.commission_level2_rate_free',
+      value: String(settings.level2_rate_free),
+      description: 'Affiliate level 2 commission rate (%) for FREE affiliates'
+    },
+    {
+      key: 'affiliate.commission_level2_rate_paid',
+      value: String(settings.level2_rate_paid),
+      description: 'Affiliate level 2 commission rate (%) for PAID affiliates'
+    },
+  ];
+  const dbType = db.getType();
+  if (dbType === 'sqlite') {
+    for (const row of rows) {
+      await db.executeQuery(
+        `INSERT INTO system_settings 
+         (setting_key, setting_value, setting_type, category, description, is_public, updated_by)
+         VALUES (?, ?, 'number', 'billing', ?, 0, ?)
+         ON CONFLICT(setting_key) DO UPDATE SET
+           setting_value = excluded.setting_value,
+           setting_type = excluded.setting_type,
+           category = excluded.category,
+           description = excluded.description,
+           is_public = excluded.is_public,
+           updated_by = excluded.updated_by,
+           updated_at = CURRENT_TIMESTAMP`,
+        [row.key, row.value, row.description, userId]
+      );
+    }
+    return;
+  }
+  await db.executeQuery(
+    `INSERT INTO system_settings 
+     (setting_key, setting_value, setting_type, category, description, is_public, updated_by)
+     VALUES (?, ?, 'number', 'billing', ?, 0, ?)
+     ON DUPLICATE KEY UPDATE
+       setting_value = VALUES(setting_value),
+       setting_type = VALUES(setting_type),
+       category = VALUES(category),
+       description = VALUES(description),
+       is_public = VALUES(is_public),
+       updated_by = VALUES(updated_by),
+       updated_at = NOW()`,
+    [rows[0].key, rows[0].value, rows[0].description, userId]
+  );
+  await db.executeQuery(
+    `INSERT INTO system_settings 
+     (setting_key, setting_value, setting_type, category, description, is_public, updated_by)
+     VALUES (?, ?, 'number', 'billing', ?, 0, ?)
+     ON DUPLICATE KEY UPDATE
+       setting_value = VALUES(setting_value),
+       setting_type = VALUES(setting_type),
+       category = VALUES(category),
+       description = VALUES(description),
+       is_public = VALUES(is_public),
+       updated_by = VALUES(updated_by),
+       updated_at = NOW()`,
+    [rows[1].key, rows[1].value, rows[1].description, userId]
+  );
+}
+
 // Middleware functions - must be defined before use
 const requireSuperAdmin = async (req: any, res: Response, next: any) => {
   try {
@@ -2141,7 +2246,6 @@ router.delete('/admins/:id', authenticateToken, requireSuperAdmin, async (req: R
 
 // USER MANAGEMENT ROUTES
 
-// Get all users with enhanced filtering
 router.get('/users', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { page = 1, limit = 10, search, role, status, created_from, created_to } = req.query;
@@ -3111,6 +3215,34 @@ router.get('/stripe/config', authenticateToken, requireSuperAdmin, async (req: R
   } catch (error) {
     console.error('Error fetching Stripe config:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch Stripe configuration' });
+  }
+});
+
+// Affiliate Commission Settings
+router.get('/affiliate-commission-settings', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const settings = await getAffiliateCommissionSettings(db);
+    res.json({ success: true, settings });
+  } catch (error) {
+    console.error('Error fetching affiliate commission settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch affiliate commission settings' });
+  }
+});
+
+router.post('/affiliate-commission-settings', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const parsed = affiliateCommissionSettingsSchema.parse(req.body);
+    const userId = (req as any).user?.id;
+    const db = getDatabaseAdapter();
+    await upsertAffiliateCommissionSettings(db, userId, parsed);
+    res.json({ success: true, settings: parsed });
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ success: false, error: 'Invalid affiliate commission settings' });
+    }
+    console.error('Error updating affiliate commission settings:', error);
+    res.status(500).json({ success: false, error: 'Failed to update affiliate commission settings' });
   }
 });
 

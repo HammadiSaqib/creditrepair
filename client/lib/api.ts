@@ -236,6 +236,15 @@ export const authApi = {
   logout: () => api.post('/api/auth/logout'),
 };
 
+export const integrationsApi = {
+  getGhlIntegration: () => api.get('/api/integrations/ghl'),
+  saveGhlIntegration: (data: { access_token: string; location_id?: string | null }) =>
+    api.post('/api/integrations/ghl', data),
+  disableGhlIntegration: () => api.post('/api/integrations/ghl/disable'),
+  regenerateGhlWebhook: () => api.post('/api/integrations/ghl/regenerate-webhook'),
+  getGhlActivity: (limit?: number) => api.get('/api/integrations/ghl/activity', { params: { limit } }),
+};
+
 // Clients API
 export const clientsApi = {
   getClients: (params?: { page?: number; limit?: number; search?: string }) =>
@@ -562,7 +571,7 @@ export const shopApi = {
 
 // Super Admin API
 export const superAdminApi = {
-  getUsers: (params?: { page?: number; limit?: number; search?: string }) =>
+  getUsers: (params?: { page?: number; limit?: number; search?: string; role?: string; status?: string; account_type?: string; referral_source?: string; created_from?: string; created_to?: string }) =>
     api.get('/api/super-admin/users', { params }),
   getUser: (id: string) => api.get(`/api/super-admin/users/${id}`),
   updateUser: (id: string, data: any) => api.put(`/api/super-admin/users/${id}`, data),
@@ -666,6 +675,9 @@ export const superAdminApi = {
   // Alias for create flow used by some components
   createStripeConfig: (data: any) => api.post('/api/super-admin/stripe-config', data),
   updateStripeConfigSetting: (data: any) => api.put('/api/super-admin/stripe/config', data),
+  getAffiliateCommissionSettings: () => api.get('/api/super-admin/affiliate-commission-settings'),
+  updateAffiliateCommissionSettings: (data: { level2_rate_free: number; level2_rate_paid: number }) =>
+    api.post('/api/super-admin/affiliate-commission-settings', data),
   importAffiliateCSV: (file: File) => {
     const form = new FormData();
     form.append('file', file);
@@ -705,11 +717,12 @@ export const affiliateApi = {
     if (params?.range) queryParams.append('range', params.range);
     return api.get(`/api/affiliate/analytics/stats?${queryParams}`);
   },
-  generateLink: (data: { campaign: string; customCode: string }) => 
+  generateLink: (data: { campaign: string; customCode?: string; linkType?: 'product' | 'affiliate_only' }) => 
     api.post('/api/affiliate/dashboard/generate-link', data),
 
   // Referrals endpoints
   getReferrals: () => api.get('/api/affiliate/referrals'),
+  getChildReferrals: () => api.get('/api/affiliate/referrals/child'),
   getReferralStats: () => api.get('/api/affiliate/referrals/stats'),
   sendFollowUp: (referralId: string) => api.post(`/api/affiliate/referrals/${referralId}/follow-up`),
 

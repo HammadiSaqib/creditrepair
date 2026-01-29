@@ -9,6 +9,8 @@ interface CommissionCalculation {
   commissionAmount: number;
   planId?: number;
   transactionId?: string;
+  level: number;
+  affiliateTypeAtPayout?: 'free' | 'paid';
 }
 
 interface PurchaseData {
@@ -43,6 +45,51 @@ class CommissionService {
     
     // Default fallback
     return 10.0;
+  }
+
+  private async getCommissionSettings(): Promise<{ level2RateFree: number; level2RatePaid: number }> {
+    const defaults = { level2RateFree: 2, level2RatePaid: 5 };
+    try {
+      const rows = await executeQuery(
+        `SELECT setting_key, setting_value 
+         FROM system_settings 
+         WHERE setting_key IN (?, ?, ?)`,
+        [
+          'affiliate.commission_level2_rate_free',
+          'affiliate.commission_level2_rate_paid',
+          'affiliate.commission_level2_rate'
+        ]
+      ) as any[];
+      const map = new Map<string, number>();
+      for (const row of rows || []) {
+        if (row?.setting_key) {
+          const value = Number(row.setting_value);
+          if (Number.isFinite(value)) {
+            map.set(String(row.setting_key), value);
+          }
+        }
+      }
+      const fallbackLevel2 = map.get('affiliate.commission_level2_rate');
+      const level2RateFree = map.get('affiliate.commission_level2_rate_free') ?? (fallbackLevel2 ?? defaults.level2RateFree);
+      const level2RatePaid = map.get('affiliate.commission_level2_rate_paid') ?? (fallbackLevel2 ?? defaults.level2RatePaid);
+      return {
+        level2RateFree,
+        level2RatePaid
+      };
+    } catch {
+      return defaults;
+    }
+  }
+
+  private resolveAffiliateType(planType?: string | null): 'free' | 'paid' {
+    if (!planType) {
+      return 'free';
+    }
+    const normalized = String(planType).toLowerCase();
+    if (normalized === 'paid' || normalized === 'paid_partner' || normalized === 'pro' || normalized === 'premium' || normalized === 'partner') {
+      return 'paid';
+    }
+    return 'free';
   }
 
   /**
@@ -141,6 +188,7 @@ class CommissionService {
 
       const affiliate = affiliateResult[0];
       const commissionAmount = (purchaseData.amount * affiliate.commission_rate) / 100;
+      const affiliateType = this.resolveAffiliateType(affiliate.plan_type);
 
       return {
         affiliateId: affiliate.id,
@@ -148,7 +196,9 @@ class CommissionService {
         commissionRate: affiliate.commission_rate,
         commissionAmount,
         transactionId: purchaseData.transactionId,
-        planId: purchaseData.planId
+        planId: purchaseData.planId,
+        level: 1,
+        affiliateTypeAtPayout: affiliateType
       };
     } catch (error) {
       console.error('Error calculating commission:', error);
@@ -166,12 +216,14 @@ class CommissionService {
   async calculateHierarchicalCommissions(purchaseData: PurchaseData): Promise<CommissionCalculation[]> {
     try {
       const commissions: CommissionCalculation[] = [];
+      const settings = await this.getCommissionSettings();
 
       // If an explicit affiliateId is provided, traverse hierarchy from that ID
       if (purchaseData.affiliateId) {
         let currentAffiliateId = purchaseData.affiliateId;
         let level = 1;
-        const maxLevels = 3; // safety limit
+        const maxLevels = 2;
+        let childParentCommissionRate: number | null = null;
 
         while (currentAffiliateId && level <= maxLevels) {
           const affiliateRows = await executeQuery(
@@ -185,28 +237,17 @@ class CommissionService {
 
           const affiliate = affiliateRows[0];
           let commissionRate = 0;
+          const affiliateType = this.resolveAffiliateType(affiliate.plan_type);
 
           if (level === 1) {
-            // Direct affiliate gets tiered commission rate based on plan type and referral count
-            const planType = affiliate.plan_type || 'free';
-            const paidReferralsCount = affiliate.paid_referrals_count || 0;
-            
-            // Update paid referrals count before calculating commission
-            await this.updateAffiliatePaidReferralsCount(affiliate.id);
-            
-            // Get updated count
-            const updatedAffiliate = await executeQuery(
-              'SELECT paid_referrals_count FROM affiliates WHERE id = ?',
-              [affiliate.id]
-            ) as any[];
-            
-            const currentPaidReferrals = updatedAffiliate[0]?.paid_referrals_count || 0;
-            commissionRate = this.calculateTieredCommissionRate(planType, currentPaidReferrals);
-            console.log(`Direct affiliate ${affiliate.id}: plan_type=${planType}, paid_referrals=${currentPaidReferrals}, tiered_rate=${commissionRate}%`);
+            commissionRate = this.calculateTieredCommissionRate(affiliate.plan_type, affiliate.paid_referrals_count || 0);
+            childParentCommissionRate = affiliate.parent_commission_rate ?? null;
           } else {
-            // Parent affiliates get their parent commission rate
-            commissionRate = parseFloat(affiliate.parent_commission_rate) || 5.0;
-            console.log(`Parent affiliate ${affiliate.id}: parent_commission_rate = ${commissionRate}%`);
+            commissionRate = childParentCommissionRate && childParentCommissionRate > 0
+              ? childParentCommissionRate
+              : affiliateType === 'paid'
+                ? settings.level2RatePaid
+                : settings.level2RateFree;
           }
 
           if (commissionRate > 0) {
@@ -217,7 +258,9 @@ class CommissionService {
               commissionRate,
               commissionAmount,
               planId: purchaseData.planId,
-              transactionId: `${purchaseData.transactionId}_L${level}`
+              transactionId: `${purchaseData.transactionId}_L${level}`,
+              level,
+              affiliateTypeAtPayout: affiliateType
             });
           }
 
@@ -240,28 +283,18 @@ class CommissionService {
       for (let i = 0; i < affiliateHierarchy.length; i++) {
         const affiliate = affiliateHierarchy[i];
         let commissionRate = 0;
+        const affiliateType = this.resolveAffiliateType(affiliate.plan_type);
 
         if (i === 0) {
-          // Direct affiliate gets tiered commission rate based on plan type and referral count
-          const planType = affiliate.plan_type || 'free';
-          const paidReferralsCount = affiliate.paid_referrals_count || 0;
-          
-          // Update paid referrals count before calculating commission
-          await this.updateAffiliatePaidReferralsCount(affiliate.id);
-          
-          // Get updated count
-          const updatedAffiliate = await executeQuery(
-            'SELECT paid_referrals_count FROM affiliates WHERE id = ?',
-            [affiliate.id]
-          ) as any[];
-          
-          const currentPaidReferrals = updatedAffiliate[0]?.paid_referrals_count || 0;
-          commissionRate = this.calculateTieredCommissionRate(planType, currentPaidReferrals);
-          console.log(`Direct affiliate ${affiliate.id}: plan_type=${planType}, paid_referrals=${currentPaidReferrals}, tiered_rate=${commissionRate}%`);
+          commissionRate = this.calculateTieredCommissionRate(affiliate.plan_type, affiliate.paid_referrals_count || 0);
         } else {
-          // Parent affiliates get their parent commission rate
-          commissionRate = parseFloat(affiliate.parent_commission_rate) || 5.0;
-          console.log(`Parent affiliate ${affiliate.id}: parent_commission_rate = ${commissionRate}%`);
+          const childAffiliate = affiliateHierarchy[i - 1];
+          const configuredParentRate = childAffiliate?.parent_commission_rate ?? null;
+          commissionRate = configuredParentRate && configuredParentRate > 0
+            ? configuredParentRate
+            : affiliateType === 'paid'
+              ? settings.level2RatePaid
+              : settings.level2RateFree;
         }
 
         if (commissionRate > 0) {
@@ -272,7 +305,9 @@ class CommissionService {
             commissionRate,
             commissionAmount,
             transactionId: `${purchaseData.transactionId}_L${i + 1}`,
-            planId: purchaseData.planId
+            planId: purchaseData.planId,
+            level: i + 1,
+            affiliateTypeAtPayout: affiliateType
           });
         }
       }
@@ -440,6 +475,18 @@ class CommissionService {
     try {
       const commissionIds: number[] = [];
 
+      // Attempt to resolve current subscription_id for the payer user (if any)
+      let activeSubscriptionId: string | null = null;
+      try {
+        const subRows = await executeQuery(
+          `SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = 'active' LIMIT 1`,
+          [userId]
+        ) as any[];
+        if (subRows && subRows.length > 0 && subRows[0].stripe_subscription_id) {
+          activeSubscriptionId = String(subRows[0].stripe_subscription_id);
+        }
+      } catch {}
+
       for (const commission of commissions) {
         // Prefer updating an existing pending referral without transaction_id
         const pendingReferralRows = await executeQuery(
@@ -455,7 +502,7 @@ class CommissionService {
           await executeQuery(
             `UPDATE affiliate_referrals 
              SET commission_amount = ?, commission_rate = ?, transaction_id = ?, 
-                 notes = ?, conversion_date = NOW(), updated_at = NOW()
+                 status = 'paid', payment_date = NOW(), conversion_date = NOW(), notes = ?, updated_at = NOW()
              WHERE id = ?`,
             [
               commission.commissionAmount,
@@ -474,12 +521,23 @@ class CommissionService {
 
           if (existingReferralRows && existingReferralRows.length > 0) {
             referralId = existingReferralRows[0].id;
+            await executeQuery(
+              `UPDATE affiliate_referrals 
+               SET commission_amount = ?, commission_rate = ?, 
+                   status = 'paid', payment_date = NOW(), conversion_date = NOW(), updated_at = NOW()
+               WHERE id = ?`,
+              [
+                commission.commissionAmount,
+                commission.commissionRate,
+                referralId
+              ]
+            );
           } else {
             const result = await executeQuery(
               `INSERT INTO affiliate_referrals (
                  affiliate_id, referred_user_id, commission_amount, commission_rate,
-                 transaction_id, status, referral_date, conversion_date, notes, created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
+                 transaction_id, status, referral_date, conversion_date, payment_date, notes, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, 'paid', NOW(), NOW(), NOW(), ?, NOW(), NOW())`,
               [
                 commission.affiliateId,
                 userId,
@@ -508,12 +566,13 @@ class CommissionService {
         ) as any[];
 
         if (!existingCommissionRows || existingCommissionRows.length === 0) {
-          await executeQuery(
-            `INSERT INTO affiliate_commissions (
-               affiliate_id, referral_id, customer_id, customer_name, customer_email,
-               order_value, commission_rate, commission_amount, status, tier, product,
-               order_date, tracking_code, commission_type, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'Bronze', 'Subscription', NOW(), ?, 'signup', NOW(), NOW())`,
+        await executeQuery(
+          `INSERT INTO affiliate_commissions (
+             affiliate_id, referral_id, customer_id, customer_name, customer_email,
+             order_value, commission_rate, commission_amount, status, tier, product,
+             commission_level, affiliate_type_at_payout, subscription_id, payer_user_id,
+             order_date, tracking_code, commission_type, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'Bronze', 'Subscription', ?, ?, ?, ?, NOW(), ?, 'signup', NOW(), NOW())`,
             [
               commission.affiliateId,
               referralId,
@@ -523,6 +582,10 @@ class CommissionService {
               commission.amount,
               commission.commissionRate,
               commission.commissionAmount,
+              commission.level,
+              commission.affiliateTypeAtPayout || 'free',
+              activeSubscriptionId,
+              userId,
               commission.transactionId || null
             ]
           );
@@ -584,7 +647,7 @@ class CommissionService {
         await executeQuery(
           `UPDATE affiliate_referrals 
            SET commission_amount = ?, commission_rate = ?, transaction_id = ?, 
-               notes = ?, conversion_date = NOW(), updated_at = NOW()
+               status = 'paid', payment_date = NOW(), conversion_date = NOW(), notes = ?, updated_at = NOW()
            WHERE id = ?`,
           [
             calculation.commissionAmount,
@@ -603,12 +666,23 @@ class CommissionService {
 
         if (existingReferralRows && existingReferralRows.length > 0) {
           referralId = existingReferralRows[0].id;
+          await executeQuery(
+            `UPDATE affiliate_referrals 
+             SET commission_amount = ?, commission_rate = ?, 
+                 status = 'paid', payment_date = NOW(), conversion_date = NOW(), updated_at = NOW()
+             WHERE id = ?`,
+            [
+              calculation.commissionAmount,
+              calculation.commissionRate,
+              referralId
+            ]
+          );
         } else {
           const result = await executeQuery(
             `INSERT INTO affiliate_referrals (
                affiliate_id, referred_user_id, commission_amount, commission_rate,
-               transaction_id, status, referral_date, conversion_date, notes, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW(), ?, NOW(), NOW())`,
+               transaction_id, status, referral_date, conversion_date, payment_date, notes, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, 'paid', NOW(), NOW(), NOW(), ?, NOW(), NOW())`,
             [
               calculation.affiliateId,
               userId,
@@ -634,13 +708,25 @@ class CommissionService {
         [referralId]
       ) as any[];
 
+      let activeSubscriptionId: string | null = null;
+      try {
+        const subRows = await executeQuery(
+          `SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = 'active' LIMIT 1`,
+          [userId]
+        ) as any[];
+        if (subRows && subRows.length > 0 && subRows[0].stripe_subscription_id) {
+          activeSubscriptionId = String(subRows[0].stripe_subscription_id);
+        }
+      } catch {}
+
       if (!existingCommissionRows || existingCommissionRows.length === 0) {
         await executeQuery(
           `INSERT INTO affiliate_commissions (
              affiliate_id, referral_id, customer_id, customer_name, customer_email,
              order_value, commission_rate, commission_amount, status, tier, product,
+             commission_level, affiliate_type_at_payout, subscription_id, payer_user_id,
              order_date, tracking_code, commission_type, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'Bronze', 'Subscription', NOW(), ?, 'signup', NOW(), NOW())`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid', 'Bronze', 'Subscription', ?, ?, ?, ?, NOW(), ?, 'signup', NOW(), NOW())`,
           [
             calculation.affiliateId,
             referralId,
@@ -650,6 +736,10 @@ class CommissionService {
             calculation.amount,
             calculation.commissionRate,
             calculation.commissionAmount,
+            calculation.level,
+            calculation.affiliateTypeAtPayout || 'free',
+            activeSubscriptionId,
+            userId,
             calculation.transactionId || null
           ]
         );

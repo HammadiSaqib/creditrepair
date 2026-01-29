@@ -11,6 +11,7 @@ let pool = null;
 
 // Import environment configuration
 import { ENV_CONFIG } from '../config/environment.js';
+import { syncGhlCreditScores } from '../services/ghlService.js';
 
 // Default database configuration using ENV_CONFIG
 const DEFAULT_CONFIG = {
@@ -155,11 +156,126 @@ async function saveCreditReport(data) {
   ];
 
   try {
-    return await executeQuery(sql, params);
+    const result = await executeQuery(sql, params);
+    try {
+      const clientId = data.client_id;
+      let clientRow = null;
+      if (clientId) {
+        const rows = await executeQuery(
+          'SELECT id, user_id, first_name, last_name, email, phone, integration_id FROM clients WHERE id = ? LIMIT 1',
+          [clientId]
+        );
+        if (Array.isArray(rows) && rows.length > 0) {
+          clientRow = rows[0];
+        }
+      }
+      if (clientRow?.user_id) {
+        let integrationRow = null;
+        if (clientRow.integration_id) {
+          const rows = await executeQuery(
+            `SELECT * FROM admin_integrations WHERE id = ? AND admin_id = ? AND provider = 'ghl' AND is_active = 1 LIMIT 1`,
+            [clientRow.integration_id, clientRow.user_id]
+          );
+          if (Array.isArray(rows) && rows.length > 0) {
+            integrationRow = rows[0];
+          }
+        }
+        if (!integrationRow) {
+          const rows = await executeQuery(
+            `SELECT * FROM admin_integrations WHERE admin_id = ? AND provider = 'ghl' AND is_active = 1 ORDER BY id DESC LIMIT 1`,
+            [clientRow.user_id]
+          );
+          if (Array.isArray(rows) && rows.length > 0) {
+            integrationRow = rows[0];
+          }
+        }
+        if (integrationRow?.access_token) {
+          const integrationId = integrationRow.id;
+          const adminId = integrationRow.admin_id || clientRow.user_id;
+          const payload = {
+            integration: {
+              accessToken: integrationRow.access_token,
+              locationId: integrationRow.location_id || null,
+              businessRecordId: integrationRow.business_record_id || null,
+              outboundUrl: integrationRow.outbound_url || null,
+              customFieldCreditScore: integrationRow.custom_field_credit_score || null,
+              customFieldExperianScore: integrationRow.custom_field_experian_score || null,
+              customFieldEquifaxScore: integrationRow.custom_field_equifax_score || null,
+              customFieldTransunionScore: integrationRow.custom_field_transunion_score || null,
+              customFieldReportDate: integrationRow.custom_field_report_date || null
+            },
+            email: clientRow?.email || null,
+            phone: clientRow?.phone || null,
+            firstName: clientRow?.first_name || null,
+            lastName: clientRow?.last_name || null,
+            scores: {
+              creditScore: data.credit_score ?? null,
+              experianScore: data.experian_score ?? null,
+              equifaxScore: data.equifax_score ?? null,
+              transunionScore: data.transunion_score ?? null
+            },
+            reportDate: data.report_date ? new Date(data.report_date).toISOString().split('T')[0] : null
+          };
+          void syncGhlCreditScoresWithRetry({
+            payload,
+            integrationId,
+            adminId,
+            clientId: clientRow?.id || null
+          }).catch(() => {});
+        }
+      }
+    } catch (ghlError) {
+      console.error('GHL sync failed:', ghlError);
+    }
+    return result;
   } catch (error) {
     console.error('Failed to save credit report history:', error);
     throw error;
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function logIntegrationActivity({ integrationId, adminId, clientId, status, message }) {
+  try {
+    await executeQuery(
+      `INSERT INTO integration_activity_logs (integration_id, admin_id, direction, event_type, status, message, client_id, created_at)
+       VALUES (?, ?, 'outbound', 'score_synced', ?, ?, ?, CURRENT_TIMESTAMP)`,
+      [integrationId, adminId, status, message || null, clientId || null]
+    );
+  } catch {}
+}
+
+async function syncGhlCreditScoresWithRetry({ payload, integrationId, adminId, clientId }) {
+  const backoffDelays = [5000, 30000, 120000];
+  let lastError = null;
+  for (let attempt = 0; attempt < backoffDelays.length + 1; attempt += 1) {
+    try {
+      await syncGhlCreditScores(payload);
+      await logIntegrationActivity({
+        integrationId,
+        adminId,
+        clientId,
+        status: 'success',
+        message: attempt > 0 ? 'Retry succeeded' : 'Report synced to GHL'
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < backoffDelays.length) {
+        await sleep(backoffDelays[attempt]);
+      }
+    }
+  }
+  await logIntegrationActivity({
+    integrationId,
+    adminId,
+    clientId,
+    status: 'failed',
+    message: lastError?.message || 'GHL sync failed'
+  });
 }
 
 /**
