@@ -4526,19 +4526,7 @@ export default function CreditReport() {
               )}
             </div>
 
-            {/* Export Options */}
-            <div className="flex justify-end mt-6">
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="text-gray-600 hover:text-gray-800">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export PDF
-                </Button>
-                <Button variant="outline" size="sm" className="text-gray-600 hover:text-gray-800">
-                  <FileText className="h-4 w-4 mr-2" />
-                  Export CSV
-                </Button>
-              </div>
-            </div>
+            
           </div>
 
           {/* moved application cards to Funding tab */}

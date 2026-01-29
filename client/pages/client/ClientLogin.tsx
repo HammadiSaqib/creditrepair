@@ -238,25 +238,14 @@ const ClientLogin = () => {
               </Button>
             </form>
 
-            <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600">
-                Don't have an account?{' '}
-                <Link 
-                  to="/member/register" 
-                  className="text-green-600 hover:text-green-700 font-medium hover:underline"
-                >
-                  Contact us to get started
-                </Link>
-              </p>
-            </div>
 
             <div className="mt-6 pt-6 border-t border-gray-200">
               <div className="text-center">
                 <Link 
-                  to="/login" 
+                  to="/contact" 
                   className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
                 >
-                  Access Professional Dashboard
+                  User Your Monitoring Site Email and Password to login
                 </Link>
               </div>
             </div>

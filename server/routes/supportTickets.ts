@@ -1,12 +1,53 @@
 import { Router, Request, Response } from 'express';
 import { executeQuery, executeTransaction } from '../database/mysqlConfig.js';
-import { authenticateToken } from '../middleware/authMiddleware.js';
+import { authenticateToken, AuthRequest } from '../middleware/authMiddleware.js';
 import { Ticket, TicketMessage } from '../database/mysqlSchema.js';
 
 const router = Router();
 
 // Apply authentication middleware to all routes
 router.use(authenticateToken);
+
+// GET /api/support/tickets/my - Get tickets for current user
+router.get('/my', async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const ticketsQuery = `
+      SELECT 
+        t.id,
+        t.title,
+        t.priority,
+        t.status,
+        t.category,
+        t.created_at,
+        t.updated_at
+      FROM tickets t
+      WHERE t.customer_id = ?
+      ORDER BY t.created_at DESC
+    `;
+
+    const tickets = await executeQuery<any[]>(ticketsQuery, [userId]);
+
+    const transformedTickets = tickets.map(ticket => ({
+      id: ticket.id.toString(),
+      subject: ticket.title,
+      status: ticket.status,
+      priority: ticket.priority,
+      created_at: ticket.created_at,
+      updated_at: ticket.updated_at,
+      category: ticket.category
+    }));
+
+    res.json({ tickets: transformedTickets });
+  } catch (error) {
+    console.error('Error fetching user tickets:', error);
+    res.status(500).json({ error: 'Failed to fetch tickets' });
+  }
+});
 
 // GET /api/support/tickets - Get all tickets with pagination and filtering
 router.get('/', async (req: Request, res: Response) => {

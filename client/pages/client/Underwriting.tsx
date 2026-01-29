@@ -6540,9 +6540,7 @@ export default function CreditReport() {
               </div>
             </CardContent>
           </Card>
-
-
-
+          <div className="space-y-6">
           {/* Do You Qualify */}
           <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50 dark:bg-none dark:bg-slate-800 dark:border dark:border-slate-700`}>
             <CardHeader>
@@ -7772,6 +7770,7 @@ export default function CreditReport() {
               })()}
             </CardContent>
           </Card>
+          </div>
           {/* Pay Down Plan Modal */}
           <Dialog
             open={paydownDialogOpen}

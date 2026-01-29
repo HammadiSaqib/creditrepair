@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ClientLayout from '../../components/ClientLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,14 +14,28 @@ import {
   Mail, 
   Clock, 
   HelpCircle, 
-  FileText, 
-  Video, 
   Search,
   CheckCircle,
-  AlertCircle,
-  BookOpen,
-  Users
+  AlertCircle
 } from 'lucide-react';
+import { apiRequest } from '@/lib/api';
+
+interface SupportTicket {
+  id: string;
+  subject: string;
+  status: 'open' | 'in_progress' | 'pending' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  created_at: string;
+  updated_at: string;
+  category: string;
+}
+
+interface FAQItem {
+  id: number | string;
+  question: string;
+  answer: string;
+  category: string;
+}
 
 const Support = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -31,94 +45,100 @@ const Support = () => {
     priority: '',
     description: ''
   });
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(true);
+  const [ticketsError, setTicketsError] = useState<string | null>(null);
+  const [faqs, setFaqs] = useState<FAQItem[]>([]);
+  const [faqsLoading, setFaqsLoading] = useState(true);
+  const [faqsError, setFaqsError] = useState<string | null>(null);
 
-  const supportTickets = [
-    {
-      id: 'T-2024-001',
-      subject: 'Question about dispute process',
-      status: 'Open',
-      priority: 'Medium',
-      created: '2024-01-20',
-      lastUpdate: '2024-01-22'
-    },
-    {
-      id: 'T-2024-002',
-      subject: 'Credit score not updating',
-      status: 'Resolved',
-      priority: 'High',
-      created: '2024-01-15',
-      lastUpdate: '2024-01-18'
-    }
-  ];
-
-  const faqs = [
-    {
-      question: 'How long does credit repair take?',
-      answer: 'Credit repair typically takes 3-6 months, but can vary depending on the complexity of your situation and the number of items being disputed.',
-      category: 'General'
-    },
-    {
-      question: 'What is a good credit score?',
-      answer: 'Credit scores range from 300-850. Generally, 670+ is considered good, 740+ is very good, and 800+ is excellent.',
-      category: 'Credit Scores'
-    },
-    {
-      question: 'How often should I check my credit report?',
-      answer: 'You should check your credit report at least once a year from each bureau, but monthly monitoring is recommended for active credit repair.',
-      category: 'Credit Reports'
-    },
-    {
-      question: 'Can I dispute items myself?',
-      answer: 'Yes, you can dispute items yourself, but professional credit repair services have experience and resources that can be more effective.',
-      category: 'Disputes'
-    }
-  ];
-
-  const resources = [
-    {
-      title: 'Credit Repair Guide',
-      description: 'Complete guide to understanding and improving your credit',
-      type: 'PDF',
-      icon: FileText
-    },
-    {
-      title: 'Dispute Letter Templates',
-      description: 'Professional templates for disputing credit report errors',
-      type: 'Templates',
-      icon: FileText
-    },
-    {
-      title: 'Credit Score Basics',
-      description: 'Video series explaining how credit scores work',
-      type: 'Video',
-      icon: Video
-    },
-    {
-      title: 'Budgeting Worksheet',
-      description: 'Excel template for managing your finances',
-      type: 'Excel',
-      icon: FileText
-    }
-  ];
-
-  const getStatusColor = (status) => {
+  const getStatusColor = (status: SupportTicket['status'] | string) => {
     switch (status) {
-      case 'Open': return 'bg-yellow-100 text-yellow-800';
-      case 'In Progress': return 'bg-blue-100 text-blue-800';
-      case 'Resolved': return 'bg-green-100 text-green-800';
-      case 'Closed': return 'bg-gray-100 text-gray-800';
+      case 'open':
+      case 'Open':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'in_progress':
+      case 'In Progress':
+        return 'bg-blue-100 text-blue-800';
+      case 'pending':
+      case 'Pending':
+        return 'bg-purple-100 text-purple-800';
+      case 'resolved':
+      case 'Resolved':
+        return 'bg-green-100 text-green-800';
+      case 'closed':
+      case 'Closed':
+        return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const getPriorityColor = (priority) => {
+  const getPriorityColor = (priority: SupportTicket['priority'] | string) => {
     switch (priority) {
-      case 'High': return 'bg-red-100 text-red-800';
-      case 'Medium': return 'bg-yellow-100 text-yellow-800';
-      case 'Low': return 'bg-green-100 text-green-800';
+      case 'high':
+      case 'High':
+        return 'bg-red-100 text-red-800';
+      case 'medium':
+      case 'Medium':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'low':
+      case 'Low':
+        return 'bg-green-100 text-green-800';
+      case 'urgent':
+      case 'Urgent':
+        return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
+
+  const formatLabel = (value: string) => {
+    return value
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        setTicketsLoading(true);
+        setTicketsError(null);
+        const data = await apiRequest('/api/support/tickets/my');
+        setSupportTickets(data.tickets || []);
+      } catch (error) {
+        console.error('Error fetching support tickets:', error);
+        setTicketsError('Failed to load tickets');
+      } finally {
+        setTicketsLoading(false);
+      }
+    };
+
+    fetchTickets();
+  }, []);
+
+  useEffect(() => {
+    const fetchFaqs = async () => {
+      try {
+        setFaqsLoading(true);
+        setFaqsError(null);
+        const data = await apiRequest('/api/knowledge-base/faqs');
+        const items = Array.isArray(data?.data) ? data.data : [];
+        const mapped: FAQItem[] = items.map((f: any) => ({
+          id: f.id,
+          question: f.question,
+          answer: f.answer,
+          category: f.category
+        }));
+        setFaqs(mapped);
+      } catch (error) {
+        console.error('Error fetching FAQs:', error);
+        setFaqsError('Failed to load FAQs');
+      } finally {
+        setFaqsLoading(false);
+      }
+    };
+
+    fetchFaqs();
+  }, []);
 
   const filteredFaqs = faqs.filter(faq => 
     faq.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -130,24 +150,15 @@ const Support = () => {
       <div className="space-y-6">
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="cursor-pointer hover:shadow-md transition-shadow">
-            <CardContent className="p-6 text-center">
-              <MessageCircle className="h-12 w-12 text-green-600 mx-auto mb-3" />
-              <h3 className="font-semibold mb-2">Live Chat</h3>
-              <p className="text-sm text-gray-600 mb-3">Chat with our support team</p>
-              <Button className="bg-green-600 hover:bg-green-700">
-                Start Chat
-              </Button>
-            </CardContent>
-          </Card>
+          
 
           <Card className="cursor-pointer hover:shadow-md transition-shadow">
             <CardContent className="p-6 text-center">
               <Phone className="h-12 w-12 text-blue-600 mx-auto mb-3" />
               <h3 className="font-semibold mb-2">Phone Support</h3>
-              <p className="text-sm text-gray-600 mb-3">Call us at (555) 123-4567</p>
-              <Button variant="outline">
-                Call Now
+              <p className="text-sm text-gray-600 mb-3">Call us at (475) 259-8768</p>
+              <Button variant="outline" asChild>
+                <a href="tel:+15551234567">Call Now</a>
               </Button>
             </CardContent>
           </Card>
@@ -157,8 +168,10 @@ const Support = () => {
               <Mail className="h-12 w-12 text-purple-600 mx-auto mb-3" />
               <h3 className="font-semibold mb-2">Email Support</h3>
               <p className="text-sm text-gray-600 mb-3">Send us an email</p>
-              <Button variant="outline">
-                Send Email
+              <Button variant="outline" asChild>
+                <a href="mailto:support@thescoremachine.com">
+                  Send Email
+                </a>
               </Button>
             </CardContent>
           </Card>
@@ -172,7 +185,7 @@ const Support = () => {
                 <Clock className="h-6 w-6 text-green-600" />
                 <div>
                   <h4 className="font-semibold">Support Hours</h4>
-                  <p className="text-sm text-gray-600">Monday - Friday: 8:00 AM - 8:00 PM EST</p>
+                  <p className="text-sm text-gray-600">Monday To Saturday From 11:00AM to 7:00PM EST</p>
                 </div>
               </div>
               <Badge className="bg-green-100 text-green-800">
@@ -183,11 +196,10 @@ const Support = () => {
         </Card>
 
         <Tabs defaultValue="faq" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="faq">FAQ</TabsTrigger>
             <TabsTrigger value="tickets">My Tickets</TabsTrigger>
             <TabsTrigger value="contact">Contact Us</TabsTrigger>
-            <TabsTrigger value="resources">Resources</TabsTrigger>
           </TabsList>
 
           <TabsContent value="faq">
@@ -214,22 +226,32 @@ const Support = () => {
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  {filteredFaqs.map((faq, index) => (
-                    <div key={index} className="border rounded-lg p-4">
-                      <div className="flex items-start justify-between mb-2">
-                        <h4 className="font-semibold">{faq.question}</h4>
-                        <Badge variant="outline">{faq.category}</Badge>
-                      </div>
-                      <p className="text-sm text-gray-600">{faq.answer}</p>
+                {faqsLoading && (
+                  <div className="text-sm text-gray-600">Loading FAQs...</div>
+                )}
+                {faqsError && (
+                  <div className="text-sm text-red-600">{faqsError}</div>
+                )}
+                {!faqsLoading && !faqsError && (
+                  <>
+                    <div className="space-y-4">
+                      {filteredFaqs.map((faq) => (
+                        <div key={faq.id} className="border rounded-lg p-4">
+                          <div className="flex items-start justify-between mb-2">
+                            <h4 className="font-semibold">{faq.question}</h4>
+                            <Badge variant="outline">{faq.category}</Badge>
+                          </div>
+                          <p className="text-sm text-gray-600">{faq.answer}</p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
 
-                {filteredFaqs.length === 0 && (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500">No FAQs found matching your search.</p>
-                  </div>
+                    {filteredFaqs.length === 0 && (
+                      <div className="text-center py-8">
+                        <p className="text-gray-500">No FAQs found matching your search.</p>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -244,46 +266,61 @@ const Support = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {supportTickets.map((ticket) => (
-                    <div key={ticket.id} className="p-4 border rounded-lg">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <h4 className="font-semibold">{ticket.subject}</h4>
-                          <p className="text-sm text-gray-600">Ticket #{ticket.id}</p>
+                {ticketsLoading && (
+                  <div className="text-sm text-gray-600">Loading tickets...</div>
+                )}
+                {ticketsError && (
+                  <div className="text-sm text-red-600">{ticketsError}</div>
+                )}
+                {!ticketsLoading && !ticketsError && supportTickets.length === 0 && (
+                  <div className="text-sm text-gray-500">No tickets yet.</div>
+                )}
+                {!ticketsLoading && !ticketsError && supportTickets.length > 0 && (
+                  <div className="space-y-4">
+                    {supportTickets.map((ticket) => (
+                      <div key={ticket.id} className="p-4 border rounded-lg">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <h4 className="font-semibold">{ticket.subject}</h4>
+                            <p className="text-sm text-gray-600">Ticket #{ticket.id}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Badge className={getStatusColor(ticket.status)}>
+                              {formatLabel(ticket.status)}
+                            </Badge>
+                            <Badge className={getPriorityColor(ticket.priority)}>
+                              {formatLabel(ticket.priority)}
+                            </Badge>
+                          </div>
                         </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+                          <div>
+                            <span className="text-gray-600">Created:</span>
+                            <span className="ml-2 font-medium">
+                              {new Date(ticket.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-600">Last Update:</span>
+                            <span className="ml-2 font-medium">
+                              {new Date(ticket.updated_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+
                         <div className="flex gap-2">
-                          <Badge className={getStatusColor(ticket.status)}>
-                            {ticket.status}
-                          </Badge>
-                          <Badge className={getPriorityColor(ticket.priority)}>
-                            {ticket.priority}
-                          </Badge>
+                          <Button variant="outline" size="sm">
+                            View Details
+                          </Button>
+                          <Button variant="outline" size="sm">
+                            Add Reply
+                          </Button>
                         </div>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-4 text-sm mb-3">
-                        <div>
-                          <span className="text-gray-600">Created:</span>
-                          <span className="ml-2 font-medium">{ticket.created}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">Last Update:</span>
-                          <span className="ml-2 font-medium">{ticket.lastUpdate}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <Button variant="outline" size="sm">
-                          View Details
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          Add Reply
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="mt-6">
                   <Button className="bg-green-600 hover:bg-green-700">
@@ -371,57 +408,6 @@ const Support = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="resources">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BookOpen className="h-5 w-5" />
-                  Resources & Downloads
-                </CardTitle>
-                <CardDescription>
-                  Helpful guides, templates, and educational materials
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {resources.map((resource, index) => {
-                    const Icon = resource.icon;
-                    
-                    return (
-                      <div key={index} className="p-4 border rounded-lg hover:shadow-md transition-shadow">
-                        <div className="flex items-start gap-3">
-                          <Icon className="h-8 w-8 text-green-600 mt-1" />
-                          <div className="flex-1">
-                            <h4 className="font-semibold mb-1">{resource.title}</h4>
-                            <p className="text-sm text-gray-600 mb-3">{resource.description}</p>
-                            <div className="flex items-center justify-between">
-                              <Badge variant="outline">{resource.type}</Badge>
-                              <Button size="sm" variant="outline">
-                                Download
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center gap-3 mb-3">
-                    <Users className="h-6 w-6 text-blue-600" />
-                    <h4 className="font-semibold text-blue-800">Community Forum</h4>
-                  </div>
-                  <p className="text-sm text-blue-700 mb-3">
-                    Connect with other clients, share experiences, and get advice from the community.
-                  </p>
-                  <Button variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100">
-                    Visit Forum
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
       </div>
     </ClientLayout>

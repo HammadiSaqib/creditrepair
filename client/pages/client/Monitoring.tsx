@@ -2423,18 +2423,7 @@ export default function ClientDashboard() {
                             <span className="text-sm text-muted-foreground">
                               Report File: {report.report_path.split('/').pop()}
                             </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs"
-                              onClick={() => {
-                                // Handle report download/view
-                                console.log('View report:', report.report_path);
-                              }}
-                            >
-                              <FileText className="h-3 w-3 mr-1" />
-                              View Report
-                            </Button>
+                            
                           </div>
                         </div>
                       )}
