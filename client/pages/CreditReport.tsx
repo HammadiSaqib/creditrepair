@@ -8727,20 +8727,18 @@ export default function CreditReport() {
                       </div>
 
                       {/* Footer Delta */}
-                      <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-col items-center gap-2">
-                        
+                      <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between gap-4">
+                        <span className="text-xl text-slate-400 font-medium">Monthly Change</span>
                         {(() => {
                            const cls = delta === null ? 'text-slate-400' : (delta > 0 ? 'text-green-500' : (delta < 0 ? 'text-red-500' : 'text-slate-500'));
                            const icon = delta === null ? null : (delta > 0 ? <TrendingUp className="w-3 h-3" /> : (delta < 0 ? <TrendingDown className="w-3 h-3" /> : null));
                            return (
-                             <div className={`flex items-center gap-2 text-3xl font-bold ${cls}`}>
+                             <div className={`flex items-center gap-2 text-7xl font-bold ${cls}`}>
                                {icon}
                                {delta === null ? '—' : (delta > 0 ? `${delta}+` : delta)}
                              </div>
                            );
                         })()}
-
-                        <span className="text-xs text-slate-400 font-medium text-center">Monthly Change</span>
                       </div>
                     </div>
                   );
