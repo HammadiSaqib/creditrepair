@@ -412,6 +412,19 @@ export interface Ticket {
   updated_by: number;
 }
 
+export interface ProjectTask {
+  id: number;
+  title: string;
+  description: string;
+  screenshot_url?: string | null;
+  status: 'pending' | 'in_progress' | 'completed';
+  priority: 'normal' | 'medium' | 'priority';
+  created_by: number;
+  updated_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface TicketMessage {
   id: number;
   ticket_id: number;
@@ -490,6 +503,17 @@ export async function initializeMySQLDatabase(): Promise<void> {
       if (!existing.has('logo_url')) alters.push('ADD COLUMN logo_url VARCHAR(500)');
       if (alters.length) {
         await executeQuery(`ALTER TABLE affiliates ${alters.join(', ')}`);
+      }
+    } catch (e) {
+    }
+
+    try {
+      const cols = await executeQuery(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'project_tasks'`
+      );
+      const existing = new Set((cols as any[]).map((r: any) => r.COLUMN_NAME));
+      if (!existing.has('priority')) {
+        await executeQuery(`ALTER TABLE project_tasks ADD COLUMN priority ENUM('normal', 'medium', 'priority') NOT NULL DEFAULT 'normal'`);
       }
     } catch (e) {
     }
@@ -1387,6 +1411,26 @@ async function createMySQLTables(): Promise<void> {
       INDEX idx_created_at (created_at),
       FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Project tasks table
+    `CREATE TABLE IF NOT EXISTS project_tasks (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      description TEXT NOT NULL,
+      screenshot_url VARCHAR(500) NULL,
+      status ENUM('pending', 'in_progress', 'completed') NOT NULL DEFAULT 'pending',
+      priority ENUM('normal', 'medium', 'priority') NOT NULL DEFAULT 'normal',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_by INT NOT NULL,
+      updated_by INT NOT NULL,
+      INDEX idx_status (status),
+      INDEX idx_created_by (created_by),
+      INDEX idx_updated_by (updated_by),
+      INDEX idx_created_at (created_at),
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,

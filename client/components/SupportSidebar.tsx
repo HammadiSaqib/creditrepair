@@ -24,6 +24,7 @@ import {
   UserCog,
   Newspaper,
   Video,
+  ClipboardList,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -55,6 +56,12 @@ export default function SupportSidebar({ className }: SupportSidebarProps) {
       href: "/support/live-chat",
       icon: MessageSquare,
       badge: "3",
+    },
+    {
+      name: "Tasks",
+      href: "/support/tasks",
+      icon: ClipboardList,
+      badge: null,
     },
     {
       name: "Users",

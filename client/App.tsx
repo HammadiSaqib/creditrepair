@@ -69,12 +69,14 @@ const SuperAdminAdminImport = React.lazy(() => import("./pages/super-admin/Super
 const SuperAdminAffiliateImport = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliateImport"));
 const SuperAdminClientImport = React.lazy(() => import("./pages/super-admin/SuperAdminClientImport"));
 const SuperAdminCreditReportUpload = React.lazy(() => import("./pages/super-admin/SuperAdminCreditReportUpload"));
+const SuperAdminTasks = React.lazy(() => import("./pages/super-admin/SuperAdminTasks"));
 const ShopManagement = React.lazy(() => import("./pages/super-admin/ShopManagement"));
 const Login = React.lazy(() => import("./pages/Login"));
 const Register = React.lazy(() => import("./pages/Register"));
 const SuperAdminLogin = React.lazy(() => import("./pages/SuperAdminLogin"));
 const SupportLogin = React.lazy(() => import("./pages/SupportLogin"));
 const SupportDashboard = React.lazy(() => import("./pages/SupportDashboard"));
+const SupportTasks = React.lazy(() => import("./pages/SupportTasks"));
 const SupportAffiliateCsvImport = React.lazy(() => import("./pages/SupportAffiliateCsvImport"));
 const SupportTickets = React.lazy(() => import("./pages/SupportTickets"));
 const SupportLiveChat = React.lazy(() => import("./pages/SupportLiveChat"));
@@ -568,6 +570,14 @@ const App = () => {
             }
           />
           <Route
+            path="/super-admin/tasks"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminTasks />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
             path="/super-admin/shop-management"
             element={
               <SuperAdminProtectedRoute>
@@ -636,6 +646,14 @@ const App = () => {
             element={
               <SupportProtectedRoute>
                 <SupportDashboard />
+              </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/support/tasks"
+            element={
+              <SupportProtectedRoute>
+                <SupportTasks />
               </SupportProtectedRoute>
             }
           />

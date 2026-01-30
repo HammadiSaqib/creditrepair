@@ -704,6 +704,19 @@ export const superAdminApi = {
   updateShopProduct: (id: number, data: { name?: string; description?: string; price?: number; thumbnail_url?: string | null; files?: Array<{ url: string; type: 'image' | 'video' | 'pdf' | 'zip' | 'other'; source: 'upload' | 'link' }> }) =>
     api.put(`/api/super-admin/shop/products/${id}`, data),
   deleteShopProduct: (id: number) => api.delete(`/api/super-admin/shop/products/${id}`),
+  getTasks: () => api.get('/api/super-admin/tasks'),
+  createTask: (data: { title: string; description: string; status?: string; priority?: string; screenshot?: File | null }) => {
+    const form = new FormData();
+    form.append('title', data.title);
+    form.append('description', data.description);
+    if (data.status) form.append('status', data.status);
+    if (data.priority) form.append('priority', data.priority);
+    if (data.screenshot) form.append('screenshot', data.screenshot);
+    return api.post('/api/super-admin/tasks', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  updateTask: (id: number, data: { title?: string; description?: string; status?: string }) =>
+    api.put(`/api/super-admin/tasks/${id}`, data),
+  deleteTask: (id: number) => api.delete(`/api/super-admin/tasks/${id}`),
 };
 
 // Affiliate API module
@@ -809,6 +822,19 @@ export const supportApi = {
   // Profile Management
   getProfile: () => api.get('/api/auth/profile'),
   updateProfile: (data: any) => api.put('/api/auth/profile', data),
+  getTasks: () => api.get('/api/support/dashboard/tasks'),
+  createTask: (data: { title: string; description: string; status?: string; priority?: string; screenshot?: File | null }) => {
+    const form = new FormData();
+    form.append('title', data.title);
+    form.append('description', data.description);
+    if (data.status) form.append('status', data.status);
+    if (data.priority) form.append('priority', data.priority);
+    if (data.screenshot) form.append('screenshot', data.screenshot);
+    return api.post('/api/support/dashboard/tasks', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  updateTask: (id: number, data: { title?: string; description?: string; status?: string }) =>
+    api.put(`/api/support/dashboard/tasks/${id}`, data),
+  deleteTask: (id: number) => api.delete(`/api/support/dashboard/tasks/${id}`),
 };
 
 // Admin Notification API

@@ -401,6 +401,10 @@ async function createTables() {
     await runQuery(`ALTER TABLE clients ADD COLUMN integration_id INTEGER`);
   } catch (err) {
   }
+  try {
+    await runQuery(`ALTER TABLE project_tasks ADD COLUMN priority TEXT DEFAULT 'normal' CHECK (priority IN ('normal', 'medium', 'priority'))`);
+  } catch (err) {
+  }
 
   // Credit Reports table
   await runQuery(`
@@ -587,6 +591,24 @@ async function createTables() {
       updated_by INTEGER NOT NULL,
       FOREIGN KEY (customer_id) REFERENCES users (id),
       FOREIGN KEY (assignee_id) REFERENCES users (id),
+      FOREIGN KEY (created_by) REFERENCES users (id),
+      FOREIGN KEY (updated_by) REFERENCES users (id)
+    )
+  `);
+
+  // Project tasks table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS project_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      screenshot_url TEXT,
+      status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed')),
+      priority TEXT DEFAULT 'normal' CHECK (priority IN ('normal', 'medium', 'priority')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by INTEGER NOT NULL,
+      updated_by INTEGER NOT NULL,
       FOREIGN KEY (created_by) REFERENCES users (id),
       FOREIGN KEY (updated_by) REFERENCES users (id)
     )

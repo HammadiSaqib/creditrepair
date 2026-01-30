@@ -22,6 +22,7 @@ import {
   FileText,
   Headphones,
   GraduationCap,
+  ClipboardList,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -88,6 +89,12 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       name: "Reports",
       href: "/super-admin/reports",
       icon: FileText,
+      badge: null,
+    },
+    {
+      name: "Tasks",
+      href: "/super-admin/tasks",
+      icon: ClipboardList,
       badge: null,
     },
     {
