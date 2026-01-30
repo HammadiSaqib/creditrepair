@@ -22,6 +22,22 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
   const radius = (size - 80) / 2;
   const center = size / 2;
   const strokeWidth = 40;
+  const labelRadiusOffset = Math.max(18, Math.min(45, size * 0.12));
+  const labelBoxClasses = size < 260
+    ? 'bg-white/90 backdrop-blur-sm rounded-lg px-2 py-1 shadow-lg border border-gray-200 text-center min-w-[60px]'
+    : 'bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border border-gray-200 text-center min-w-[80px]';
+  const labelValueClasses = size < 260 ? 'text-base font-bold text-gray-900 leading-none' : 'text-lg font-bold text-gray-900 leading-none';
+  const labelTextClasses = size < 260 ? 'text-[10px] text-gray-600 font-medium mt-1 leading-tight' : 'text-xs text-gray-600 font-medium mt-1 leading-tight';
+  const scoreClasses = size < 260 ? 'text-2xl font-black text-transparent bg-gradient-to-br from-gray-800 via-gray-900 to-black bg-clip-text hover:scale-105 transition-transform duration-300 cursor-default' : 'text-3xl font-black text-transparent bg-gradient-to-br from-gray-800 via-gray-900 to-black bg-clip-text hover:scale-105 transition-transform duration-300 cursor-default';
+  const ficoLogoClasses = size < 260 ? 'h-14 w-auto mb-2 object-contain filter drop-shadow-md hover:scale-110 transition-transform duration-300' : 'h-20 w-auto mb-2 object-contain filter drop-shadow-md hover:scale-110 transition-transform duration-300';
+  const vantageLogoClasses = size < 260 ? 'h-16 w-auto mb-1 object-contain filter drop-shadow-md hover:scale-110 transition-transform duration-300' : 'h-22 w-auto mb-1 object-contain filter drop-shadow-md hover:scale-110 transition-transform duration-300';
+  const badgeClasses = size < 260 ? 'text-[10px] text-gray-500 font-semibold tracking-wide bg-gray-100 px-2 py-1 rounded-full' : 'text-xs text-gray-500 font-semibold tracking-wide bg-gray-100 px-3 py-1 rounded-full';
+  const centerSize = size < 260 ? size * 0.42 : size * 0.48;
+  const centerBoxClasses = size < 260
+    ? 'text-center bg-gradient-to-br from-white via-gray-50 to-white rounded-full p-3 shadow-2xl border-4 border-white ring-4 ring-gray-100 ring-opacity-50 backdrop-blur-sm flex flex-col items-center justify-center gap-1'
+    : 'text-center bg-gradient-to-br from-white via-gray-50 to-white rounded-full p-5 shadow-2xl border-4 border-white ring-4 ring-gray-100 ring-opacity-50 backdrop-blur-sm flex flex-col items-center justify-center gap-2';
+  const scoreLabelClasses = size < 260 ? 'text-[10px] text-gray-600 uppercase tracking-widest font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent' : 'text-xs text-gray-600 uppercase tracking-widest font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent';
+  const logoWrapperClasses = size < 260 ? 'mb-1 flex flex-col items-center' : 'mb-2 flex flex-col items-center';
   
   // Score breakdown data - use provided creditFactors or fallback to defaults
   const getScoreBreakdown = (): CreditFactor[] => {
@@ -158,7 +174,7 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
         {/* Floating labels around the chart */}
         {segments.map((segment, index) => {
           const midAngle = (segment.startAngle + segment.endAngle) / 2;
-          const labelRadius = radius + 45;
+          const labelRadius = radius + labelRadiusOffset;
           const midAngleRad = (midAngle - 90) * (Math.PI / 180);
           const labelX = center + labelRadius * Math.cos(midAngleRad);
           const labelY = center + labelRadius * Math.sin(midAngleRad);
@@ -172,11 +188,11 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
                 top: labelY,
               }}
             >
-              <div className="bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-lg border border-gray-200 text-center min-w-[80px] hover:bg-white hover:shadow-xl transition-all duration-300">
-                <div className="text-lg font-bold text-gray-900 leading-none">
+                      <div className={`${labelBoxClasses} hover:bg-white hover:shadow-xl transition-all duration-300`}>
+                        <div className={labelValueClasses}>
                   {segment.value}%
                 </div>
-                <div className="text-xs text-gray-600 font-medium mt-1 leading-tight">
+                        <div className={labelTextClasses}>
                   {segment.label}
                 </div>
               </div>
@@ -186,35 +202,35 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
         
         {/* Center content */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="text-center bg-gradient-to-br from-white via-gray-50 to-white rounded-full p-6 shadow-2xl border-4 border-white ring-4 ring-gray-100 ring-opacity-50 backdrop-blur-sm" style={{ width: size * 0.45, height: size * 0.45 }}>
+          <div className={centerBoxClasses} style={{ width: centerSize, height: centerSize }}>
             {scoreType === 'FICO' ? (
-              <div className="mb-2 flex flex-col items-center">
+              <div className={logoWrapperClasses}>
                 <div className="relative">
-                  <img 
+                          <img 
                     src="/FICO_Score_RGB_Blue.png" 
                     alt="FICO Score" 
-                    className="h-20 w-auto mb-2 object-contain filter drop-shadow-md hover:scale-110 transition-transform duration-300"
+                            className={ficoLogoClasses}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white opacity-20 rounded-lg"></div>
                 </div>
-                <div className="text-xs text-gray-600 uppercase tracking-widest font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">SCORE</div>
+                <div className={scoreLabelClasses}>SCORE</div>
               </div>
             ) : (
-              <div className="mb-2 flex flex-col items-center">
+              <div className={logoWrapperClasses}>
                 <div className="relative">
-                  <img 
+                          <img 
                     src="/VantageScore.png" 
                     alt="VantageScore" 
-                    className="h-22 w-auto mb-1 object-contain filter drop-shadow-md hover:scale-110 transition-transform duration-300"
+                            className={vantageLogoClasses}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white opacity-20 rounded-lg"></div>
                 </div>
               </div>
             )}
-            <div className="text-3xl font-black text-transparent bg-gradient-to-br from-gray-800 via-gray-900 to-black bg-clip-text mb-1 hover:scale-105 transition-transform duration-300 cursor-default">
+                    <div className={scoreClasses}>
               {score}
             </div>
-            <div className="text-xs text-gray-500 font-semibold tracking-wide bg-gray-100 px-3 py-1 rounded-full">Avarage Score</div>
+                    <div className={badgeClasses}>Avarage Score</div>
           </div>
         </div>
 
@@ -223,15 +239,15 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
 
       {/* Score breakdown legend */}
       <div className="mt-8 w-full">
-        <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-lg border border-gray-200 p-6">
-          <h4 className="text-lg font-bold text-gray-800 mb-6 text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+        <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-lg border border-gray-200 p-4 sm:p-6">
+          <h4 className="text-base sm:text-lg font-bold text-gray-800 mb-4 sm:mb-6 text-center bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
             Credit Factors Breakdown
           </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="flex flex-col gap-3 sm:gap-4">
             {breakdown.map((item, index) => (
-              <div key={index} className="group relative bg-white rounded-lg p-4 shadow-sm border border-gray-100 hover:shadow-md hover:border-gray-200 transition-all duration-300 transform hover:-translate-y-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+              <div key={index} className="group relative bg-white rounded-lg p-3 sm:p-4 shadow-sm border border-gray-100 hover:shadow-md hover:border-gray-200 transition-all duration-300 transform hover:-translate-y-1 min-w-0">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
                     <div className="relative">
                       <div 
                         className="w-5 h-5 rounded-full shadow-md border-2 border-white ring-2 ring-gray-100 group-hover:ring-gray-200 transition-all duration-300" 
@@ -242,15 +258,15 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
                         style={{ backgroundColor: item.color }}
                       ></div>
                     </div>
-                    <span className="text-gray-700 font-semibold text-sm group-hover:text-gray-900 transition-colors">
+                    <span className="text-gray-700 font-semibold text-xs sm:text-sm leading-snug group-hover:text-gray-900 transition-colors break-words">
                       {item.label}
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    <span className="font-bold text-gray-900 text-xl group-hover:text-2xl transition-all duration-300">
+                  <div className="flex items-baseline gap-1 sm:shrink-0 sm:pt-0 pt-1">
+                    <span className="font-bold text-gray-900 text-lg sm:text-xl group-hover:text-2xl transition-all duration-300">
                       {item.value}
                     </span>
-                    <span className="text-gray-500 text-sm font-medium">%</span>
+                    <span className="text-gray-500 text-xs sm:text-sm font-medium">%</span>
                   </div>
                 </div>
                 <div className="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden">

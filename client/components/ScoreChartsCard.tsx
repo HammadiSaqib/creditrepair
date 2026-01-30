@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import CircularScoreChart from './CircularScoreChart';
 import { calculateCreditFactors, Account } from '../utils/creditFactorsCalculator';
@@ -43,6 +43,29 @@ const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accoun
   };
 
   const uniqueScoreTypes = getUniqueScoreTypes();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [chartSize, setChartSize] = useState(280);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateSize = () => {
+      const width = element.clientWidth;
+      if (!width) {
+        return;
+      }
+      const nextSize = Math.max(220, Math.min(360, Math.floor(width - 32)));
+      setChartSize((prev) => (prev === nextSize ? prev : nextSize));
+    };
+
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <Card className="w-full h-full flex flex-col">
@@ -50,7 +73,7 @@ const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accoun
         <CardTitle>Credit Score Analysis</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col">
-        <div className="flex flex-col gap-6 flex-1 justify-center">
+        <div ref={containerRef} className="flex flex-col gap-6 flex-1 justify-center w-full">
           {uniqueScoreTypes.map((scoreData, index) => {
             const factors = accounts ? calculateCreditFactors(accounts, scoreData.scoreType) : undefined;
             return (
@@ -58,7 +81,7 @@ const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accoun
                 key={`${scoreData.scoreType}-${index}`}
                 score={scoreData.score}
                 scoreType={scoreData.scoreType}
-                size={280}
+                size={chartSize}
                 creditFactors={factors}
               />
             );

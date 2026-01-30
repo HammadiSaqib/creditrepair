@@ -8727,18 +8727,20 @@ export default function CreditReport() {
                       </div>
 
                       {/* Footer Delta */}
-                      <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center">
-                        <span className="text-xs text-slate-400 font-medium">Monthly Change</span>
+                      <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-col items-center gap-2">
+                        
                         {(() => {
                            const cls = delta === null ? 'text-slate-400' : (delta > 0 ? 'text-green-500' : (delta < 0 ? 'text-red-500' : 'text-slate-500'));
                            const icon = delta === null ? null : (delta > 0 ? <TrendingUp className="w-3 h-3" /> : (delta < 0 ? <TrendingDown className="w-3 h-3" /> : null));
                            return (
-                             <div className={`flex items-center gap-1 text-sm font-bold ${cls}`}>
+                             <div className={`flex items-center gap-2 text-3xl font-bold ${cls}`}>
                                {icon}
                                {delta === null ? '—' : (delta > 0 ? `${delta}+` : delta)}
                              </div>
                            );
                         })()}
+
+                        <span className="text-xs text-slate-400 font-medium text-center">Monthly Change</span>
                       </div>
                     </div>
                   );
@@ -9031,8 +9033,8 @@ export default function CreditReport() {
           {/* Bureau Scores Chart and Circular Score Charts */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-stretch">
             {/* Bureau Scores Chart - Takes 2/3 of the width */}
-            <div className="xl:col-span-2 flex">
-              <div className="w-full">
+            <div className="xl:col-span-2 flex min-w-0">
+              <div className="w-full min-w-0">
                 <BureauScoresChart 
                   reportData={reportData}
                   allReports={reportData.reportHistory || []}
@@ -9041,8 +9043,8 @@ export default function CreditReport() {
             </div>
             
             {/* Circular Score Charts Card - Takes 1/3 of the width */}
-            <div className="xl:col-span-1 flex">
-              <div className="w-full">
+            <div className="xl:col-span-1 flex min-w-0">
+              <div className="w-full min-w-0">
                 <ScoreChartsCard 
                   currentScores={(() => {
                     // Use real API data if available, otherwise fall back to mock data

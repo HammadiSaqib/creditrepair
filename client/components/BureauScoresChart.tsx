@@ -211,6 +211,13 @@ const BureauScoresChart: React.FC<BureauScoresChartProps> = ({ reportData, allRe
   };
 
   const lineChartData = getLineChartData();
+  const allScoreValues = [
+    ...currentScores,
+    ...allReportsScores.flat()
+  ]
+    .map(score => score.score)
+    .filter(score => score > 0);
+  const minScore = allScoreValues.length > 0 ? Math.min(...allScoreValues) : 300;
 
   // Get unique score types from current scores for circular charts
   const getUniqueScoreTypes = (): Array<{scoreType: 'FICO' | 'VantageScore', score: number}> => {
@@ -282,7 +289,7 @@ const BureauScoresChart: React.FC<BureauScoresChartProps> = ({ reportData, allRe
             <LineChart data={lineChartData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="date" />
-              <YAxis domain={[300, 850]} />
+              <YAxis domain={[minScore, 850]} />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Line 
