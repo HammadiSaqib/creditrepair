@@ -72,6 +72,7 @@ interface Bank {
   state?: string;
   states?: string[];
   credit_bureaus?: string[];
+  primary_bureau?: string;
   is_active: boolean;
   is_recommended?: boolean;
   created_at: string;
@@ -102,6 +103,7 @@ const BankManagement: React.FC = () => {
     state: '',
     states: [] as string[],
     credit_bureaus: [] as string[],
+    primary_bureau: '',
     is_recommended: false,
   });
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
@@ -227,6 +229,7 @@ const BankManagement: React.FC = () => {
       state: '',
       states: [],
       credit_bureaus: [],
+      primary_bureau: '',
       is_recommended: false,
     });
     setSelectedStates([]);
@@ -246,6 +249,9 @@ const BankManagement: React.FC = () => {
         states: selectedStates.length > 0 ? selectedStates : (formData.state ? [formData.state] : []),
         state: undefined,
         credit_bureaus: formData.credit_bureaus,
+        primary_bureau: formData.credit_bureaus.length === 1
+          ? formData.credit_bureaus[0]
+          : (formData.primary_bureau || undefined),
       } as any;
       const response = await fetch(url, {
         method,
@@ -297,6 +303,7 @@ const BankManagement: React.FC = () => {
           state: statesArr[0] || '',
           states: statesArr,
           credit_bureaus: bureaus,
+          primary_bureau: data.primary_bureau || bank.primary_bureau || (bureaus.length === 1 ? bureaus[0] : ''),
           is_recommended: Boolean(data?.is_recommended ?? bank?.is_recommended ?? false),
         });
         setSelectedStates(statesArr);
@@ -307,6 +314,7 @@ const BankManagement: React.FC = () => {
           state: (bank.states && bank.states[0]) || bank.state || '',
           states: bank.states || (bank.state ? [bank.state] : []),
           credit_bureaus: bank.credit_bureaus || [],
+          primary_bureau: bank.primary_bureau || ((bank.credit_bureaus || []).length === 1 ? (bank.credit_bureaus || [])[0] : ''),
           is_recommended: Boolean(bank?.is_recommended ?? false),
         });
         setSelectedStates(bank.states || (bank.state ? [bank.state] : []));
@@ -318,6 +326,7 @@ const BankManagement: React.FC = () => {
         state: (bank.states && bank.states[0]) || bank.state || '',
         states: bank.states || (bank.state ? [bank.state] : []),
         credit_bureaus: bank.credit_bureaus || [],
+        primary_bureau: bank.primary_bureau || ((bank.credit_bureaus || []).length === 1 ? (bank.credit_bureaus || [])[0] : ''),
         is_recommended: Boolean(bank?.is_recommended ?? false),
       });
       setSelectedStates(bank.states || (bank.state ? [bank.state] : []));
@@ -666,9 +675,21 @@ const BankManagement: React.FC = () => {
                           onChange={() => {
                             setFormData((prev) => ({
                               ...prev,
-                              credit_bureaus: prev.credit_bureaus.includes(bureau)
-                                ? prev.credit_bureaus.filter((b) => b !== bureau)
-                                : [...prev.credit_bureaus, bureau],
+                              credit_bureaus: (() => {
+                                const next = prev.credit_bureaus.includes(bureau)
+                                  ? prev.credit_bureaus.filter((b) => b !== bureau)
+                                  : [...prev.credit_bureaus, bureau];
+                                return next;
+                              })(),
+                              primary_bureau: (() => {
+                                const next = prev.credit_bureaus.includes(bureau)
+                                  ? prev.credit_bureaus.filter((b) => b !== bureau)
+                                  : [...prev.credit_bureaus, bureau];
+                                if (next.length === 0) return '';
+                                if (next.length === 1) return next[0];
+                                if (prev.primary_bureau && next.includes(prev.primary_bureau)) return prev.primary_bureau;
+                                return next[0];
+                              })(),
                             }));
                           }}
                         />
@@ -678,6 +699,24 @@ const BankManagement: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {formData.credit_bureaus.length > 1 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Primary Bureau *
+                  </label>
+                  <select
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={formData.primary_bureau}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, primary_bureau: e.target.value }))}
+                  >
+                    <option value="">Select primary bureau</option>
+                    {formData.credit_bureaus.map((bureau) => (
+                      <option key={bureau} value={bureau}>{bureau}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               
             <div className="flex justify-end space-x-3">
               <button

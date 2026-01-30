@@ -239,7 +239,7 @@ export default function FundingDIY() {
   const [bankSearchMap, setBankSearchMap] = useState<Record<number, string>>({});
   const [selectedSlots, setSelectedSlots] = useState<Array<{ bankId: number; cardId: number }>>([]);
 
-  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; recommended?: boolean; priority_rank?: number }>>([]);
+  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; primary_bureau?: string; recommended?: boolean; priority_rank?: number }>>([]);
 
   const banksFromCards = useMemo(() => {
     const map = new Map<number, { id: number; name: string; logo?: string }>();
@@ -274,6 +274,26 @@ export default function FundingDIY() {
     const merged = Array.from(new Set([...(arrA || []), ...(bankArr || [])]));
     const canon = merged.map(canonBureau).filter(Boolean) as string[];
     return canon.includes(bureau);
+  };
+
+  const getBankPrimaryBureau = (bankId?: number): 'Experian' | 'Equifax' | 'TransUnion' | null => {
+    const bank = allBanks.find((b) => b.id === bankId);
+    const direct = canonBureau((bank as any)?.primary_bureau || '');
+    if (direct) return direct;
+    const fromList = ((bank as any)?.credit_bureaus || []).map(canonBureau).filter(Boolean) as Array<'Experian' | 'Equifax' | 'TransUnion'>;
+    return fromList[0] || null;
+  };
+
+  const bureauShortLabel = (b: 'Experian' | 'Equifax' | 'TransUnion' | null) => {
+    if (b === 'Experian') return 'EX';
+    if (b === 'Equifax') return 'EQ';
+    if (b === 'TransUnion') return 'TU';
+    return 'Bureau';
+  };
+
+  const countCardsForBankBureau = (bankId: number, bureau: 'Experian' | 'Equifax' | 'TransUnion') => {
+    const source = (cards.length > 0 ? cards : allCards) as FundingCard[];
+    return source.filter((c) => c.bank_id === bankId && cardHasBureau(c, bureau)).length;
   };
 
   
@@ -591,7 +611,7 @@ export default function FundingDIY() {
     const fetchBanks = async () => {
       try {
         const token = localStorage.getItem("auth_token");
-        const all: Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[] }> = [];
+        const all: Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; primary_bureau?: string }> = [];
         let page = 1;
         const limit = 1000;
         while (true) {
@@ -610,6 +630,7 @@ export default function FundingDIY() {
               : (typeof b?.credit_bureaus === 'string'
                 ? (() => { try { const arr = JSON.parse(b.credit_bureaus); return Array.isArray(arr) ? arr : []; } catch { return []; } })()
                 : []),
+            primary_bureau: b?.primary_bureau ?? b?.primaryBureau ?? undefined,
             recommended: Boolean(b?.is_recommended ?? b?.recommended ?? b?.isPriority ?? false),
             priority_rank: Number(b?.priority_rank ?? b?.rank ?? 0)
           }));
@@ -1432,6 +1453,11 @@ export default function FundingDIY() {
                             return q ? String(b.name || '').toLowerCase().includes(q) : true;
                           })).map((b) => {
                             const elig = bankEligibility(b.id);
+                            const primary = getBankPrimaryBureau(b.id);
+                            const primaryEligible = primary
+                              ? (elig.bureauEligible as any)[primary] && (clientFundableFlags as any)[primary]
+                              : false;
+                            const primaryCount = primary ? countCardsForBankBureau(b.id, primary) : 0;
                             return (
                               <SelectItem key={b.id} value={String(b.id)}>
                                 <div className="flex items-center justify-between w-full">
@@ -1445,9 +1471,9 @@ export default function FundingDIY() {
                                   </div>
                                   <div className="flex items-center gap-2 text-xs">
                                     <span className={elig.stateEligible ? 'text-green-600' : 'text-red-500'}>{elig.stateEligible ? (elig.isNationwide ? '✅' : '✔') : '❌'} State</span>
-                                    <span className={elig.bureauEligible.Experian && clientFundableFlags.Experian ? 'text-green-600' : 'text-red-500'}>EX {elig.bureauEligible.Experian && clientFundableFlags.Experian ? '✔' : '❌'}</span>
-                                    <span className={elig.bureauEligible.Equifax && clientFundableFlags.Equifax ? 'text-green-600' : 'text-red-500'}>EQ {elig.bureauEligible.Equifax && clientFundableFlags.Equifax ? '✔' : '❌'}</span>
-                                    <span className={elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion ? 'text-green-600' : 'text-red-500'}>TU {elig.bureauEligible.TransUnion && clientFundableFlags.TransUnion ? '✔' : '❌'}</span>
+                                    <span className={primaryEligible ? 'text-green-600' : 'text-red-500'}>
+                                      {bureauShortLabel(primary)} {primaryEligible ? '✔' : '❌'} ({primaryCount})
+                                    </span>
                                   </div>
                                 </div>
                               </SelectItem>

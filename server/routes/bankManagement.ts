@@ -15,9 +15,19 @@ const createBankSchema = z.object({
   state: z.enum(STATE_OR_COUNTRY_CODES).optional(),
   states: z.array(z.enum(STATE_OR_COUNTRY_CODES)).min(1).optional(),
   credit_bureaus: z.array(z.enum(['Experian', 'Equifax', 'TransUnion'] as const)).min(1),
+  primary_bureau: z.enum(['Experian', 'Equifax', 'TransUnion'] as const).optional(),
   funding_manager_id: z.number().int().positive().optional(),
   is_recommended: z.boolean().optional(),
-}).refine((data) => !!data.state || !!data.states, { message: 'state or states is required' });
+})
+  .refine((data) => !!data.state || !!data.states, { message: 'state or states is required' })
+  .refine((data) => (data.credit_bureaus.length > 1 ? !!data.primary_bureau : true), {
+    message: 'primary_bureau is required when multiple credit bureaus are selected',
+    path: ['primary_bureau'],
+  })
+  .refine((data) => (!data.primary_bureau ? true : data.credit_bureaus.includes(data.primary_bureau)), {
+    message: 'primary_bureau must be one of credit_bureaus',
+    path: ['primary_bureau'],
+  });
 
 const updateBankSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -25,8 +35,12 @@ const updateBankSchema = z.object({
   state: z.enum(STATE_OR_COUNTRY_CODES).optional(),
   states: z.array(z.enum(STATE_OR_COUNTRY_CODES)).min(1).optional(),
   credit_bureaus: z.array(z.enum(['Experian', 'Equifax', 'TransUnion'] as const)).min(1).optional(),
+  primary_bureau: z.enum(['Experian', 'Equifax', 'TransUnion'] as const).optional(),
   is_active: z.boolean().optional(),
   is_recommended: z.boolean().optional(),
+}).refine((data) => (!data.primary_bureau || !data.credit_bureaus || data.credit_bureaus.includes(data.primary_bureau)), {
+  message: 'primary_bureau must be one of credit_bureaus',
+  path: ['primary_bureau'],
 });
 
 const querySchema = z.object({
@@ -65,7 +79,7 @@ export async function getBanks(req: Request, res: Response) {
 
     // Get banks with pagination
     const query = `
-      SELECT id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at 
+      SELECT id, name, logo, state, credit_bureaus, primary_bureau, is_active, is_recommended, created_at, updated_at 
       FROM banks 
       ${whereClause}
       ORDER BY created_at DESC 
@@ -94,7 +108,7 @@ export async function getBank(req: Request, res: Response) {
   try {
     const { id } = req.params;
     
-    const query = 'SELECT id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?';
+    const query = 'SELECT id, name, logo, state, credit_bureaus, primary_bureau, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?';
     const result = await executeQuery(query, [id]);
     
     if (result.length === 0) {
@@ -129,8 +143,8 @@ export async function createBank(req: Request, res: Response) {
     }
     
     const query = `
-      INSERT INTO banks (funding_manager_id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at) 
-      VALUES (?, ?, ?, ?, ?, true, ?, NOW(), NOW())
+      INSERT INTO banks (funding_manager_id, name, logo, state, credit_bureaus, primary_bureau, is_active, is_recommended, created_at, updated_at) 
+      VALUES (?, ?, ?, ?, ?, ?, true, ?, NOW(), NOW())
     `;
     
     const statesArr = Array.isArray(validatedData.states) && validatedData.states.length > 0
@@ -138,12 +152,14 @@ export async function createBank(req: Request, res: Response) {
       : (validatedData.state ? [validatedData.state] : []);
     const stateValue = statesArr.length > 1 ? JSON.stringify(statesArr) : (statesArr[0] || null);
 
+    const primaryBureau = validatedData.primary_bureau ?? (validatedData.credit_bureaus.length === 1 ? validatedData.credit_bureaus[0] : null);
     const result = await executeQuery(query, [
       fundingManagerId,
       validatedData.name,
       validatedData.logo || null,
       stateValue,
       JSON.stringify(validatedData.credit_bureaus),
+      primaryBureau,
       validatedData.is_recommended ?? false,
     ]);
     
@@ -151,7 +167,7 @@ export async function createBank(req: Request, res: Response) {
     
     // Fetch the created bank
     const createdBank = await executeQuery(
-      'SELECT id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?',
+      'SELECT id, name, logo, state, credit_bureaus, primary_bureau, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?',
       [bankId]
     );
     
@@ -204,6 +220,10 @@ export async function updateBank(req: Request, res: Response) {
       updateFields.push('credit_bureaus = ?');
       updateValues.push(JSON.stringify(validatedData.credit_bureaus));
     }
+    if (validatedData.primary_bureau !== undefined) {
+      updateFields.push('primary_bureau = ?');
+      updateValues.push(validatedData.primary_bureau || null);
+    }
     
     if (validatedData.is_active !== undefined) {
       updateFields.push('is_active = ?');
@@ -226,7 +246,7 @@ export async function updateBank(req: Request, res: Response) {
     
     // Fetch updated bank
     const updatedBank = await executeQuery(
-      'SELECT id, name, logo, state, credit_bureaus, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?',
+      'SELECT id, name, logo, state, credit_bureaus, primary_bureau, is_active, is_recommended, created_at, updated_at FROM banks WHERE id = ?',
       [id]
     );
     

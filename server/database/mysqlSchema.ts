@@ -2387,6 +2387,21 @@ async function createMySQLTables(): Promise<void> {
       console.log('⚠️  Error adding credit_bureaus column to banks:', error.message);
     }
   }
+
+  // Add primary_bureau column to banks if it doesn't exist
+  try {
+    await executeQuery(`
+      ALTER TABLE banks 
+      ADD COLUMN primary_bureau ENUM('Experian','Equifax','TransUnion') NULL AFTER credit_bureaus
+    `);
+    console.log('✅ Added primary_bureau column to banks table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  primary_bureau column already exists on banks');
+    } else {
+      console.log('⚠️  Error adding primary_bureau column to banks:', error.message);
+    }
+  }
   
   // Add is_recommended column to banks if it doesn't exist
   try {

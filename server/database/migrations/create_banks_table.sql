@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS banks (
   address TEXT,
   city VARCHAR(100),
   state VARCHAR(50),
+  credit_bureaus JSON NULL,
+  primary_bureau ENUM('Experian','Equifax','TransUnion') NULL,
   zip_code VARCHAR(10),
   routing_number VARCHAR(9),
   contact_person VARCHAR(255),
