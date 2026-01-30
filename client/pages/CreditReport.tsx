@@ -3106,6 +3106,37 @@ export default function CreditReport() {
 
   const getHistoryReportDateValue = (row: any) => getReportDateFromJson(getHistoryJson(row)) || getHistoryDateValue(row);
 
+  const getScoreFromJson = (json: any, bureau: 'experian' | 'transunion' | 'equifax') => {
+    if (!json) return null;
+    const root = json?.reportData ?? json?.report_data ?? json;
+    const direct =
+      root?.scores?.[bureau] ??
+      root?.Scores?.[bureau] ??
+      root?.reportData?.scores?.[bureau] ??
+      null;
+    const directNum = Number(direct);
+    if (Number.isFinite(directNum)) return directNum;
+    const scoreArray =
+      root?.Score ??
+      root?.Scores ??
+      root?.score ??
+      root?.scores ??
+      null;
+    if (Array.isArray(scoreArray)) {
+      const bureauId = bureau === 'transunion' ? 1 : bureau === 'experian' ? 2 : 3;
+      const match = scoreArray.find((s: any) => Number(s?.BureauId ?? s?.bureauId) === bureauId) ?? null;
+      const scoreValue = match?.Score ?? match?.score ?? match?.Value ?? match?.value ?? null;
+      const scoreNum = Number(scoreValue);
+      return Number.isFinite(scoreNum) ? scoreNum : null;
+    }
+    if (scoreArray && typeof scoreArray === 'object') {
+      const scoreValue = scoreArray?.[bureau] ?? scoreArray?.[bureau.toUpperCase()] ?? null;
+      const scoreNum = Number(scoreValue);
+      return Number.isFinite(scoreNum) ? scoreNum : null;
+    }
+    return null;
+  };
+
   const getHistoryBureauScore = (row: any, bureau: 'experian' | 'transunion' | 'equifax') => {
     const direct =
       row?.[`${bureau}_score`] ??
@@ -3113,13 +3144,32 @@ export default function CreditReport() {
       row?.data?.scores?.[bureau] ??
       row?.data?.reportData?.scores?.[bureau] ??
       null;
-    const num = Number(direct);
-    return Number.isFinite(num) ? num : null;
+    if (direct !== null && direct !== undefined && String(direct).trim() !== '') {
+      const num = Number(direct);
+      if (Number.isFinite(num)) return num;
+    }
+    const json = getHistoryJson(row) ?? row?.data ?? null;
+    return getScoreFromJson(json, bureau);
   };
 
   const getScoreDelta = (bureau: 'experian' | 'transunion' | 'equifax') => {
-    const current = Number((reportData as any)?.scores?.[bureau]);
-    const previous = reportHistory.length > 1 ? getHistoryBureauScore(reportHistory[1], bureau) : null;
+    const historyWithDates = reportHistory
+      .map((row) => {
+        const dateValue = getHistoryReportDateValue(row);
+        const date = parseLooseDate(dateValue);
+        return { row, time: date ? date.getTime() : null };
+      })
+      .sort((a, b) => {
+        if (a.time === null && b.time === null) return 0;
+        if (a.time === null) return 1;
+        if (b.time === null) return -1;
+        return b.time - a.time;
+      });
+    const newestRow = historyWithDates.length > 0 ? historyWithDates[0].row : null;
+    const previousRow = historyWithDates.length > 1 ? historyWithDates[1].row : null;
+    const currentFromHistory = newestRow ? getHistoryBureauScore(newestRow, bureau) : null;
+    const current = currentFromHistory ?? Number((reportData as any)?.scores?.[bureau]);
+    const previous = previousRow ? getHistoryBureauScore(previousRow, bureau) : null;
     if (!Number.isFinite(current)) return null;
     if (previous === null) return null;
     return current - previous;
@@ -8685,7 +8735,7 @@ export default function CreditReport() {
                            return (
                              <div className={`flex items-center gap-1 text-sm font-bold ${cls}`}>
                                {icon}
-                               {delta === null ? '—' : (delta > 0 ? `+${delta}` : delta)}
+                               {delta === null ? '—' : (delta > 0 ? `${delta}+` : delta)}
                              </div>
                            );
                         })()}
@@ -8927,16 +8977,26 @@ export default function CreditReport() {
                 };
 
                 const history = Array.isArray(reportData.reportHistory) ? reportData.reportHistory : [];
-                const newest: any = history.length > 0 ? history[0] : null;
-                const previous: any = history.length > 1 ? history[1] : (history.length > 0 ? history[history.length - 1] : null);
+                const historyWithDates = history
+                  .map((row: any) => {
+                    const dateValue = getHistoryReportDateValue(row);
+                    const date = parseLooseDate(dateValue);
+                    return { row, time: date ? date.getTime() : null };
+                  })
+                  .sort((a, b) => {
+                    if (a.time === null && b.time === null) return 0;
+                    if (a.time === null) return 1;
+                    if (b.time === null) return -1;
+                    return b.time - a.time;
+                  });
+                const newest: any = historyWithDates.length > 0 ? historyWithDates[0].row : null;
+                const previous: any = historyWithDates.length > 1 ? historyWithDates[1].row : null;
                 const prevItems = previous ? extractNegatives(previous?.data || previous?.reportData || previous) : [];
                 const keyOf = (it: any) => `${(it.category||'').toLowerCase()}|${(it.type||'').toLowerCase()}|${String((it as any).accountKey || '').toLowerCase()}|${(it.creditor||'').toString().toLowerCase()}`;
                 const prevSet = new Set(prevItems.map(keyOf));
                 const currSet = new Set(allNegativeItems.map(keyOf));
                 const removed = prevItems.filter((it: any) => !currSet.has(keyOf(it)));
                 const added = allNegativeItems.filter((it: any) => !prevSet.has(keyOf(it)));
-
-                if (!newest || allNegativeItems.length === 0) return null;
                 const removedAsOf = formatIsoDate(getHistoryReportDateValue(newest));
 
                 return (
