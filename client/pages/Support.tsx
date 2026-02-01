@@ -87,6 +87,9 @@ export default function Support() {
   const [faqs, setFaqs] = useState<FAQItem[]>([]);
   const [faqVotes, setFaqVotes] = useState<Record<number | string, 'helpful' | 'not_helpful'>>({});
   const voteKey = (id: number | string) => `faq_vote_${currentUserId || 'guest'}_${id}`;
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [ticketsError, setTicketsError] = useState<string | null>(null);
   
   // Chat-related state
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -99,27 +102,36 @@ export default function Support() {
   // Get current user ID from localStorage
   const currentUserId = parseInt(localStorage.getItem('userId') || '0');
 
-  // Mock data - in real app, this would come from API
-  const supportTickets: SupportTicket[] = [
-    {
-      id: "TICK-001",
-      subject: "Unable to generate credit report",
-      status: "in-progress",
-      priority: "high",
-      created_at: "2024-01-15T10:30:00Z",
-      updated_at: "2024-01-15T14:20:00Z",
-      category: "Technical Issue",
-    },
-    {
-      id: "TICK-002",
-      subject: "Question about dispute process",
-      status: "resolved",
-      priority: "medium",
-      created_at: "2024-01-14T09:15:00Z",
-      updated_at: "2024-01-14T16:45:00Z",
-      category: "General Inquiry",
-    },
-  ];
+  const loadTickets = async () => {
+    try {
+      setTicketsLoading(true);
+      setTicketsError(null);
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch('/api/support/tickets/my', {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        setSupportTickets([]);
+        setTicketsError('Failed to load tickets');
+        return;
+      }
+      const data = await res.json();
+      const tickets = Array.isArray(data?.tickets) ? data.tickets : [];
+      const normalized = tickets.map((t: any) => ({
+        ...t,
+        status: t.status === 'in_progress' ? 'in-progress' : t.status
+      }));
+      setSupportTickets(normalized);
+    } catch (err) {
+      setTicketsError('Failed to load tickets');
+      setSupportTickets([]);
+    } finally {
+      setTicketsLoading(false);
+    }
+  };
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
   const loadFaqs = async () => {
@@ -139,6 +151,7 @@ export default function Support() {
     } catch {}
   };
   useEffect(() => { loadFaqs(); }, []);
+  useEffect(() => { loadTickets(); }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const qsTab = params.get('tab');
@@ -388,15 +401,40 @@ export default function Support() {
     setSubmitting(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      const token = localStorage.getItem('auth_token');
+      const body = {
+        title: ticketForm.subject,
+        description: ticketForm.description,
+        customer_id: currentUserId,
+        priority: ticketForm.priority || 'medium',
+        category: ticketForm.category || 'general'
+      };
+      const res = await fetch('/api/support/tickets', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        throw new Error('Failed to submit ticket');
+      }
+      const created = await res.json();
+      const newTicket: SupportTicket = {
+        id: created.id,
+        subject: created.title,
+        status: created.status === 'in_progress' ? 'in-progress' : created.status,
+        priority: created.priority,
+        created_at: created.created || new Date().toISOString(),
+        updated_at: created.updated || created.created || new Date().toISOString(),
+        category: created.category
+      };
+      setSupportTickets(prev => [newTicket, ...prev]);
       toast({
         title: "Support ticket created",
         description: "Your support ticket has been submitted successfully. We'll get back to you within 24 hours.",
       });
-      
-      // Reset form
       setTicketForm({
         subject: "",
         category: "",
@@ -419,6 +457,7 @@ export default function Support() {
       case 'open':
         return <AlertCircle className="h-4 w-4 text-blue-500" />;
       case 'in-progress':
+      case 'in_progress':
         return <Clock className="h-4 w-4 text-yellow-500" />;
       case 'resolved':
         return <CheckCircle className="h-4 w-4 text-green-500" />;

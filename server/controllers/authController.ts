@@ -1128,6 +1128,22 @@ export class AuthController {
         if (!client) {
           return res.status(404).json({ error: 'Client not found' });
         }
+        const dobValue = client.date_of_birth;
+        let dobFormatted: string | null = null;
+        if (dobValue) {
+          try {
+            const d = new Date(dobValue);
+            if (!isNaN(d.getTime())) {
+              dobFormatted = d.toISOString().slice(0, 10);
+            } else {
+              const s = String(dobValue);
+              dobFormatted = s.length >= 10 ? s.slice(0, 10) : s;
+            }
+          } catch {
+            const s = String(dobValue);
+            dobFormatted = s.length >= 10 ? s.slice(0, 10) : s;
+          }
+        }
         
         const clientData = {
           id: client.id,
@@ -1136,6 +1152,10 @@ export class AuthController {
           last_name: client.last_name,
           phone: client.phone,
           address: client.address,
+          city: client.city,
+          state: client.state,
+          zip_code: client.zip_code,
+          date_of_birth: dobFormatted,
           role: 'client',
           status: client.status,
           created_at: client.created_at,
@@ -1380,8 +1400,70 @@ export class AuthController {
           referral_slug: updatedAffiliate.referral_slug,
         };
         return res.json({
+          success: true,
           message: 'Profile updated successfully',
           user: affiliateData
+        });
+      }
+
+      // Handle client profile updates separately (use clients table)
+      if (req.user!.role === 'client') {
+        const allowedClientKeys = [
+          'first_name',
+          'last_name',
+          'email',
+          'phone',
+          'address',
+          'city',
+          'state',
+          'zip_code',
+          'date_of_birth'
+        ];
+        const clientUpdates: Record<string, any> = {};
+        for (const [k, v] of Object.entries(profileUpdates)) {
+          if (allowedClientKeys.includes(k)) {
+            const column = k === 'email' ? 'platform_email' : k;
+            clientUpdates[column] = v;
+          }
+        }
+        if (clientUpdates['date_of_birth']) {
+          try {
+            const d = new Date(String(clientUpdates['date_of_birth']));
+            if (!isNaN(d.getTime())) {
+              clientUpdates['date_of_birth'] = d.toISOString().slice(0, 10);
+            }
+          } catch {}
+        }
+        if (Object.keys(clientUpdates).length === 0) {
+          return res.status(400).json({ error: 'No updates provided' });
+        }
+        const setClauseClient = Object.keys(clientUpdates).map(key => `${key} = ?`).join(', ');
+        const valuesClient = [...Object.values(clientUpdates), req.user!.id];
+        await runQuery(`UPDATE clients SET ${setClauseClient}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, valuesClient);
+        const updatedClient = await getQuery('SELECT * FROM clients WHERE id = ?', [req.user!.id]);
+        if (!updatedClient) {
+          return res.status(404).json({ error: 'Client not found after update' });
+        }
+        const clientData = {
+          id: updatedClient.id,
+          email: updatedClient.platform_email,
+          first_name: updatedClient.first_name,
+          last_name: updatedClient.last_name,
+          phone: updatedClient.phone,
+          address: updatedClient.address,
+          city: updatedClient.city,
+          state: updatedClient.state,
+          zip_code: updatedClient.zip_code,
+          date_of_birth: updatedClient.date_of_birth,
+          role: 'client',
+          status: updatedClient.status,
+          created_at: updatedClient.created_at,
+          last_login: updatedClient.last_login,
+        };
+        return res.json({
+          success: true,
+          message: 'Profile updated successfully',
+          user: clientData
         });
       }
 
@@ -1402,6 +1484,7 @@ export class AuthController {
       }
       
       res.json({
+        success: true,
         message: 'Profile updated successfully',
         user: {
           id: updatedUser.id,

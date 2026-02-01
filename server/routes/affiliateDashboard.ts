@@ -746,6 +746,174 @@ router.get('/dashboard/analytics', authenticateToken, requireAffiliateRole, asyn
   }
 });
 
+router.get('/analytics/stats', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ success: false, error: 'Affiliate not found for this user' });
+    }
+    const totalsQuery = `
+      SELECT 
+        COUNT(*) as total_referrals,
+        COUNT(CASE WHEN u.status = 'active' THEN 1 END) as conversions,
+        COALESCE(SUM(ar.commission_amount), 0) as revenue
+      FROM affiliate_referrals ar
+      LEFT JOIN users u ON u.id = ar.referred_user_id
+      WHERE ar.affiliate_id = ?
+    `;
+    const totals = await executeQuery(totalsQuery, [affiliateId]);
+    const t = totals && totals[0] ? totals[0] : { total_referrals: 0, conversions: 0, revenue: 0 };
+    const totalClicks = (t.total_referrals || 0) * 10;
+    const uniqueVisitors = t.total_referrals || 0;
+    const conversions = t.conversions || 0;
+    const conversionRate = uniqueVisitors > 0 ? Number(((conversions / uniqueVisitors) * 100).toFixed(1)) : 0;
+    const clickThroughRate = totalClicks > 0 ? Number(((conversions / totalClicks) * 100).toFixed(1)) : 0;
+    res.json({
+      success: true,
+      data: {
+        totalClicks,
+        uniqueVisitors,
+        conversions,
+        conversionRate,
+        clickThroughRate,
+        avgSessionDuration: '0:00',
+        bounceRate: 0,
+        topReferralSource: 'Direct'
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching analytics stats:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch analytics stats' });
+  }
+});
+
+router.get('/analytics/traffic-sources', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ success: false, error: 'Affiliate not found for this user' });
+    }
+    res.json({
+      success: true,
+      data: [
+        { source: 'Direct', clicks: 0, conversions: 0, conversionRate: 0, revenue: 0 },
+        { source: 'Social', clicks: 0, conversions: 0, conversionRate: 0, revenue: 0 },
+        { source: 'Email', clicks: 0, conversions: 0, conversionRate: 0, revenue: 0 },
+        { source: 'Search', clicks: 0, conversions: 0, conversionRate: 0, revenue: 0 }
+      ]
+    });
+  } catch (error) {
+    console.error('Error fetching traffic sources:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch traffic sources' });
+  }
+});
+
+router.get('/analytics/geographic', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ success: false, error: 'Affiliate not found for this user' });
+    }
+    res.json({
+      success: true,
+      data: [
+        { country: 'United States', clicks: 0, conversions: 0, revenue: 0 }
+      ]
+    });
+  } catch (error) {
+    console.error('Error fetching geographic data:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch geographic data' });
+  }
+});
+
+router.get('/analytics/devices', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ success: false, error: 'Affiliate not found for this user' });
+    }
+    res.json({
+      success: true,
+      data: [
+        { device: 'Mobile', clicks: 0, percentage: 60 },
+        { device: 'Desktop', clicks: 0, percentage: 35 },
+        { device: 'Tablet', clicks: 0, percentage: 5 }
+      ]
+    });
+  } catch (error) {
+    console.error('Error fetching device data:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch device data' });
+  }
+});
+
+router.get('/analytics/time-series', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ success: false, error: 'Affiliate not found for this user' });
+    }
+    const range = String(req.query.range || '30d');
+    const interval = range === '7d' ? '7 DAY' : range === '90d' ? '90 DAY' : range === '1y' ? '365 DAY' : '30 DAY';
+    const tsQuery = `
+      SELECT 
+        DATE(ar.created_at) as date,
+        COUNT(*) as clicks,
+        COUNT(CASE WHEN u.status = 'active' THEN 1 END) as conversions,
+        COALESCE(SUM(ar.commission_amount), 0) as revenue
+      FROM affiliate_referrals ar
+      LEFT JOIN users u ON u.id = ar.referred_user_id
+      WHERE ar.affiliate_id = ? AND ar.created_at >= DATE_SUB(NOW(), INTERVAL ${interval})
+      GROUP BY DATE(ar.created_at)
+      ORDER BY date ASC
+    `;
+    const rows = await executeQuery(tsQuery, [affiliateId]);
+    const data = Array.isArray(rows) ? rows.map((r: any) => ({
+      date: r.date,
+      clicks: Number(r.clicks) || 0,
+      conversions: Number(r.conversions) || 0,
+      revenue: Number(r.revenue) || 0
+    })) : [];
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching time series data:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch time series data' });
+  }
+});
+
+router.get('/analytics/top-links', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ success: false, error: 'Affiliate not found for this user' });
+    }
+    const tlQuery = `
+      SELECT 
+        COALESCE(ac.tracking_code, CONCAT('AFF-', ac.affiliate_id)) as tracking_code,
+        COUNT(*) as clicks,
+        COUNT(CASE WHEN ac.status = 'paid' THEN 1 END) as conversions,
+        COALESCE(SUM(ac.commission_amount), 0) as revenue
+      FROM affiliate_commissions ac
+      WHERE ac.affiliate_id = ?
+      GROUP BY tracking_code
+      ORDER BY clicks DESC
+      LIMIT 10
+    `;
+    const rows = await executeQuery(tlQuery, [affiliateId]);
+    const data = Array.isArray(rows) ? rows.map((r: any, idx: number) => ({
+      id: String(idx + 1),
+      url: `/r/${affiliateId}?code=${encodeURIComponent(r.tracking_code || 'general')}`,
+      clicks: Number(r.clicks) || 0,
+      conversions: Number(r.conversions) || 0,
+      revenue: Number(r.revenue) || 0,
+      conversionRate: (Number(r.clicks) || 0) > 0 ? Number(((Number(r.conversions) || 0) / Number(r.clicks) * 100).toFixed(1)) : 0
+    })) : [];
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('Error fetching top links:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch top links' });
+  }
+});
+
 // GET /api/affiliate/referrals - Get all referrals for the affiliate
 router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, res) => {
   try {
@@ -762,6 +930,7 @@ router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, re
     const query = `
       SELECT 
         ar.id,
+        ar.transaction_id,
         u.first_name,
         u.last_name,
         u.email,
@@ -808,7 +977,8 @@ router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, re
       commission: parseFloat(referral.commission_earned) || 0,
       lifetimeValue: parseFloat(referral.commission_earned) || 0,
       tier: parseFloat(referral.commission_earned) > 100 ? 'enterprise' :
-            parseFloat(referral.commission_earned) > 50 ? 'premium' : 'basic'
+            parseFloat(referral.commission_earned) > 50 ? 'premium' : 'basic',
+      transactionId: referral.transaction_id
     }));
     
     res.json({

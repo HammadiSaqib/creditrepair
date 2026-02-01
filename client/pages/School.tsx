@@ -453,6 +453,17 @@ export default function School() {
   ];
   const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
   const [courseMaps, setCourseMaps] = useState<CourseMap[]>([]);
+  const [customPaths, setCustomPaths] = useState<LearningPath[]>([]);
+  const [isCreatePathOpen, setIsCreatePathOpen] = useState(false);
+  const [pathFormData, setPathFormData] = useState({
+    name: '',
+    type: 'specialized' as LearningPath['type'],
+    description: '',
+    estimatedHours: 5,
+    difficulty: 'beginner' as LearningPath['difficulty'],
+    prerequisites: '',
+    skills: ''
+  });
 
   const computeLearningPaths = (sourceCourses: Course[]): LearningPath[] => {
     const groups: Record<string, Course[]> = {};
@@ -790,8 +801,8 @@ export default function School() {
   }, [toast]);
 
   useEffect(() => {
-    setLearningPaths(computeLearningPaths(courses));
-  }, [courses]);
+    setLearningPaths([...computeLearningPaths(courses), ...customPaths]);
+  }, [courses, customPaths]);
 
   useEffect(() => {
     setCourseMaps(computeCourseMaps(courses));
@@ -1053,6 +1064,54 @@ export default function School() {
         chapters: prev.chapters.filter((_, i) => i !== index)
       }));
     }
+  };
+
+  const handlePathFormChange = (field: string, value: any) => {
+    setPathFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleCreatePath = () => {
+    const name = pathFormData.name.trim();
+    if (!name) {
+      toast({
+        title: "Name Required",
+        description: "Please enter a name for the learning path.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const skillsArr = pathFormData.skills.split(',').map(s => s.trim()).filter(Boolean);
+    const prereqArr = pathFormData.prerequisites.split(',').map(s => s.trim()).filter(Boolean);
+    const newPath: LearningPath = {
+      id: Date.now(),
+      name,
+      type: pathFormData.type,
+      description: pathFormData.description.trim(),
+      totalCourses: 0,
+      completedCourses: 0,
+      estimatedHours: Math.max(1, Number(pathFormData.estimatedHours) || 1),
+      difficulty: pathFormData.difficulty,
+      prerequisites: prereqArr.length ? prereqArr : undefined,
+      skills: skillsArr,
+      isEnrolled: true,
+      progress: 0,
+      nextCourse: undefined
+    };
+    setCustomPaths(prev => [...prev, newPath]);
+    setIsCreatePathOpen(false);
+    setPathFormData({
+      name: '',
+      type: 'specialized',
+      description: '',
+      estimatedHours: 5,
+      difficulty: 'beginner',
+      prerequisites: '',
+      skills: ''
+    });
+    toast({
+      title: "Path Created",
+      description: "Your custom learning path has been added.",
+    });
   };
 
   // Handle course enrollment
@@ -1963,7 +2022,7 @@ export default function School() {
                     Structured learning journeys to master funding
                   </CardDescription>
                 </div>
-                <Button className="gradient-primary hover:opacity-90">
+                <Button className="gradient-primary hover:opacity-90" onClick={() => setIsCreatePathOpen(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Create Custom Path
                 </Button>
@@ -2832,6 +2891,108 @@ export default function School() {
                   Create Course
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCreatePathOpen} onOpenChange={setIsCreatePathOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="gradient-text-primary my-3">
+              Create Custom Learning Path
+            </DialogTitle>
+            <DialogDescription>
+              Define a personalized path tailored to your goals
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="path-name">Name *</Label>
+                <Input
+                  id="path-name"
+                  placeholder="e.g., Small Business Funding Path"
+                  value={pathFormData.name}
+                  onChange={(e) => handlePathFormChange('name', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="path-type">Type</Label>
+                <Select value={pathFormData.type} onValueChange={(v) => handlePathFormChange('type', v)}>
+                  <SelectTrigger id="path-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fundamental">fundamental</SelectItem>
+                    <SelectItem value="advanced">advanced</SelectItem>
+                    <SelectItem value="specialized">specialized</SelectItem>
+                    <SelectItem value="certification">certification</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="path-description">Description</Label>
+              <Textarea
+                id="path-description"
+                placeholder="What is the purpose of this path?"
+                rows={3}
+                value={pathFormData.description}
+                onChange={(e) => handlePathFormChange('description', e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="path-hours">Estimated Hours</Label>
+                <Input
+                  id="path-hours"
+                  type="number"
+                  min={1}
+                  value={pathFormData.estimatedHours}
+                  onChange={(e) => handlePathFormChange('estimatedHours', parseInt(e.target.value) || 1)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Difficulty</Label>
+                <Select value={pathFormData.difficulty} onValueChange={(v) => handlePathFormChange('difficulty', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select difficulty" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="beginner">beginner</SelectItem>
+                    <SelectItem value="intermediate">intermediate</SelectItem>
+                    <SelectItem value="advanced">advanced</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="path-prereq">Prerequisites</Label>
+                <Input
+                  id="path-prereq"
+                  placeholder="Comma separated"
+                  value={pathFormData.prerequisites}
+                  onChange={(e) => handlePathFormChange('prerequisites', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="path-skills">Skills</Label>
+              <Input
+                id="path-skills"
+                placeholder="Comma separated skills"
+                value={pathFormData.skills}
+                onChange={(e) => handlePathFormChange('skills', e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreatePathOpen(false)}>
+              Cancel
+            </Button>
+            <Button className="gradient-primary" onClick={handleCreatePath}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Path
             </Button>
           </DialogFooter>
         </DialogContent>

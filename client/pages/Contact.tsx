@@ -81,10 +81,10 @@ export default function Contact() {
           <div className="text-center text-white max-w-4xl mx-auto">
             
             {/* Main Heading */}
-            <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
+            <h1 className="text-5xl md:text-6xl font-bold my-6 leading-tight">
               Questions about our
-              <span className="block bg-gradient-to-r from-yellow-300 via-orange-300 to-pink-300 bg-clip-text text-transparent">
-                platform or services?
+              <span className="block bg-gradient-to-r from-yellow-300 via-orange-300 to-pink-300 bg-clip-text text-transparent pb-2">
+                Platform or services?
               </span>
             </h1>
             

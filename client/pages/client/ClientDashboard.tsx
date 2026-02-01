@@ -3285,7 +3285,10 @@ export default function CreditReport() {
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch credit report: ${response.statusText}`);
+          // Gracefully handle "no report yet" scenarios so the Client Portal doesn't error
+          if (response.status !== 404) {
+            throw new Error(`Failed to fetch credit report: ${response.statusText}`);
+          }
         }
 
         const data = await response.json();
@@ -4354,7 +4357,7 @@ export default function CreditReport() {
                     ) : (
                       <ArrowDown className="h-8 w-8 mr-2" />
                     )}
-                    <span className="text-[2rem] font-bold leading-none">
+                    <span className="text-[2rem] font-bold leading-none mb-5">
                       {getScoreChange(
                         reportData.scores.experian,
                         reportData.previousScores.experian,
@@ -4467,7 +4470,7 @@ export default function CreditReport() {
                     ) : (
                       <ArrowDown className="h-8 w-8 mr-2" />
                     )}
-                    <span className="text-[2rem] font-bold leading-none">
+                    <span className="text-[2rem] font-bold leading-none  mb-5">
                       {getScoreChange(
                         reportData.scores.transunion,
                         reportData.previousScores.transunion,
@@ -4580,7 +4583,7 @@ export default function CreditReport() {
                     ) : (
                       <ArrowDown className="h-8 w-8 mr-2" />
                     )}
-                    <span className="text-[2rem] font-bold leading-none">
+                    <span className="text-[2rem] font-bold leading-none mb-5">
                       {getScoreChange(
                         reportData.scores.equifax,
                         reportData.previousScores.equifax,
@@ -5091,7 +5094,7 @@ export default function CreditReport() {
 
           {/* Detailed Credit Report Information - Restricted for trial users */}
           {/* Employer Details Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm mt-8">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 dark:from-slate-800 dark:via-slate-700 dark:to-slate-800 backdrop-blur-sm my-8">
             <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
@@ -5606,7 +5609,7 @@ export default function CreditReport() {
           </Card>
 
           {/* Public Records Section */}
-          <Card className="border-0 shadow-md">
+          <Card className="border-0 shadow-md my-3">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-ocean-blue" />
@@ -6420,258 +6423,6 @@ export default function CreditReport() {
           </CardContent>
         </Card>
 
-        {/* Creditor Contacts Section */}
-        <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-green-50/30 to-emerald-50/40 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-          <CardHeader className="bg-gradient-to-r from-green-600/10 via-emerald-600/10 to-teal-600/10 rounded-t-lg border-b border-green-100/50">
-            <CardTitle className="flex items-center gap-3 text-lg font-semibold">
-              <div className="p-2 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg shadow-md">
-                <Phone className="h-5 w-5 text-white" />
-              </div>
-              <span className="bg-gradient-to-r from-green-700 to-emerald-700 bg-clip-text text-transparent">
-                Creditor Contacts
-              </span>
-            </CardTitle>
-            <CardDescription className="text-gray-600 ml-12">
-              Contact information for your creditors and account management
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              {(() => {
-                // Get unique creditors from accounts
-                const uniqueCreditors = Array.from(
-                  new Set(reportData.accounts.map(account => account.creditor))
-                ).map(creditorName => {
-                  const account = reportData.accounts.find(acc => acc.creditor === creditorName);
-                  return {
-                    name: creditorName,
-                    type: account?.type || 'Unknown',
-                    accounts: reportData.accounts.filter(acc => acc.creditor === creditorName).length
-                  };
-                });
-
-                return uniqueCreditors.map((creditor, index) => (
-                  <div
-                    key={index}
-                    className="group relative p-6 border-0 rounded-2xl bg-gradient-to-br from-white via-green-50/40 to-emerald-50/60 shadow-lg hover:shadow-2xl transition-all duration-500 hover:scale-[1.02] border border-green-100/50 backdrop-blur-sm overflow-hidden"
-                    style={{
-                      animationDelay: `${index * 150}ms`,
-                      animation: 'fadeInUp 0.6s ease-out forwards'
-                    }}
-                  >
-                    {/* Animated background gradient */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-green-400/5 via-emerald-400/5 to-teal-400/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                    
-                    {/* Floating particles effect */}
-                    <div className="absolute top-4 right-4 w-2 h-2 bg-green-400/30 rounded-full animate-pulse"></div>
-                    <div className="absolute top-8 right-8 w-1 h-1 bg-emerald-400/40 rounded-full animate-pulse" style={{animationDelay: '1s'}}></div>
-                    
-                    <div className="relative z-10 flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-4 mb-4">
-                          <div className="relative p-3 bg-gradient-to-br from-green-500/20 to-emerald-500/20 rounded-xl shadow-md group-hover:shadow-lg transition-all duration-300 group-hover:scale-110">
-                            <Building className="h-6 w-6 text-green-600 group-hover:text-green-700 transition-colors duration-300" />
-                            <div className="absolute inset-0 bg-gradient-to-br from-green-400/20 to-emerald-400/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-bold text-gray-800 text-xl mb-1 group-hover:text-green-800 transition-colors duration-300">{creditor.name}</h3>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="secondary" className="bg-green-100/80 text-green-700 border-green-200/50 text-xs font-medium px-2 py-1">
-                                {creditor.type}
-                              </Badge>
-                              <span className="text-sm text-gray-500">•</span>
-                              <span className="text-sm text-gray-600 font-medium">{creditor.accounts} account{creditor.accounts > 1 ? 's' : ''}</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="grid md:grid-cols-2 gap-5">
-                          {/* Customer Service */}
-                          <div className="group/item space-y-3 p-4 rounded-xl bg-gradient-to-br from-blue-50/50 to-indigo-50/30 border border-blue-100/30 hover:border-blue-200/50 transition-all duration-300 hover:shadow-md">
-                            <div className="flex items-center gap-3">
-                              <div className="relative p-2 bg-gradient-to-br from-blue-500/20 to-indigo-500/20 rounded-lg group-hover/item:shadow-md transition-all duration-300">
-                                <Phone className="h-4 w-4 text-blue-600 group-hover/item:scale-110 transition-transform duration-300" />
-                              </div>
-                              <span className="font-semibold text-gray-700 group-hover/item:text-blue-700 transition-colors duration-300">Customer Service</span>
-                            </div>
-                            <div className="ml-9 space-y-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-600">Phone:</span>
-                                <span className="font-mono text-blue-600 font-semibold bg-blue-50 px-2 py-1 rounded border border-blue-200/50">1-800-XXX-XXXX</span>
-                              </div>
-                              <p className="text-sm text-gray-600 flex items-center gap-2">
-                                <Clock className="h-3 w-3 text-gray-400" />
-                                Mon-Fri 8AM-8PM EST
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Dispute Department */}
-                          <div className="group/item space-y-3 p-4 rounded-xl bg-gradient-to-br from-orange-50/50 to-red-50/30 border border-orange-100/30 hover:border-orange-200/50 transition-all duration-300 hover:shadow-md">
-                            <div className="flex items-center gap-3">
-                              <div className="relative p-2 bg-gradient-to-br from-orange-500/20 to-red-500/20 rounded-lg group-hover/item:shadow-md transition-all duration-300">
-                                <AlertTriangle className="h-4 w-4 text-orange-600 group-hover/item:scale-110 transition-transform duration-300" />
-                              </div>
-                              <span className="font-semibold text-gray-700 group-hover/item:text-orange-700 transition-colors duration-300">Dispute Department</span>
-                            </div>
-                            <div className="ml-9 space-y-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-600">Phone:</span>
-                                <span className="font-mono text-orange-600 font-semibold bg-orange-50 px-2 py-1 rounded border border-orange-200/50">1-800-XXX-XXXX</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-600">Fax:</span>
-                                <span className="font-mono text-gray-500 font-semibold bg-gray-50 px-2 py-1 rounded border border-gray-200/50">1-800-XXX-XXXX</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Mailing Address */}
-                          <div className="group/item space-y-3 p-4 rounded-xl bg-gradient-to-br from-purple-50/50 to-violet-50/30 border border-purple-100/30 hover:border-purple-200/50 transition-all duration-300 hover:shadow-md">
-                            <div className="flex items-center gap-3">
-                              <div className="relative p-2 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-lg group-hover/item:shadow-md transition-all duration-300">
-                                <MapPin className="h-4 w-4 text-purple-600 group-hover/item:scale-110 transition-transform duration-300" />
-                              </div>
-                              <span className="font-semibold text-gray-700 group-hover/item:text-purple-700 transition-colors duration-300">Mailing Address</span>
-                            </div>
-                            <div className="ml-9">
-                              <div className="text-sm text-gray-600 leading-relaxed bg-white/50 p-3 rounded-lg border border-purple-100/30">
-                                <div className="font-semibold text-gray-700">{creditor.name}</div>
-                                <div>P.O. Box XXXX</div>
-                                <div>City, State ZIP</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Online Portal */}
-                          <div className="group/item space-y-3 p-4 rounded-xl bg-gradient-to-br from-cyan-50/50 to-blue-50/30 border border-cyan-100/30 hover:border-cyan-200/50 transition-all duration-300 hover:shadow-md">
-                            <div className="flex items-center gap-3">
-                              <div className="relative p-2 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-lg group-hover/item:shadow-md transition-all duration-300">
-                                <Globe className="h-4 w-4 text-cyan-600 group-hover/item:scale-110 transition-transform duration-300" />
-                              </div>
-                              <span className="font-semibold text-gray-700 group-hover/item:text-cyan-700 transition-colors duration-300">Online Portal</span>
-                            </div>
-                            <div className="ml-9 space-y-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-600">Website:</span>
-                                <a href="#" className="text-cyan-600 hover:text-cyan-700 underline font-medium text-sm bg-cyan-50 px-2 py-1 rounded border border-cyan-200/50 hover:bg-cyan-100 transition-all duration-200">
-                                  www.{creditor.name.toLowerCase().replace(/\s+/g, '')}.com
-                                </a>
-                              </div>
-                              <p className="text-sm text-gray-600 flex items-center gap-2">
-                                <Shield className="h-3 w-3 text-gray-400" />
-                                Account Management Available 24/7
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Mailing Address */}
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <div className="p-1 bg-gradient-to-br from-gray-500/20 to-slate-500/20 rounded-md">
-                                <MapPin className="h-4 w-4 text-gray-600" />
-                              </div>
-                              <span className="font-medium text-gray-700">Mailing Address</span>
-                            </div>
-                            <div className="ml-7">
-                              <p className="text-sm text-gray-600">
-                                {creditor.name}<br />
-                                P.O. Box XXXX<br />
-                                City, State ZIP
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Quick Actions */}
-                        <div className="mt-6 pt-5 border-t border-gradient-to-r from-green-200/30 via-emerald-200/30 to-teal-200/30">
-                          <div className="flex flex-wrap gap-3">
-                            <button className="group/btn relative inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold text-blue-700 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl hover:from-blue-100 hover:to-indigo-100 hover:border-blue-300/50 transition-all duration-300 hover:scale-105 hover:shadow-lg overflow-hidden">
-                              <div className="absolute inset-0 bg-gradient-to-r from-blue-400/10 to-indigo-400/10 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
-                              <div className="relative z-10 flex items-center gap-2">
-                                <div className="p-1 bg-blue-200/50 rounded-md group-hover/btn:bg-blue-300/50 transition-colors duration-300">
-                                  <Phone className="h-4 w-4 group-hover/btn:scale-110 transition-transform duration-300" />
-                                </div>
-                                <span className="group-hover/btn:text-blue-800 transition-colors duration-300">Call Customer Service</span>
-                              </div>
-                            </button>
-                            
-                            <button className="group/btn relative inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold text-orange-700 bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200/50 rounded-xl hover:from-orange-100 hover:to-red-100 hover:border-orange-300/50 transition-all duration-300 hover:scale-105 hover:shadow-lg overflow-hidden">
-                              <div className="absolute inset-0 bg-gradient-to-r from-orange-400/10 to-red-400/10 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
-                              <div className="relative z-10 flex items-center gap-2">
-                                <div className="p-1 bg-orange-200/50 rounded-md group-hover/btn:bg-orange-300/50 transition-colors duration-300">
-                                  <AlertTriangle className="h-4 w-4 group-hover/btn:scale-110 transition-transform duration-300" />
-                                </div>
-                                <span className="group-hover/btn:text-orange-800 transition-colors duration-300">File Dispute</span>
-                              </div>
-                            </button>
-                            
-                            <button className="group/btn relative inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold text-cyan-700 bg-gradient-to-r from-cyan-50 to-blue-50 border border-cyan-200/50 rounded-xl hover:from-cyan-100 hover:to-blue-100 hover:border-cyan-300/50 transition-all duration-300 hover:scale-105 hover:shadow-lg overflow-hidden">
-                              <div className="absolute inset-0 bg-gradient-to-r from-cyan-400/10 to-blue-400/10 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300"></div>
-                              <div className="relative z-10 flex items-center gap-2">
-                                <div className="p-1 bg-cyan-200/50 rounded-md group-hover/btn:bg-cyan-300/50 transition-colors duration-300">
-                                  <Globe className="h-4 w-4 group-hover/btn:scale-110 transition-transform duration-300" />
-                                </div>
-                                <span className="group-hover/btn:text-cyan-800 transition-colors duration-300">Visit Website</span>
-                              </div>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ));
-              })()}
-            </div>
-
-            {/* Contact Tips */}
-            <div className="mt-8 p-6 bg-gradient-to-br from-blue-50/80 via-indigo-50/60 to-purple-50/40 rounded-2xl border border-blue-200/50 shadow-lg hover:shadow-xl transition-all duration-300 backdrop-blur-sm">
-              <div className="flex items-start gap-4">
-                <div className="relative p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg flex-shrink-0 group-hover:shadow-xl transition-all duration-300">
-                  <Info className="h-5 w-5 text-white" />
-                  <div className="absolute inset-0 bg-gradient-to-br from-blue-400/20 to-indigo-400/20 rounded-xl opacity-0 hover:opacity-100 transition-opacity duration-300"></div>
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-bold text-blue-900 mb-3 text-lg flex items-center gap-2">
-                    Contact Tips
-                    <div className="h-1 w-12 bg-gradient-to-r from-blue-400 to-indigo-500 rounded-full"></div>
-                  </h4>
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div className="space-y-3">
-                      <div className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-blue-100/50 hover:bg-white/80 transition-all duration-200">
-                        <div className="p-1 bg-blue-100 rounded-md flex-shrink-0 mt-0.5">
-                          <CheckCircle className="h-3 w-3 text-blue-600" />
-                        </div>
-                        <p className="text-sm text-blue-800 leading-relaxed">Always have your account number and personal information ready</p>
-                      </div>
-                      <div className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-blue-100/50 hover:bg-white/80 transition-all duration-200">
-                        <div className="p-1 bg-blue-100 rounded-md flex-shrink-0 mt-0.5">
-                          <FileText className="h-3 w-3 text-blue-600" />
-                        </div>
-                        <p className="text-sm text-blue-800 leading-relaxed">Keep records of all communications and reference numbers</p>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-blue-100/50 hover:bg-white/80 transition-all duration-200">
-                        <div className="p-1 bg-blue-100 rounded-md flex-shrink-0 mt-0.5">
-                          <CalendarIcon className="h-3 w-3 text-blue-600" />
-                        </div>
-                        <p className="text-sm text-blue-800 leading-relaxed">For disputes, follow up in writing within 30 days</p>
-                      </div>
-                      <div className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-blue-100/50 hover:bg-white/80 transition-all duration-200">
-                        <div className="p-1 bg-blue-100 rounded-md flex-shrink-0 mt-0.5">
-                          <Clock className="h-3 w-3 text-blue-600" />
-                        </div>
-                        <p className="text-sm text-blue-800 leading-relaxed">Best times to call are typically early morning or late afternoon</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Main Content Grid */}
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Left Column */}
@@ -6870,74 +6621,6 @@ export default function CreditReport() {
                         </div>
                       </div>
                     ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Active Disputes */}
-              <Card className="border-0 shadow-lg bg-gradient-to-br from-white via-purple-50/30 to-violet-50/40 hover:shadow-xl transition-all duration-300 hover:scale-[1.02]">
-                <CardHeader className="bg-gradient-to-r from-purple-600/10 via-violet-600/10 to-indigo-600/10 rounded-t-lg border-b border-purple-100/50">
-                  <CardTitle className="flex items-center gap-3 text-lg font-semibold">
-                    <div className="p-2 bg-gradient-to-br from-purple-500 to-violet-600 rounded-lg shadow-md">
-                      <FileText className="h-5 w-5 text-white" />
-                    </div>
-                    <span className="bg-gradient-to-r from-purple-700 to-violet-700 bg-clip-text text-transparent">
-                      Active Disputes
-                    </span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-6">
-                  <div className="space-y-4">
-                    {reportData.disputeHistory
-                      .filter((d) => d.status !== "Resolved")
-                      .map((dispute) => (
-                        <div
-                          key={dispute.id}
-                          className="border-0 rounded-xl p-4 bg-gradient-to-r from-purple-50/80 to-violet-50/80 shadow-md hover:shadow-lg transition-all duration-300 hover:scale-[1.01] border border-purple-200/50"
-                        >
-                          <div className="flex justify-between items-start mb-3">
-                            <div>
-                              <div className="font-semibold text-purple-800 flex items-center gap-2">
-                                <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md">
-                                  <Building className="h-4 w-4 text-purple-600" />
-                                </div>
-                                {dispute.accountDisputed}
-                              </div>
-                              <div className="text-sm text-purple-700 font-medium mt-1">
-                                {dispute.bureau}
-                              </div>
-                            </div>
-                            <Badge
-                              variant={
-                                dispute.status === "Under Investigation"
-                                  ? "default"
-                                  : "secondary"
-                              }
-                              className={`${
-                                dispute.status === "Under Investigation"
-                                  ? "bg-yellow-100 text-yellow-800 border-yellow-200"
-                                  : "bg-gray-100 text-gray-700 border-gray-200"
-                              }`}
-                            >
-                              {dispute.status}
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-purple-600/70 flex items-center gap-3">
-                            <div className="flex items-center gap-1">
-                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md">
-                                <CalendarIcon className="h-3 w-3 text-purple-600" />
-                              </div>
-                              Filed: {new Date(dispute.date).toLocaleDateString()}
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <div className="p-1 bg-gradient-to-br from-purple-500/20 to-violet-500/20 rounded-md">
-                                <Clock className="h-3 w-3 text-purple-600" />
-                              </div>
-                              Expected: {new Date(dispute.expectedResolution).toLocaleDateString()}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
                   </div>
                 </CardContent>
               </Card>

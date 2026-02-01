@@ -6,6 +6,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Bell, Search, Settings, Menu, Moon, Sun, Monitor } from "lucide-react";
@@ -117,12 +118,32 @@ export default function ClientLayout({
               </div>
 
               {/* Notifications */}
-              <Button variant="ghost" size="sm" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 h-4 w-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center">
-                  2
-                </span>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="relative">
+                    <Bell className="h-5 w-5" />
+                    <span className="absolute -top-1 -right-1 h-4 w-4 bg-green-500 text-white text-xs rounded-full flex items-center justify-center">
+                      2
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80">
+                  <DropdownMenuLabel className="flex items-center gap-2">
+                    <Bell className="h-4 w-4" />
+                    Notifications
+                    <span className="bg-green-500 text-white text-xs px-2 py-1 rounded-full">2</span>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="flex flex-col items-start p-3 cursor-default">
+                    <div className="font-medium">Profile updated</div>
+                    <div className="text-xs text-muted-foreground">Your personal information was saved.</div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="flex flex-col items-start p-3 cursor-default">
+                    <div className="font-medium">Welcome</div>
+                    <div className="text-xs text-muted-foreground">Thanks for using the client portal.</div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Theme Toggle */}
               <DropdownMenu>

@@ -472,7 +472,7 @@ export default function Pricing() {
 
             <h1 className="text-5xl lg:text-7xl font-bold leading-tight">
               Unlock Your
-              <span className="block bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
+              <span className="block bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent pb-3">
                 Credit Strategy Toolkit
               </span>
             </h1>
@@ -757,11 +757,12 @@ export default function Pricing() {
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-bold mb-4">Trusted by Industry Leaders</h2>
+            <h2 className="whitespace-nowrap text-[clamp(1.75rem,3.5vw,2.5rem)] font-bold mb-4 text-slate-900 tracking-tight">Trusted by Industry Leaders</h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               See what top professionals are saying about their experience with Score Machine Pro.
             </p>
           </div>
+
           <div className="flex flex-wrap justify-center gap-6">
             {currentTestimonials.map((t) => {
               const src = /^https?:\/\//i.test(t.video) ? t.video : `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
@@ -770,7 +771,7 @@ export default function Pricing() {
               return (
                 <div
                   key={t.id}
-                  className="group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer w-[280px] sm:w-[300px] lg:w-[320px]"
+                  className="testimonial-card group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer w-[280px] sm:w-[300px] lg:w-[320px]"
                   onClick={() => setActiveTestimonialVideo(src)}
                 >
                   <div className="relative aspect-[9/16] bg-slate-900">

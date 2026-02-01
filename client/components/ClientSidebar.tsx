@@ -139,7 +139,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
       <div
         className={`${
           collapsed ? "w-16" : "w-64"
-        } transition-all duration-300 ease-in-out transform ${translateClass} bg-white dark:bg-slate-900 border-r border-border/40 dark:border-slate-700 flex flex-col shadow-lg fixed left-0 top-0 h-screen z-50 ${className}`}
+        } transition-all duration-150 ease-out transform ${translateClass} bg-white dark:bg-slate-900 border-r border-border/40 dark:border-slate-700 flex flex-col shadow-lg fixed left-0 top-0 h-screen z-50 ${className}`}
       >
       {/* Header */}
       <div className="p-4 border-b border-border/40 dark:border-slate-700">
@@ -165,9 +165,9 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
               className="hover:bg-green-50 dark:hover:bg-green-900/20"
             >
               {collapsed ? (
-                <ChevronRight className="h-4 w-4" />
+                <ChevronRight className="h-5 w-5 text-slate-700 dark:text-slate-200 hover:text-slate-700 dark:hover:text-slate-200 focus:text-slate-700 active:text-slate-700" />
               ) : (
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-5 w-5 text-slate-700 dark:text-slate-200 hover:text-slate-700 dark:hover:text-slate-200 focus:text-slate-700 active:text-slate-700" />
               )}
             </Button>
             {isSmallScreen && mobileOpen && (
@@ -178,7 +178,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                 onClick={() => onCloseMobile && onCloseMobile()}
                 aria-label="Close sidebar"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-5 w-5 text-slate-700 dark:text-slate-200 hover:text-slate-700 dark:hover:text-slate-200 focus:text-slate-700 active:text-slate-700" />
               </Button>
             )}
           </div>
@@ -213,6 +213,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
             {section.items.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
+                const iconSize = collapsed ? "h-6 w-6" : "h-5 w-5";
 
               return (
                 <Link
@@ -224,11 +225,11 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                       : "text-slate-600 dark:text-slate-400 hover:bg-green-50 dark:hover:bg-green-900/20 hover:text-foreground"
                   }`}
                 >
-                  <Icon
-                    className={`h-5 w-5 ${
+                    <Icon
+                      className={`${iconSize} transition-none ${
                       active
                         ? "text-white"
-                        : "text-slate-600 dark:text-slate-400 group-hover:text-green-600"
+                          : `${collapsed ? "text-slate-700 dark:text-slate-200" : "text-slate-600 dark:text-slate-400"} group-hover:text-green-600`
                     }`}
                   />
                   {!collapsed && (
@@ -253,7 +254,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                 onClick={() => navigate("/member/progress-report")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-green-500/20 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                className="w-full justify-start border-green-500/20 text-green-600 hover:bg-green-500 dark:hover:bg-green-900/20"
               >
                 <Target className="h-4 w-4 mr-2" />
                 View Progress
@@ -262,7 +263,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                 onClick={() => navigate("/member/analysis")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-emerald-500/20 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                className="w-full justify-start border-emerald-500/20 text-emerald-600 hover:bg-emerald-500 dark:hover:bg-emerald-900/20"
               >
                 <PieChart className="h-4 w-4 mr-2" />
                 Credit Analysis
@@ -271,7 +272,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                 onClick={() => navigate("/member/monitoring")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-green-500/20 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                className="w-full justify-start border-green-500/20 text-green-600 hover:bg-green-500 dark:hover:bg-green-900/20"
               >
                 <Shield className="h-4 w-4 mr-2" />
                 Monitoring
@@ -280,7 +281,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                 onClick={() => navigate("/member/score-history")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-emerald-500/20 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                className="w-full justify-start border-emerald-500/20 text-emerald-600 hover:bg-emerald-500 dark:hover:bg-emerald-900/20"
               >
                 <TrendingUp className="h-4 w-4 mr-2" />
                 Score History
@@ -289,7 +290,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                 onClick={() => navigate("/member/support")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-green-500/20 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                className="w-full justify-start border-green-500/20 text-green-600 hover:bg-green-500 dark:hover:bg-green-900/20"
               >
                 <HelpCircle className="h-4 w-4 mr-2" />
                 Support
@@ -298,7 +299,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                 onClick={() => navigate("/member/settings")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-emerald-500/20 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                className="w-full justify-start border-emerald-500/20 text-emerald-600 hover:bg-emerald-500 dark:hover:bg-emerald-900/20"
               >
                 <Settings className="h-4 w-4 mr-2" />
                 Settings
@@ -332,7 +333,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start hover:bg-green-50 dark:hover:bg-green-900/20"
+                  className="w-full justify-start hover:bg-green-500 dark:hover:bg-green-900/20"
                 >
                   <Settings className="h-4 w-4 mr-2" />
                   Settings
@@ -346,7 +347,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
             size="sm"
             className={`${
               collapsed ? "w-full" : ""
-            } hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600`}
+            } hover:bg-red-50 hover:bg-red-500 dark:hover:bg-red-900/20 text-red-600`}
           >
             <LogOut className="h-4 w-4" />
             {!collapsed && <span className="ml-2">Logout</span>}

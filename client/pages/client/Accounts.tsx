@@ -4425,9 +4425,6 @@ export default function CreditReport() {
                   {/* Header with bureau logos */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-card rounded-xl p-4 border border-border shadow-sm">
                     <div className="font-bold text-base text-foreground flex items-center gap-2">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
-                      </svg>
                       Account Details
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">

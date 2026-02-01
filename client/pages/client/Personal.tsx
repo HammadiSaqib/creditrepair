@@ -4666,7 +4666,7 @@ export default function CreditReport() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900 mt-5">
             <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 dark:border-blue-700/30">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">

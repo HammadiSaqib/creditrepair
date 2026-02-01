@@ -782,6 +782,11 @@ export const affiliateApi = {
     if (params?.range) queryParams.append('range', params.range);
     return api.get(`/api/affiliate/analytics/time-series?${queryParams}`);
   },
+  getTopLinks: (params?: { range?: string }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.range) queryParams.append('range', params.range);
+    return api.get(`/api/affiliate/analytics/top-links?${queryParams}`);
+  },
 
   // Settings endpoints
   getSettings: () => api.get('/api/affiliate/settings'),

@@ -3,13 +3,12 @@ import ClientLayout from '../../components/ClientLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Bell, Shield, CreditCard, Eye, Lock, Smartphone, Mail, Loader2, Camera } from 'lucide-react';
+import { User, Loader2, Camera } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { authApi, billingApi } from '@/lib/api';
+import { authApi } from '@/lib/api';
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/contexts/AuthContext";
 
@@ -33,29 +32,9 @@ const Settings = () => {
     dateOfBirth: ''
   });
 
-  const [notifications, setNotifications] = useState({
-    emailAlerts: true,
-    smsAlerts: false,
-    pushNotifications: true,
-    scoreUpdates: true,
-    disputeUpdates: true,
-    marketingEmails: false,
-    weeklyReports: true
-  });
+ 
 
-  const [privacy, setPrivacy] = useState({
-    twoFactorAuth: false,
-    biometricLogin: false,
-    sessionTimeout: '30',
-    dataSharing: false,
-    creditMonitoring: true
-  });
-
-  const [billingInfo, setBillingInfo] = useState({
-    subscription: null,
-    paymentMethod: null,
-    history: []
-  });
+  // Billing tab removed for clients
 
   // Load user data on component mount
   useEffect(() => {
@@ -83,29 +62,7 @@ const Settings = () => {
         });
       }
 
-      // Load billing information
-      try {
-        const [subscriptionResponse, historyResponse] = await Promise.all([
-          billingApi.getSubscription(),
-          billingApi.getHistory()
-        ]);
-
-        if (subscriptionResponse.data) {
-          setBillingInfo(prev => ({
-            ...prev,
-            subscription: subscriptionResponse.data
-          }));
-        }
-
-        if (historyResponse.data) {
-          setBillingInfo(prev => ({
-            ...prev,
-            history: historyResponse.data.history || []
-          }));
-        }
-      } catch (billingError) {
-        console.log('Billing data not available:', billingError);
-      }
+      // Billing tab removed for clients; skip billing data loading
 
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -126,19 +83,7 @@ const Settings = () => {
     }));
   };
 
-  const handleNotificationToggle = (key) => {
-    setNotifications(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
-
-  const handlePrivacyToggle = (key) => {
-    setPrivacy(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
+ 
 
   const saveProfile = async () => {
     try {
@@ -178,53 +123,7 @@ const Settings = () => {
     }
   };
 
-  const saveNotifications = async () => {
-    try {
-      setSaving(true);
-      
-      // For now, we'll store notifications in localStorage since there's no specific endpoint
-      // In a real app, you'd send this to a backend endpoint
-      localStorage.setItem('user_notifications', JSON.stringify(notifications));
-      
-      toast({
-        title: "Success",
-        description: "Notification preferences saved successfully!",
-      });
-    } catch (error) {
-      console.error('Error saving notifications:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save notification preferences. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveSecuritySettings = async () => {
-    try {
-      setSaving(true);
-      
-      // For now, we'll store security settings in localStorage since there's no specific endpoint
-      // In a real app, you'd send this to a backend endpoint
-      localStorage.setItem('user_security', JSON.stringify(privacy));
-      
-      toast({
-        title: "Success",
-        description: "Security settings saved successfully!",
-      });
-    } catch (error) {
-      console.error('Error saving security settings:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save security settings. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
+ 
 
   // Handle image upload
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -319,26 +218,7 @@ const Settings = () => {
     }
   };
 
-  // Load saved preferences from localStorage on mount
-  useEffect(() => {
-    const savedNotifications = localStorage.getItem('user_notifications');
-    if (savedNotifications) {
-      try {
-        setNotifications(JSON.parse(savedNotifications));
-      } catch (error) {
-        console.error('Error parsing saved notifications:', error);
-      }
-    }
-
-    const savedSecurity = localStorage.getItem('user_security');
-    if (savedSecurity) {
-      try {
-        setPrivacy(JSON.parse(savedSecurity));
-      } catch (error) {
-        console.error('Error parsing saved security settings:', error);
-      }
-    }
-  }, []);
+ 
 
   if (loading) {
     return (
@@ -355,11 +235,8 @@ const Settings = () => {
     <ClientLayout title="Settings" description="Manage your account preferences and security settings">
       <div className="space-y-6">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-1">
             <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="security">Security</TabsTrigger>
-            <TabsTrigger value="billing">Billing</TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile">
@@ -598,367 +475,7 @@ const Settings = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="notifications">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Bell className="h-5 w-5" />
-                  Notification Preferences
-                </CardTitle>
-                <CardDescription>
-                  Choose how and when you want to receive notifications
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Mail className="h-5 w-5 text-gray-500" />
-                      <div>
-                        <h4 className="font-medium">Email Alerts</h4>
-                        <p className="text-sm text-gray-600">Receive important updates via email</p>
-                      </div>
-                    </div>
-                    <Switch 
-                      checked={notifications.emailAlerts}
-                      onCheckedChange={() => handleNotificationToggle('emailAlerts')}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Smartphone className="h-5 w-5 text-gray-500" />
-                      <div>
-                        <h4 className="font-medium">SMS Alerts</h4>
-                        <p className="text-sm text-gray-600">Get text messages for urgent notifications</p>
-                      </div>
-                    </div>
-                    <Switch 
-                      checked={notifications.smsAlerts}
-                      onCheckedChange={() => handleNotificationToggle('smsAlerts')}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Bell className="h-5 w-5 text-gray-500" />
-                      <div>
-                        <h4 className="font-medium">Push Notifications</h4>
-                        <p className="text-sm text-gray-600">Browser and mobile app notifications</p>
-                      </div>
-                    </div>
-                    <Switch 
-                      checked={notifications.pushNotifications}
-                      onCheckedChange={() => handleNotificationToggle('pushNotifications')}
-                    />
-                  </div>
-                </div>
-
-                <div className="border-t pt-4">
-                  <h4 className="font-medium mb-4">Notification Types</h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h5 className="font-medium">Credit Score Updates</h5>
-                        <p className="text-sm text-gray-600">When your credit score changes</p>
-                      </div>
-                      <Switch 
-                        checked={notifications.scoreUpdates}
-                        onCheckedChange={() => handleNotificationToggle('scoreUpdates')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h5 className="font-medium">Dispute Updates</h5>
-                        <p className="text-sm text-gray-600">Progress on your credit disputes</p>
-                      </div>
-                      <Switch 
-                        checked={notifications.disputeUpdates}
-                        onCheckedChange={() => handleNotificationToggle('disputeUpdates')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h5 className="font-medium">Weekly Reports</h5>
-                        <p className="text-sm text-gray-600">Summary of your credit activity</p>
-                      </div>
-                      <Switch 
-                        checked={notifications.weeklyReports}
-                        onCheckedChange={() => handleNotificationToggle('weeklyReports')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h5 className="font-medium">Marketing Emails</h5>
-                        <p className="text-sm text-gray-600">Product updates and promotions</p>
-                      </div>
-                      <Switch 
-                        checked={notifications.marketingEmails}
-                        onCheckedChange={() => handleNotificationToggle('marketingEmails')}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <Button 
-                   className="bg-green-600 hover:bg-green-700"
-                   onClick={saveNotifications}
-                   disabled={saving}
-                 >
-                   {saving ? (
-                     <>
-                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                       Saving...
-                     </>
-                   ) : (
-                     'Save Notification Settings'
-                   )}
-                 </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="security">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Security & Privacy
-                </CardTitle>
-                <CardDescription>
-                  Manage your account security and privacy preferences
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Lock className="h-5 w-5 text-gray-500" />
-                      <div>
-                        <h4 className="font-medium">Two-Factor Authentication</h4>
-                        <p className="text-sm text-gray-600">Add an extra layer of security to your account</p>
-                      </div>
-                    </div>
-                    <Switch 
-                      checked={privacy.twoFactorAuth}
-                      onCheckedChange={() => handlePrivacyToggle('twoFactorAuth')}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Eye className="h-5 w-5 text-gray-500" />
-                      <div>
-                        <h4 className="font-medium">Biometric Login</h4>
-                        <p className="text-sm text-gray-600">Use fingerprint or face recognition</p>
-                      </div>
-                    </div>
-                    <Switch 
-                      checked={privacy.biometricLogin}
-                      onCheckedChange={() => handlePrivacyToggle('biometricLogin')}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">Session Timeout</h4>
-                      <p className="text-sm text-gray-600">Automatically log out after inactivity</p>
-                    </div>
-                    <Select value={privacy.sessionTimeout} onValueChange={(value) => setPrivacy(prev => ({ ...prev, sessionTimeout: value }))}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="15">15 minutes</SelectItem>
-                        <SelectItem value="30">30 minutes</SelectItem>
-                        <SelectItem value="60">1 hour</SelectItem>
-                        <SelectItem value="120">2 hours</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="border-t pt-4">
-                  <h4 className="font-medium mb-4">Privacy Settings</h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h5 className="font-medium">Data Sharing</h5>
-                        <p className="text-sm text-gray-600">Allow sharing anonymized data for research</p>
-                      </div>
-                      <Switch 
-                        checked={privacy.dataSharing}
-                        onCheckedChange={() => handlePrivacyToggle('dataSharing')}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h5 className="font-medium">Credit Monitoring</h5>
-                        <p className="text-sm text-gray-600">Monitor your credit reports for changes</p>
-                      </div>
-                      <Switch 
-                        checked={privacy.creditMonitoring}
-                        onCheckedChange={() => handlePrivacyToggle('creditMonitoring')}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t pt-4">
-                  <h4 className="font-medium mb-4">Password & Security</h4>
-                  <div className="space-y-3">
-                    <Button variant="outline" className="w-full justify-start">
-                      Change Password
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start">
-                      Download Security Report
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start">
-                      View Login History
-                    </Button>
-                  </div>
-                </div>
-
-                <Button 
-                   className="bg-green-600 hover:bg-green-700"
-                   onClick={saveSecuritySettings}
-                   disabled={saving}
-                 >
-                   {saving ? (
-                     <>
-                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                       Saving...
-                     </>
-                   ) : (
-                     'Save Security Settings'
-                   )}
-                 </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="billing">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5" />
-                  Billing & Subscription
-                </CardTitle>
-                <CardDescription>
-                  Manage your subscription and payment methods
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {billingInfo.subscription ? (
-                   <div className="p-4 bg-green-50 rounded-lg">
-                     <div className="flex items-center justify-between mb-2">
-                       <h4 className="font-semibold text-green-800">
-                         {billingInfo.subscription.plan_name || 'Premium Plan'}
-                       </h4>
-                       <span className="text-green-600 font-bold">
-                         ${billingInfo.subscription.amount || '29.99'}/month
-                       </span>
-                     </div>
-                     <p className="text-sm text-green-700">
-                       Next billing date: {billingInfo.subscription.next_billing_date || 'February 15, 2024'}
-                     </p>
-                   </div>
-                 ) : (
-                   <div className="p-4 bg-gray-50 rounded-lg">
-                     <div className="flex items-center justify-between mb-2">
-                       <h4 className="font-semibold text-gray-800">No Active Subscription</h4>
-                     </div>
-                     <p className="text-sm text-gray-700">You don't have an active subscription.</p>
-                   </div>
-                 )}
-
-                <div>
-                  <h4 className="font-medium mb-4">Payment Method</h4>
-                  <div className="p-4 border rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <CreditCard className="h-6 w-6 text-gray-500" />
-                        <div>
-                          <p className="font-medium">•••• •••• •••• 4242</p>
-                          <p className="text-sm text-gray-600">Expires 12/25</p>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        Update
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                   <h4 className="font-medium mb-4">Billing History</h4>
-                   <div className="space-y-2">
-                     {billingInfo.history && billingInfo.history.length > 0 ? (
-                       billingInfo.history.map((item, index) => (
-                         <div key={index} className="flex items-center justify-between p-3 border rounded">
-                           <div>
-                             <p className="font-medium">
-                               {item.date ? new Date(item.date).toLocaleDateString('en-US', { 
-                                 year: 'numeric', 
-                                 month: 'long' 
-                               }) : `Transaction ${index + 1}`}
-                             </p>
-                             <p className="text-sm text-gray-600">{item.description || 'Premium Plan'}</p>
-                           </div>
-                           <div className="text-right">
-                             <p className="font-medium">${item.amount || '29.99'}</p>
-                             <Button variant="ghost" size="sm">Download</Button>
-                           </div>
-                         </div>
-                       ))
-                     ) : (
-                       <>
-                         <div className="flex items-center justify-between p-3 border rounded">
-                           <div>
-                             <p className="font-medium">January 2024</p>
-                             <p className="text-sm text-gray-600">Premium Plan</p>
-                           </div>
-                           <div className="text-right">
-                             <p className="font-medium">$29.99</p>
-                             <Button variant="ghost" size="sm">Download</Button>
-                           </div>
-                         </div>
-                         <div className="flex items-center justify-between p-3 border rounded">
-                           <div>
-                             <p className="font-medium">December 2023</p>
-                             <p className="text-sm text-gray-600">Premium Plan</p>
-                           </div>
-                           <div className="text-right">
-                             <p className="font-medium">$29.99</p>
-                             <Button variant="ghost" size="sm">Download</Button>
-                           </div>
-                         </div>
-                       </>
-                     )}
-                   </div>
-                 </div>
-
-                <div className="border-t pt-4">
-                  <h4 className="font-medium mb-4">Subscription Management</h4>
-                  <div className="space-y-3">
-                    <Button variant="outline" className="w-full justify-start">
-                      Change Plan
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start">
-                      Pause Subscription
-                    </Button>
-                    <Button variant="outline" className="w-full justify-start text-red-600 hover:text-red-700">
-                      Cancel Subscription
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {/* Billing tab removed for clients */}
         </Tabs>
       </div>
     </ClientLayout>

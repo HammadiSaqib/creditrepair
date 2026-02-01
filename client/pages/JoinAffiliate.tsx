@@ -328,30 +328,6 @@ const JoinAffiliate: React.FC = () => {
               Promote the <span className="font-semibold text-ocean-blue">AI-powered credit platform</span> that analyzes and decodes credit files before repair or funding. Choose your path—from a free affiliate track to full brand ownership with our <span className="font-semibold text-orange-600">White Label program (Coming Soon)</span>.
             </p>
 
-            {/* Trust Indicators */}
-            <div className="flex flex-wrap justify-center items-center gap-8 mb-8 text-sm text-gray-500">
-              <div className="flex items-center gap-2">
-                <div className="flex">
-                  {[...Array(5)].map((_, i) => (
-                    <Star key={i} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  ))}
-                </div>
-                <span>4.9/5 Partner Rating*</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-ocean-blue" />
-                <span>500+ Active Partners*</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-sea-green" />
-                <span>$2M+ Paid in Commissions*</span>
-              </div>
-            </div>
-            
-            <p className="text-xs text-gray-400 text-center max-w-2xl mx-auto mb-12 italic">
-              *Metrics reflect current usage and historical payouts and may change over time.
-            </p>
-
             {/* Enhanced CTAs */}
             <div className="flex flex-col sm:flex-row gap-6 justify-center mb-16">
               <Button asChild size="lg" className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-semibold px-10 py-6 text-lg shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105 rounded-xl">
@@ -378,10 +354,19 @@ const JoinAffiliate: React.FC = () => {
                 </div>
                 <h3 className="text-xl font-bold mb-3 text-gray-900">Up to 25% Commissions</h3>
                 <p className="text-gray-600 leading-relaxed">Earn competitive commissions through our tiered partner program and recurring revenue model.</p>
-                <div className="mt-4 inline-flex items-center text-ocean-blue font-semibold">
+                <Button
+                  variant="link"
+                  className="mt-4 text-ocean-blue font-semibold"
+                  onClick={() => {
+                    const el = document.getElementById('programs');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                >
                   <span>Learn More</span>
                   <ArrowRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                </div>
+                </Button>
               </CardContent>
             </Card>
             
@@ -392,10 +377,19 @@ const JoinAffiliate: React.FC = () => {
                 </div>
                 <h3 className="text-xl font-bold mb-3 text-gray-900">Full Support</h3>
                 <p className="text-gray-600 leading-relaxed">Comprehensive training, marketing assets, and dedicated account management.</p>
-                <div className="mt-4 inline-flex items-center text-ocean-blue font-semibold">
+                <Button
+                  variant="link"
+                  className="mt-4 text-ocean-blue font-semibold"
+                  onClick={() => {
+                    const el = document.getElementById('apply');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                >
                   <span>Get Started</span>
                   <ArrowRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                </div>
+                </Button>
               </CardContent>
             </Card>
             
@@ -406,10 +400,19 @@ const JoinAffiliate: React.FC = () => {
                 </div>
                 <h3 className="text-xl font-bold mb-3 text-gray-900">Real-time Analytics</h3>
                 <p className="text-gray-600 leading-relaxed">Track conversions, optimize campaigns, and monitor performance in real-time.</p>
-                <div className="mt-4 inline-flex items-center text-ocean-blue font-semibold">
+                <Button
+                  variant="link"
+                  className="mt-4 text-ocean-blue font-semibold"
+                  onClick={() => {
+                    const el = document.getElementById('programs');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                >
                   <span>View Dashboard</span>
                   <ArrowRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                </div>
+                </Button>
               </CardContent>
             </Card>
           </div>
@@ -474,10 +477,20 @@ const JoinAffiliate: React.FC = () => {
                 
                 <div className="pt-4 border-t border-gray-100">
                   <Button asChild className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-lg hover:shadow-xl transition-all duration-300 group/btn">
-                    <Link to="#apply" className="flex items-center justify-center gap-2">
+                    <a
+                      href="#apply"
+                      className="flex items-center justify-center gap-2"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const el = document.getElementById('apply');
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                      }}
+                    >
                       Apply as Affiliate
                       <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
-                    </Link>
+                    </a>
                   </Button>
                 </div>
               </CardContent>
@@ -518,7 +531,7 @@ const JoinAffiliate: React.FC = () => {
                 </div>
                 
                 <div className="pt-4 border-t border-gray-100">
-                  <Button asChild variant="outline" className="w-full border-2 border-purple-200 text-purple-700 hover:bg-purple-50 hover:border-purple-300 shadow-lg hover:shadow-xl transition-all duration-300 group/btn">
+                  <Button asChild variant="outline" className="w-full border-2 border-purple-200 text-purple-700 hover:bg-purple-500 hover:border-purple-300 shadow-lg hover:shadow-xl transition-all duration-300 group/btn">
                     <Link to="#apply" className="flex items-center justify-center gap-2">
                       Apply as Partner
                       <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
@@ -550,10 +563,6 @@ const JoinAffiliate: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex items-start gap-3">
                     <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span className="text-gray-700">Investment tiers from $2.5K to $50K</span>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
                     <span className="text-gray-700">Flexible profit structures with brand control options</span>
                   </div>
                   <div className="flex items-start gap-3">
@@ -563,11 +572,22 @@ const JoinAffiliate: React.FC = () => {
                 </div>
                 
                 <div className="pt-4 border-t border-gray-100">
-                  <Button asChild className="w-full bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 group/btn cursor-not-allowed" disabled>
-                    <span className="flex items-center justify-center gap-2">
+                  <Button asChild className="w-full bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 group/btn">
+                    <a
+                      href="#"
+                      className="flex items-center justify-center gap-2"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const el = document.getElementById('');
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                      }}
+                      aria-label="Join Waitlist for White Label"
+                    >
                       Join Waitlist for White Label
                       <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
-                    </span>
+                    </a>
                   </Button>
                 </div>
               </CardContent>
@@ -884,10 +904,20 @@ const JoinAffiliate: React.FC = () => {
           {/* Call to Action */}
           <div className="text-center mt-16">
             <Button asChild size="lg" className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white shadow-2xl hover:shadow-3xl transition-all duration-300 px-8 py-4 text-lg group">
-              <Link to="#apply" className="flex items-center gap-3">
+              <a
+                href="#apply"
+                className="flex items-center gap-3"
+                onClick={(e) => {
+                  e.preventDefault();
+                  const el = document.getElementById('apply');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }}
+              >
                 Get Started Today
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" />
-              </Link>
+              </a>
             </Button>
           </div>
         </div>
@@ -919,7 +949,7 @@ const JoinAffiliate: React.FC = () => {
               {/* Card Header Gradient */}
               <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-emerald-500 via-blue-500 to-emerald-500" />
               
-              <CardHeader className="pb-8 pt-12 relative">
+              <CardHeader id="apply" className="pb-8 pt-12 relative">
                 <div className="flex items-center justify-center mb-8">
                   <div className="relative">
                     <div className="w-20 h-20 bg-gradient-to-r from-emerald-600 to-blue-600 rounded-2xl flex items-center justify-center shadow-2xl transform group-hover:scale-105 transition-transform duration-300">
@@ -928,7 +958,7 @@ const JoinAffiliate: React.FC = () => {
                     <div className="absolute -inset-2 bg-gradient-to-r from-emerald-600/20 to-blue-600/20 rounded-2xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   </div>
                 </div>
-                <CardTitle className="text-4xl text-center font-bold bg-gradient-to-r from-emerald-700 to-blue-700 bg-clip-text text-transparent mb-4">
+                <CardTitle className="text-4xl text-center font-bold bg-gradient-to-r from-emerald-700 to-blue-700 bg-clip-text text-transparent mb-8">
                   Affiliate & Partner Registration
                 </CardTitle>
                 <CardDescription className="text-center text-lg text-gray-600 max-w-2xl mx-auto leading-relaxed">
@@ -1233,7 +1263,7 @@ const JoinAffiliate: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <p className="text-gray-600 leading-relaxed text-lg">
-                    We process commissions weekly with no minimum threshold. Payments are sent every Friday for the previous week's confirmed conversions, with detailed reporting available in your affiliate dashboard.
+                    We process commissions monthly. Payouts are made once per month for confirmed conversions, with reporting available in your affiliate dashboard.
                   </p>
                 </CardContent>
               </Card>
@@ -1269,7 +1299,7 @@ const JoinAffiliate: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <p className="text-gray-600 leading-relaxed text-lg">
-                    We provide comprehensive marketing assets including banners, landing pages, email templates, social media content, and video materials. All materials are professionally designed and optimized for conversion.
+                    We only provide a landing page. Nothing else is included.
                   </p>
                 </CardContent>
               </Card>
@@ -1305,7 +1335,7 @@ const JoinAffiliate: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                   <p className="text-gray-600 leading-relaxed text-lg">
-                    We offer dedicated account management, marketing strategy consultation, technical support, and regular training webinars. Our team is committed to helping you maximize your earning potential.
+                    We offer dedicated account management and technical support. Our team is committed to helping you maximize your earning potential.
                   </p>
                 </CardContent>
               </Card>

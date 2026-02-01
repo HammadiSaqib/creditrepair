@@ -647,7 +647,6 @@ export default function AffiliateCommissions() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Product</TableHead>
                       <TableHead>Order Value</TableHead>
                       <TableHead>Rate</TableHead>
                       <TableHead>Commission</TableHead>
@@ -678,14 +677,6 @@ export default function AffiliateCommissions() {
                             <div>
                               <div className="font-medium">{commission.customerName}</div>
                               <div className="text-sm text-gray-500">{commission.customerEmail}</div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{commission.product}</div>
-                              {commission.trackingCode && (
-                                <div className="text-xs text-gray-500">{commission.trackingCode}</div>
-                              )}
                             </div>
                           </TableCell>
                           <TableCell>${(commission.orderValue || 0).toFixed(2)}</TableCell>

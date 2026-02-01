@@ -405,7 +405,6 @@ export default function AffiliateReferrals() {
                     <TableHead>Signup Date</TableHead>
                     <TableHead>Commission</TableHead>
                     <TableHead>Lifetime Value</TableHead>
-                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -498,25 +497,6 @@ export default function AffiliateReferrals() {
                           <span className="font-medium">
                             ${(referral.lifetimeValue || 0).toLocaleString()}
                           </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            {referral.status === "unpaid" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleFollowUp(referral.id)}
-                              >
-                                <MessageSquare className="h-4 w-4" />
-                              </Button>
-                            )}
-                            <Button variant="ghost" size="sm">
-                              <ExternalLink className="h-4 w-4" />
-                            </Button>
-                          </div>
                         </TableCell>
                       </TableRow>
                     ))

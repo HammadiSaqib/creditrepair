@@ -4249,11 +4249,6 @@ export default function CreditReport() {
             <p className="text-muted-foreground">Credit Report Analysis</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={downloadAnalysisPdf} disabled={activeTab !== 'analysis'}>
-              <Download className="h-4 w-4 mr-2" />
-              Download PDF
-            </Button>
-            
             <Button size="sm" variant="default">
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
@@ -4335,7 +4330,7 @@ export default function CreditReport() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                   <div className="bg-blue-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-6 bg-blue-600 rounded text-white flex items-center justify-center mx-auto pb-4 mb-3 text-sm font-bold">
+                    <div className="w-12 h-6 bg-blue-600 rounded text-white flex items-center justify-center mx-auto pb-1 mb-3 text-sm font-bold">
                       EQ
                     </div>
                     <h4 className="font-semibold text-blue-800">Equifax</h4>
@@ -4344,7 +4339,7 @@ export default function CreditReport() {
                     </p>
                   </div>
                   <div className="bg-green-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-6 bg-green-600 rounded text-white flex items-center justify-center mx-auto pb-4 mb-3 text-sm font-bold">
+                    <div className="w-12 h-6 bg-green-600 rounded text-white flex items-center justify-center mx-auto pb-1 mb-3 text-sm font-bold">
                       EX
                     </div>
                     <h4 className="font-semibold text-green-800">Experian</h4>
@@ -4353,7 +4348,7 @@ export default function CreditReport() {
                     </p>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-6 bg-purple-600 rounded text-white flex items-center justify-center mx-auto pb-4 mb-3 text-sm font-bold">
+                    <div className="w-12 h-6 bg-purple-600 rounded text-white flex items-center justify-center mx-auto pb-1 mb-3 text-sm font-bold">
                       TU
                     </div>
                     <h4 className="font-semibold text-purple-800">
@@ -4523,9 +4518,9 @@ export default function CreditReport() {
                   The Importance of Credit in Everyday Life
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 place-items-center">
                   <div className="text-center">
-                    <Building2 className="h-12 w-12 text-blue-600 mr-5 mx-auto mb-4" />
+                    <Building2 className="h-12 w-12 text-blue-600 mx-auto mb-4" />
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Renting an Apartment
                     </h4>
@@ -4536,7 +4531,7 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center">
-                    <CreditCard className="h-12 w-12 text-green-600 mr-4 mx-auto mb-4" />
+                    <CreditCard className="h-12 w-12 text-green-600 mx-auto mb-4" />
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Buying a Car
                     </h4>
@@ -4547,7 +4542,7 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center">
-                    <Wallet className="h-12 w-12 text-purple-600 mr-3 mx-auto mb-4" />
+                    <Wallet className="h-12 w-12 text-purple-600 mx-auto mb-4" />
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Everyday Purchases
                     </h4>
@@ -4558,7 +4553,7 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center">
-                    <Zap className="h-12 w-12 text-orange-600 pr-3 mx-auto mb-4" />
+                    <Zap className="h-12 w-12 text-orange-600 mx-auto mb-4" />
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Utility Services
                     </h4>
