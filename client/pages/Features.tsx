@@ -192,7 +192,7 @@ export default function Features() {
                 <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
                   <Button size="lg" variant="secondary" className="bg-white text-ocean-blue hover:bg-gray-50 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105" asChild>
                     <Link to="/register" className="flex items-center gap-2">
-                      Get Started Free <ArrowRight className="h-4 w-4" />
+                      Get Started Today <ArrowRight className="h-4 w-4" />
                     </Link>
                   </Button>
                   <Button size="lg" variant="outline" className="border-white/30 text-black hover:bg-white/10 backdrop-blur-sm" asChild>
