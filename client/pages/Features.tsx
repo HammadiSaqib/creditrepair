@@ -2,7 +2,7 @@ import SiteHeader from "@/components/SiteHeader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Shield, Brain, FileText, TrendingUp, Zap, Users, BarChart3, CheckCircle, ArrowRight, Star, Award, Target, Lock, Globe, DollarSign } from "lucide-react";
+import { Sparkles, Shield, Brain, FileText, TrendingUp, Zap, Users, BarChart3, CheckCircle, ArrowRight, Star, Award, Target, Lock, Globe } from "lucide-react";
 import { Link } from "react-router-dom";
 import Footer from "@/components/Footer";
 
@@ -48,8 +48,7 @@ export default function Features() {
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100">
               <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                 <div className="text-center md:text-left">
-                  <div className="text-3xl font-bold text-gray-900 mb-2">Included Toolkit (Comparable value: $197 — internal estimate only)</div>
-                  <div className="text-gray-600 text-sm">Comparable values are internal estimates based on similar tools. They do not represent retail pricing or discounts.</div>
+                  <div className="text-3xl font-bold text-gray-900 mb-2">Included Toolkit</div>
                 </div>
                 <div className="text-center">
                   <div className="text-3xl font-bold text-sea-green mb-2">Starting at $197</div>
@@ -81,7 +80,6 @@ export default function Features() {
                 icon: TrendingUp,
                 title: "Progress Report with Score Timeline",
                 description: "Visualize month-to-month changes in reported credit data for clearer understanding.",
-                value: "$97",
                 color: "from-blue-500 to-blue-600",
                 features: ["Timeline visualization", "Display of data changes", "Structured view of report variations"]
               },
@@ -89,7 +87,6 @@ export default function Features() {
                 icon: FileText,
                 title: "Client Summary Export & PDF Download",
                 description: "Generate a clean, organized summary of credit data in a downloadable PDF.",
-                value: "$127",
                 color: "from-emerald-500 to-emerald-600",
                 features: ["Professional formatting", "Summary export", "Client-ready reporting"]
               },
@@ -97,7 +94,6 @@ export default function Features() {
                 icon: Brain,
                 title: "Full AI Credit File Analysis",
                 description: "Organize report data into categories commonly reviewed by lenders. AI-assisted features organize information but do not guarantee accuracy, outcomes, or lender perception.",
-                value: "$147",
                 color: "from-purple-500 to-purple-600",
                 features: ["Structured breakdown of report sections", "Pattern detection", "General insight identification"]
               },
@@ -105,7 +101,6 @@ export default function Features() {
                 icon: Shield,
                 title: "Underwriting Overview",
                 description: "General overview of factors commonly referenced by lenders. Not a guarantee of credit approval, funding approval, or any specific financial outcome.",
-                value: "$207",
                 color: "from-orange-500 to-orange-600",
                 features: ["General indicator overview", "High-level criteria review", "Not a prediction or guarantee"]
               }
@@ -114,13 +109,6 @@ export default function Features() {
                 <div className={`absolute inset-0 bg-gradient-to-br ${feature.color} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
                 
                 <CardHeader className="pb-6 relative">
-                  {/* Value Badge */}
-                  <div className="absolute top-3 right-3">
-                    <Badge className={`bg-gradient-to-r ${feature.color} text-white shadow-lg`}>
-                      {feature.value}
-                    </Badge>
-                  </div>
-                  
                   {/* Icon */}
                   <div className={`w-16 h-16 bg-gradient-to-br ${feature.color} rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-all duration-300 shadow-lg`}>
                     <feature.icon className="h-8 w-8 text-white" />
@@ -197,11 +185,8 @@ export default function Features() {
                   </div>
                   
                   <h3 className="text-3xl lg:text-4xl font-bold mb-4">
-                    Included Toolkit (Comparable value: $197 — internal estimate only)
+                    Included Toolkit
                   </h3>
-                  <p className="text-xl text-white/90 leading-relaxed max-w-3xl mx-auto mb-6">
-                    Comparable values are internal estimates based on similar tools. They do not represent retail pricing or discounts.
-                  </p>
                 </div>
                 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
@@ -229,7 +214,7 @@ export default function Features() {
       <div className="bg-white py-8 px-4 border-t border-gray-100">
         <div className="container mx-auto max-w-4xl text-center">
           <p className="text-xs text-gray-500 leading-relaxed">
-            Score Machine provides tools for organizing and reviewing credit report information. It does not provide credit repair, legal advice, or guarantee credit improvement or funding approval.
+            The Score Machine may not be used to make eligibility, approval, denial, or onboarding decisions for credit, employment, insurance, or housing.
           </p>
         </div>
       </div>

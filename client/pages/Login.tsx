@@ -1429,24 +1429,24 @@ export default function Login() {
                   <div className="flex items-center justify-center space-x-6 text-sm">
                     <div className="flex items-center space-x-2">
                       <Shield className="h-4 w-4 text-green-600" />
-                      <span className="text-muted-foreground">SSL Secured</span>
+                      <span className="text-muted-foreground">Account Access Tools</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <CheckCircle className="h-4 w-4 text-green-600" />
                       <span className="text-muted-foreground">
-                        Privacy Focused
+                        Policy Transparency
                       </span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Award className="h-4 w-4 text-green-600" />
                       <span className="text-muted-foreground">
-                        Security Focused
+                        Support Ready
                       </span>
                     </div>
                   </div>
                   <div className="mt-2 text-center">
                     <p className="text-[10px] text-muted-foreground">
-                      Security certifications apply to our infrastructure and internal processes.
+                      Details shown are informational and may change over time.
                     </p>
                   </div>
                 </div>

@@ -71,6 +71,11 @@ const Terms: React.FC = () => {
                 <p className="text-slate-600 leading-relaxed">
                   Subject to your full compliance with this Agreement and timely payment of fees, the Company grants you a personal, limited, revocable, non-exclusive, and non-transferable license (the "License") to access and use the Platform and Services solely for your own bona fide internal business operations or personal informational use.
                 </p>
+                <ul className="list-disc pl-6 space-y-2 text-slate-600">
+                  <li>No eligibility decisions</li>
+                  <li>No onboarding decisions</li>
+                  <li>Educational use only</li>
+                </ul>
 
                 <h3 className="text-xl font-semibold text-slate-800 mt-6">Ownership and Intellectual Property ("Company IP")</h3>
                 <ul className="list-disc pl-6 space-y-2 text-slate-600">

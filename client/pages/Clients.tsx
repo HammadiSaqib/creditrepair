@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -186,6 +187,7 @@ const getScoreChange = (current: number, previous: number) => {
   const [addEmail, setAddEmail] = useState<string>("");
   const [addPassword, setAddPassword] = useState<string>("");
   const [addSsnLast4, setAddSsnLast4] = useState<string>("");
+  const [addAuthorization, setAddAuthorization] = useState(false);
   const [isAddingClient, setIsAddingClient] = useState<boolean>(false);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [showInlinePassword, setShowInlinePassword] = useState(false);
@@ -520,6 +522,14 @@ const getScoreChange = (current: number, previous: number) => {
         });
         return;
       }
+      if (!addAuthorization) {
+        toast({
+          title: "Authorization Required",
+          description: "Please confirm authorization to use the credit report for educational analysis.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // Scrape credit report to extract personal info
       const scrapeResponse = await fetch("/api/credit-reports/scrape", {
@@ -709,6 +719,7 @@ const getScoreChange = (current: number, previous: number) => {
       setAddEmail("");
       setAddPassword("");
       setAddSsnLast4("");
+      setAddAuthorization(false);
 
       // Refresh client list
       await fetchClients();
@@ -977,6 +988,16 @@ const getScoreChange = (current: number, previous: number) => {
                     onChange={(e) => setAddSsnLast4(e.target.value.replace(/[^0-9]/g, ""))}
                   />
                 )}
+                <div className="flex items-start space-x-2 w-full sm:w-auto">
+                  <Checkbox
+                    id="inline-authorization"
+                    checked={addAuthorization}
+                    onCheckedChange={(checked) => setAddAuthorization(checked === true)}
+                  />
+                  <Label htmlFor="inline-authorization" className="text-sm text-slate-600">
+                    I confirm this is my clent credit report and I am authorized to use for educational analysis.
+                  </Label>
+                </div>
                 <Button type="submit" size="sm" disabled={isAddingClient}>
                   {isAddingClient ? (
                     <>

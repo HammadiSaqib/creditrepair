@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -200,6 +201,7 @@ export default function Dashboard() {
     password: "",
     ssnLast4: "",
   });
+  const [dashboardAuthorization, setDashboardAuthorization] = useState(false);
   const [showDashboardPassword, setShowDashboardPassword] = useState(false);
   const creditReportRegisterUrl = "https://member.myscoreiq.com/get-fico-max.aspx?offercode=432135JQ";
   const clientLoginUrl = `${window.location.origin}/member/login`;
@@ -679,6 +681,14 @@ export default function Dashboard() {
 
   const handleSubmitClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!dashboardAuthorization) {
+      toast({
+        title: "Authorization Required",
+        description: "Please confirm authorization to use the credit report for educational analysis.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -928,6 +938,7 @@ export default function Dashboard() {
         password: "",
         ssnLast4: "",
       });
+      setDashboardAuthorization(false);
       setIsAddClientOpen(false);
 
       // Refresh dashboard data
@@ -974,6 +985,19 @@ export default function Dashboard() {
 
   const handleInputChange = (field: string, value: string) => {
     setNewClient((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddClientDialogChange = (open: boolean) => {
+    setIsAddClientOpen(open);
+    if (!open) {
+      setNewClient({
+        platform: "",
+        email: "",
+        password: "",
+        ssnLast4: "",
+      });
+      setDashboardAuthorization(false);
+    }
   };
 
   return (
@@ -1804,7 +1828,7 @@ export default function Dashboard() {
       </div>
 
       {/* Add New Client Dialog */}
-        <Dialog open={isAddClientOpen} onOpenChange={setIsAddClientOpen}>
+        <Dialog open={isAddClientOpen} onOpenChange={handleAddClientDialogChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="gradient-text-primary">
@@ -1900,12 +1924,22 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+            <div className="flex items-start space-x-2">
+              <Checkbox
+                id="dashboard-authorization"
+                checked={dashboardAuthorization}
+                onCheckedChange={(checked) => setDashboardAuthorization(checked === true)}
+              />
+              <Label htmlFor="dashboard-authorization" className="text-sm text-slate-600">
+                I confirm this is my clent credit report and I am authorized to use for educational analysis.
+              </Label>
+            </div>
 
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsAddClientOpen(false)}
+                onClick={() => handleAddClientDialogChange(false)}
               >
                 Cancel
               </Button>
@@ -1917,6 +1951,7 @@ export default function Dashboard() {
                   !newClient.platform ||
                   !newClient.email ||
                   !newClient.password ||
+                  !dashboardAuthorization ||
                   ((newClient.platform === "identityiq" || newClient.platform === "myscoreiq") && (!newClient.ssnLast4 || newClient.ssnLast4.length !== 4))
                 }
               >

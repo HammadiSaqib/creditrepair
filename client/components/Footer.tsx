@@ -170,6 +170,7 @@ const Footer: React.FC = () => {
                 { label: "Terms & Conditions", to: "/terms" },
                 { label: "Privacy Policy", to: "/privacy" },
                 { label: "Refund Policy", to: "/refund-policy" },
+                { label: "Cancel Subscription", to: "/login" },
                 { label: "Support Center", to: "/support" },
                 { label: "Documentation", to: "/docs" },
               ].map((link, i) => (

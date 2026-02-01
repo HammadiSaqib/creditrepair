@@ -7,6 +7,8 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Checkbox } from '../components/ui/checkbox';
+import { Label } from '../components/ui/label';
 import { useToast } from '../hooks/use-toast';
 import { billingApi, getAuthToken, pricingApi, superAdminApi } from '../lib/api';
 import DashboardLayout from '../components/DashboardLayout';
@@ -101,6 +103,7 @@ const SubscriptionContent: React.FC = () => {
     planName: string;
   } | null>(null);
   const [billingFilter, setBillingFilter] = useState<'monthly' | 'yearly'>('monthly');
+  const [recurringConsent, setRecurringConsent] = useState(false);
 
   // Enhanced plan data with better descriptions and icons
   const enhancedPlans: SubscriptionPlan[] = [
@@ -656,8 +659,8 @@ const SubscriptionContent: React.FC = () => {
                   <Button 
                     onClick={handleCancelSubscription}
                     disabled={upgrading}
-                    variant="outline"
-                    className="text-red-600 border-red-200 hover:bg-red-50"
+                    size="lg"
+                    className="bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-lg px-6 py-3 text-base font-semibold"
                   >
                     {upgrading ? (
                       <div className="w-4 h-4 mr-2 border-2 border-red-300 border-t-red-600 rounded-full animate-spin"></div>
@@ -699,6 +702,21 @@ const SubscriptionContent: React.FC = () => {
                 <TabsTrigger value="yearly">Yearly</TabsTrigger>
               </TabsList>
             </Tabs>
+          </div>
+
+          <div className="flex justify-center">
+            <div className="w-full max-w-3xl rounded-lg border border-slate-200 bg-white/90 p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="recurring-consent"
+                  checked={recurringConsent}
+                  onCheckedChange={(checked) => setRecurringConsent(checked === true)}
+                />
+                <Label htmlFor="recurring-consent" className="text-sm text-slate-700">
+                  By checking this box and providing my payment information, I agree that my account will be automatically charged each month on a recurring basis until I cancel.
+                </Label>
+              </div>
+            </div>
           </div>
 
           <div className="grid lg:grid-cols-3 gap-8">
@@ -803,7 +821,7 @@ const SubscriptionContent: React.FC = () => {
                       ) : (
                         <Button 
                           onClick={() => handleSelectPlan(plan.id)}
-                          disabled={upgrading}
+                          disabled={upgrading || !recurringConsent}
                           className={`w-full ${
                             plan.popular 
                               ? 'bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90' 

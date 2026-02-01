@@ -679,7 +679,6 @@ export default function Pricing() {
                           'Get Started'
                         )}
                       </Button>
-                      <p className="text-xs text-center text-gray-500 mt-2">Charges apply per report pull. Unlimited access is optional.</p>
                     </CardContent>
                   </Card>
                 );
@@ -964,9 +963,9 @@ export default function Pricing() {
       </section>
        
        <div className="py-8 bg-gray-50 text-center px-4">
-         <p className="text-xs text-gray-500 max-w-4xl mx-auto leading-relaxed">
-           Score Machine provides tools for organizing and reviewing credit report information. It does not guarantee credit improvement, funding approval, or specific financial outcomes. All insights are for informational purposes only. Comparable values represent internal estimates, not retail pricing.
-         </p>
+        <p className="text-xs text-gray-500 max-w-4xl mx-auto leading-relaxed">
+          Score Machine provides tools for organizing and reviewing credit report information. It does not guarantee credit improvement, funding approval, or specific financial outcomes. All insights are for informational purposes only.
+        </p>
        </div>
        <Footer />
     </div>

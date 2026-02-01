@@ -168,7 +168,7 @@ export default function HowItWorks() {
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <Button size="lg" variant="secondary" className="bg-white text-ocean-blue hover:bg-gray-50 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105" asChild>
                     <a href="/register" className="flex items-center gap-2">
-                      Start Free Today <ArrowRight className="h-4 w-4" />
+                      Start Today <ArrowRight className="h-4 w-4" />
                     </a>
                   </Button>
                   <Button size="lg" variant="outline" className="border-white/30 text-black hover:bg-white/10 backdrop-blur-sm" asChild>

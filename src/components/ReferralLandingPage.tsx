@@ -395,7 +395,7 @@ const ReferralLandingPage: React.FC = () => {
                   className="h-14 px-8 text-lg rounded-full bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-lg shadow-teal-500/20 transition-all duration-300 border-0"
                   onClick={scrollToPricing}
                 >
-                  Start Free Trial <ArrowRight className="ml-2 h-5 w-5" />
+                  Start Today <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
                 <Button
                   size="lg"

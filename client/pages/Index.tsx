@@ -19,7 +19,6 @@ import {
   Brain,
   Shield,
   TrendingUp,
-  Zap,
   CheckCircle,
   ArrowRight,
   ChevronLeft,
@@ -34,7 +33,6 @@ import {
   DollarSign,
   MousePointer2,
   Check,
-  Wifi,
 } from "lucide-react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -299,13 +297,6 @@ export default function Index() {
 
       const tl = gsap.timeline();
 
-      // --- Hero Entrance (No Needle Animation yet) ---
-      tl.fromTo(
-        ".gauge-container",
-        { scale: 0.8, opacity: 0 },
-        { scale: 1, opacity: 1, duration: 1, ease: "power3.out" }
-      );
-
       // Hero Text Entrance
       tl.fromTo(
         ".hero-text-item",
@@ -314,109 +305,8 @@ export default function Index() {
         "-=0.5"
       );
 
-      // --- Master Scroll Animation (Needle + Parallax + Morph + Position) ---
-      // This timeline spans the entire page scroll (0% to 100%)
-      const mainTl = gsap.timeline({
-        scrollTrigger: {
-          trigger: "body",
-          start: "top top",
-          end: "bottom bottom",
-          scrub: 1, // Smooth scrubbing tied to scroll
-        }
-      });
-
       // Responsive Movement Setup using MatchMedia
       const mm = gsap.matchMedia();
-
-      // Desktop Animation
-      mm.add("(min-width: 1024px)", () => {
-        // 0. Initial Hero State -> Docked State (0% -> 20% scroll)
-        // Starts closer to text (x: -20vw), moves to fixed right position (x: 0)
-        mainTl.fromTo(".speedometer-wrapper", 
-          { xPercent: -40, scale: 1.1, yPercent: 0 }, // Hero State
-          { xPercent: 0, scale: 0.9, yPercent: 0, duration: 0.2, ease: "power2.out" }, // Docked State
-          0
-        );
-      });
-
-      // Mobile Animation
-      mm.add("(max-width: 1023px)", () => {
-        // 0. Initial Hero State -> Docked State (0% -> 20% scroll)
-        // Starts closer to text/center, moves to bottom right corner (but stays visible)
-        mainTl.fromTo(".speedometer-wrapper",
-          { scale: 0.65, yPercent: -5, xPercent: 0, transformOrigin: "bottom center" }, // Hero State
-          { scale: 0.45, yPercent: 5, xPercent: 25, duration: 0.2, ease: "power2.out" }, // Docked State
-          0
-        );
-      });
-
-      // 1. Needle & Score (0% -> 80% of scroll)
-      mainTl.to(".gauge-needle", {
-        rotation: 130, // Target 850 score (-106 to 130)
-        ease: "power1.inOut", // Smooth easing
-        duration: 0.8,
-        force3D: true, // Ensure GPU optimization
-        onUpdate: function () {
-          // Map progress (0-1) of this specific tween to score range
-          const progress = this.progress();
-          const score = Math.floor(350 + progress * 500); // 350 -> 850
-          const scoreEl = document.querySelector(".gauge-score-text");
-          if (scoreEl) scoreEl.textContent = score.toString();
-        }
-      }, 0);
-
-      // 2. Horizontal Parallax (0% -> 100% of scroll)
-      // Scroll down = move left (xPercent)
-      mainTl.to(".hero-3d-container", {
-        xPercent: -30, // Move 30% of width left by the end (responsive)
-        ease: "none",
-        duration: 1,
-        force3D: true // Ensure GPU optimization
-      }, 0);
-
-      // 3. Morph to Credit Card (80% -> 100% of scroll)
-      // We group these animations to start at 0.8 (80% scroll depth)
-      const morphStart = 0.8;
-      const morphDuration = 0.2; // Remaining 20%
-
-      mainTl
-        .to(".gauge-circle", {
-          borderRadius: "16px",
-          width: "340px",
-          height: "210px",
-          background: "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)", // Light theme gradient
-          ease: "power2.inOut",
-          duration: morphDuration
-        }, morphStart)
-        .to(".gauge-svg", { opacity: 0, scale: 0.5, duration: morphDuration * 0.5 }, morphStart)
-        .to(".gauge-score-text-container", { opacity: 0, duration: morphDuration * 0.5 }, morphStart)
-        .fromTo(".card-details", 
-          { opacity: 0, scale: 0.9 }, 
-          { opacity: 1, scale: 1, duration: morphDuration * 0.8, ease: "power2.out" }, 
-          morphStart + (morphDuration * 0.2)
-        )
-        .to(".gauge-circle", {
-          boxShadow: "0 20px 50px -12px rgba(0, 0, 0, 0.1), 0 0 15px rgba(16, 185, 129, 0.1)", // Light shadow
-          border: "1px solid rgba(0, 0, 0, 0.1)", // Light border
-          duration: morphDuration * 0.5,
-        }, morphStart);
-
-      // Mouse Parallax for Hero
-      const heroSection = heroRef.current;
-      if (heroSection) {
-        heroSection.addEventListener("mousemove", (e) => {
-          const { clientX, clientY } = e;
-          const xPos = (clientX / window.innerWidth - 0.5) * 20;
-          const yPos = (clientY / window.innerHeight - 0.5) * 20;
-
-          gsap.to(".hero-3d-container", {
-            rotationY: xPos,
-            rotationX: -yPos,
-            duration: 1,
-            ease: "power2.out",
-          });
-        });
-      }
 
       // --- Trusted By Stagger (Updated) ---
       // Desktop
@@ -670,95 +560,6 @@ export default function Index() {
 
       <SiteHeader />
 
-      {/* --- FIXED FLOATING GAUGE COMPONENT --- */}
-      <div className="fixed inset-0 z-20 pointer-events-none flex items-end justify-center pb-4 lg:items-center lg:justify-end lg:pb-0 lg:pr-16 overflow-hidden">
-        <div className="speedometer-wrapper relative h-[300px] w-[300px] lg:h-[400px] lg:w-[400px] flex items-center justify-center perspective-1000 pointer-events-auto">
-          <div className="hero-3d-container relative preserve-3d will-change-transform">
-            <div className="gauge-container gauge-circle relative w-[300px] h-[300px] rounded-full bg-white border border-slate-200 shadow-2xl flex items-center justify-center overflow-hidden">
-              
-              <svg className="gauge-svg absolute inset-0 w-full h-full p-4" viewBox="0 0 100 100">
-                <path
-                  d="M 20 80 A 40 40 0 1 1 80 80"
-                  fill="none"
-                  stroke="#f1f5f9"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                />
-                <defs>
-                  <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#ef4444" />
-                    <stop offset="50%" stopColor="#eab308" />
-                    <stop offset="100%" stopColor="#10b981" />
-                  </linearGradient>
-                </defs>
-                <path
-                  d="M 20 80 A 40 40 0 1 1 80 80"
-                  fill="none"
-                  stroke="url(#gaugeGradient)"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  strokeDasharray="188"
-                  strokeDashoffset="0"
-                  className="drop-shadow-[0_0_10px_rgba(16,185,129,0.3)]"
-                />
-              </svg>
-
-              <div className="gauge-svg absolute inset-0 flex items-center justify-center">
-                <div className="gauge-needle w-1 h-32 bg-gradient-to-t from-slate-600 to-transparent origin-bottom absolute bottom-1/2 left-1/2 -translate-x-1/2 rounded-full will-change-transform" style={{ transform: 'rotate(-106deg)' }}>
-                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-800 rounded-full shadow-md"></div>
-                </div>
-                <div className="w-4 h-4 bg-slate-600 rounded-full z-10 shadow-lg"></div>
-              </div>
-
-              <div className="gauge-score-text-container absolute top-2/3 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-                <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Credit Score</div>
-                <div className="gauge-score-text text-5xl font-bold text-slate-800 font-mono tracking-tighter">350</div>
-              </div>
-
-              <div className="card-details absolute inset-0 p-6 flex flex-col justify-between opacity-0">
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-2">
-                     <div className="w-8 h-8 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-lg flex items-center justify-center">
-                        <Zap className="w-5 h-5 text-white" />
-                     </div>
-                     <span className="font-bold text-slate-800 tracking-wider">SCORE MACHINE</span>
-                  </div>
-                  <Wifi className="text-slate-400 w-6 h-6 rotate-90" />
-                </div>
-
-                <div className="w-12 h-9 bg-gradient-to-br from-yellow-200 to-yellow-400 rounded-md border border-yellow-500/30 relative overflow-hidden">
-                   <div className="absolute top-1/2 w-full h-[1px] bg-yellow-600/40"></div>
-                   <div className="absolute left-1/3 h-full w-[1px] bg-yellow-600/40"></div>
-                   <div className="absolute right-1/3 h-full w-[1px] bg-yellow-600/40"></div>
-                </div>
-
-                <div className="space-y-1">
-                   <div className="flex gap-4 text-xl font-mono text-slate-600 tracking-widest">
-                      <span>••••</span>
-                      <span>••••</span>
-                      <span>••••</span>
-                      <span>8842</span>
-                   </div>
-                   <div className="flex justify-between items-end">
-                      <div className="text-xs text-slate-500 uppercase tracking-wider">
-                         <span className="block text-[10px]">Card Holder</span>
-                         <span className="text-sm text-slate-800 font-medium">ALEX MORGAN</span>
-                      </div>
-                      <div className="text-slate-800 font-bold italic text-lg opacity-80">VISA</div>
-                   </div>
-                </div>
-                
-                <div className="absolute inset-0 bg-gradient-to-br from-white/40 via-transparent to-transparent pointer-events-none"></div>
-              </div>
-
-            </div>
-            
-            <div className="absolute -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] border border-slate-200 rounded-full animate-[spin_10s_linear_infinite]"></div>
-            <div className="absolute -z-10 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] border border-teal-500/10 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
-          </div>
-        </div>
-      </div>
-
       {/* --- HERO SECTION --- */}
       <section ref={heroRef} className="relative min-h-[100vh] flex items-center pt-20 lg:pt-0 overflow-hidden">
         
@@ -818,9 +619,15 @@ export default function Index() {
                 </div>
             </div>
 
-            {/* Visual Content - Placeholder for Layout */}
             <div className="hidden lg:block">
-               {/* The gauge is now fixed/floating above */}
+              <div className="relative">
+                <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-teal-500/20 via-emerald-500/10 to-transparent blur-2xl" />
+                <img
+                  src="/frame_chrome_mac_dark (1).png"
+                  alt="Score Machine dashboard preview"
+                  className="relative w-full max-w-[720px] rounded-3xl shadow-2xl border border-slate-200"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -830,8 +637,8 @@ export default function Index() {
       <section ref={trustedRef} className="trusted-section py-16 border-y border-slate-100 relative z-10 bg-slate-50/50 backdrop-blur-sm">
         <div className="container mx-auto px-4">
           <div className="text-center mb-10">
-            <h2 className="text-2xl font-bold text-slate-800 mb-2">Trusted by Credit & Funding Professionals Nationwide</h2>
-            <p className="text-slate-500 max-w-2xl mx-auto">Used by thousands of industry practitioners seeking reliable, structured, and efficient credit analysis tools.</p>
+            <h2 className="text-2xl font-bold text-slate-800 mb-2">Designed for credit and funding professionals</h2>
+            <p className="text-slate-500 max-w-2xl mx-auto">For industry practitioners seeking reliable, structured, and efficient credit analysis tools.</p>
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -886,7 +693,6 @@ export default function Index() {
                 desc: "Visualize how key credit data points evolve over time for clearer decision-making.",
                 icon: TrendingUp,
                 color: "from-blue-500 to-blue-600",
-                val: "$97",
                 accent: "text-blue-600",
                 bg: "bg-blue-50"
               },
@@ -895,7 +701,6 @@ export default function Index() {
                 desc: "Generate clean, organized, professional summaries with one click.",
                 icon: FileText,
                 color: "from-emerald-500 to-emerald-600",
-                val: "$127",
                 accent: "text-emerald-600",
                 bg: "bg-emerald-50"
               },
@@ -904,7 +709,6 @@ export default function Index() {
                 desc: "Advanced AI highlights patterns, trends, and areas that may require attention — all in a structured and readable format.",
                 icon: Brain,
                 color: "from-indigo-500 to-indigo-600",
-                val: "$147",
                 accent: "text-indigo-600",
                 bg: "bg-indigo-50"
               },
@@ -914,7 +718,6 @@ export default function Index() {
                 note: "Not a guarantee of credit or funding approval.",
                 icon: Shield,
                 color: "from-purple-500 to-purple-600",
-                val: "$207",
                 accent: "text-purple-600",
                 bg: "bg-purple-50"
               }
@@ -931,18 +734,9 @@ export default function Index() {
                     {feat.note && <span className="block mt-2 text-xs italic opacity-80">{feat.note}</span>}
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full ${feat.bg} ${feat.accent} text-sm font-bold border border-slate-100`}>
-                    <DollarSign className="h-3 w-3" /> Comparable value: {feat.val}
-                  </div>
-                </CardContent>
               </Card>
             ))}
           </div>
-
-          <p className="text-center text-xs text-slate-500 mb-8 -mt-8 italic">
-            Comparable values are internal estimates based on similar professional tools and do not indicate retail pricing or discounts.
-          </p>
 
           <div className="text-center mt-12 p-8 bg-slate-50 rounded-2xl border border-slate-100">
              <h3 className="text-xl font-bold text-slate-800 mb-4">Included With Every Paid Subscription</h3>

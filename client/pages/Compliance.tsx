@@ -263,7 +263,7 @@ export default function Compliance() {
   return (
     <DashboardLayout
       title="Compliance Center"
-      description="FCRA/CROA compliance monitoring and legal requirement management"
+      description="Secure access compliance monitoring and legal requirement management"
     >
       {/* Coming Soon Overlay */}
       <div className="relative">
@@ -885,7 +885,7 @@ export default function Compliance() {
             </CardHeader>
             <CardContent className="text-center space-y-4">
               <p className="text-muted-foreground leading-relaxed">
-                We're building a comprehensive compliance management system with automated FCRA/CROA monitoring, real-time violation detection, and intelligent compliance recommendations.
+                We're building a comprehensive compliance management system with automated secure access monitoring, real-time violation detection, and intelligent compliance recommendations.
               </p>
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-center text-muted-foreground">

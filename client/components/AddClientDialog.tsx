@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -40,6 +41,7 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
     ssnLast4: "",
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [scrapeAuthorization, setScrapeAuthorization] = useState(false);
   const [manualClient, setManualClient] = useState({
     first_name: "",
     last_name: "",
@@ -56,9 +58,18 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
     platform_password: "",
   });
   const [showManualPassword, setShowManualPassword] = useState(false);
+  const [manualAuthorization, setManualAuthorization] = useState(false);
 
   const handleSubmitClient = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!scrapeAuthorization) {
+      toast({
+        title: "Authorization Required",
+        description: "Please confirm authorization to use the credit report for educational analysis.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -519,6 +530,14 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
 
   const handleSubmitManual = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!manualAuthorization) {
+      toast({
+        title: "Authorization Required",
+        description: "Please confirm authorization to use the credit report for educational analysis.",
+        variant: "destructive",
+      });
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -618,6 +637,7 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
       password: "",
       ssnLast4: "",
     });
+    setScrapeAuthorization(false);
     setManualClient({
       first_name: "",
       last_name: "",
@@ -630,6 +650,7 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
       zip_code: "",
       notes: "",
     });
+    setManualAuthorization(false);
     onClose();
   };
 
@@ -731,6 +752,16 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
                   />
                 </div>
               )}
+            </div>
+            <div className="flex items-start space-x-2">
+              <Checkbox
+                id="scrape-authorization"
+                checked={scrapeAuthorization}
+                onCheckedChange={(checked) => setScrapeAuthorization(checked === true)}
+              />
+              <Label htmlFor="scrape-authorization" className="text-sm text-slate-600">
+                confirm this is my credit report and I authorize its use for educational analysis.
+              </Label>
             </div>
             <DialogFooter className="gap-2">
               <Button
@@ -908,6 +939,16 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
                   </button>
                 </div>
               </div>
+            </div>
+            <div className="flex items-start space-x-2">
+              <Checkbox
+                id="manual-authorization"
+                checked={manualAuthorization}
+                onCheckedChange={(checked) => setManualAuthorization(checked === true)}
+              />
+              <Label htmlFor="manual-authorization" className="text-sm text-slate-600">
+                I confirm this is my clent credit report and I am authorized to use for educational analysis.
+              </Label>
             </div>
             <DialogFooter className="gap-2">
               <Button

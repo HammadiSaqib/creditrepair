@@ -693,16 +693,7 @@ const AffiliateLanding: React.FC = () => {
                 )}
                 © 2025 Score Machine. All rights reserved.
               </p>
-              <div className="flex items-center space-x-6 text-gray-400">
-                <span className="flex items-center">
-                  <Shield className="w-4 h-4 mr-2" />
-                  SSL Secured
-                </span>
-                <span className="flex items-center">
-                  <Award className="w-4 h-4 mr-2" />
-                  BBB Accredited
-                </span>
-              </div>
+             
             </div>
           </div>
         </div>

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { clientsApi } from "@/lib/api";
@@ -41,6 +42,7 @@ const ClientIntake = () => {
     password: "",
     ssnLast4: "",
   });
+  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(false);
 
   const requiresSsn = useMemo(
     () => formData.platform === "identityiq" || formData.platform === "myscoreiq",
@@ -86,6 +88,14 @@ const ClientIntake = () => {
       });
       return;
     }
+    if (!authorizationConfirmed) {
+      toast({
+        title: "Authorization Required",
+        description: "Please confirm authorization to use the credit report for educational analysis.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -102,6 +112,7 @@ const ClientIntake = () => {
         clientName: data?.clientName || "",
         clientId: data?.clientId,
       });
+      setAuthorizationConfirmed(false);
       toast({
         title: "Intake completed",
         description: "Your credit report is being prepared.",
@@ -234,6 +245,16 @@ const ClientIntake = () => {
                     />
                   </div>
                 ) : null}
+                <div className="flex items-start space-x-2">
+                  <Checkbox
+                    id="intake-authorization"
+                    checked={authorizationConfirmed}
+                    onCheckedChange={(checked) => setAuthorizationConfirmed(checked === true)}
+                  />
+                  <Label htmlFor="intake-authorization" className="text-sm text-slate-600">
+                    I confirm this is my credit report and I authorize its use for educational analysis.
+                  </Label>
+                </div>
                 <Button type="submit" className="w-full" disabled={isSubmitting}>
                   {isSubmitting ? "Submitting..." : "Submit Intake"}
                 </Button>
