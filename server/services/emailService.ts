@@ -66,7 +66,7 @@ class EmailService {
   private transporter: nodemailer.Transporter | null = null;
 
   private getFrontendBaseUrl(): string {
-    return String(ENV_CONFIG.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3001').replace(/\/$/, '');
+    return String(ENV_CONFIG.FRONTEND_URL || process.env.CLIENT_URL || 'https://thescoremachine.com').replace(/\/$/, '');
   }
 
   // Enhanced email template with admin dashboard color scheme

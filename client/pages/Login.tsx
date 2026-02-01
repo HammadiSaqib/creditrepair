@@ -572,8 +572,8 @@ export default function Login() {
     },
     {
       icon: Shield,
-      title: "FCRA/CROA Friendly",
-      description: "Designed with FCRA/CROA-friendly workflows",
+      title: "Secure Data Encryption",
+      description: "End-to-end encryption for client data and communications",
     },
     {
       icon: Users,

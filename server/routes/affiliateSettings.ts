@@ -585,7 +585,7 @@ router.put('/update-username', authenticateToken, requireAffiliateRole, async (r
     await executeQuery(updateQuery, [firstName, lastName, affiliateId]);
     
     // Generate new personalized link
-    const baseUrl = process.env.CLIENT_URL || 'http://localhost:3001';
+    const baseUrl = process.env.CLIENT_URL || 'https://thescoremachine.com';
     const personalizedLink = `${baseUrl}/pricing?ref=${username}`;
     
     securityLogger.logSecurityEvent('affiliate_username_updated', {

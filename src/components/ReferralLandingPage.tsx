@@ -491,7 +491,7 @@ const ReferralLandingPage: React.FC = () => {
                 Credit Management
               </span>
             </h2>
-            <p className="text-xl text-slate-600 leading-relaxed font-light">
+            <p className="text-xl text-slate-600 leading-relaxed font-light mt-6 mb-6">
               Professional tools powered by AI to help you understand, track, and improve your credit health with confidence.
             </p>
           </div>
@@ -527,10 +527,7 @@ const ReferralLandingPage: React.FC = () => {
                     {feature.desc}
                   </p>
 
-                  <div className="mt-6 flex items-center text-teal-600 font-semibold text-sm opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300">
-                     <span>Learn more</span>
-                     <ArrowRight className="w-4 h-4 ml-2" />
-                  </div>
+                  
                 </div>
               </div>
             ))}

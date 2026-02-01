@@ -22,6 +22,7 @@ const BlogPost = () => {
   const [post, setPost] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [relatedPosts, setRelatedPosts] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchPost = async () => {
@@ -41,6 +42,35 @@ const BlogPost = () => {
 
     if (slug) fetchPost();
   }, [slug]);
+
+  useEffect(() => {
+    const fetchRelatedPosts = async () => {
+      if (!post?.id) return;
+      try {
+        const categoryQuery = post.category_slug ? `?category=${post.category_slug}&limit=8` : '?limit=8';
+        const categoryRes = await fetch(`/api/blog${categoryQuery}`);
+        if (!categoryRes.ok) throw new Error('Failed to load related posts');
+        const categoryData = await categoryRes.json();
+        const filtered = (categoryData.posts || []).filter((item: any) => item.id !== post.id);
+        if (filtered.length >= 4) {
+          setRelatedPosts(filtered.slice(0, 4));
+          return;
+        }
+
+        const fallbackRes = await fetch('/api/blog?limit=12');
+        if (!fallbackRes.ok) throw new Error('Failed to load fallback posts');
+        const fallbackData = await fallbackRes.json();
+        const fallbackFiltered = (fallbackData.posts || []).filter((item: any) => item.id !== post.id);
+        const combined = [...filtered, ...fallbackFiltered.filter((item: any) => !filtered.some((p: any) => p.id === item.id))];
+        setRelatedPosts(combined.slice(0, 4));
+      } catch (err) {
+        console.error(err);
+        setRelatedPosts([]);
+      }
+    };
+
+    fetchRelatedPosts();
+  }, [post]);
 
   if (loading) {
     return (
@@ -214,6 +244,64 @@ const BlogPost = () => {
             </div>
           </div>
         </article>
+
+        {relatedPosts.length > 0 && (
+          <section className="container mx-auto px-4 pb-20">
+            <div className="max-w-5xl mx-auto">
+              <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-8">
+                More Articles
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {relatedPosts.map((item) => (
+                  <article
+                    key={item.id}
+                    className="group bg-white dark:bg-slate-800 rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition-all duration-300 border border-slate-200 dark:border-slate-700 flex flex-col h-full"
+                  >
+                    <Link to={`/blog/${item.slug}`} className="relative block overflow-hidden aspect-video">
+                      {item.featured_image ? (
+                        <img
+                          src={item.featured_image}
+                          alt={item.title}
+                          className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-800 flex items-center justify-center">
+                          <span className="text-slate-400 font-medium text-xs">No Image</span>
+                        </div>
+                      )}
+                      {item.category_name && (
+                        <span className="absolute top-3 left-3 bg-teal-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-md">
+                          {item.category_name}
+                        </span>
+                      )}
+                    </Link>
+                    <div className="p-4 flex flex-col flex-grow">
+                      <div className="text-xs text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-2">
+                        <Calendar className="h-3 w-3" />
+                        {new Date(item.published_at).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3 line-clamp-2 group-hover:text-teal-600 transition-colors">
+                        <Link to={`/blog/${item.slug}`}>
+                          {item.title}
+                        </Link>
+                      </h3>
+                      <Link
+                        to={`/blog/${item.slug}`}
+                        className="mt-auto inline-flex items-center text-teal-600 font-semibold text-xs hover:text-teal-700 group-hover:translate-x-1 transition-all"
+                      >
+                        Read More
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
       </main>
 
       <Footer />
@@ -222,4 +310,3 @@ const BlogPost = () => {
 };
 
 export default BlogPost;
-

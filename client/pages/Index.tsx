@@ -1222,7 +1222,7 @@ export default function Index() {
               <p className="text-2xl font-bold text-teal-600 mb-8">Get the clarity you need to make informed decisions — without guessing.</p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                  <Button asChild size="lg" className="bg-teal-600 hover:bg-teal-700 text-white rounded-full px-8">
-                    <Link to="/signup">Create Free Account</Link>
+                    <Link to="/register">Create Free Account</Link>
                  </Button>
                  <Button variant="outline" size="lg" className="border-slate-300 text-slate-700 hover:bg-teal-600 rounded-full px-8" onClick={scrollToHowItWorks}>
                     Watch Demo

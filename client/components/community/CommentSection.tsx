@@ -60,6 +60,15 @@ export function CommentSection({ postId, currentUser, onCommentAdded }: CommentS
   const [hasMore, setHasMore] = useState(true);
 const { toast } = useToast();
 
+  const getInitials = (user?: { first_name?: string; last_name?: string }) => {
+    const first = (user?.first_name || '').trim();
+    const last = (user?.last_name || '').trim();
+    const firstInitial = first ? first[0] : '';
+    const lastInitial = last ? last[0] : '';
+    const initials = `${firstInitial}${lastInitial}`.trim();
+    return initials || 'U';
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return 'Unknown date';
     const date = new Date(dateString);
@@ -252,7 +261,7 @@ const { toast } = useToast();
             <Avatar className="w-8 h-8 ring-2 ring-blue-50">
               <AvatarImage src={undefined} />
               <AvatarFallback className="text-xs bg-gradient-to-br from-blue-500 to-purple-600 text-white font-medium">
-                {currentUser.first_name[0]}{currentUser.last_name[0]}
+                {getInitials(currentUser)}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1">
@@ -298,7 +307,7 @@ const { toast } = useToast();
                 <Avatar className="w-8 h-8 ring-2 ring-gray-100">
                   <AvatarImage src={undefined} />
                   <AvatarFallback className="text-xs bg-gradient-to-br from-green-500 to-blue-600 text-white font-medium">
-                    {comment.user ? `${comment.user.first_name[0]}${comment.user.last_name[0]}` : 'U'}
+                    {getInitials(comment.user)}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1">

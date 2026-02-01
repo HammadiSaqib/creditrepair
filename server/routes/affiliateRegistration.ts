@@ -438,7 +438,7 @@ router.get('/link/:affiliateId', async (req, res) => {
     }
     
     // Generate unique referral link
-    const baseUrl = process.env.CLIENT_URL || 'http://localhost:3001';
+    const baseUrl = process.env.CLIENT_URL || 'https://thescoremachine.com';
     const referralLink = `${baseUrl}/pricing?ref=${affiliateId}`;
     
     res.json({
