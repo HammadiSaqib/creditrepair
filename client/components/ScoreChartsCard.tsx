@@ -68,7 +68,7 @@ const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accoun
   }, []);
 
   return (
-    <Card className="w-full h-full flex flex-col">
+    <Card className="w-full h-full flex flex-col my-5">
       <CardHeader>
         <CardTitle>Credit Score Analysis</CardTitle>
       </CardHeader>

@@ -278,7 +278,7 @@ const BureauScoresChart: React.FC<BureauScoresChartProps> = ({ reportData, allRe
   };
 
   return (
-    <Card className="w-full h-full flex flex-col">
+    <Card className="w-full h-full flex flex-col my-5 mb-5">
       <CardHeader>
         <CardTitle>Bureau Credit Scores Trend</CardTitle>
       </CardHeader>

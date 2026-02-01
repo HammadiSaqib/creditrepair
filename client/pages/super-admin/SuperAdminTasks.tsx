@@ -82,6 +82,57 @@ export default function SuperAdminTasks() {
   const [editDescription, setEditDescription] = useState("");
   const [editStatus, setEditStatus] = useState<TaskStatus>("pending");
 
+  const isImageUrl = (text: string) => {
+    try {
+      const url = new URL(text);
+      const pathname = url.pathname.toLowerCase();
+      return (
+        pathname.endsWith(".png") ||
+        pathname.endsWith(".jpg") ||
+        pathname.endsWith(".jpeg") ||
+        pathname.endsWith(".gif") ||
+        pathname.endsWith(".webp") ||
+        pathname.endsWith(".bmp") ||
+        pathname.endsWith(".svg")
+      );
+    } catch {
+      return text.startsWith("data:image/");
+    }
+  };
+
+  const handleTitlePasteCreate = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const cd = e.clipboardData;
+    if (!cd) return;
+
+    for (const item of Array.from(cd.items)) {
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file && file.type.startsWith("image/")) {
+          e.preventDefault();
+          setFormScreenshot(file);
+          toast({ title: "Screenshot added", description: "Image pasted into Title moved to Screenshot." });
+          return;
+        }
+      }
+    }
+
+    const text = cd.getData("text");
+    if (text && isImageUrl(text.trim())) {
+      try {
+        const resp = await fetch(text.trim());
+        const blob = await resp.blob();
+        if (blob.type.startsWith("image/")) {
+          e.preventDefault();
+          const name = (text.split("/").pop() || "pasted-image").split("?")[0];
+          const file = new File([blob], name, { type: blob.type });
+          setFormScreenshot(file);
+          toast({ title: "Screenshot added", description: "Image URL pasted moved to Screenshot." });
+        }
+      } catch {
+      }
+    }
+  };
+
   useEffect(() => {
     if (!formScreenshot) {
       setScreenshotPreview(null);
@@ -296,7 +347,7 @@ export default function SuperAdminTasks() {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Title</label>
-                    <Input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} />
+                    <Input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} onPaste={handleTitlePasteCreate} />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Description</label>

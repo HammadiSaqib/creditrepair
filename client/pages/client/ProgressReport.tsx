@@ -4904,7 +4904,7 @@ export default function CreditReport() {
           </div>
 
           {/* Types of Negative Accounts - simplified counts */}
-          <Card className="border-0 shadow-lg bg-card mb-8">
+          <Card className="border-0 shadow-lg bg-card my-8">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-foreground">
                 <AlertTriangle className="h-6 w-6 text-red-600" />
@@ -5388,7 +5388,7 @@ export default function CreditReport() {
                       </table>
                     </div>
                     {previous && (
-                      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6 mb-5">
                         <div className="bg-white rounded-lg border shadow-sm">
                           <div className="px-4 py-3 border-b font-semibold text-green-700">Removed Items</div>
                           <div className="p-4 space-y-2">
@@ -5451,7 +5451,7 @@ export default function CreditReport() {
           </Card>
 
           {/* Credit History & Account Overview */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-5">
             {/* Length of Credit History */}
             <Card className="border-0 shadow-lg bg-gradient-to-br from-purple-50 to-pink-50">
               <CardHeader>

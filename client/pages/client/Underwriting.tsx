@@ -4312,7 +4312,7 @@ export default function CreditReport() {
             </div>
           </div>
           {/* Client Information Header */}
-          <Card id="uw-client-information" className="border-0 shadow-xl bg-card scroll-mt-24">
+          <Card id="uw-client-information" className="border-0 shadow-xl bg-card scroll-mt-24 my-3">
             <CardHeader>
               <CardTitle className="text-2xl font-bold text-foreground">Client Information</CardTitle>
             </CardHeader>
@@ -4368,7 +4368,7 @@ export default function CreditReport() {
                   </CardHeader>
                   <CardContent className="text-center relative p-8">
                     {/* Speedometer with score inside */}
-                    <div className="flex justify-center mb-6">
+                    <div className="flex justify-center mb-5">
                       <div className="relative w-80 h-40">
                         <svg className="w-80 h-40" viewBox="0 0 320 170">
                           {/* Background arc */}
@@ -4426,7 +4426,7 @@ export default function CreditReport() {
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm mb-5">
                         {getScoreChange(
                           reportData.scores.transunion,
                           reportData.previousScores.transunion,
@@ -4532,7 +4532,7 @@ export default function CreditReport() {
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm mb-5">
                         {getScoreChange(
                           reportData.scores.experian,
                           reportData.previousScores.experian,
@@ -4638,7 +4638,7 @@ export default function CreditReport() {
                         ).color
                       }`}
                     >
-                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm">
+                      <div className="flex items-center bg-card/80 backdrop-blur-sm px-4 py-2 rounded-full shadow-sm mb-5">
                         {getScoreChange(
                           reportData.scores.equifax,
                           reportData.previousScores.equifax,

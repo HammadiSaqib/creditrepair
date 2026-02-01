@@ -832,8 +832,18 @@ export const supportApi = {
     if (data.screenshot) form.append('screenshot', data.screenshot);
     return api.post('/api/support/dashboard/tasks', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   },
-  updateTask: (id: number, data: { title?: string; description?: string; status?: string }) =>
-    api.put(`/api/support/dashboard/tasks/${id}`, data),
+  updateTask: (id: number, data: { title?: string; description?: string; status?: string; priority?: string; screenshot?: File | null }) => {
+    if (data.screenshot instanceof File) {
+      const form = new FormData();
+      if (data.title !== undefined) form.append('title', data.title);
+      if (data.description !== undefined) form.append('description', data.description);
+      if (data.status !== undefined) form.append('status', data.status);
+      if (data.priority !== undefined) form.append('priority', data.priority);
+      form.append('screenshot', data.screenshot);
+      return api.put(`/api/support/dashboard/tasks/${id}`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+    }
+    return api.put(`/api/support/dashboard/tasks/${id}`, data);
+  },
   deleteTask: (id: number) => api.delete(`/api/support/dashboard/tasks/${id}`),
 };
 
