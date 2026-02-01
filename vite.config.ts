@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => ({
     host: "0.0.0.0",
     port: 3001,
   },
+  publicDir: path.resolve(__dirname, "./client/public"),
   build: {
     outDir: "dist/spa",
   },

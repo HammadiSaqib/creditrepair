@@ -623,7 +623,7 @@ export default function Index() {
               <div className="relative">
                 <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-teal-500/20 via-emerald-500/10 to-transparent blur-2xl" />
                 <img
-                  src="/frame_chrome_mac_dark (1).png"
+                  src="/frame_chrome_mac_dark.png"
                   alt="Score Machine dashboard preview"
                   className="relative w-full max-w-[720px] rounded-3xl shadow-2xl border border-slate-200"
                 />
