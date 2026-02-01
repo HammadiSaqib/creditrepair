@@ -81,6 +81,9 @@ export default function SupportTasks() {
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editStatus, setEditStatus] = useState<TaskStatus>("pending");
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<number>>(new Set());
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTask, setPreviewTask] = useState<Task | null>(null);
 
   useEffect(() => {
     if (!formScreenshot) {
@@ -421,7 +424,36 @@ export default function SupportTasks() {
                       <TableRow key={task.id}>
                         <TableCell className="font-medium">{task.title}</TableCell>
                         <TableCell className="max-w-[320px] text-sm text-muted-foreground">
-                          <div className="line-clamp-2">{task.description}</div>
+                          <div className={expandedTaskIds.has(task.id) ? "" : "line-clamp-2"}>{task.description}</div>
+                          {expandedTaskIds.has(task.id) ? (
+                            <button
+                              type="button"
+                              className="mt-1 text-sm text-emerald-600"
+                              onClick={() =>
+                                setExpandedTaskIds((prev) => {
+                                  const next = new Set(prev);
+                                  next.delete(task.id);
+                                  return next;
+                                })
+                              }
+                            >
+                              Read less
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="mt-1 text-sm text-emerald-600"
+                              onClick={() =>
+                                setExpandedTaskIds((prev) => {
+                                  const next = new Set(prev);
+                                  next.add(task.id);
+                                  return next;
+                                })
+                              }
+                            >
+                              Read more
+                            </button>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={statusBadgeClasses[task.status]}>
@@ -449,15 +481,17 @@ export default function SupportTasks() {
                         </TableCell>
                         <TableCell>
                           {task.screenshot_url ? (
-                            <a
-                              href={task.screenshot_url}
-                              target="_blank"
-                              rel="noreferrer"
+                            <button
+                              type="button"
                               className="inline-flex items-center gap-1 text-sm text-primary"
+                              onClick={() => {
+                                setPreviewTask(task);
+                                setPreviewOpen(true);
+                              }}
                             >
                               <ImageIcon className="h-4 w-4" />
                               View
-                            </a>
+                            </button>
                           ) : (
                             <span className="text-xs text-muted-foreground">None</span>
                           )}
@@ -530,6 +564,29 @@ export default function SupportTasks() {
             <Button onClick={handleEdit} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="sm:max-w-[800px]">
+          <DialogHeader>
+            <DialogTitle>{previewTask?.title}</DialogTitle>
+            <DialogDescription>{previewTask?.description}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {previewTask?.screenshot_url ? (
+              <img
+                src={previewTask.screenshot_url}
+                alt="Task screenshot"
+                className="w-full h-auto max-h-[70vh] object-contain rounded-lg border"
+              />
+            ) : (
+              <span className="text-sm text-muted-foreground">No screenshot</span>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button onClick={() => setPreviewOpen(false)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
