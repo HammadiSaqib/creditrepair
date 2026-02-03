@@ -204,6 +204,8 @@ export async function createServer() {
   app.use('/uploads', express.static('uploads'));
   // Serve testimonials videos from client/public/testimonials
   app.use('/testimonials', express.static(path.resolve(process.cwd(), 'client', 'public', 'testimonials')));
+  // Serve root-level public assets for SPA image references
+  app.use(express.static(path.resolve(process.cwd(), 'public')));
 
   // Health check
   app.get("/api/ping", (_req, res) => {

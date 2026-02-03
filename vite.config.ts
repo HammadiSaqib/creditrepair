@@ -2,6 +2,7 @@ import { defineConfig, Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { createServer } from "./server";
+import fs from "fs";
 
 //1 https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -96,6 +97,30 @@ function expressPlugin(): Plugin {
           }
           
           console.log('🔌 WebSocket service initialized in development mode');
+          
+          server.middlewares.use((req, res, next) => {
+            const urlPath = req.url?.split("?")[0] || "";
+            const isApi = urlPath.startsWith("/api");
+            if (isApi) return next();
+            const isStatic = /\.(png|jpg|jpeg|svg|gif|webp|ico)$/i.test(urlPath);
+            if (!isStatic) return next();
+            const filePath = path.resolve(process.cwd(), "public", urlPath.replace(/^\//, ""));
+            fs.stat(filePath, (err, stats) => {
+              if (err || !stats.isFile()) return next();
+              const ext = path.extname(filePath).toLowerCase();
+              const types: Record<string, string> = {
+                ".png": "image/png",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".svg": "image/svg+xml",
+                ".gif": "image/gif",
+                ".webp": "image/webp",
+                ".ico": "image/x-icon",
+              };
+              res.setHeader("Content-Type", types[ext] || "application/octet-stream");
+              fs.createReadStream(filePath).pipe(res);
+            });
+          });
         })
         .catch((error) => {
           console.error("Failed to create Express server:", error);
