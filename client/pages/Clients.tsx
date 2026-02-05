@@ -83,6 +83,7 @@ import {
   RefreshCw,
   Copy,
 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 // Type definitions for client data
 type ClientData = {
@@ -455,7 +456,7 @@ const getScoreChange = (current: number, previous: number) => {
 
   useEffect(() => {
     fetchClients();
-  }, [pagination.page, searchTerm, statusFilter]);
+  }, [pagination.page, pagination.limit, searchTerm, statusFilter]);
 
   const goToDiyFundingForClient = (clientId: number) => {
     setPendingFundingClientId(clientId);
@@ -1264,6 +1265,69 @@ const getScoreChange = (current: number, previous: number) => {
                 })}
               </TableBody>
               </Table>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground">
+              Page {pagination.page} of {Math.max(1, pagination.pages || Math.ceil((pagination.total || 0) / (pagination.limit || 20)))}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPagination((prev) => ({
+                    ...prev,
+                    page: Math.max(1, prev.page - 1),
+                  }))
+                }
+                disabled={pagination.page <= 1}
+              >
+                <ChevronLeft className="h-4 w-4 mr-2" />
+                Prev
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPagination((prev) => ({
+                    ...prev,
+                    page: Math.min(
+                      Math.max(1, prev.pages || Math.ceil((prev.total || 0) / (prev.limit || 20))),
+                      prev.page + 1
+                    ),
+                  }))
+                }
+                disabled={
+                  pagination.page >=
+                  Math.max(1, pagination.pages || Math.ceil((pagination.total || 0) / (pagination.limit || 20)))
+                }
+              >
+                Next
+                <ChevronRight className="h-4 w-4 ml-2" />
+              </Button>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Rows per page</span>
+                <Select
+                  value={String(pagination.limit)}
+                  onValueChange={(val) =>
+                    setPagination((prev) => ({
+                      ...prev,
+                      limit: parseInt(val, 10) || 20,
+                      page: 1,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-[90px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </CardContent>
