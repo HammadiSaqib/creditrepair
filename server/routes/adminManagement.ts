@@ -358,4 +358,52 @@ router.post('/:id/toggle-status', authenticateToken, requireSupportRole, async (
   }
 });
 
+// POST /api/admin-management/:id/reset-password - Reset admin password (support only)
+router.post('/:id/reset-password', authenticateToken, requireSupportRole, async (req, res) => {
+  try {
+    const adminId = req.params.id.replace('ADM-', '');
+    const { newPassword } = req.body || {};
+    const rows = await executeQuery(
+      'SELECT id, email FROM users WHERE id = ? AND role = "admin"',
+      [adminId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Admin user not found' });
+    }
+    let nextPassword: string = String(newPassword || '');
+    if (!nextPassword || nextPassword.length < 8) {
+      const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+      const gen = (len: number) => Array.from({ length: len }, () => charset[Math.floor(Math.random() * charset.length)]).join('');
+      nextPassword = gen(12);
+    }
+    const passwordHash = await bcrypt.hash(nextPassword, 12);
+    await executeQuery(
+      `UPDATE users 
+       SET password_hash = ?, password_changed_at = NOW(), updated_at = NOW()
+       WHERE id = ? AND role = "admin"`,
+      [passwordHash, adminId]
+    );
+    securityLogger.logSecurityEvent('admin_password_reset', {
+      resetBy: req.user?.id,
+      adminId,
+      ip: req.ip
+    });
+    res.json({
+      success: true,
+      message: 'Password reset successfully',
+      generated: !newPassword,
+      newPassword: nextPassword
+    });
+  } catch (error: any) {
+    console.error('Error resetting admin password:', error);
+    securityLogger.logSecurityEvent('admin_password_reset_error', {
+      userId: req.user?.id,
+      adminId: req.params.id,
+      error: error.message,
+      ip: req.ip
+    });
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
 export default router;

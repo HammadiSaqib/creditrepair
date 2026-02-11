@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HelmetProvider } from "react-helmet-async";
+import { HelmetProvider, Helmet } from "react-helmet-async";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -194,6 +194,33 @@ const App = () => {
               <Toaster />
               <Sonner />
               <BrowserRouter>
+                <Helmet>
+                  <script type="application/ld+json">
+                    {JSON.stringify({
+                      "@context": "https://schema.org",
+                      "@type": "SoftwareApplication",
+                      name: "Score Machine",
+                      operatingSystem: "Web-based",
+                      applicationCategory: "FinanceApplication",
+                      description:
+                        "Next-Generation Credit Intelligence for Professionals. Provides AI-driven credit insights, underwriting overviews, and structured analytics for financial service providers.",
+                      offers: {
+                        "@type": "Offer",
+                        price: "0",
+                        priceCurrency: "USD",
+                        description:
+                          "14-day free access with limited visibility. Full access requires a paid subscription.",
+                      },
+                      featureList: [
+                        "AI Credit Analysis",
+                        "Underwriting Overview",
+                        "Client Summary Export & PDF",
+                        "Score Timeline Visualization",
+                        "Secure MyFreeScoreNow Integration",
+                      ],
+                    })}
+                  </script>
+                </Helmet>
                 <PageViewTracker />
                 <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
                   <Routes>

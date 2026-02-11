@@ -32,6 +32,7 @@ import {
   Loader2,
   UserCog
 } from "lucide-react";
+import { KeyRound, Copy } from "lucide-react";
 
 // Interface for regular admin accounts only - Super admins are managed separately
 interface Admin {
@@ -71,6 +72,7 @@ export default function SupportAdminManagement() {
   const [selectedAdmin, setSelectedAdmin] = useState<Admin | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [newAdmin, setNewAdmin] = useState<Partial<Admin>>({
     username: "",
     email: "",
@@ -82,6 +84,12 @@ export default function SupportAdminManagement() {
     department: "",
     phone: ""
   });
+  const [passwordData, setPasswordData] = useState<{ newPassword: string; confirmPassword: string }>({
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [passwordChanging, setPasswordChanging] = useState(false);
+  const [passwordResult, setPasswordResult] = useState<string | null>(null);
 
   // Available permissions for regular admins only - excludes super admin privileges
   const availablePermissions = [
@@ -212,7 +220,7 @@ export default function SupportAdminManagement() {
       if (!admin) return;
       
       const newStatus = admin.status === "active" ? "inactive" : "active";
-      const response = await api.post(`/admin-management/${adminId}/toggle-status`);
+      const response = await api.post(`/api/admin-management/${adminId}/toggle-status`);
       const updatedAdmin = response.data;
       
       if (isRegularAdmin(updatedAdmin)) {
@@ -240,6 +248,35 @@ export default function SupportAdminManagement() {
         ? selectedAdmin.permissions.filter(p => p !== permission)
         : [...selectedAdmin.permissions, permission];
       setSelectedAdmin({ ...selectedAdmin, permissions: updatedPermissions });
+    }
+  };
+
+  const generateSecurePassword = () => {
+    const charset = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+    const gen = (len: number) => Array.from({ length: len }, () => charset[Math.floor(Math.random() * charset.length)]).join("");
+    const pwd = gen(12);
+    setPasswordData({ newPassword: pwd, confirmPassword: pwd });
+  };
+
+  const handleResetPassword = async () => {
+    if (!selectedAdmin) return;
+    if (passwordData.newPassword && passwordData.newPassword !== passwordData.confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+    try {
+      setPasswordChanging(true);
+      setPasswordResult(null);
+      const payload = passwordData.newPassword ? { newPassword: passwordData.newPassword } : {};
+      const resp = await api.post(`/api/admin-management/${selectedAdmin.id}/reset-password`, payload);
+      const data = resp?.data || {};
+      const newPwd = data?.newPassword || passwordData.newPassword;
+      setPasswordResult(newPwd || null);
+    } catch (err: any) {
+      setError(err?.response?.data?.error || "Failed to reset password");
+      console.error("Error resetting password:", err);
+    } finally {
+      setPasswordChanging(false);
     }
   };
 
@@ -588,14 +625,108 @@ export default function SupportAdminManagement() {
                           </div>
                         </DialogContent>
                       </Dialog>
-                      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+                      <Dialog open={isPasswordDialogOpen} onOpenChange={(open) => {
+                        setIsPasswordDialogOpen(open);
+                        if (!open) {
+                          setPasswordData({ newPassword: "", confirmPassword: "" });
+                          setPasswordResult(null);
+                          setSelectedAdmin(null);
+                        }
+                      }}>
                         <DialogTrigger asChild>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => {
                               setSelectedAdmin(admin);
-                              setIsEditDialogOpen(true);
+                              setPasswordData({ newPassword: "", confirmPassword: "" });
+                              setPasswordResult(null);
+                            }}
+                            className="text-orange-600 border-orange-200 hover:bg-orange-50"
+                          >
+                            <KeyRound className="h-4 w-4 mr-1" />
+                            Change Password
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-lg">
+                          <DialogHeader>
+                            <DialogTitle>Change Password</DialogTitle>
+                            <DialogDescription>
+                              Set a new password for this admin. Current passwords cannot be shown.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <Label>New Password</Label>
+                              <Button variant="ghost" size="sm" onClick={generateSecurePassword}>
+                                Generate
+                              </Button>
+                            </div>
+                            <Input
+                              type="text"
+                              value={passwordData.newPassword}
+                              onChange={(e) =>
+                                setPasswordData((p) => ({ ...p, newPassword: e.target.value }))
+                              }
+                              placeholder="Enter new password or use Generate"
+                            />
+                            <div>
+                              <Label>Confirm Password</Label>
+                              <Input
+                                type="text"
+                                value={passwordData.confirmPassword}
+                                onChange={(e) =>
+                                  setPasswordData((p) => ({ ...p, confirmPassword: e.target.value }))
+                                }
+                                placeholder="Re-enter new password"
+                              />
+                            </div>
+                            {passwordResult && (
+                              <div className="mt-2 rounded-md border p-3">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-medium">New Password</span>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      try {
+                                        navigator.clipboard.writeText(passwordResult || "");
+                                      } catch {}
+                                    }}
+                                  >
+                                    <Copy className="h-4 w-4 mr-1" />
+                                    Copy
+                                  </Button>
+                                </div>
+                                <p className="mt-1 font-mono text-sm break-all">{passwordResult}</p>
+                              </div>
+                            )}
+                            <div className="flex justify-end space-x-2">
+                              <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)}>
+                                Cancel
+                              </Button>
+                              <Button onClick={handleResetPassword} disabled={passwordChanging} className="bg-orange-600 hover:bg-orange-700">
+                                {passwordChanging ? (
+                                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                                ) : null}
+                                Save Password
+                              </Button>
+                            </div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                      <Dialog open={isEditDialogOpen} onOpenChange={(open) => {
+                        setIsEditDialogOpen(open);
+                        if (!open) {
+                          setSelectedAdmin(null);
+                        }
+                      }}>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedAdmin(admin);
                             }}
                             className="text-blue-600 border-blue-200 hover:bg-blue-50"
                           >
