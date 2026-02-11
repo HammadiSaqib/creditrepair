@@ -130,12 +130,22 @@ const JoinAffiliate: React.FC = () => {
         }),
       });
 
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {}
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (response.status === 409) {
+          setError('This Email Already Registrated');
+        } else {
+          setError((data && (data.error || data.message)) || 'Registration failed. Please try again.');
+        }
+        return;
       }
 
-      const data = await response.json();
-
+      // response.ok path
+      // data may be null if parsing failed above; guard access
       if (data.success) {
         try {
           const loginRes = await fetch('/api/auth/affiliate/login', {
@@ -160,7 +170,7 @@ const JoinAffiliate: React.FC = () => {
           setError('Login failed. Please try affiliate login.');
         }
       } else {
-        setError(data.error || 'Registration failed');
+        setError((data && (data.error || data.message)) || 'Registration failed');
       }
     } catch (error) {
       console.error('Registration error:', error);
@@ -968,7 +978,7 @@ const JoinAffiliate: React.FC = () => {
                     <div className="absolute -inset-2 bg-gradient-to-r from-emerald-600/20 to-blue-600/20 rounded-2xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   </div>
                 </div>
-                <CardTitle className="text-4xl text-center font-bold bg-gradient-to-r from-emerald-700 to-blue-700 bg-clip-text text-transparent mb-8">
+                <CardTitle className="text-4xl text-center font-bold bg-gradient-to-r from-emerald-700 to-blue-700 bg-clip-text text-transparent mb-8 pb-3">
                   Affiliate & Partner Registration
                 </CardTitle>
                 <CardDescription className="text-center text-lg text-gray-600 max-w-2xl mx-auto leading-relaxed">
