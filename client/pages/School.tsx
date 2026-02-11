@@ -2015,7 +2015,7 @@ export default function School() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="gradient-text-primary">
+                  <CardTitle className="gradient-text-primary pb-3">
                     Learning Pathways
                   </CardTitle>
                   <CardDescription>
@@ -2182,7 +2182,7 @@ export default function School() {
           {/* Course Progress Maps */}
           <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="gradient-text-secondary">
+              <CardTitle className="gradient-text-secondary pb-3">
                 Course Progress Maps
               </CardTitle>
               <CardDescription>

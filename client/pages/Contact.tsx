@@ -224,17 +224,6 @@ export default function Contact() {
                   )}
 
                   <Tabs defaultValue="support" className="space-y-6">
-                    <TabsList className="grid w-full grid-cols-3 bg-gray-100/80 p-1 rounded-xl">
-                      <TabsTrigger value="support" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg transition-all">
-                        Support
-                      </TabsTrigger>
-                      <TabsTrigger value="sales" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg transition-all">
-                        Sales
-                      </TabsTrigger>
-                      <TabsTrigger value="partnerships" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg transition-all">
-                        Partnerships
-                      </TabsTrigger>
-                    </TabsList>
 
                     <TabsContent value="support" className="space-y-6">
                       <form onSubmit={handleSubmit} className="space-y-6">
@@ -406,7 +395,7 @@ export default function Contact() {
                   <HelpCircle className="h-4 w-4 text-ocean-blue" />
                   <span className="text-sm font-medium text-ocean-blue">FAQ</span>
                 </div>
-                <h2 className="text-4xl font-bold bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent">
+                <h2 className="text-4xl font-bold bg-gradient-to-r from-ocean-blue to-sea-green bg-clip-text text-transparent pb-3">
                   Frequently Asked Questions
                 </h2>
                 <p className="text-lg text-gray-600 leading-relaxed">

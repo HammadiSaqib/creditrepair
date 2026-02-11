@@ -1365,15 +1365,17 @@ export default function Dashboard() {
                   </Button>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  onClick={handleGenerateClientIntakeLink}
-                  disabled={isGeneratingIntakeLink}
-                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-500/90 hover:to-teal-500/90"
-                >
-                  {isGeneratingIntakeLink ? "Generating..." : onboardingSlug ? "Use Saved Onboarding Link" : "Generate Onboarding Link"}
-                </Button>
-              </div>
+              {!(clientIntakeLink || onboardingSlug) && (
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={handleGenerateClientIntakeLink}
+                    disabled={isGeneratingIntakeLink}
+                    className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-500/90 hover:to-teal-500/90"
+                  >
+                    {isGeneratingIntakeLink ? "Generating..." : "Generate Onboarding Link"}
+                  </Button>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

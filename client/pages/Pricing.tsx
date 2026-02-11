@@ -763,7 +763,7 @@ export default function Pricing() {
             </p>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {currentTestimonials.map((t) => {
               const src = /^https?:\/\//i.test(t.video) ? t.video : `/${t.video.replace(/^public[\\/]/, "").replace(/\\/g, "/")}`;
               const isDrive = isDriveUrl(src);
@@ -771,7 +771,7 @@ export default function Pricing() {
               return (
                 <div
                   key={t.id}
-                  className="testimonial-card group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer w-[280px] sm:w-[300px] lg:w-[320px]"
+                  className="testimonial-card group relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer w-full"
                   onClick={() => setActiveTestimonialVideo(src)}
                 >
                   <div className="relative aspect-[9/16] bg-slate-900">

@@ -957,7 +957,7 @@ const JoinAffiliate: React.FC = () => {
                 <Users className="w-4 h-4 mr-2" />
                 Join Our Network
               </Badge>
-              <h2 className="text-5xl font-bold mb-6 bg-gradient-to-r from-gray-900 via-emerald-800 to-blue-800 bg-clip-text text-transparent">
+              <h2 className="text-5xl font-bold mb-6 bg-gradient-to-r from-gray-900 via-emerald-800 to-blue-800 bg-clip-text text-transparent pb-3">
                 Start Your Success Journey
               </h2>
               <p className="text-xl text-gray-600 leading-relaxed">
@@ -1260,7 +1260,7 @@ const JoinAffiliate: React.FC = () => {
               <HelpCircle className="w-4 h-4 mr-2" />
               Get Answers
             </Badge>
-            <h2 className="text-5xl font-bold mb-6 bg-gradient-to-r from-gray-900 via-emerald-800 to-blue-800 bg-clip-text text-transparent">
+            <h2 className="text-5xl font-bold mb-6 bg-gradient-to-r from-gray-900 via-emerald-800 to-blue-800 bg-clip-text text-transparent pb-3">
               Frequently Asked Questions
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
