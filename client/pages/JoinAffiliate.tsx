@@ -95,6 +95,23 @@ const JoinAffiliate: React.FC = () => {
     
     if (!validateForm()) return;
 
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        const profileRes = await fetch('/api/auth/profile', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          const currentEmail = profileData?.user?.email;
+          if (currentEmail && currentEmail.toLowerCase() === formData.email.toLowerCase()) {
+            setError('You are already logged in with this email');
+            return;
+          }
+        }
+      }
+    } catch {}
+
     setLoading(true);
     setError('');
 
@@ -331,16 +348,20 @@ const JoinAffiliate: React.FC = () => {
             {/* Enhanced CTAs */}
             <div className="flex flex-col sm:flex-row gap-6 justify-center mb-16">
               <Button asChild size="lg" className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-semibold px-10 py-6 text-lg shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:scale-105 rounded-xl">
-                <Link to="#apply" className="flex items-center">
+                <a
+                  href="#apply"
+                  className="flex items-center"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    const el = document.getElementById('apply');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                >
                   Apply to Join
                   <ArrowRight className="ml-2 h-5 w-5" />
-                </Link>
-              </Button>
-              <Button asChild size="lg" variant="outline" className="border-2 border-ocean-blue text-ocean-blue hover:bg-ocean-blue hover:text-white font-semibold px-10 py-6 text-lg rounded-xl transition-all duration-300 backdrop-blur-sm bg-white/50">
-                <Link to="#programs" className="flex items-center">
-                  View Program Details
-                  <Building2 className="ml-2 h-5 w-5" />
-                </Link>
+                </a>
               </Button>
             </div>
           </div>
@@ -532,7 +553,7 @@ const JoinAffiliate: React.FC = () => {
                 
                 <div className="pt-4 border-t border-gray-100">
                   <Button asChild variant="outline" className="w-full border-2 border-purple-200 text-purple-700 hover:bg-purple-500 hover:border-purple-300 shadow-lg hover:shadow-xl transition-all duration-300 group/btn">
-                    <Link to="#apply" className="flex items-center justify-center gap-2">
+                    <Link to="/pricing" className="flex items-center justify-center gap-2">
                       Apply as Partner
                       <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
                     </Link>
@@ -572,22 +593,11 @@ const JoinAffiliate: React.FC = () => {
                 </div>
                 
                 <div className="pt-4 border-t border-gray-100">
-                  <Button asChild className="w-full bg-gradient-to-r from-gray-400 to-gray-500 hover:from-gray-500 hover:to-gray-600 text-white shadow-lg hover:shadow-xl transition-all duration-300 group/btn">
-                    <a
-                      href="#"
-                      className="flex items-center justify-center gap-2"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        const el = document.getElementById('');
-                        if (el) {
-                          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }
-                      }}
-                      aria-label="Join Waitlist for White Label"
-                    >
+                  <Button className="w-full bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-lg transition-all duration-300" disabled>
+                    <span className="flex items-center justify-center gap-2">
                       Join Waitlist for White Label
-                      <ArrowRight className="w-4 h-4 group-hover/btn:translate-x-1 transition-transform duration-300" />
-                    </a>
+                      <ArrowRight className="w-4 h-4" />
+                    </span>
                   </Button>
                 </div>
               </CardContent>

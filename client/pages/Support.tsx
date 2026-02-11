@@ -761,9 +761,6 @@ export default function Support() {
                         </div>
                         <div className="flex items-center justify-between">
                           <Badge variant="outline">{ticket.status}</Badge>
-                          <Button variant="ghost" size="sm">
-                            View Details
-                          </Button>
                         </div>
                       </div>
                     ))}

@@ -498,7 +498,7 @@ export default function Contact() {
                       asChild
                       className="w-full bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-medium py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200"
                     >
-                      <a href="tel:4752598768">Contact Support</a>
+                      <a href="tel:4752598768"> Call Now (475) 259-8768</a>
                     </Button>
                   </div>
                 </div>

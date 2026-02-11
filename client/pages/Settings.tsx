@@ -910,7 +910,7 @@ export default function Settings() {
           <div className="grid lg:grid-cols-3 gap-8">
             <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="gradient-text-primary">
+                <CardTitle className="gradient-text-primary leading-tight">
                   Profile Picture
                 </CardTitle>
                 <CardDescription>
@@ -1007,7 +1007,7 @@ export default function Settings() {
             <div className="lg:col-span-2">
               <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle className="gradient-text-primary">
+                  <CardTitle className="gradient-text-primary leading-tight">
                     Personal Information
                   </CardTitle>
                   <CardDescription>
@@ -1352,7 +1352,7 @@ export default function Settings() {
         <TabsContent value="integrations" className="space-y-8">
           <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="gradient-text-primary">
+              <CardTitle className="gradient-text-primary leading-tight">
                 System Integrations
               </CardTitle>
               <CardDescription>
@@ -1405,7 +1405,7 @@ export default function Settings() {
 
           <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="gradient-text-primary flex items-center">
+              <CardTitle className="gradient-text-primary leading-tight flex items-center">
                 <Webhook className="h-5 w-5 mr-2" />
                 GoHighLevel Integration
               </CardTitle>

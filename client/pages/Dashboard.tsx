@@ -1287,6 +1287,7 @@ export default function Dashboard() {
           <CardContent className="p-6">
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
               <div className="space-y-1">
+                <Badge className="w-fit bg-gradient-to-r from-ocean-blue to-sea-green text-white border-0">Step 1</Badge>
                 <div className="text-xl font-bold gradient-text-primary">Get Your Credit Report</div>
                 <div className="text-sm text-gray-700 dark:text-gray-300">If you don't have credit reports, register and pull your reports.</div>
               </div>
@@ -1316,6 +1317,7 @@ export default function Dashboard() {
           <CardContent className="p-6">
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
               <div className="space-y-1">
+                <Badge className="w-fit bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-0">Step 2</Badge>
                 <div className="text-xl font-bold gradient-text-primary">Client Login Link</div>
                 <div className="text-sm text-gray-700 dark:text-gray-300">Share this link with clients to access their login page.</div>
               </div>
@@ -1340,6 +1342,7 @@ export default function Dashboard() {
           <CardContent className="p-6">
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
               <div className="space-y-1">
+                <Badge className="w-fit bg-gradient-to-r from-teal-600 to-emerald-600 text-white border-0">Step 3</Badge>
                 <div className="text-xl font-bold gradient-text-primary">Client Onboarding Link</div>
                 <div className="text-sm text-gray-700 dark:text-gray-300">Share this link to collect client credentials and start onboarding.</div>
               </div>

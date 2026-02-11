@@ -7553,7 +7553,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         </TabsContent>
 
         {/* Detailed Accounts Section */}
-        <TabsContent value="accounts" className="space-y-8 mt-6">
+        <TabsContent value="accounts" className="space-y-8 my-6">
           <TrialCreditReportWrapper featureName="Account Details">
           <Card className="border-0 shadow-md">
           <CardHeader>
@@ -10435,7 +10435,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
                   <Building className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold">
+                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold pb-3">
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>
@@ -11048,7 +11048,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         
 
         {/* Account Details Section */}
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-md my-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-ocean-blue" />
@@ -13161,7 +13161,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
                   <Building className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold">
+                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold pb-3">
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>

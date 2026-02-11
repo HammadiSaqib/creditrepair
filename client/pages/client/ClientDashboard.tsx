@@ -3246,7 +3246,7 @@ export default function CreditReport() {
   useEffect(() => {
     const fetchCreditReport = async () => {
       if (!clientId) {
-        setError("No client ID provided");
+        setError("Load My Report");
         setLoading(false);
         return;
       }
@@ -4130,7 +4130,7 @@ export default function CreditReport() {
     return (
       <ClientLayout
         title={`Credit Report - ${clientName}`}
-        description="Error loading credit report"
+        description="To load your credit report click on load my report or refresh the page."
       >
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
@@ -4138,7 +4138,7 @@ export default function CreditReport() {
             <p className="text-red-600 mb-4">{error}</p>
             <Button onClick={() => window.location.reload()}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Retry
+              Click to Load
             </Button>
           </div>
         </div>
@@ -5819,7 +5819,7 @@ export default function CreditReport() {
         
 
         {/* Account Details Section */}
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-md my-3">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-ocean-blue" />

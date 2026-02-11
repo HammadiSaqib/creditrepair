@@ -9921,7 +9921,7 @@ export default function CreditReport() {
         </TabsContent>
 
         {/* Detailed Accounts Section */}
-        <TabsContent value="accounts" className="space-y-8 mt-6">
+        <TabsContent value="accounts" className="space-y-8 my-6">
           <TrialCreditReportWrapper featureName="Account Details">
           <Card className="border-0 shadow-md">
           <CardHeader>
@@ -10086,9 +10086,7 @@ export default function CreditReport() {
                   {/* Header with bureau logos */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-card rounded-xl p-4 border border-border shadow-sm">
                     <div className="font-bold text-base text-foreground flex items-center gap-2">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
-                      </svg>
+                      <CardIcon className="w-5 h-5 text-blue-600" />
                       Account Details
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
@@ -13070,7 +13068,7 @@ export default function CreditReport() {
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
                   <Building className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold dark:text-white dark:bg-none">
+                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold dark:text-white dark:bg-none pb-3">
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>
@@ -13317,7 +13315,7 @@ export default function CreditReport() {
             </CardContent>
           </Card>
           {/* Inquiry Cards Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900 backdrop-blur-sm">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/40 dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900 backdrop-blur-sm m-3">
             <CardHeader className="bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-purple-600/10 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 rounded-t-lg border-b border-blue-100/50 dark:border-blue-700/30">
               <CardTitle className="flex items-center gap-3 text-lg font-semibold">
                 <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-md">
@@ -13789,7 +13787,7 @@ export default function CreditReport() {
         
 
         {/* Account Details Section */}
-        <Card className="border-0 shadow-md">
+        <Card className="border-0 shadow-mx-3 my-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-ocean-blue" />
@@ -13905,10 +13903,7 @@ export default function CreditReport() {
                 <div className="space-y-4">
                   {/* Header with bureau logos */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-card rounded-xl p-4 border border-border shadow-sm">
-                    <div className="font-bold text-base text-foreground flex items-center gap-2">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 9a2 2 0 00-2 2v2m0 0V9a2 2 0 012-2h14a2 2 0 012 2v2M7 7V3a4 4 0 018 0v4M9 7h6" />
-                      </svg>
+                    <div className="pt-3 font-bold text-base text-foreground flex items-center gap-2">
                       Account Details
                     </div>
                     <div className="text-center bg-card rounded-lg p-3 border border-border shadow-sm hover:shadow-md transition-shadow">
@@ -15674,13 +15669,13 @@ export default function CreditReport() {
               </div>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900">
+          <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-slate-50/50 to-gray-100/30 backdrop-blur-sm dark:from-blue-950 dark:via-indigo-950 dark:to-slate-900 my-3">
             <CardHeader className="bg-gradient-to-r from-slate-500/10 via-gray-500/10 to-slate-600/10 border-b border-slate-200/30 backdrop-blur-sm dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 dark:border-blue-700/30">
               <CardTitle className="flex items-center gap-3">
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md dark:bg-none dark:bg-neutral-800">
                   <Building className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold dark:text-white dark:bg-none">
+                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold dark:text-white dark:bg-none pb-3">
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>
@@ -17749,20 +17744,6 @@ export default function CreditReport() {
                   </CardContent>
                 </Card>
               )}
-            </div>
-
-            {/* Export Options */}
-            <div className="flex justify-end mt-6">
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="text-gray-600 hover:text-gray-800">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export PDF
-                </Button>
-                <Button variant="outline" size="sm" className="text-gray-600 hover:text-gray-800">
-                  <FileText className="h-4 w-4 mr-2" />
-                  Export CSV
-                </Button>
-              </div>
             </div>
           </div>
 

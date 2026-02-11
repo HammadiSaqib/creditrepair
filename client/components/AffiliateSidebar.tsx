@@ -106,6 +106,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
   ];
 
   const isActive = (href: string) => location.pathname === href;
+  const filteredNavigation = navigation.filter((item) => item.href !== "/affiliate/analytics");
 
   // Fetch affiliate stats
   useEffect(() => {
@@ -215,7 +216,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-        {navigation.map((item) => {
+        {filteredNavigation.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.href);
 
