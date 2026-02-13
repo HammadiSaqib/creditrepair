@@ -2907,7 +2907,7 @@ export default function School() {
           {/* Course Progress Maps */}
           <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
             <CardHeader>
-              <CardTitle className="gradient-text-secondary pb-3">
+              <CardTitle className="gradient-text-secondary">
                 Course Progress Maps
               </CardTitle>
               <CardDescription>

@@ -53,7 +53,7 @@ const BlogEditor = () => {
   const [fetching, setFetching] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
 
-  const { register, handleSubmit, setValue, watch, formState: { errors, isDirty } } = useForm<BlogFormData>({
+  const { register, handleSubmit, setValue, watch, getValues, formState: { errors, isDirty } } = useForm<BlogFormData>({
     defaultValues: {
       status: 'draft',
       category_id: ''
@@ -68,9 +68,17 @@ const BlogEditor = () => {
   const [linkText, setLinkText] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [uploadingContentImage, setUploadingContentImage] = useState(false);
+  const [viewMode, setViewMode] = useState<'visual' | 'code'>('visual');
   
   const editorRef = useRef<HTMLDivElement>(null);
   const savedSelection = useRef<Range | null>(null);
+
+  // Sync content to editor when switching to visual mode
+  useEffect(() => {
+    if (!showPreview && viewMode === 'visual' && editorRef.current) {
+      editorRef.current.innerHTML = getValues('content') || '';
+    }
+  }, [viewMode, showPreview, getValues]);
 
   // Initialization Effects
   useEffect(() => {
@@ -441,7 +449,13 @@ const BlogEditor = () => {
                 <Button 
                   variant="outline" 
                   size="sm"
-                  onClick={() => setShowPreview(!showPreview)}
+                  onClick={() => setShowPreview(prev => {
+                    const next = !prev;
+                    if (!next) {
+                      setViewMode('visual');
+                    }
+                    return next;
+                  })}
                 >
                   {showPreview ? <Type className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
                   {showPreview ? 'Edit' : 'Preview'}
@@ -491,7 +505,7 @@ const BlogEditor = () => {
                     {/* Sticky Editor Toolbar */}
                     <div className="sticky top-0 z-30 bg-background/95 backdrop-blur border-b p-2 flex items-center gap-1 flex-wrap supports-[backdrop-filter]:bg-background/80">
                       <div className="flex items-center gap-0.5 border-r pr-2 mr-1">
-                        <Select onValueChange={(val) => execCommand('formatBlock', val)}>
+                        <Select onValueChange={(val) => execCommand('formatBlock', val)} disabled={viewMode === 'code'}>
                           <SelectTrigger className="h-8 w-[130px] border-none bg-transparent hover:bg-muted focus:ring-0">
                             <SelectValue placeholder="Paragraph" />
                           </SelectTrigger>
@@ -510,20 +524,20 @@ const BlogEditor = () => {
                       </div>
                       
                       <div className="flex items-center gap-0.5 border-r pr-2 mr-1">
-                        <ToolbarBtn icon={Bold} onClick={() => execCommand('bold')} tooltip="Bold (Cmd+B)" />
-                        <ToolbarBtn icon={Italic} onClick={() => execCommand('italic')} tooltip="Italic (Cmd+I)" />
-                        <ToolbarBtn icon={Underline} onClick={() => execCommand('underline')} tooltip="Underline (Cmd+U)" />
+                        <ToolbarBtn icon={Bold} onClick={() => execCommand('bold')} tooltip="Bold (Cmd+B)" disabled={viewMode === 'code'} />
+                        <ToolbarBtn icon={Italic} onClick={() => execCommand('italic')} tooltip="Italic (Cmd+I)" disabled={viewMode === 'code'} />
+                        <ToolbarBtn icon={Underline} onClick={() => execCommand('underline')} tooltip="Underline (Cmd+U)" disabled={viewMode === 'code'} />
                       </div>
                       
                       <div className="flex items-center gap-0.5 border-r pr-2 mr-1">
-                        <ToolbarBtn icon={AlignLeft} onClick={() => execCommand('justifyLeft')} tooltip="Align Left" />
-                        <ToolbarBtn icon={AlignCenter} onClick={() => execCommand('justifyCenter')} tooltip="Align Center" />
-                        <ToolbarBtn icon={AlignRight} onClick={() => execCommand('justifyRight')} tooltip="Align Right" />
+                        <ToolbarBtn icon={AlignLeft} onClick={() => execCommand('justifyLeft')} tooltip="Align Left" disabled={viewMode === 'code'} />
+                        <ToolbarBtn icon={AlignCenter} onClick={() => execCommand('justifyCenter')} tooltip="Align Center" disabled={viewMode === 'code'} />
+                        <ToolbarBtn icon={AlignRight} onClick={() => execCommand('justifyRight')} tooltip="Align Right" disabled={viewMode === 'code'} />
                       </div>
 
                       <div className="flex items-center gap-0.5 border-r pr-2 mr-1">
-                        <ToolbarBtn icon={List} onClick={() => execCommand('insertUnorderedList')} tooltip="Bullet List" />
-                        <ToolbarBtn icon={ListOrdered} onClick={() => execCommand('insertOrderedList')} tooltip="Numbered List" />
+                        <ToolbarBtn icon={List} onClick={() => execCommand('insertUnorderedList')} tooltip="Bullet List" disabled={viewMode === 'code'} />
+                        <ToolbarBtn icon={ListOrdered} onClick={() => execCommand('insertOrderedList')} tooltip="Numbered List" disabled={viewMode === 'code'} />
                       </div>
                       
                       <div className="flex items-center gap-0.5 border-r pr-2 mr-1">
@@ -535,6 +549,7 @@ const BlogEditor = () => {
                               size="sm" 
                               className="h-8 w-8 p-0"
                               onMouseDown={saveSelection} // Save selection before popover opens
+                              disabled={viewMode === 'code'}
                             >
                               <LinkIcon className="h-4 w-4" />
                             </Button>
@@ -559,37 +574,57 @@ const BlogEditor = () => {
                             className="absolute inset-0 opacity-0 cursor-pointer z-10" 
                             onChange={handleContentImageUpload} 
                             accept="image/*" 
-                            disabled={uploadingContentImage} 
+                            disabled={uploadingContentImage || viewMode === 'code'} 
                           />
-                          <ToolbarBtn icon={uploadingContentImage ? Loader2 : ImageIcon} onClick={() => {}} tooltip="Insert Image" disabled={uploadingContentImage} />
+                          <ToolbarBtn icon={uploadingContentImage ? Loader2 : ImageIcon} onClick={() => {}} tooltip="Insert Image" disabled={uploadingContentImage || viewMode === 'code'} />
                         </div>
-                        <ToolbarBtn icon={TableIcon} onClick={insertTable} tooltip="Insert Table" />
+                        <ToolbarBtn icon={TableIcon} onClick={insertTable} tooltip="Insert Table" disabled={viewMode === 'code'} />
                       </div>
-                      <ToolbarBtn icon={Minus} onClick={() => execCommand('insertHorizontalRule')} tooltip="Horizontal Rule" />
+                      <ToolbarBtn icon={Minus} onClick={() => execCommand('insertHorizontalRule')} tooltip="Horizontal Rule" disabled={viewMode === 'code'} />
+                      
+                      <div className="flex-1" />
+                      <div className="flex items-center gap-0.5 border-l pl-2 ml-1">
+                        <ToolbarBtn 
+                          icon={Code} 
+                          onClick={() => setViewMode(prev => prev === 'visual' ? 'code' : 'visual')} 
+                          tooltip={viewMode === 'visual' ? "Switch to HTML Format" : "Switch to Text Format"} 
+                          active={viewMode === 'code'}
+                        />
+                      </div>
                     </div>
 
-                    {/* Writing Canvas (ContentEditable) */}
-                    <div
-                      ref={editorRef}
-                      contentEditable
-                      className="flex-1 min-h-[600px] outline-none p-8 text-lg leading-relaxed font-serif prose prose-slate max-w-none focus:outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/40"
-                      data-placeholder="Start writing your story..."
-                      onInput={(e) => {
-                        setValue('content', e.currentTarget.innerHTML, { shouldDirty: true, shouldValidate: true });
-                      }}
-                      onBlur={() => {
-                        if (editorRef.current) {
-                          setValue('content', editorRef.current.innerHTML, { shouldDirty: true, shouldValidate: true });
-                          saveSelection(); // Save on blur so toolbar clicks might work if we were careful, but popover logic handles it explicitly
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                         if (e.key === 'Tab') {
-                           e.preventDefault();
-                           execCommand('insertHTML', '&nbsp;&nbsp;&nbsp;&nbsp;');
-                         }
-                      }}
-                    />
+                    {/* Writing Canvas (ContentEditable) or Code Editor */}
+                    {viewMode === 'visual' ? (
+                      <div
+                        ref={editorRef}
+                        contentEditable
+                        className="flex-1 min-h-[600px] outline-none p-8 text-lg leading-relaxed font-serif prose prose-slate max-w-none focus:outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/40"
+                        data-placeholder="Start writing your story..."
+                        onInput={(e) => {
+                          setValue('content', e.currentTarget.innerHTML, { shouldDirty: true, shouldValidate: true });
+                        }}
+                        onBlur={() => {
+                          if (editorRef.current) {
+                            setValue('content', editorRef.current.innerHTML, { shouldDirty: true, shouldValidate: true });
+                            saveSelection(); // Save on blur so toolbar clicks might work if we were careful, but popover logic handles it explicitly
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                           if (e.key === 'Tab') {
+                             e.preventDefault();
+                             execCommand('insertHTML', '&nbsp;&nbsp;&nbsp;&nbsp;');
+                           }
+                        }}
+                      />
+                    ) : (
+                      <textarea
+                        className="flex-1 min-h-[600px] w-full p-8 font-mono text-sm bg-slate-50 outline-none border-none resize-none focus:ring-0"
+                        value={contentValue}
+                        onChange={(e) => setValue('content', e.target.value, { shouldDirty: true, shouldValidate: true })}
+                        placeholder="<div>Write your HTML here...</div>"
+                        spellCheck={false}
+                      />
+                    )}
                     
                     {/* Status Footer */}
                     <div className="border-t p-2 px-4 bg-muted/20 text-xs text-muted-foreground flex justify-between items-center">

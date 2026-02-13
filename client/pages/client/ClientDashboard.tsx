@@ -5100,7 +5100,7 @@ export default function CreditReport() {
                 <div className="p-2 bg-gradient-to-br from-slate-500 to-gray-600 rounded-lg shadow-md">
                   <Building className="h-5 w-5 text-white" />
                 </div>
-                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold dark:text-white dark:bg-none">
+                <span className="bg-gradient-to-r from-slate-700 to-gray-800 bg-clip-text text-transparent font-bold dark:text-white dark:bg-none pb-3">
                   Employer Details from All Bureaus
                 </span>
               </CardTitle>
