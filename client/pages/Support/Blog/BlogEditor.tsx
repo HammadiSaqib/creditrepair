@@ -23,7 +23,7 @@ import {
   ArrowLeft, Save, Loader2, Upload, Image as ImageIcon, 
   Bold, Italic, Underline, Heading2, Heading3, List, ListOrdered, 
   Link as LinkIcon, Quote, Code, Minus, Eye, Globe, Calendar, X, 
-  AlignLeft, AlignCenter, AlignRight, Type, Table as TableIcon
+  AlignLeft, AlignCenter, AlignRight, Type, Table as TableIcon, Mic
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,7 @@ interface BlogFormData {
   excerpt: string;
   featured_image: string;
   youtube_url: string;
+  audio_url: string;
   category_id: string;
   status: string;
   seo_title: string;
@@ -63,6 +64,7 @@ const BlogEditor = () => {
   const title = watch('title');
   const contentValue = watch('content') || '';
   const featuredImage = watch('featured_image');
+  const audioUrl = watch('audio_url');
   const status = watch('status');
   
   const [linkText, setLinkText] = useState('');
@@ -145,6 +147,7 @@ const BlogEditor = () => {
         setValue('excerpt', data.excerpt || '');
         setValue('featured_image', data.featured_image || '');
         setValue('youtube_url', data.youtube_url || '');
+        setValue('audio_url', data.audio_url || '');
         setValue('category_id', data.category_id?.toString() || '');
         setValue('status', data.status);
         setValue('seo_title', data.seo_title || '');
@@ -170,6 +173,37 @@ const BlogEditor = () => {
   };
 
   // Handlers
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('audio', file);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return;
+      const res = await fetch('/api/support/blog/upload-audio', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setValue('audio_url', data.url, { shouldDirty: true });
+        toast.success('Audio file uploaded');
+      } else {
+        toast.error('Failed to upload audio');
+      }
+    } catch (error) {
+      toast.error('Error uploading audio');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -675,6 +709,54 @@ const BlogEditor = () => {
                             </SelectContent>
                           </Select>
                         </div>
+                      </CardContent>
+                    </Card>
+
+                    {/* Voice / Audio Card */}
+                    <Card>
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          <Mic className="h-4 w-4" />
+                          Voice / Audio
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {audioUrl ? (
+                          <div className="space-y-2">
+                             <audio controls className="w-full h-8">
+                               <source src={audioUrl} />
+                               Your browser does not support the audio element.
+                             </audio>
+                             <div className="flex gap-2">
+                               <Button size="sm" variant="outline" className="w-full relative">
+                                  Replace
+                                  <input
+                                    type="file"
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                    onChange={handleAudioUpload}
+                                    accept="audio/*"
+                                  />
+                               </Button>
+                               <Button size="sm" variant="destructive" onClick={() => setValue('audio_url', '', { shouldDirty: true })}>
+                                 Delete
+                               </Button>
+                             </div>
+                          </div>
+                        ) : (
+                          <div className="border-2 border-dashed rounded-md p-6 text-center hover:bg-muted/50 transition-colors relative">
+                             <input
+                              type="file"
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                              onChange={handleAudioUpload}
+                              accept="audio/*"
+                              disabled={uploading}
+                            />
+                            <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                              {uploading ? <Loader2 className="h-8 w-8 animate-spin" /> : <Mic className="h-8 w-8" />}
+                              <span className="text-xs">Drag & Drop or select file..</span>
+                            </div>
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
 

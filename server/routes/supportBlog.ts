@@ -24,16 +24,16 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit (increased for audio)
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const allowedTypes = /jpeg|jpg|png|gif|webp|mp3|wav|ogg|m4a|mpeg/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    const mimetype = /image\/|audio\//.test(file.mimetype);
     
     if (mimetype && extname) {
       return cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only images are allowed.'));
+      cb(new Error('Invalid file type. Only images and audio files are allowed.'));
     }
   }
 });
@@ -57,6 +57,24 @@ router.post('/upload', upload.single('image'), (req, res) => {
   } catch (error) {
     console.error('Error uploading image:', error);
     res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+// Upload audio
+router.post('/upload-audio', upload.single('audio'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+    const host = (req.headers['x-forwarded-host'] as string) || req.get('host');
+    const url = `${proto}://${host}/uploads/blog/${req.file.filename}`;
+    
+    res.json({ url });
+  } catch (error) {
+    console.error('Error uploading audio:', error);
+    res.status(500).json({ error: 'Failed to upload audio' });
   }
 });
 
@@ -179,6 +197,7 @@ router.post('/posts', async (req: any, res) => {
       excerpt,
       featured_image,
       youtube_url,
+      audio_url,
       category_id,
       status,
       seo_title,
@@ -193,12 +212,12 @@ router.post('/posts', async (req: any, res) => {
 
     const result = await executeQuery(
       `INSERT INTO blog_posts (
-        title, slug, content, excerpt, featured_image, youtube_url, 
+        title, slug, content, excerpt, featured_image, youtube_url, audio_url,
         author_id, category_id, status, published_at, 
         seo_title, seo_description, seo_keywords
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        title, finalSlug, content, excerpt, featured_image, youtube_url,
+        title, finalSlug, content, excerpt, featured_image, youtube_url, audio_url,
         author_id, category_id, status || 'draft', published_at,
         seo_title, seo_description, seo_keywords
       ]
@@ -244,6 +263,7 @@ router.put('/posts/:id', async (req, res) => {
       excerpt,
       featured_image,
       youtube_url,
+      audio_url,
       category_id,
       status,
       seo_title,
@@ -260,7 +280,7 @@ router.put('/posts/:id', async (req, res) => {
 
     let published_at_update = '';
     const params = [
-      title, slug, content, excerpt, featured_image, youtube_url,
+      title, slug, content, excerpt, featured_image, youtube_url, audio_url,
       category_id, status, seo_title, seo_description, seo_keywords
     ];
 
@@ -273,7 +293,7 @@ router.put('/posts/:id', async (req, res) => {
 
     await executeQuery(
       `UPDATE blog_posts SET 
-        title = ?, slug = ?, content = ?, excerpt = ?, featured_image = ?, youtube_url = ?,
+        title = ?, slug = ?, content = ?, excerpt = ?, featured_image = ?, youtube_url = ?, audio_url = ?,
         category_id = ?, status = ?, seo_title = ?, seo_description = ?, seo_keywords = ?
         ${published_at_update}
        WHERE id = ?`,

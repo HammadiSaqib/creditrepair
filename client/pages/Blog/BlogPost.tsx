@@ -10,7 +10,9 @@ import {
   Share2,
   Facebook,
   Twitter,
-  Linkedin
+  Linkedin,
+  Volume2,
+  Pause
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +25,7 @@ const BlogPost = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [relatedPosts, setRelatedPosts] = useState<any[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     const fetchPost = async () => {
@@ -190,6 +193,41 @@ const BlogPost = () => {
             {/* Content Body */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 md:p-12 shadow-sm border border-slate-100 dark:border-slate-700">
               
+              {/* Voice Player */}
+              {post.audio_url && (
+                <div className="mb-10 flex flex-col items-center justify-center p-6 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-700">
+                   <Button 
+                     onClick={() => {
+                       const audio = document.getElementById('blog-audio') as HTMLAudioElement;
+                       if (audio) {
+                         if (audio.paused) {
+                           audio.play();
+                           setIsPlaying(true);
+                         } else {
+                           audio.pause();
+                           setIsPlaying(false);
+                         }
+                       }
+                     }}
+                     className={isPlaying 
+                       ? "bg-rose-500 hover:bg-rose-600 text-white rounded-full px-8 py-6 text-lg shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+                       : "bg-teal-600 hover:bg-teal-700 text-white rounded-full px-8 py-6 text-lg shadow-lg hover:shadow-xl transition-all transform hover:scale-105"
+                     }
+                   >
+                     {isPlaying ? <Pause className="h-6 w-6 mr-3" /> : <Volume2 className="h-6 w-6 mr-3" />}
+                     {isPlaying ? 'Pause Text Voice' : 'Play Text Voice'}
+                   </Button>
+                   <audio 
+                     id="blog-audio" 
+                     src={post.audio_url} 
+                     className="hidden" 
+                     onEnded={() => setIsPlaying(false)}
+                     onPause={() => setIsPlaying(false)}
+                     onPlay={() => setIsPlaying(true)}
+                   />
+                </div>
+              )}
+
               {/* YouTube Embed */}
               {post.youtube_url && (
                 <div className="mb-10 aspect-video rounded-xl overflow-hidden shadow-lg">
