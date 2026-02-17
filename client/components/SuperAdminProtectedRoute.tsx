@@ -4,6 +4,7 @@ import { authApi, getAuthToken } from "@/lib/api";
 import { Loader2, Shield, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import LoadingScreen from "./LoadingScreen";
 
 interface SuperAdminProtectedRouteProps {
   children: React.ReactNode;
@@ -53,17 +54,7 @@ export default function SuperAdminProtectedRoute({ children }: SuperAdminProtect
   }, []);
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-        <div className="text-center text-white">
-          <div className="mb-4 w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-full flex items-center justify-center mx-auto">
-            <Shield className="h-8 w-8 text-white" />
-          </div>
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-white mb-4" />
-          <p className="text-white/80">Verifying super admin credentials...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Verifying super admin credentials..." />;
   }
 
   if (!isAuthenticated) {

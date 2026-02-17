@@ -72,6 +72,7 @@ import {
   Lock,
   Unlock,
   Copy,
+  Share2,
   Building2,
   CreditCard,
 } from "lucide-react";
@@ -207,11 +208,16 @@ export default function Dashboard() {
   const clientLoginUrl = `${window.location.origin}/member/login`;
   const [clientIntakeLink, setClientIntakeLink] = useState("");
   const [isGeneratingIntakeLink, setIsGeneratingIntakeLink] = useState(false);
+  const [isClientIntakeShareOpen, setIsClientIntakeShareOpen] = useState(false);
   const onboardingSlug = (userProfile?.onboarding_slug || "").trim();
   const onboardingIntakeLink = useMemo(() => {
     if (!onboardingSlug) return "";
     return `${window.location.origin}/client-intake/${encodeURIComponent(onboardingSlug)}`;
   }, [onboardingSlug]);
+  const clientIntakeEmbedCode = useMemo(() => {
+    if (!clientIntakeLink) return "";
+    return `<iframe src="${clientIntakeLink}" style="width:100%; height:900px; border:0;" title="Client Intake"></iframe>`;
+  }, [clientIntakeLink]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -668,6 +674,27 @@ export default function Dashboard() {
       toast({ title: "Link copied", description: "Client onboarding link copied to clipboard" });
     } catch (e) {
       toast({ title: "Copy failed", description: "Please copy the link manually", variant: "destructive" });
+    }
+  };
+
+  const handleOpenClientIntakeShare = () => {
+    if (!clientIntakeLink) {
+      toast({ title: "Generate a link first", description: "Create an onboarding link to share." });
+      return;
+    }
+    setIsClientIntakeShareOpen(true);
+  };
+
+  const handleCopyClientIntakeEmbedCode = async () => {
+    if (!clientIntakeEmbedCode) {
+      toast({ title: "Generate a link first", description: "Create an onboarding link to embed." });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(clientIntakeEmbedCode);
+      toast({ title: "Embed copied", description: "Iframe embed code copied to clipboard" });
+    } catch (e) {
+      toast({ title: "Copy failed", description: "Please copy the iframe manually", variant: "destructive" });
     }
   };
 
@@ -1363,6 +1390,15 @@ export default function Dashboard() {
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleOpenClientIntakeShare}
+                    className="flex items-center gap-1"
+                  >
+                    <Share2 className="h-4 w-4" />
+                    Share
+                  </Button>
                 </div>
               </div>
               {!(clientIntakeLink || onboardingSlug) && (
@@ -1379,6 +1415,50 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+        
+
+        <Dialog open={isClientIntakeShareOpen} onOpenChange={setIsClientIntakeShareOpen}>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Client Intake Sharing</DialogTitle>
+              <DialogDescription>Copy the link or iframe to share with clients or embed on your site.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Share I</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={clientIntakeLink}
+                    readOnly
+                    className="font-mono text-xs bg-slate-50 dark:bg-slate-800"
+                  />
+                  <Button size="sm" className="gradient-primary hover:opacity-90" onClick={handleCopyClientIntakeLink}>
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Share II</Label>
+                <Textarea
+                  value={clientIntakeEmbedCode}
+                  readOnly
+                  className="font-mono text-xs bg-slate-50 dark:bg-slate-800 min-h-[120px]"
+                />
+                <div className="flex justify-end">
+                  <Button size="sm" variant="outline" onClick={handleCopyClientIntakeEmbedCode}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Iframe
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsClientIntakeShareOpen(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
      
 

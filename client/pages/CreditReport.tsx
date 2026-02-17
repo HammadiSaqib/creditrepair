@@ -1285,6 +1285,7 @@ export default function CreditReport() {
   const [activeTab, setActiveTab] = useState("overview");
   const [reportData, setReportData] = useState(detailedReport);
   const [apiData, setApiData] = useState<any>(null);
+  const [missingBureaus, setMissingBureaus] = useState<string[]>([]);
   const [qualifyView, setQualifyView] = useState<'cards' | 'table'>('table');
   const [refreshAuditNonce, setRefreshAuditNonce] = useState(0);
   const [isRerunningAudit, setIsRerunningAudit] = useState(false);
@@ -1348,6 +1349,47 @@ export default function CreditReport() {
   const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
   const { clientId: urlClientId } = useParams<{ clientId: string }>();
   const clientId = urlClientId || searchParams.get("clientId") || userProfile?.id;
+
+  const getMissingBureaus = (reportData: any) => {
+    const bureauIds = [1, 2, 3];
+    const safeArray = (value: any) => (Array.isArray(value) ? value : []);
+    const getBureauId = (item: any) => Number(item?.BureauId ?? item?.bureauId);
+    const hasText = (value: any) => typeof value === "string" && value.trim().length > 0;
+    const hasNumber = (value: any) => {
+      const num = Number(value);
+      return Number.isFinite(num) && num > 0;
+    };
+
+    const scoreArray = safeArray(reportData?.Score ?? reportData?.Scores);
+    const accounts = safeArray(reportData?.Accounts);
+    const inquiries = safeArray(reportData?.Inquiries);
+    const publicRecords = safeArray(reportData?.PublicRecords);
+    const names = safeArray(reportData?.Name);
+    const dobs = safeArray(reportData?.DOB);
+    const addresses = safeArray(reportData?.Address);
+    const employers = safeArray(reportData?.Employer);
+
+    const hasPersonalInfo = (bureauId: number) =>
+      names.some((n: any) => getBureauId(n) === bureauId && hasText(n?.FirstName || n?.LastName || n?.NameFirst || n?.NameLast || n?.Name || n?.FullName)) ||
+      dobs.some((d: any) => getBureauId(d) === bureauId && hasText(d?.DOB || d?.DateOfBirth)) ||
+      addresses.some((a: any) => getBureauId(a) === bureauId && hasText(a?.StreetAddress || a?.Address || a?.City || a?.State || a?.Zip)) ||
+      employers.some((e: any) => getBureauId(e) === bureauId && hasText(e?.EmployerName || e?.Name));
+
+    const hasBureauData = (bureauId: number) =>
+      scoreArray.some((s: any) => getBureauId(s) === bureauId && hasNumber(s?.Score ?? s?.score)) ||
+      accounts.some((a: any) => getBureauId(a) === bureauId) ||
+      inquiries.some((i: any) => getBureauId(i) === bureauId) ||
+      publicRecords.some((r: any) => getBureauId(r) === bureauId) ||
+      hasPersonalInfo(bureauId);
+
+    const getBureauName = (bureauId: number) => {
+      if (bureauId === 1) return "TransUnion";
+      if (bureauId === 2) return "Experian";
+      return "Equifax";
+    };
+
+    return bureauIds.filter((id) => !hasBureauData(id)).map(getBureauName);
+  };
 
   const fetchPayoffPlans = async () => {
     if (!clientId) return;
@@ -3304,6 +3346,7 @@ export default function CreditReport() {
       try {
         setLoading(true);
         setError(null);
+        setMissingBureaus([]);
         // Fetch client data to retrieve SSN last four for masked display
         let dbSSNLastFour: string | null = null;
         try {
@@ -3346,6 +3389,7 @@ export default function CreditReport() {
         if (data && data.success && data.data && data.data.reportData) {
           // Transform the API data to match our expected structure
           setApiData(data.data.reportData);
+          setMissingBureaus(getMissingBureaus(data.data.reportData));
           console.log('🔍 DEBUG: API reportData:', data.data.reportData);
           console.log('🔍 DEBUG: API Name data:', data.data.reportData.Name);
           console.log('🔍 DEBUG: API DOB data:', data.data.reportData.DOB);
@@ -3360,9 +3404,9 @@ export default function CreditReport() {
           
           // Extract scores and score types dynamically from API data
           let scores = {
-            experian: "785", // Default fallback
-            transunion: "769", // Default fallback
-            equifax: "778" // Default fallback
+            experian: "0",
+            transunion: "0",
+            equifax: "0"
           };
 
           let scoreTypes = {
@@ -3838,6 +3882,24 @@ export default function CreditReport() {
           const qualificationCriteria = calculateQualificationCriteria(data.data, debtUtilization, scores);
           console.log('🔍 DEBUG: Final qualification criteria:', qualificationCriteria);
 
+          const reportPayload = data.data.reportData;
+          const nestedReport = reportPayload?.reportData || reportPayload?.report_data || null;
+          const accountsSource =
+            reportPayload?.Accounts ||
+            nestedReport?.Accounts ||
+            nestedReport?.reportData?.Accounts ||
+            [];
+          const inquiriesSource =
+            reportPayload?.Inquiries ||
+            nestedReport?.Inquiries ||
+            nestedReport?.reportData?.Inquiries ||
+            [];
+          const publicRecordsSource =
+            reportPayload?.PublicRecords ||
+            nestedReport?.PublicRecords ||
+            nestedReport?.reportData?.PublicRecords ||
+            [];
+
           const transformedData = {
             ...detailedReport,
             scores: scores,
@@ -3855,10 +3917,10 @@ export default function CreditReport() {
                 ? `${personalInfo.name.FirstName} ${personalInfo.name.Middle || ''} ${personalInfo.name.LastName}`.trim()
                 : detailedReport.personalInfo.name
             },
-            accounts: transformApiAccounts(data.data.reportData.Accounts || []),
-            collections: transformApiCollections(data.data.reportData.Accounts || []),
-            disputeHistory: transformApiDisputes(data.data.reportData.Accounts || []),
-            inquiries: (data.data.reportData.Inquiries || []).map((inquiry, index) => ({
+            accounts: transformApiAccounts(accountsSource),
+            collections: transformApiCollections(accountsSource),
+            disputeHistory: transformApiDisputes(accountsSource),
+            inquiries: inquiriesSource.map((inquiry, index) => ({
               id: index + 1,
               company: inquiry.CreditorName || 'Unknown Creditor',
               creditorName: inquiry.CreditorName || 'Unknown Creditor', // Add creditorName field for progress display
@@ -3867,7 +3929,7 @@ export default function CreditReport() {
               date: inquiry.DateInquiry || new Date().toISOString().split('T')[0],
               bureau: inquiry.BureauId === 1 ? 'TransUnion' : inquiry.BureauId === 2 ? 'Experian' : inquiry.BureauId === 3 ? 'Equifax' : 'Unknown'
             })),
-            publicRecords: (data.data.reportData.PublicRecords || []),
+            publicRecords: publicRecordsSource,
             // Keep the original structure for other data
             creditUtilization: detailedReport.creditUtilization,
             debtUtilization: debtUtilization, // Add calculated debt utilization
@@ -4040,9 +4102,9 @@ export default function CreditReport() {
           const updatedMockData = {
             ...detailedReport,
             scores: {
-              experian: "785",
-              transunion: "769", 
-              equifax: "778"
+              experian: "0",
+              transunion: "0", 
+              equifax: "0"
             },
             scoreTypes: {
               experian: "FICO",
@@ -4062,6 +4124,7 @@ export default function CreditReport() {
             ...updatedMockData.personalInfo,
             ssn: (typeof dbSSNLastFour === 'string' && dbSSNLastFour) ? `***-**-${dbSSNLastFour}` : null
           };
+          setMissingBureaus(["TransUnion", "Experian", "Equifax"]);
           setReportData(updatedMockData);
         }
       } catch (err) {
@@ -4311,6 +4374,20 @@ export default function CreditReport() {
           </div>
         </div>
       </div>
+
+      {missingBureaus.length > 0 && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 mt-0.5" />
+            <div>
+              <div className="font-semibold">Missing bureau report</div>
+              <div className="text-sm">
+                We could not find data for {missingBureaus.join(", ")}. Scores show 0 until a full report is available.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={handleActiveTabChange}>
         {/* Grouped Navigation: Work Area + Credit Report */}
@@ -8226,44 +8303,47 @@ export default function CreditReport() {
                   return 'Primary';
                 };
 
-                const apiAccounts = (apiData as any)?.reportData?.reportData?.Accounts;
+                const getAccountBalance = (acc: any) => {
+                  const rawValue =
+                    acc?.CurrentBalance ??
+                    acc?.balance ??
+                    acc?.Balance ??
+                    acc?.currentBalance ??
+                    acc?.AmountPastDue ??
+                    acc?.amountPastDue ??
+                    0;
+                  const num = Number(String(rawValue).replace(/,/g, ''));
+                  return Number.isFinite(num) ? num : 0;
+                };
+
+                const apiAccounts =
+                  (apiData as any)?.Accounts ||
+                  (apiData as any)?.reportData?.Accounts ||
+                  (apiData as any)?.reportData?.reportData?.Accounts;
                 const sampleAccounts = (reportData as any)?.accounts;
 
                 let accounts: Array<{ creditor: string; accountNumber?: string; ownership?: string; limit: number; balance: number; opened?: any }> = [];
 
                 if (Array.isArray(apiAccounts) && apiAccounts.length > 0) {
                   accounts = apiAccounts
-                    .filter((acc: any) =>
-                      (
-                        acc.CreditType === 'Revolving Account' ||
-                        acc.AccountTypeDescription === 'Revolving Account' ||
-                        String(acc.CreditType || '').toLowerCase().includes('credit card') ||
-                        String(acc.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
-                        String(acc.AccountType || '').toLowerCase().includes('credit card')
-                      ) &&
-                      ((parseFloat(acc.CreditLimit) || parseFloat(acc.HighBalance) || 0) > 0)
-                    )
+                    .filter((acc: any) => getAccountBalance(acc) > 0)
                     .map((acc: any) => ({
                       creditor: acc.CreditorName || acc.Creditor || '—',
                       accountNumber: acc.AccountNumber || acc.MaskAccountNumber,
                       ownership: resolveOwnership(acc.AccountDesignator || acc.AccountOwnership || acc.Responsibility || acc.OwnershipType),
                       limit: parseFloat(acc.CreditLimit) || parseFloat(acc.HighBalance) || 0,
-                      balance: parseFloat(acc.CurrentBalance) || 0,
+                      balance: getAccountBalance(acc),
                       opened: acc.DateOpened || acc.DateReported || acc.OpenDate || acc.dateOpened
                     }));
                 } else if (Array.isArray(sampleAccounts) && sampleAccounts.length > 0) {
                   accounts = sampleAccounts
-                    .filter((acc: any) => {
-                      const isRevolving = acc.accountType === 'Revolving' || acc.type === 'Credit Card' || acc.type === 'Line of Credit';
-                      const limit = acc.creditLimit ?? acc.limit;
-                      return isRevolving && (Number(limit) || 0) > 0;
-                    })
+                    .filter((acc: any) => getAccountBalance(acc) > 0)
                     .map((acc: any) => ({
                       creditor: acc.creditorName || acc.creditor || '—',
                       accountNumber: acc.accountNumber,
                       ownership: resolveOwnership(acc.ownership || acc.accountOwnership),
                       limit: Number(acc.creditLimit ?? acc.limit ?? 0),
-                      balance: Number(acc.balance ?? 0),
+                      balance: getAccountBalance(acc),
                       opened: acc.opened || acc.dateOpened
                     }));
                 }
@@ -8271,7 +8351,7 @@ export default function CreditReport() {
                 if (!accounts.length) {
                   return (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                      No revolving accounts found to compute paydown.
+                      No accounts with balances found to compute paydown.
                     </div>
                   );
                 }
@@ -9887,29 +9967,22 @@ export default function CreditReport() {
             </CardHeader>
             <CardContent>
               {(() => {
+                const getAccountBalance = (acc: any) => {
+                  const rawValue =
+                    acc?.CurrentBalance ??
+                    acc?.balance ??
+                    acc?.Balance ??
+                    acc?.AmountPastDue ??
+                    acc?.amountPastDue ??
+                    0;
+                  const num = Number(String(rawValue).replace(/,/g, ''));
+                  return Number.isFinite(num) ? num : 0;
+                };
                 const raw = reportData?.accounts || detailedReport.accounts || [];
-                const seen = new Map<string, boolean>();
-                const normalizeName = (s: any) => String(s || '').split('/')?.[0]?.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
-                const deduped: any[] = [];
-                for (const acc of raw) {
-                  const name = normalizeName((acc as any).CreditorName || (acc as any).creditor);
-                  const digits = String((acc as any).AccountNumber || (acc as any).accountNumber || '').replace(/\D/g, '');
-                  const len = digits.length;
-                  const limitVal = parseFloat((acc as any).CreditLimit || (acc as any).limit || (acc as any).HighBalance || '0') || 0;
-                  const limitKey = Math.round(limitVal);
-                  const prefix6 = digits.slice(0, 6);
-                  const prefix5 = digits.slice(0, 5);
-                  const key = len >= 6
-                    ? prefix6
-                    : [name, prefix5 || (digits || 'na'), limitKey].join('|');
-                  if (!seen.has(key)) {
-                    seen.set(key, true);
-                    deduped.push(acc);
-                  }
-                }
+                const accountsWithBalance = raw.filter((acc: any) => getAccountBalance(acc) > 0);
                 return (
                   <DebtConsolidationView
-                    accounts={deduped}
+                    accounts={accountsWithBalance}
                     payoffPlans={payoffPlans}
                     onSavePlan={handleSavePayoffPlan}
                     clientId={clientId}

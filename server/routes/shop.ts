@@ -39,7 +39,7 @@ router.get('/products', async (_req, res) => {
   try {
     const db = getDatabaseAdapter();
     const products = await db.allQuery(
-      `SELECT id, name, description, price, thumbnail_url, created_at, updated_at 
+      `SELECT id, name, description, price, thumbnail_url, stripe_billing_link, created_at, updated_at 
        FROM shop_products ORDER BY created_at DESC`
     );
     const result: any[] = [];
@@ -54,6 +54,7 @@ router.get('/products', async (_req, res) => {
         description: p.description,
         price: Number(p.price),
         thumbnail_url: p.thumbnail_url || null,
+        stripe_billing_link: p.stripe_billing_link || null,
         files: files.map((f: any) => ({
           id: f.id,
           url: f.url,

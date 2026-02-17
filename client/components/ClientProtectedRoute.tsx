@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { authApi, getAuthToken } from "@/lib/api";
 import { Loader2, CreditCard } from "lucide-react";
+import LoadingScreen from "./LoadingScreen";
 
 interface ClientProtectedRouteProps {
   children: React.ReactNode;
@@ -68,17 +69,7 @@ const ClientProtectedRoute = ({ children }: ClientProtectedRouteProps) => {
   }, []);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100">
-        <div className="text-center">
-          <div className="mx-auto mb-4 p-3 bg-green-100 rounded-full w-fit">
-            <CreditCard className="h-8 w-8 text-green-600 animate-pulse" />
-          </div>
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-green-600" />
-          <p className="text-green-700 font-medium">Loading your dashboard...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Loading your dashboard..." />;
   }
 
   if (!isAuthenticated) {

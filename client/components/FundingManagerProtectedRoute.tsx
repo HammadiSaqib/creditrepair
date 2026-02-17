@@ -4,6 +4,7 @@ import { authApi, getAuthToken } from "@/lib/api";
 import { Loader2, DollarSign, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import LoadingScreen from "./LoadingScreen";
 
 interface FundingManagerProtectedRouteProps {
   children: React.ReactNode;
@@ -51,22 +52,7 @@ export default function FundingManagerProtectedRoute({ children }: FundingManage
 
   // Show loading state
   if (isAuthenticated === null) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 dark:from-slate-900 dark:via-slate-800/95 dark:to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-2xl mb-6 mx-auto">
-            <DollarSign className="h-8 w-8 text-white" />
-          </div>
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-emerald-600 mb-4" />
-          <p className="text-lg font-medium text-slate-700 dark:text-slate-300 mb-2">
-            Verifying Funding Manager Access
-          </p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Please wait while we authenticate your credentials...
-          </p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Verifying Funding Manager Access..." />;
   }
 
   // Show error state for wrong role

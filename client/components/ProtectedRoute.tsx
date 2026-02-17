@@ -4,6 +4,7 @@ import { authApi, getAuthToken } from "@/lib/api";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { usePagePermissions, getPageIdFromPath } from "@/hooks/usePagePermissions";
 import { Loader2, Lock } from "lucide-react";
+import LoadingScreen from "./LoadingScreen";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -54,14 +55,7 @@ export default function ProtectedRoute({ children, allowUnpaidAccess = false, pa
   }, []);
 
   if (isLoading || subscriptionStatus.isLoading || pagePermissions.isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-white dark:from-slate-900 dark:to-slate-800">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-ocean-blue" />
-          <p className="mt-4 text-muted-foreground">Verifying authentication...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Verifying authentication..." />;
   }
 
   if (!isAuthenticated) {

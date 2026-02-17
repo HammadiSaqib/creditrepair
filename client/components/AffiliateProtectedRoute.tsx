@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { authApi } from "@/lib/api";
+import LoadingScreen from "./LoadingScreen";
 
 interface AffiliateProtectedRouteProps {
   children: ReactNode;
@@ -62,14 +63,7 @@ export default function AffiliateProtectedRoute({ children }: AffiliateProtected
 
   // Show loading state while checking authentication
   if (isAuthenticated === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-teal-50 dark:from-slate-950 dark:to-green-950">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-300">Verifying affiliate access...</p>
-        </div>
-      </div>
-    );
+    return <LoadingScreen message="Verifying affiliate access..." />;
   }
 
   // Redirect to affiliate login if not authenticated or not allowed role

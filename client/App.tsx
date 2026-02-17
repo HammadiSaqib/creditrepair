@@ -16,6 +16,7 @@ import FundingManagerProtectedRoute from "./components/FundingManagerProtectedRo
 import ClientProtectedRoute from "./components/ClientProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ReactGA from "react-ga4";
+import LoadingScreen from "./components/LoadingScreen";
 import Index from "./pages/Index";
 const ReferralLandingPage = React.lazy(() => import("../src/components/ReferralLandingPage"));
 
@@ -222,7 +223,7 @@ const App = () => {
                   </script>
                 </Helmet>
                 <PageViewTracker />
-                <Suspense fallback={<div className="p-6 text-muted-foreground">Loading...</div>}>
+                <Suspense fallback={<LoadingScreen />}>
                   <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/pricing" element={<Pricing />} />

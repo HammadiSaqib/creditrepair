@@ -699,9 +699,9 @@ export const superAdminApi = {
   uploadShopFiles: (form: FormData) =>
     api.post('/api/super-admin/shop/uploads', form, { headers: { 'Content-Type': 'multipart/form-data' } }),
   fetchShopUrlMeta: (url: string) => api.get('/api/super-admin/shop/url-meta', { params: { url } }),
-  createShopProduct: (data: { name: string; description?: string; price: number; thumbnail_url?: string | null; files?: Array<{ url: string; type: 'image' | 'video' | 'pdf' | 'zip' | 'other'; source: 'upload' | 'link' }> }) =>
+  createShopProduct: (data: { name: string; description?: string; price: number; thumbnail_url?: string | null; stripe_billing_link?: string | null; files?: Array<{ url: string; type: 'image' | 'video' | 'pdf' | 'zip' | 'other'; source: 'upload' | 'link' }> }) =>
     api.post('/api/super-admin/shop/products', data),
-  updateShopProduct: (id: number, data: { name?: string; description?: string; price?: number; thumbnail_url?: string | null; files?: Array<{ url: string; type: 'image' | 'video' | 'pdf' | 'zip' | 'other'; source: 'upload' | 'link' }> }) =>
+  updateShopProduct: (id: number, data: { name?: string; description?: string; price?: number; thumbnail_url?: string | null; stripe_billing_link?: string | null; files?: Array<{ url: string; type: 'image' | 'video' | 'pdf' | 'zip' | 'other'; source: 'upload' | 'link' }> }) =>
     api.put(`/api/super-admin/shop/products/${id}`, data),
   deleteShopProduct: (id: number) => api.delete(`/api/super-admin/shop/products/${id}`),
   getTasks: () => api.get('/api/super-admin/tasks'),

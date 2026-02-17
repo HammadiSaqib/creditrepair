@@ -873,7 +873,7 @@ router.get('/shop/products', authenticateToken, requireSuperAdmin, async (_req: 
   try {
     const db = getDatabaseAdapter();
     const products = await db.allQuery(
-      `SELECT id, name, description, price, thumbnail_url, created_at, updated_at FROM shop_products ORDER BY created_at DESC`
+      `SELECT id, name, description, price, thumbnail_url, stripe_billing_link, created_at, updated_at FROM shop_products ORDER BY created_at DESC`
     );
     const result: any[] = [];
     for (const p of products) {
@@ -887,6 +887,7 @@ router.get('/shop/products', authenticateToken, requireSuperAdmin, async (_req: 
         description: p.description,
         price: Number(p.price),
         thumbnail_url: p.thumbnail_url || null,
+        stripe_billing_link: p.stripe_billing_link || null,
         files: files.map((f: any) => ({
           id: f.id,
           url: f.url,
@@ -914,6 +915,7 @@ const createProductSchema = z.object({
   description: z.string().optional(),
   price: z.coerce.number(),
   thumbnail_url: z.string().nullable().optional(),
+  stripe_billing_link: z.string().url().nullish(),
   files: z.array(shopFileSchema).optional()
 });
 
@@ -925,8 +927,8 @@ router.post('/shop/products', authenticateToken, requireSuperAdmin, async (req: 
     const insertPrice = typeof validated.price === 'number' ? validated.price : 0;
     const insertDesc = typeof validated.description === 'string' ? validated.description : '';
     const insert = await db.executeQuery(
-      `INSERT INTO shop_products (name, description, price, thumbnail_url, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)`,
-      [validated.name, insertDesc, insertPrice, validated.thumbnail_url || null, userId, userId]
+      `INSERT INTO shop_products (name, description, price, thumbnail_url, stripe_billing_link, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [validated.name, insertDesc, insertPrice, validated.thumbnail_url || null, validated.stripe_billing_link || null, userId, userId]
     );
     const productId = insert.insertId || insert.lastID;
     if (Array.isArray(validated.files) && validated.files.length > 0) {
@@ -938,7 +940,7 @@ router.post('/shop/products', authenticateToken, requireSuperAdmin, async (req: 
       }
     }
     const product = await db.getQuery(
-      `SELECT id, name, description, price, thumbnail_url, created_at, updated_at FROM shop_products WHERE id = ?`,
+      `SELECT id, name, description, price, thumbnail_url, stripe_billing_link, created_at, updated_at FROM shop_products WHERE id = ?`,
       [productId]
     );
     const files = await db.allQuery(
@@ -952,6 +954,7 @@ router.post('/shop/products', authenticateToken, requireSuperAdmin, async (req: 
         description: product.description,
         price: Number(product.price),
         thumbnail_url: product.thumbnail_url || null,
+        stripe_billing_link: product.stripe_billing_link || null,
         files: files.map((f: any) => ({ id: f.id, url: f.url, type: f.type, source: f.source })),
         created_at: product.created_at,
         updated_at: product.updated_at
@@ -967,6 +970,7 @@ const updateProductSchema = z.object({
   description: z.string().optional(),
   price: z.coerce.number().optional(),
   thumbnail_url: z.string().nullable().optional(),
+  stripe_billing_link: z.string().url().nullish(),
   files: z.array(shopFileSchema).optional()
 });
 
@@ -981,6 +985,7 @@ router.put('/shop/products/:id', authenticateToken, requireSuperAdmin, async (re
     if (validated.description !== undefined) { fields.push('description = ?'); values.push(validated.description); }
     if (validated.price !== undefined) { fields.push('price = ?'); values.push(validated.price); }
     if (validated.thumbnail_url !== undefined) { fields.push('thumbnail_url = ?'); values.push(validated.thumbnail_url); }
+    if (validated.stripe_billing_link !== undefined) { fields.push('stripe_billing_link = ?'); values.push(validated.stripe_billing_link); }
     const hasFieldUpdates = fields.length > 0;
     const userId = req.user?.id || 1;
     if (hasFieldUpdates) {
@@ -999,7 +1004,7 @@ router.put('/shop/products/:id', authenticateToken, requireSuperAdmin, async (re
         );
       }
     }
-    const product = await db.getQuery(`SELECT id, name, description, price, thumbnail_url, created_at, updated_at FROM shop_products WHERE id = ?`, [id]);
+    const product = await db.getQuery(`SELECT id, name, description, price, thumbnail_url, stripe_billing_link, created_at, updated_at FROM shop_products WHERE id = ?`, [id]);
     const files = await db.allQuery(`SELECT id, url, type, source, created_at FROM shop_product_files WHERE product_id = ? ORDER BY created_at ASC`, [id]);
     res.json({
       product: {
@@ -1008,6 +1013,7 @@ router.put('/shop/products/:id', authenticateToken, requireSuperAdmin, async (re
         description: product.description,
         price: Number(product.price),
         thumbnail_url: product.thumbnail_url || null,
+        stripe_billing_link: product.stripe_billing_link || null,
         files: files.map((f: any) => ({ id: f.id, url: f.url, type: f.type, source: f.source })),
         created_at: product.created_at,
         updated_at: product.updated_at

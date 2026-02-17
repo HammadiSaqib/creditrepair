@@ -309,6 +309,7 @@ export async function createSuperAdminTables(): Promise<void> {
       description TEXT NOT NULL,
       price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
       thumbnail_url TEXT,
+      stripe_billing_link TEXT,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       created_by INT NOT NULL,
@@ -391,6 +392,21 @@ export async function createSuperAdminTables(): Promise<void> {
       }
     } catch (e) {
       console.warn('⚠️ Subscription plan column migration skipped or failed:', e);
+    }
+
+    try {
+      const [cols] = await connection.execute<any[]>(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() 
+           AND TABLE_NAME = 'shop_products' 
+           AND COLUMN_NAME IN ('stripe_billing_link')`
+      );
+      const existing = new Set((cols as any[]).map((c: any) => c.COLUMN_NAME));
+      if (!existing.has('stripe_billing_link')) {
+        await connection.execute(`ALTER TABLE shop_products ADD COLUMN stripe_billing_link TEXT`);
+      }
+    } catch (e) {
+      console.warn('⚠️ Shop products column migration skipped or failed:', e);
     }
   });
   

@@ -68,6 +68,7 @@ type ShopProduct = {
   description: string;
   price: number;
   thumbnail_url: string | null;
+  stripe_billing_link: string | null;
   files: ProductFile[];
   created_at: string;
   updated_at: string;
@@ -84,6 +85,7 @@ export default function ShopManagement() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState<number | string>("");
+  const [stripeBillingLink, setStripeBillingLink] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [linkInput, setLinkInput] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
@@ -158,6 +160,7 @@ export default function ShopManagement() {
     setName("");
     setDescription("");
     setPrice("");
+    setStripeBillingLink("");
     setSelectedFiles([]);
     setLinkInput("");
     setThumbnailUrl(null);
@@ -302,6 +305,7 @@ export default function ShopManagement() {
         description: description.trim() || undefined,
         price: safePrice,
         thumbnail_url: thumbToUse ?? null,
+        stripe_billing_link: stripeBillingLink.trim() || undefined,
         files: filesPayload,
       });
       const created = res.data?.product;
@@ -344,6 +348,7 @@ export default function ShopManagement() {
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editPrice, setEditPrice] = useState<number | string>("");
+  const [editStripeBillingLink, setEditStripeBillingLink] = useState("");
   const [editThumb, setEditThumb] = useState<string | null>(null);
   const [editFiles, setEditFiles] = useState<ProductFile[]>([]);
   const [replaceThumbFile, setReplaceThumbFile] = useState<File | null>(null);
@@ -358,6 +363,7 @@ export default function ShopManagement() {
       setEditName(editingProduct.name);
       setEditDescription(editingProduct.description);
       setEditPrice(editingProduct.price);
+      setEditStripeBillingLink(editingProduct.stripe_billing_link || "");
       setEditThumb(editingProduct.thumbnail_url);
       setEditFiles(editingProduct.files || []);
       setReplaceThumbFile(null);
@@ -478,6 +484,7 @@ export default function ShopManagement() {
         description: editDescription.trim() || undefined,
         price: safePrice,
         thumbnail_url: thumb,
+        stripe_billing_link: editStripeBillingLink.trim() || null,
         ...(filesPayload ? { files: filesPayload } : {}),
       };
       const res = await superAdminApi.updateShopProduct(editingProduct.id, payload);
@@ -848,6 +855,10 @@ export default function ShopManagement() {
               <label className="text-sm font-medium">Description</label>
               <Textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Write description..." />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Stripe Billing Link</label>
+              <Input value={stripeBillingLink} onChange={(e) => setStripeBillingLink(e.target.value)} placeholder="https://buy.stripe.com/..." />
+            </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1020,6 +1031,10 @@ export default function ShopManagement() {
           <div className="space-y-2">
             <label className="text-sm font-medium">Description</label>
             <Textarea rows={4} value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Stripe Billing Link</label>
+            <Input value={editStripeBillingLink} onChange={(e) => setEditStripeBillingLink(e.target.value)} placeholder="https://buy.stripe.com/..." />
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">

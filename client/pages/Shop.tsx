@@ -28,6 +28,7 @@ interface ShopProduct {
   description: string;
   price: number;
   thumbnail_url?: string | null;
+  stripe_billing_link?: string | null;
   files: ShopProductFile[];
 }
 
@@ -108,6 +109,11 @@ export default function Shop() {
   const openPurchase = async (product: ShopProduct) => {
     try {
       setCheckingOut(true);
+      const billingLink = product.stripe_billing_link?.trim();
+      if (billingLink) {
+        window.location.href = billingLink;
+        return;
+      }
       const resp = await shopApi.createCheckout({
         product_id: product.id,
         purchaser_name: '',
