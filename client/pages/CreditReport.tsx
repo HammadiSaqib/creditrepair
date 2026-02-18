@@ -1391,6 +1391,38 @@ export default function CreditReport() {
     return bureauIds.filter((id) => !hasBureauData(id)).map(getBureauName);
   };
 
+  const isReportEmpty = useMemo(() => {
+    if (missingBureaus.length === 3) return true;
+    const source: any =
+      apiData ??
+      (reportData as any)?.reportData ??
+      reportData ??
+      null;
+    if (!source) return true;
+    const safeArray = (value: any) => (Array.isArray(value) ? value : []);
+    const hasText = (value: any) => typeof value === "string" && value.trim().length > 0;
+    const scoreArray = safeArray(source?.Score ?? source?.Scores);
+    const hasScore = scoreArray.some((s: any) => {
+      const num = Number(s?.Score ?? s?.score);
+      return Number.isFinite(num) && num > 0;
+    });
+    const accounts = safeArray(source?.Accounts ?? source?.accounts);
+    const inquiries = safeArray(source?.Inquiries ?? source?.inquiries);
+    const publicRecords = safeArray(source?.PublicRecords ?? source?.publicRecords);
+    const names = safeArray(source?.Name ?? source?.names);
+    const dobs = safeArray(source?.DOB);
+    const addresses = safeArray(source?.Address ?? source?.addresses);
+    const employers = safeArray(source?.Employer ?? source?.employers);
+    const hasPersonalInfo =
+      names.some((n: any) =>
+        hasText(n?.FirstName || n?.LastName || n?.NameFirst || n?.NameLast || n?.Name || n?.FullName)
+      ) ||
+      dobs.some((d: any) => hasText(d?.DOB || d?.DateOfBirth)) ||
+      addresses.some((a: any) => hasText(a?.StreetAddress || a?.Address || a?.City || a?.State || a?.Zip)) ||
+      employers.some((e: any) => hasText(e?.EmployerName || e?.Name));
+    return !(hasScore || accounts.length || inquiries.length || publicRecords.length || hasPersonalInfo);
+  }, [apiData, reportData, missingBureaus]);
+
   const fetchPayoffPlans = async () => {
     if (!clientId) return;
     try {
@@ -4382,7 +4414,7 @@ export default function CreditReport() {
             <div>
               <div className="font-semibold">Missing bureau report</div>
               <div className="text-sm">
-                We could not find data for {missingBureaus.join(", ")}. Scores show 0 until a full report is available.
+                We could not find data for {missingBureaus.join(", ")}. Please re-run the report or contact support to complete the missing bureau pull.
               </div>
             </div>
           </div>
@@ -5368,8 +5400,13 @@ export default function CreditReport() {
                   <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
                   Rerun Funding Audit
                 </Button>
+                {isReportEmpty ? (
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Report data missing
+                  </span>
+                ) : (
                   <span className="text-sm font-bold bg-primary text-primary-foreground px-3 py-1 rounded-full">
-                  {(() => {
+                    {(() => {
                     // Compute an overall 0–10 score by averaging category grades
                     const grades: number[] = [];
 
@@ -5636,23 +5673,27 @@ export default function CreditReport() {
 
                     const avg = grades.length ? grades.reduce((s, n) => s + n, 0) / grades.length : 0;
                     const overall = Math.round(avg);
-                    return `Overall ${overall}/10`;
-                  })()}
-              </span>
+                      return `Overall ${overall}/10`;
+                    })()}
+                  </span>
+                )}
               </div>
-              <div className="flex items-center flex-wrap gap-2 mt-2">
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800">
-                  <CheckCircle className="h-3 w-3" /> Good to go
-                </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800">
-                  <AlertTriangle className="h-3 w-3" /> Proceed with caution
-                </span>
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800">
-                  <XCircle className="h-3 w-3" /> Not eligible
-                </span>
-              </div>
-              <CardDescription className="mt-2">
-                {(() => {
+              {!isReportEmpty && (
+                <div className="flex items-center flex-wrap gap-2 mt-2">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800">
+                    <CheckCircle className="h-3 w-3" /> Good to go
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800">
+                    <AlertTriangle className="h-3 w-3" /> Proceed with caution
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800">
+                    <XCircle className="h-3 w-3" /> Not eligible
+                  </span>
+                </div>
+              )}
+              {!isReportEmpty && (
+                <CardDescription className="mt-2">
+                  {(() => {
                   const criteriaFlags = {
                     score: [
                       getCriteriaFlag(1, "score700Plus") || getCriteriaFlag(1, "score730Plus"),
@@ -5719,25 +5760,32 @@ export default function CreditReport() {
                     status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800" :
                     "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800";
 
-                  return (
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-full border ${colorClasses}`}>
-                        <Icon className="h-4 w-4" />
-                        <span>Your Status: {label}</span>
-                      </span>
-                      {!isFundingEligible && (
-                        <span className="text-xs text-muted-foreground">
-                          Meets {criteriaMetCount} of {criteriaTotal} core criteria
+                    return (
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-full border ${colorClasses}`}>
+                          <Icon className="h-4 w-4" />
+                          <span>Your Status: {label}</span>
                         </span>
-                      )}
-                    </div>
-                  );
-                })()}
-              </CardDescription>
+                        {!isFundingEligible && (
+                          <span className="text-xs text-muted-foreground">
+                            Meets {criteriaMetCount} of {criteriaTotal} core criteria
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              {/* First Row - 6 Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
+              {isReportEmpty && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+                  Funding eligibility details are unavailable because the report is missing bureau data.
+                </div>
+              )}
+              <div className={isReportEmpty ? "hidden" : ""}>
+                {/* First Row - 6 Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
                 
                 {/* Credit Score Card */}
                 <Card className="border border-gray-200 shadow-sm dark:bg-slate-800 dark:border-slate-700">
@@ -7202,6 +7250,7 @@ export default function CreditReport() {
                 </Card>
 
               </div>
+            </div>
             </CardContent>
           </Card>
 
@@ -7217,19 +7266,28 @@ export default function CreditReport() {
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRerunningAudit ? 'animate-spin' : ''}`} />
                     Rerun Funding Audit
                   </Button>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800">
-                    <CheckCircle className="h-3 w-3" /> Good to go
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800">
-                    <AlertTriangle className="h-3 w-3" /> Proceed with caution
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800">
-                    <XCircle className="h-3 w-3" /> Not eligible
-                  </span>
+                  {isReportEmpty ? (
+                    <span className="text-sm font-medium text-muted-foreground">
+                      Report data missing
+                    </span>
+                  ) : (
+                    <>
+                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-green-100 text-green-700 border border-green-200 dark:bg-green-900/50 dark:text-white dark:border-green-800">
+                        <CheckCircle className="h-3 w-3" /> Good to go
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800">
+                        <AlertTriangle className="h-3 w-3" /> Proceed with caution
+                      </span>
+                      <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800">
+                        <XCircle className="h-3 w-3" /> Not eligible
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
-              <CardDescription className="mt-2">
-                {(() => {
+              {!isReportEmpty && (
+                <CardDescription className="mt-2">
+                  {(() => {
                   const criteriaFlags = {
                     score: [
                       getCriteriaFlag(1, "score700Plus") || getCriteriaFlag(1, "score730Plus"),
@@ -7296,24 +7354,30 @@ export default function CreditReport() {
                     status === "yellow" ? "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-white dark:border-amber-800" :
                     "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/50 dark:text-white dark:border-red-800";
 
-                  return (
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-full border ${colorClasses}`}>
-                        <Icon className="h-4 w-4" />
-                        <span>Your Status: {label}</span>
-                      </span>
-                      {!isFundingEligible && (
-                        <span className="text-xs text-muted-foreground">
-                          Meets {criteriaMetCount} of {criteriaTotal} core criteria
+                    return (
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center gap-2 text-xs font-medium px-3 py-1 rounded-full border ${colorClasses}`}>
+                          <Icon className="h-4 w-4" />
+                          <span>Your Status: {label}</span>
                         </span>
-                      )}
-                    </div>
-                  );
-                })()}
-              </CardDescription>
+                        {!isFundingEligible && (
+                          <span className="text-xs text-muted-foreground">
+                            Meets {criteriaMetCount} of {criteriaTotal} core criteria
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </CardDescription>
+              )}
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              {isReportEmpty && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+                  Funding eligibility details are unavailable because the report is missing bureau data.
+                </div>
+              )}
+              <div className={isReportEmpty ? "hidden" : "overflow-x-auto"}>
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="border-b dark:border-slate-700">
@@ -7325,11 +7389,30 @@ export default function CreditReport() {
                   </thead>
                   <tbody className="text-sm">
                     {(() => {
-                      // Function to get row background color based on qualification status
+                      const isMissingTu = missingBureaus.includes("TransUnion");
+                      const isMissingEx = missingBureaus.includes("Experian");
+                      const isMissingEq = missingBureaus.includes("Equifax");
+
+                      const renderStatus = (value: boolean, isMissing: boolean) => {
+                        if (isMissing) return <span className="text-xs text-muted-foreground">—</span>;
+                        return value
+                          ? <CheckCircle className="h-5 w-5 text-green-600 mx-auto" />
+                          : <XCircle className="h-5 w-5 text-red-600 mx-auto" />;
+                      };
+
                       const getRowBgColor = (tuStatus: boolean, exStatus: boolean, eqStatus: boolean) => {
-                        const passedCount = [tuStatus, exStatus, eqStatus].filter(Boolean).length;
-                        if (passedCount === 3) return 'bg-green-50 hover:bg-green-100 dark:bg-green-900/50 dark:hover:bg-green-800/50 dark:text-white';
-                        if (passedCount === 2) return 'bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/50 dark:hover:bg-yellow-800/50 dark:text-white';
+                        const statuses = [
+                          isMissingTu ? null : tuStatus,
+                          isMissingEx ? null : exStatus,
+                          isMissingEq ? null : eqStatus
+                        ];
+                        const available = statuses.filter((s): s is boolean => s !== null);
+                        if (!available.length) {
+                          return 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/50 dark:hover:bg-slate-800/50 dark:text-white';
+                        }
+                        const passedCount = available.filter(Boolean).length;
+                        if (passedCount === available.length) return 'bg-green-50 hover:bg-green-100 dark:bg-green-900/50 dark:hover:bg-green-800/50 dark:text-white';
+                        if (passedCount === Math.max(available.length - 1, 1)) return 'bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/50 dark:hover:bg-yellow-800/50 dark:text-white';
                         if (passedCount === 1) return 'bg-orange-50 hover:bg-orange-100 dark:bg-orange-900/50 dark:hover:bg-orange-800/50 dark:text-white';
                         return 'bg-red-50 hover:bg-red-100 dark:bg-red-900/50 dark:hover:bg-red-800/50 dark:text-white';
                       };
@@ -7421,22 +7504,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.score700Plus || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.score700Plus ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.score700Plus), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.score700Plus ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.score700Plus), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.score700Plus ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.score700Plus), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">
                         {(() => {
@@ -7463,22 +7537,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Under 30% utilization on open revolving accounts</td>
                     </tr>
@@ -7488,22 +7553,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.minFiveOpenRevolving ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.minFiveOpenRevolving), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.minFiveOpenRevolving ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.minFiveOpenRevolving), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">minimum five open primary credit cards with two years of good payment history.</td>
                     </tr>
@@ -7513,22 +7569,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.creditCard3YearsOld5KLimit || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.creditCard3YearsOld5KLimit ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.creditCard3YearsOld5KLimit), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.creditCard3YearsOld5KLimit ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.creditCard3YearsOld5KLimit), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.creditCard3YearsOld5KLimit ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.creditCard3YearsOld5KLimit), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Three primary credit cards with at least three years of age and $5,000+ limits.</td>
                     </tr>
@@ -7538,22 +7585,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.maxFourUnsecuredIn12Months || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.maxFourUnsecuredIn12Months ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.maxFourUnsecuredIn12Months), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.maxFourUnsecuredIn12Months ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.maxFourUnsecuredIn12Months), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.maxFourUnsecuredIn12Months ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.maxFourUnsecuredIn12Months), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">No more than 4 unsecured accounts open in the past 12 months</td>
                     </tr>
@@ -7564,26 +7602,32 @@ export default function CreditReport() {
                       return getRowBgColor(tuCount < 4, exCount < 4, eqCount < 4);
                     })()}`}>
                       <td className="text-center py-2 px-4">
-                        {(() => {
+                        {isMissingTu ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (() => {
                           const count = recentInquiryCount('tu');
-                          return count < 4 
-                            ? <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> 
+                          return count < 4
+                            ? <CheckCircle className="h-5 w-5 text-green-600 mx-auto" />
                             : <span className="font-bold">{count}</span>;
                         })()}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {(() => {
+                        {isMissingEx ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (() => {
                           const count = recentInquiryCount('ex');
-                          return count < 4 
-                            ? <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> 
+                          return count < 4
+                            ? <CheckCircle className="h-5 w-5 text-green-600 mx-auto" />
                             : <span className="font-bold">{count}</span>;
                         })()}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {(() => {
+                        {isMissingEq ? (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (() => {
                           const count = recentInquiryCount('eq');
-                          return count < 4 
-                            ? <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> 
+                          return count < 4
+                            ? <CheckCircle className="h-5 w-5 text-green-600 mx-auto" />
                             : <span className="font-bold">{count}</span>;
                         })()}
                       </td>
@@ -7595,22 +7639,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.noCollections || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.noCollections ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.noCollections), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.noCollections ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noCollections), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.noCollections ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noCollections), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Collections</td>
                     </tr>
@@ -7620,22 +7655,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.noChargeOffs || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.noChargeOffs ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.noChargeOffs), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.noChargeOffs ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noChargeOffs), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.noChargeOffs ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noChargeOffs), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Charge offs</td>
                     </tr>
@@ -7645,22 +7671,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.noLatePayments || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.noLatePayments ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.noLatePayments), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.noLatePayments ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noLatePayments), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.noLatePayments ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noLatePayments), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Late payments (all time)</td>
                     </tr>
@@ -7670,22 +7687,13 @@ export default function CreditReport() {
                       reportData?.qualificationCriteria?.[2]?.noBankruptcies || false
                     )}`}>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[1]?.noBankruptcies ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.noBankruptcies), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[3]?.noBankruptcies ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noBankruptcies), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {reportData?.qualificationCriteria?.[2]?.noBankruptcies ? 
-                          <CheckCircle className="h-5 w-5 text-green-600 mx-auto" /> : 
-                          <XCircle className="h-5 w-5 text-red-600 mx-auto" />
-                        }
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noBankruptcies), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Bankruptcy</td>
                     </tr>
