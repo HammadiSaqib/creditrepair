@@ -186,6 +186,16 @@ const App = () => {
     ]);
   }, []);
 
+  useEffect(() => {
+    const host = window.location.hostname.toLowerCase();
+    if (host === "www.localhost") {
+      const protocol = window.location.protocol;
+      const port = window.location.port ? `:${window.location.port}` : "";
+      const newUrl = `${protocol}//localhost${port}${window.location.pathname}${window.location.search}${window.location.hash}`;
+      window.location.replace(newUrl);
+    }
+  }, []);
+
   return (
     <ErrorBoundary>
       <HelmetProvider>
