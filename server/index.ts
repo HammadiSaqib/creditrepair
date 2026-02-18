@@ -172,13 +172,14 @@ export async function createServer() {
     (httpServer as any).headersTimeout = 0;
   } catch {}
 
-  // Canonicalize localhost: strip leading "www." for development convenience
+  // Canonicalize host: strip leading "www." for localhost and production domain
   app.use((req, res, next) => {
     const host = String(req.headers.host || '').toLowerCase();
     if (/^www\.localhost(?::\d+)?$/.test(host)) {
       const targetHost = host.replace(/^www\./, '');
-      const location = `http://${targetHost}${req.originalUrl}`;
-      return res.redirect(301, location);
+      return res.redirect(301, `http://${targetHost}${req.originalUrl}`);
+    } else if (/^www\.thescoremachine\.com(?::\d+)?$/.test(host)) {
+      return res.redirect(301, `https://thescoremachine.com${req.originalUrl}`);
     }
     next();
   });
