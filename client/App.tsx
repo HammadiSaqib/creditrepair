@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HelmetProvider, Helmet } from "react-helmet-async";
+import * as helmetPkg from "react-helmet-async";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { BlogSsrProvider, BlogSsrData } from "./contexts/BlogSsrContext";
@@ -184,6 +184,8 @@ type AppProps = {
   helmetContext?: object;
   blogSsrData?: BlogSsrData;
 };
+
+const { Helmet, HelmetProvider } = helmetPkg as typeof import("react-helmet-async");
 
 const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
   const Router = router ?? BrowserRouter;

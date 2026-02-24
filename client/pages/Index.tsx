@@ -34,13 +34,15 @@ import {
   MousePointer2,
   Check,
 } from "lucide-react";
-import gsap from "gsap";
+import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { Helmet } from "react-helmet-async";
 import { api } from "@/lib/api";
 
-gsap.registerPlugin(ScrollTrigger);
+if (typeof window !== "undefined") {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
 import FallingMoney from "@/components/ui/FallingMoney";
 import Footer from "@/components/Footer";

@@ -15,6 +15,9 @@ export default defineConfig(({ mode }) => ({
   build: {
     outDir: "dist/spa",
   },
+  ssr: {
+    noExternal: ["react-helmet-async"],
+  },
   plugins: [react(), expressPlugin()],
   resolve: {
     alias: {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
+import * as helmetPkg from 'react-helmet-async';
 import { useParams, Link } from 'react-router-dom';
 import { 
   Calendar, 
@@ -19,6 +19,8 @@ import { Badge } from '@/components/ui/badge';
 import SiteHeader from '@/components/SiteHeader';
 import Footer from '@/components/Footer';
 import { useBlogSsrData } from '@/contexts/BlogSsrContext';
+
+const { Helmet } = helmetPkg as typeof import("react-helmet-async");
 
 const BlogPost = () => {
   const { slug } = useParams<{ slug: string }>();

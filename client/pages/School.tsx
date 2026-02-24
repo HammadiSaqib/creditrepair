@@ -2104,7 +2104,7 @@ export default function School() {
                             </div>
                             <div className="flex items-center space-x-1 text-muted-foreground">
                               <BarChart3 className="h-3 w-3" />
-                              <Badge className={getDifficultyColor(path.difficulty)} variant="outline" className="text-xs">
+                              <Badge className={`${getDifficultyColor(path.difficulty)} text-xs`} variant="outline">
                                 {path.difficulty}
                               </Badge>
                             </div>
