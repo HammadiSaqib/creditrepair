@@ -30,17 +30,20 @@ function expressPlugin(): Plugin {
     apply: "serve", // Only apply during development (serve mode)
     configureServer(server) {
       // Use return so the configuration is async
-      return createServer()
+      return createServer(server)
         .then(({ app, httpServer, websocketService }) => {
           // Add the express app as middleware before Vite's internal middleware
           server.middlewares.use((req, res, next) => {
-            if (req.url?.startsWith("/api")) {
-              console.log("Proxying API request:", req.url, req.method);
-              // Cast the req and res objects to any to avoid type mismatch between Node's IncomingMessage and Express's Request
+            const urlPath = req.url?.split("?")[0] || "";
+            const isApi = urlPath.startsWith("/api");
+            const isBlogSsr = /^\/blog\/[^/]+/.test(urlPath);
+            if (isApi || isBlogSsr) {
+              if (isApi) {
+                console.log("Proxying API request:", req.url, req.method);
+              }
               return app(req as any, res as any, next);
-            } else {
-              next();
             }
+            next();
           });
           
           // Attach WebSocket service to Vite's HTTP server

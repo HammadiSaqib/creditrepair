@@ -18,12 +18,16 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import SiteHeader from '@/components/SiteHeader';
 import Footer from '@/components/Footer';
+import { useBlogSsrData } from '@/contexts/BlogSsrContext';
 
 const BlogPost = () => {
   const { slug } = useParams<{ slug: string }>();
-  const [post, setPost] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const ssrData = useBlogSsrData();
+  const initialNotFound = !!ssrData?.notFound;
+  const initialPost = ssrData?.post && ssrData.post.slug === slug ? ssrData.post : null;
+  const [post, setPost] = useState<any>(initialPost);
+  const [loading, setLoading] = useState(!initialPost && !initialNotFound);
+  const [error, setError] = useState(initialNotFound);
   const [relatedPosts, setRelatedPosts] = useState<any[]>([]);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -43,7 +47,7 @@ const BlogPost = () => {
       }
     };
 
-    if (slug) fetchPost();
+    if (slug && !initialPost && !initialNotFound) fetchPost();
   }, [slug]);
 
   useEffect(() => {
@@ -103,7 +107,8 @@ const BlogPost = () => {
     );
   }
 
-  const shareUrl = window.location.href;
+  const canonicalUrl = ssrData?.url || (typeof window !== 'undefined' ? window.location.href : '');
+  const shareUrl = canonicalUrl || (typeof window !== 'undefined' ? window.location.href : '');
   const normalizeContentHTML = (raw: string) => {
     const hasTags = /<\/?[a-z][\s\S]*>/i.test(raw);
     if (hasTags) return raw;
@@ -117,17 +122,40 @@ const BlogPost = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
       <Helmet>
-        <title>{post.seo_title || post.title} | Lend Ready Ai Blog</title>
+        <title>{post.seo_title || post.title} | Score Machine Blog</title>
         <meta name="description" content={post.seo_description || post.excerpt} />
         {post.seo_keywords && <meta name="keywords" content={post.seo_keywords} />}
+        {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
         
         {/* Open Graph */}
-        <meta property="og:title" content={post.title} />
-        <meta property="og:description" content={post.excerpt} />
+        <meta property="og:title" content={post.seo_title || post.title} />
+        <meta property="og:description" content={post.seo_description || post.excerpt} />
         {post.featured_image && <meta property="og:image" content={post.featured_image} />}
+        {canonicalUrl && <meta property="og:url" content={canonicalUrl} />}
         <meta property="og:type" content="article" />
         <meta property="article:published_time" content={post.published_at} />
         {post.author_first_name && <meta property="article:author" content={`${post.author_first_name} ${post.author_last_name}`} />}
+
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={post.seo_title || post.title} />
+        <meta name="twitter:description" content={post.seo_description || post.excerpt} />
+        {post.featured_image && <meta name="twitter:image" content={post.featured_image} />}
+
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Article",
+            headline: post.title,
+            description: post.seo_description || post.excerpt,
+            image: post.featured_image ? [post.featured_image] : undefined,
+            datePublished: post.published_at,
+            author: {
+              "@type": "Person",
+              name: `${post.author_first_name || ""} ${post.author_last_name || ""}`.trim() || "Score Machine"
+            },
+            mainEntityOfPage: canonicalUrl || undefined
+          })}
+        </script>
       </Helmet>
 
       <SiteHeader />

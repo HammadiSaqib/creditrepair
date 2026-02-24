@@ -21,8 +21,9 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:client && npm run build:server",
+    "build": "npm run build:client && npm run build:ssr && npm run build:server",
     "build:client": "vite build",
+    "build:ssr": "vite build --ssr client/entry-server.tsx --outDir dist/ssr",
     "build:server": "vite build --config vite.config.server.ts",
     "start": "node dist/server/production.mjs",
     "test": "vitest --run",

@@ -3,6 +3,39 @@ import { executeQuery } from '../database/mysqlConfig.js';
 
 const router = Router();
 
+export const fetchBlogPostBySlug = async (slug: string) => {
+  await executeQuery('UPDATE blog_posts SET views = views + 1 WHERE slug = ?', [slug]);
+
+  const posts = await executeQuery<any[]>(`
+    SELECT 
+      p.*, 
+      c.name as category_name, 
+      c.slug as category_slug,
+      u.first_name as author_first_name, 
+      u.last_name as author_last_name,
+      u.avatar as author_avatar
+    FROM blog_posts p
+    LEFT JOIN blog_categories c ON p.category_id = c.id
+    LEFT JOIN users u ON p.author_id = u.id
+    WHERE p.slug = ? AND p.status = 'published'
+  `, [slug]);
+
+  if (!posts || posts.length === 0) {
+    return null;
+  }
+
+  const post = posts[0];
+
+  const tags = await executeQuery(`
+    SELECT t.* 
+    FROM blog_tags t
+    JOIN blog_post_tags pt ON t.id = pt.tag_id
+    WHERE pt.post_id = ?
+  `, [post.id]);
+
+  return { ...post, tags };
+};
+
 // Get all published blog posts
 router.get('/', async (req, res) => {
   try {
@@ -82,39 +115,14 @@ router.get('/', async (req, res) => {
 router.get('/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
-    
-    // Update views count
-    await executeQuery('UPDATE blog_posts SET views = views + 1 WHERE slug = ?', [slug]);
 
-    const posts = await executeQuery<any[]>(`
-      SELECT 
-        p.*, 
-        c.name as category_name, 
-        c.slug as category_slug,
-        u.first_name as author_first_name, 
-        u.last_name as author_last_name,
-        u.avatar as author_avatar
-      FROM blog_posts p
-      LEFT JOIN blog_categories c ON p.category_id = c.id
-      LEFT JOIN users u ON p.author_id = u.id
-      WHERE p.slug = ? AND p.status = 'published'
-    `, [slug]);
+    const post = await fetchBlogPostBySlug(slug);
 
-    if (!posts || posts.length === 0) {
+    if (!post) {
       return res.status(404).json({ error: 'Post not found' });
     }
-
-    const post = posts[0];
-
-    // Get tags
-    const tags = await executeQuery(`
-      SELECT t.* 
-      FROM blog_tags t
-      JOIN blog_post_tags pt ON t.id = pt.tag_id
-      WHERE pt.post_id = ?
-    `, [post.id]);
-
-    res.json({ ...post, tags });
+    
+    res.json(post);
   } catch (error) {
     console.error('Error fetching blog post:', error);
     res.status(500).json({ error: 'Failed to fetch blog post' });

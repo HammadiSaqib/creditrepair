@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider, Helmet } from "react-helmet-async";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
+import { BlogSsrProvider, BlogSsrData } from "./contexts/BlogSsrContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SuperAdminProtectedRoute from "./components/SuperAdminProtectedRoute";
 import SupportProtectedRoute from "./components/SupportProtectedRoute";
@@ -175,7 +176,17 @@ function PageViewTracker() {
   return null;
 }
 
-const App = () => {
+type RouterComponent = React.ComponentType<{ children: React.ReactNode } & Record<string, unknown>>;
+
+type AppProps = {
+  router?: RouterComponent;
+  routerProps?: Record<string, unknown>;
+  helmetContext?: object;
+  blogSsrData?: BlogSsrData;
+};
+
+const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
+  const Router = router ?? BrowserRouter;
   useEffect(() => {
     if (!gaMeasurementId) return;
     ReactGA.initialize([
@@ -198,13 +209,14 @@ const App = () => {
 
   return (
     <ErrorBoundary>
-      <HelmetProvider>
+      <HelmetProvider context={helmetContext}>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
+            <BlogSsrProvider value={blogSsrData ?? null}>
+              <TooltipProvider>
+                <Toaster />
+                <Sonner />
+                <Router {...(routerProps ?? {})}>
                 <Helmet>
                   <script type="application/ld+json">
                     {JSON.stringify({
@@ -1127,10 +1139,11 @@ const App = () => {
           
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
-        </Routes>
-        </Suspense>
-      </BrowserRouter>
-    </TooltipProvider>
+                    </Routes>
+                  </Suspense>
+                </Router>
+              </TooltipProvider>
+            </BlogSsrProvider>
   </AuthProvider>
       </QueryClientProvider>
     </HelmetProvider>

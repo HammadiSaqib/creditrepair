@@ -1,6 +1,8 @@
 import dotenv from "dotenv";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
+import fs from "fs/promises";
+import type { ViteDevServer } from "vite";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +20,7 @@ import { authenticateToken, requireRole } from "./middleware/authMiddleware.js";
 import { requireSignedAdminContract } from "./middleware/contractGuard.js";
 import { jsonErrorHandler, generalErrorHandler } from "./middleware/errorHandlingMiddleware.js";
 import authRoutes from "./routes/authRoutes.js";
-import blogRoutes from "./routes/blog.js";
+import blogRoutes, { fetchBlogPostBySlug } from "./routes/blog.js";
 import newsletterRoutes from "./routes/newsletter.js";
 import profileUploadRoutes from "./routes/profileUpload.js";
 import communityRoutes from "./routes/community.js";
@@ -162,7 +164,7 @@ import multer from 'multer';
 import cardManagementRoutes from "./routes/cardManagement.js";
 import fundingDIYSubmissionsRoutes from "./routes/fundingDIYSubmissions.js";
 
-export async function createServer() {
+export async function createServer(vite?: ViteDevServer) {
   const app = express();
   const httpServer = createHttpServer(app);
 
@@ -316,6 +318,47 @@ export async function createServer() {
   // =============================================================================
   app.use("/api/auth", authRoutes);
   app.use("/api/blog", blogRoutes);
+  app.get("/blog/:slug", async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const url = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+      const post = await fetchBlogPostBySlug(slug);
+      const blogSsrData = post
+        ? { post, url }
+        : { post: null, url, notFound: true };
+
+      const isProd = process.env.NODE_ENV === "production" && !vite;
+      const templatePath = isProd
+        ? path.resolve(process.cwd(), "dist", "spa", "index.html")
+        : path.resolve(process.cwd(), "index.html");
+      let template = await fs.readFile(templatePath, "utf-8");
+      if (vite) {
+        template = await vite.transformIndexHtml(req.originalUrl, template);
+      }
+
+      let render: (url: string, blogSsrData: any) => Promise<{ appHtml: string; headTags: string }>;
+      if (vite) {
+        const mod = await vite.ssrLoadModule("/client/entry-server.tsx");
+        render = mod.render;
+      } else {
+        const entryServerPath = path.resolve(process.cwd(), "dist", "ssr", "entry-server.js");
+        const mod = await import(pathToFileURL(entryServerPath).href);
+        render = mod.render;
+      }
+
+      const { appHtml, headTags } = await render(req.originalUrl, blogSsrData);
+      const serializedData = JSON.stringify(blogSsrData).replace(/</g, "\\u003c");
+      const html = template
+        .replace('<div id="root"></div>', `<div id="root">${appHtml}</div>`)
+        .replace("</head>", `${headTags}</head>`)
+        .replace("</body>", `<script>window.__BLOG_SSR__=${serializedData}</script></body>`);
+
+      res.status(post ? 200 : 404).setHeader("Content-Type", "text/html").send(html);
+    } catch (error) {
+      console.error("Failed to render blog SSR:", error);
+      res.status(500).send("Internal Server Error");
+    }
+  });
   app.use("/api/newsletter", newsletterRoutes);
   app.post("/api/contact", async (req, res) => {
     try {
