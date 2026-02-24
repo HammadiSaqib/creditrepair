@@ -323,9 +323,19 @@ export async function createClient(req: AuthRequest, res: Response) {
   try {
     // Validate and sanitize input data
     const clientData = clientSchema.parse(req.body);
+    let baseUserId: number = req.user!.id;
+    if (req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+      const employeeLink = await getQuery(
+        'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+        [req.user!.id, 'active']
+      );
+      if (employeeLink?.admin_id) {
+        baseUserId = employeeLink.admin_id;
+      }
+    }
     
     // Check client quota before proceeding
-    const quotaValidation = await validateClientQuota(req.user!.id);
+    const quotaValidation = await validateClientQuota(baseUserId);
     
     if (!quotaValidation.canAdd) {
       return res.status(403).json({
@@ -339,7 +349,7 @@ export async function createClient(req: AuthRequest, res: Response) {
     // Check for duplicate email within user's clients
     const existingClient = await getQuery(
       'SELECT id FROM clients WHERE email = ? AND user_id = ?',
-      [clientData.email, req.user!.id]
+      [clientData.email, baseUserId]
     );
     
     if (existingClient) {
@@ -358,7 +368,7 @@ export async function createClient(req: AuthRequest, res: Response) {
           credit_score, target_score, notes, created_by, updated_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         params: [
-          req.user!.id,
+          baseUserId,
           sanitizeInput(clientData.first_name),
           sanitizeInput(clientData.last_name),
           clientData.email,
@@ -395,7 +405,7 @@ export async function createClient(req: AuthRequest, res: Response) {
       logActivity(
         'client_created',
         `New client created: ${clientData.first_name} ${clientData.last_name}`,
-        req.user!.id,
+        baseUserId,
         clientId,
         undefined,
         { email: clientData.email, status: clientData.status },
@@ -415,7 +425,13 @@ export async function createClient(req: AuthRequest, res: Response) {
     ]);
     
     if (req.user && req.user.email) {
-      const adminEmail = req.user.email;
+      let adminEmail = req.user.email;
+      if (baseUserId !== req.user!.id) {
+        const adminRecord = await getQuery('SELECT email FROM users WHERE id = ? LIMIT 1', [baseUserId]);
+        if (adminRecord?.email) {
+          adminEmail = adminRecord.email;
+        }
+      }
       const clientName = `${clientData.first_name} ${clientData.last_name}`.trim();
       const createdAt = new Date().toISOString();
       const html = `

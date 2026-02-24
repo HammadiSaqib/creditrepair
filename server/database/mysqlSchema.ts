@@ -41,6 +41,9 @@ export interface User {
   nmi_password?: string; // consider storing securely/encrypted
   nmi_test_mode?: boolean;
   nmi_gateway_logo?: string;
+  funding_override_enabled?: boolean;
+  funding_override_signature_text?: string | null;
+  funding_override_signed_at?: string | null;
   created_at: string;
   updated_at: string;
   created_by?: number;
@@ -597,6 +600,9 @@ async function createMySQLTables(): Promise<void> {
     nmi_password VARCHAR(255) NULL,
     nmi_test_mode BOOLEAN NOT NULL DEFAULT FALSE,
     nmi_gateway_logo VARCHAR(500) NULL,
+    funding_override_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    funding_override_signature_text TEXT NULL,
+    funding_override_signed_at DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       created_by INT NULL,
@@ -2315,6 +2321,46 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  nmi_gateway_logo column already exists');
     } else {
       console.log('⚠️  Error adding nmi_gateway_logo column:', error.message);
+    }
+  }
+
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN funding_override_enabled BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+    console.log('✅ Added funding_override_enabled column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  funding_override_enabled column already exists');
+    } else {
+      console.log('⚠️  Error adding funding_override_enabled column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN funding_override_signature_text TEXT NULL
+    `);
+    console.log('✅ Added funding_override_signature_text column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  funding_override_signature_text column already exists');
+    } else {
+      console.log('⚠️  Error adding funding_override_signature_text column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users 
+      ADD COLUMN funding_override_signed_at DATETIME NULL
+    `);
+    console.log('✅ Added funding_override_signed_at column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  funding_override_signed_at column already exists');
+    } else {
+      console.log('⚠️  Error adding funding_override_signed_at column:', error.message);
     }
   }
 

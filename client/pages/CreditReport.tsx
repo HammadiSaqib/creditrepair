@@ -1859,8 +1859,12 @@ export default function CreditReport() {
     const perBureauEligible = [0, 1, 2].map((i) => flagGroups.every((group) => group[i]));
     const localEligible = perBureauEligible.some(Boolean);
 
-    return Boolean(isFundingEligible) || localEligible;
-  }, [reportData, apiData, isFundingEligible]);
+    return (
+      Boolean(isFundingEligible) ||
+      localEligible ||
+      Boolean((userProfile as any)?.funding_override_enabled)
+    );
+  }, [reportData, apiData, isFundingEligible, userProfile]);
 
   const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
     || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
@@ -2041,8 +2045,38 @@ export default function CreditReport() {
   // Default targets aligned with Pay Down table
   const paydownTargets = [30, 25, 20, 15, 10, 5, 0];
   
-  // Calculate debt utilization from real account data
-  const calculateDebtUtilization = (accounts) => {
+  const resolveBureauIdFromText = (value: any) => {
+    const text = String(value || '').toLowerCase();
+    if (!text) return null;
+    if (text.includes('transunion') || text.includes('trans union') || text === 'tu') return 1;
+    if (text.includes('equifax') || text === 'eq') return 2;
+    if (text.includes('experian') || text === 'ex') return 3;
+    return null;
+  };
+
+  const resolveBureauIdFromAccount = (account: any) => {
+    return resolveBureauIdFromText(
+      account?.Bureau ||
+        account?.BureauName ||
+        account?.bureau ||
+        account?.BureauSource ||
+        account?.BureauType
+    );
+  };
+
+  const buildBureauIdMap = (accounts: any[]) => {
+    if (!Array.isArray(accounts)) return {};
+    return accounts.reduce((acc, account) => {
+      const rawId = Number(account?.BureauId);
+      const nameId = resolveBureauIdFromAccount(account);
+      if (rawId && nameId && !acc[rawId]) {
+        acc[rawId] = nameId;
+      }
+      return acc;
+    }, {} as Record<number, number>);
+  };
+
+  const calculateDebtUtilization = (accounts: any[], bureauIdMap: Record<number, number> = {}) => {
     const utilizationByBureau = {
       1: { // TransUnion
         openRevolvingBalance: 0,
@@ -2075,43 +2109,54 @@ export default function CreditReport() {
     }
 
     accounts.forEach(account => {
-      const bureauId = account.BureauId;
+      const rawBureauId = Number(account?.BureauId);
+      const nameBureauId = resolveBureauIdFromAccount(account);
+      const mappedBureauId = rawBureauId ? bureauIdMap[rawBureauId] ?? rawBureauId : null;
+      const bureauId = nameBureauId ?? mappedBureauId;
       const currentBalance = parseFloat(account.CurrentBalance) || 0;
       const creditLimit = parseFloat(account.CreditLimit) || 0;
       const highBalance = parseFloat(account.HighBalance) || 0;
       
-      if (!utilizationByBureau[bureauId]) return;
+      if (!bureauId || !utilizationByBureau[bureauId]) return;
 
       // Revolving accounts (credit cards, lines of credit)
-      if (
-        account.CreditType === 'Revolving Account' ||
-        account.AccountTypeDescription === 'Revolving Account' ||
-        String(account.CreditType || '').toLowerCase().includes('credit card') ||
-        String(account.AccountTypeDescription || '').toLowerCase().includes('credit card') ||
-        String(account.AccountType || '').toLowerCase().includes('credit card')
-      ) {
+      const creditTypeText = String(account.CreditType || '').toLowerCase();
+      const accountTypeText = String(account.AccountType || '').toLowerCase();
+      const accountTypeDescText = String(account.AccountTypeDescription || '').toLowerCase();
+      const statusText = String(account.AccountStatus || account.AccountCondition || '').toLowerCase();
+      const isOpen = statusText.includes('open') || statusText.includes('current');
+      const isRevolving =
+        creditTypeText.includes('revolving') ||
+        accountTypeDescText.includes('revolving') ||
+        accountTypeText.includes('revolving') ||
+        creditTypeText.includes('credit card') ||
+        accountTypeDescText.includes('credit card') ||
+        accountTypeText.includes('credit card');
+
+      if (isRevolving) {
         // All revolving accounts
         utilizationByBureau[bureauId].allRevolvingBalance += currentBalance;
         utilizationByBureau[bureauId].allRevolvingLimit += creditLimit || highBalance;
         
         // Open revolving accounts only
-        if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+        if (isOpen) {
           utilizationByBureau[bureauId].openRevolvingBalance += currentBalance;
           utilizationByBureau[bureauId].openRevolvingLimit += creditLimit || highBalance;
         }
       }
       
       // Real estate debt (mortgages)
-      if (account.AccountType === 'Mortgage' || account.Industry?.includes('Real Estate') || 
-          account.CreditorName?.toLowerCase().includes('mortgage')) {
-        if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+      const industryText = String(account.Industry || '').toLowerCase();
+      const creditorNameText = String(account.CreditorName || '').toLowerCase();
+      if (accountTypeText.includes('mortgage') || industryText.includes('real estate') || creditorNameText.includes('mortgage')) {
+        if (isOpen) {
           utilizationByBureau[bureauId].realEstateDebt += currentBalance;
         }
       }
       
       // Installment debt (auto loans, personal loans, etc.)
-      if (account.CreditType === 'Installment Account' || account.AccountTypeDescription === 'Installment Account') {
-        if (account.AccountStatus === 'Open' || account.AccountStatus === 'Current') {
+      if (creditTypeText.includes('installment') || accountTypeDescText.includes('installment')) {
+        if (isOpen) {
           utilizationByBureau[bureauId].installmentDebt += currentBalance;
         }
       }
@@ -2130,7 +2175,11 @@ export default function CreditReport() {
 
   // Get dynamic debt utilization data
   const getDebtUtilizationData = () => {
-    if (!apiData?.Accounts) {
+    const accounts =
+      apiData?.Accounts ||
+      apiData?.reportData?.Accounts ||
+      apiData?.reportData?.reportData?.Accounts;
+    if (!Array.isArray(accounts) || accounts.length === 0) {
       // Return default structure if no account data
       return {
         1: { openRevolvingBalance: 0, openRevolvingLimit: 0, allRevolvingBalance: 0, allRevolvingLimit: 0, realEstateDebt: 0, installmentDebt: 0 },
@@ -2139,7 +2188,8 @@ export default function CreditReport() {
       };
     }
     
-    return calculateDebtUtilization(apiData.Accounts);
+    const bureauIdMap = buildBureauIdMap(accounts);
+    return calculateDebtUtilization(accounts, bureauIdMap);
   };
 
   // Form validation functions
@@ -8332,9 +8382,38 @@ export default function CreditReport() {
 
                 let accounts: Array<{ creditor: string; accountNumber?: string; ownership?: string; limit: number; balance: number; opened?: any }> = [];
 
+                const isRevolvingAccount = (acc: any) => {
+                  const typeText = String(
+                    acc?.CreditType ||
+                    acc?.AccountTypeDescription ||
+                    acc?.AccountType ||
+                    acc?.type ||
+                    ''
+                  ).toLowerCase();
+                  const industryText = String(acc?.Industry || '').toLowerCase();
+                  return (
+                    typeText.includes('revolving') ||
+                    typeText.includes('credit card') ||
+                    typeText.includes('charge account') ||
+                    typeText.includes('flexible spending') ||
+                    industryText.includes('bank credit cards')
+                  );
+                };
+
+                const isOpenAccount = (acc: any) => {
+                  const statusText = String(
+                    acc?.AccountStatus ||
+                    acc?.AccountCondition ||
+                    acc?.status ||
+                    ''
+                  ).toLowerCase();
+                  return statusText.includes('open') || statusText.includes('current');
+                };
+
                 if (Array.isArray(apiAccounts) && apiAccounts.length > 0) {
                   accounts = apiAccounts
                     .filter((acc: any) => getAccountBalance(acc) > 0)
+                    .filter((acc: any) => isRevolvingAccount(acc) && isOpenAccount(acc))
                     .map((acc: any) => ({
                       creditor: acc.CreditorName || acc.Creditor || '—',
                       accountNumber: acc.AccountNumber || acc.MaskAccountNumber,
@@ -8346,6 +8425,7 @@ export default function CreditReport() {
                 } else if (Array.isArray(sampleAccounts) && sampleAccounts.length > 0) {
                   accounts = sampleAccounts
                     .filter((acc: any) => getAccountBalance(acc) > 0)
+                    .filter((acc: any) => isRevolvingAccount(acc) && isOpenAccount(acc))
                     .map((acc: any) => ({
                       creditor: acc.creditorName || acc.creditor || '—',
                       accountNumber: acc.accountNumber,

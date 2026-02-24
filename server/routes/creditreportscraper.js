@@ -2099,6 +2099,7 @@ router.get('/history', authenticateToken, async (req, res) => {
   try {
     const { clientId } = req.query;
     const userId = req.user.id;
+    let baseUserId = userId;
     
     console.log('🔍 DEBUG: GET /api/credit-reports/history request received (JS file)');
     console.log('🔍 DEBUG: User ID:', userId);
@@ -2117,6 +2118,20 @@ router.get('/history', authenticateToken, async (req, res) => {
     
     connection = await Promise.race([connectionPromise, timeoutPromise]);
     console.log('🔍 DEBUG: Database connection established');
+
+    if (req.user.role !== 'super_admin' && req.user.role !== 'client' && req.user.role !== 'admin') {
+      try {
+        const [rows] = await connection.query(
+          'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+          [userId, 'active']
+        );
+        if (Array.isArray(rows) && rows.length > 0 && rows[0]?.admin_id) {
+          baseUserId = Number(rows[0].admin_id);
+        }
+      } catch (err) {
+        console.warn('🔍 DEBUG: Failed to resolve admin_id for employee:', err?.message || err);
+      }
+    }
     
     // Build query based on whether clientId is provided - using credit_report_history table
     let query = `
@@ -2159,7 +2174,7 @@ router.get('/history', authenticateToken, async (req, res) => {
     } else {
       // Regular users (admin, support, etc.) - filter by user_id
       query += ' WHERE c.user_id = ?';
-      params.push(userId);
+      params.push(baseUserId);
     }
     
     // Add client filter if clientId is provided (and not already filtered by client role)

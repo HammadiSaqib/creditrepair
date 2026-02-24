@@ -394,11 +394,22 @@ export async function getClient(req: AuthRequest, res: Response) {
 export async function createClient(req: AuthRequest, res: Response) {
   try {
     const clientData = clientSchema.parse(req.body);
+    let baseUserId: number = req.user!.id;
+    const isFundingManager = req.user!.role === 'funding_manager';
+    if (!isFundingManager && req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+      const employeeLink = await getQuery(
+        'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+        [req.user!.id, 'active']
+      );
+      if (employeeLink?.admin_id) {
+        baseUserId = employeeLink.admin_id;
+      }
+    }
     
     // Use transaction to prevent race conditions in quota validation
     const result = await executeTransaction(async (connection) => {
       // Check client quota within transaction to prevent race conditions
-      const quotaValidation = await validateClientQuota(req.user!.id);
+      const quotaValidation = await validateClientQuota(baseUserId);
       
       if (!quotaValidation.canAdd) {
         throw new Error(JSON.stringify({
@@ -421,7 +432,7 @@ export async function createClient(req: AuthRequest, res: Response) {
           platform, platform_email, platform_password, created_by, updated_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        req.user!.id,
+        baseUserId,
         clientData.first_name || null,
         clientData.last_name || null,
         clientData.email || null,
@@ -444,8 +455,8 @@ export async function createClient(req: AuthRequest, res: Response) {
         clientData.platform || null,
         platformEmail || null,
         platformPassword || null,
-        req.user!.id, // created_by
-        req.user!.id  // updated_by
+        req.user!.id,
+        req.user!.id
       ]);
       
       // connection.execute returns [ResultSetHeader, FieldPacket[]]; we need the header
@@ -475,7 +486,7 @@ export async function createClient(req: AuthRequest, res: Response) {
       INSERT INTO activities (user_id, client_id, type, description)
       VALUES (?, ?, ?, ?)
     `, [
-      req.user!.id,
+      baseUserId,
       insertedId,
       'client_added',
       `New client added: ${clientData.first_name} ${clientData.last_name}${clientData.platform ? ` (via ${clientData.platform})` : ''}`
@@ -485,7 +496,7 @@ export async function createClient(req: AuthRequest, res: Response) {
       INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description, ip_address, user_agent, session_id)
       VALUES (?, 'create', 'client', ?, ?, ?, ?, ?)
     `, [
-      req.user!.id,
+      baseUserId,
       insertedId,
       `New client added: ${clientData.first_name} ${clientData.last_name}${clientData.platform ? ` (via ${clientData.platform})` : ''}`,
       req.ip,

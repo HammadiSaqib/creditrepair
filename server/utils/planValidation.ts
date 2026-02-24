@@ -9,17 +9,30 @@ export interface PlanLimits {
   planStatus?: string;
 }
 
+async function resolvePlanUserId(userId: number): Promise<number> {
+  const employeeLink = await getQuery(
+    'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+    [userId, 'active']
+  );
+  if (employeeLink?.admin_id) {
+    return Number(employeeLink.admin_id);
+  }
+  return userId;
+}
+
 /**
  * Check user's active plan and client limits
  * @param userId - The user ID to check
  * @returns PlanLimits object with plan information and validation status
  */
 export async function checkUserPlanLimits(userId: number): Promise<PlanLimits> {
+  let effectiveUserId = userId;
   try {
     // First, get the user's current client count
+    effectiveUserId = await resolvePlanUserId(userId);
     const clientCountResult = await getQuery(
       'SELECT COUNT(*) as count FROM clients WHERE user_id = ?',
-      [userId]
+      [effectiveUserId]
     );
     
     const currentClientCount = clientCountResult?.count || 0;
@@ -28,7 +41,7 @@ export async function checkUserPlanLimits(userId: number): Promise<PlanLimits> {
     // This allows unlimited clients and bypasses subscription requirements
     const adminProfile = await getQuery(
       'SELECT permissions FROM admin_profiles WHERE user_id = ?',
-      [userId]
+      [effectiveUserId]
     );
     try {
       const rawPermissions = adminProfile?.permissions;
@@ -61,7 +74,7 @@ export async function checkUserPlanLimits(userId: number): Promise<PlanLimits> {
       WHERE s.user_id = ? AND s.status = 'active'
       ORDER BY s.created_at DESC
       LIMIT 1
-    `, [userId]);
+    `, [effectiveUserId]);
 
     // If no active subscription found, check admin_subscriptions table
     let adminSubscription = null;
@@ -78,7 +91,7 @@ export async function checkUserPlanLimits(userId: number): Promise<PlanLimits> {
         WHERE ap.user_id = ? AND asub.status = 'active'
         ORDER BY asub.created_at DESC
         LIMIT 1
-      `, [userId]);
+      `, [effectiveUserId]);
     }
 
     const subscription = activeSubscription || adminSubscription;
@@ -113,7 +126,7 @@ export async function checkUserPlanLimits(userId: number): Promise<PlanLimits> {
     // In case of error, be conservative and allow only 1 client
     const clientCountResult = await getQuery(
       'SELECT COUNT(*) as count FROM clients WHERE user_id = ?',
-      [userId]
+      [effectiveUserId]
     ).catch(() => ({ count: 0 }));
     
     const currentClientCount = clientCountResult?.count || 0;

@@ -23,6 +23,9 @@ interface UserProfile {
   nmi_password?: string;
   nmi_test_mode?: boolean;
   nmi_gateway_logo?: string | null;
+  funding_override_enabled?: boolean;
+  funding_override_signature_text?: string | null;
+  funding_override_signed_at?: string | null;
 }
 
 interface AuthContextType {

@@ -212,6 +212,9 @@ async function createTables() {
       avatar TEXT,
       credit_repair_url TEXT,
       onboarding_slug TEXT,
+      funding_override_enabled BOOLEAN DEFAULT 0,
+      funding_override_signature_text TEXT,
+      funding_override_signed_at DATETIME,
       account_type TEXT DEFAULT 'admin' CHECK (account_type IN ('admin','affiliate_only')),
       referred_by_user_id INTEGER,
       referral_source TEXT CHECK (referral_source IN ('product_link','affiliate_link')),
@@ -232,6 +235,18 @@ async function createTables() {
   }
   try {
     await runQuery(`ALTER TABLE users ADD COLUMN onboarding_slug TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN funding_override_enabled BOOLEAN DEFAULT 0`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN funding_override_signature_text TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN funding_override_signed_at DATETIME`);
   } catch (err) {
   }
   try {

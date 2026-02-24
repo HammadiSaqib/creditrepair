@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -36,6 +37,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import DashboardLayout from "@/components/DashboardLayout";
 import AdminAgreementTab from "@/components/AdminAgreementTab";
@@ -142,6 +144,11 @@ export default function Settings() {
     testMode: false,
     gatewayLogoFile: null as File | null,
   });
+  const [fundingOverrideEnabled, setFundingOverrideEnabled] = useState(false);
+  const [fundingOverrideDialogOpen, setFundingOverrideDialogOpen] = useState(false);
+  const [fundingOverrideAcknowledged, setFundingOverrideAcknowledged] = useState(false);
+  const [fundingOverrideSignature, setFundingOverrideSignature] = useState("");
+  const [fundingOverrideSaving, setFundingOverrideSaving] = useState(false);
   const [savingFunding, setSavingFunding] = useState(false);
   const { toast } = useToast();
   const { userProfile, refreshProfile } = useAuthContext();
@@ -196,6 +203,7 @@ export default function Settings() {
       nmiPassword: prev.nmiPassword,
       testMode: !!(userProfile as any).nmi_test_mode,
     }));
+    setFundingOverrideEnabled(!!(userProfile as any).funding_override_enabled);
   }, [userProfile]);
 
   // Initialize credit repair URL input from profile
@@ -869,6 +877,79 @@ export default function Settings() {
     }
   };
 
+  const canUseFundingOverride = useMemo(() => {
+    return userProfile?.role === "admin" || userProfile?.role === "super_admin";
+  }, [userProfile]);
+
+  const fundingOverrideSignedAt = useMemo(() => {
+    const raw = (userProfile as any)?.funding_override_signed_at;
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return String(raw);
+    return d.toLocaleString();
+  }, [userProfile]);
+
+  const handleFundingOverrideToggle = async (checked: boolean) => {
+    if (checked) {
+      setFundingOverrideAcknowledged(false);
+      setFundingOverrideSignature("");
+      setFundingOverrideDialogOpen(true);
+      return;
+    }
+    try {
+      setFundingOverrideSaving(true);
+      await authApi.updateProfile({ funding_override_enabled: false });
+      await refreshProfile();
+      setFundingOverrideEnabled(false);
+      toast({
+        title: "Funding override disabled",
+        description: "Funding access now follows fundability requirements.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Failed to disable funding override",
+        variant: "destructive",
+      });
+    } finally {
+      setFundingOverrideSaving(false);
+    }
+  };
+
+  const handleConfirmFundingOverride = async () => {
+    const signature = fundingOverrideSignature.trim();
+    if (!fundingOverrideAcknowledged || !signature) {
+      toast({
+        title: "Action required",
+        description: "Accept the warning and provide your signature to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      setFundingOverrideSaving(true);
+      await authApi.updateProfile({
+        funding_override_enabled: true,
+        funding_override_signature_text: signature,
+      });
+      await refreshProfile();
+      setFundingOverrideEnabled(true);
+      setFundingOverrideDialogOpen(false);
+      toast({
+        title: "Funding override enabled",
+        description: "All clients can access the Funding page regardless of fundability.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Failed to enable funding override",
+        variant: "destructive",
+      });
+    } finally {
+      setFundingOverrideSaving(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Active":
@@ -1347,6 +1428,207 @@ export default function Settings() {
 
         <TabsContent value="agreement" className="space-y-8">
           <AdminAgreementTab />
+          {canUseFundingOverride ? (
+            <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="gradient-text-primary flex items-center">
+                  <Shield className="h-5 w-5 mr-2" />
+                  Funding Module Override Agreement
+                </CardTitle>
+                <CardDescription>
+                  Mandatory electronic acceptance required to allow all clients into Funding
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between border border-border/40 rounded-md p-4">
+                  <div>
+                    <div className="font-medium">Enable Funding Override</div>
+                    <p className="text-sm text-muted-foreground">
+                      Allow all clients access to the Funding page regardless of qualification status
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant={fundingOverrideEnabled ? "default" : "outline"}>
+                      {fundingOverrideEnabled ? "Enabled" : "Disabled"}
+                    </Badge>
+                    <Switch
+                      checked={fundingOverrideEnabled}
+                      onCheckedChange={handleFundingOverrideToggle}
+                      disabled={fundingOverrideSaving}
+                    />
+                  </div>
+                </div>
+                {fundingOverrideEnabled ? (
+                  <div className="text-xs text-muted-foreground">
+                    Signed by {(userProfile as any)?.funding_override_signature_text || "Unknown"}
+                    {fundingOverrideSignedAt ? ` • ${fundingOverrideSignedAt}` : ""}
+                  </div>
+                ) : null}
+                <ScrollArea className="h-[420px] rounded-md border border-border/40 bg-white/50 dark:bg-slate-900/30 p-4">
+                  <div className="space-y-4 text-sm leading-relaxed">
+                    <div className="text-base font-semibold">THE SCORE MACHINE</div>
+                    <div className="text-sm font-semibold">Funding Module Override Agreement</div>
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Mandatory Electronic Acceptance Required
+                    </div>
+                    <div>
+                      This Funding Module Override Agreement (“Agreement”) is entered into by and between:
+                      The Score Machine, a SaaS credit analytics and educational software platform (“Company”),
+                      and The User / Affiliate / Partner enabling this setting (“User”).
+                      By enabling the Funding Module Override setting inside the platform, User agrees to the following terms:
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">1. Purpose of the Funding Module</div>
+                      <div>
+                        The Score Machine software provides automated credit analytics, risk indicators, and fundability
+                        readiness metrics based on data supplied by the User and/or the end client. The standard system
+                        configuration requires certain Score Machine minimum qualification thresholds before a client is
+                        permitted access to the Funding Page. These thresholds exist to reduce client decline risk, improve
+                        approval probability, protect affiliate conversion ratios, and maintain underwriting integrity.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">2. Override Election by User</div>
+                      <div>
+                        The User is voluntarily choosing to disable Score Machine fundability requirements and allow all
+                        clients access to the Funding Page regardless of qualification status. By selecting this option,
+                        User acknowledges that they are overriding the system’s recommended underwriting safeguards.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">3. Assumption of Risk</div>
+                      <div>
+                        If User disables the Score Machine fundability requirements: the Company makes no representation
+                        regarding approval likelihood; the Company does not guarantee funding outcomes; the Company does not
+                        guarantee lender engagement, approval, terms, rates, or funding amounts. User understands that the
+                        Score Machine’s qualification system is designed to reduce denials and bypassing these safeguards
+                        increases the probability of declines. User assumes full responsibility for client approval or denial
+                        outcomes, client dissatisfaction, chargebacks or refund disputes, commission losses, reputation
+                        damage, and any business loss resulting from funding denials.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">4. No Liability Clause</div>
+                      <div>
+                        Under no circumstances shall The Score Machine, its owners, officers, developers, affiliates, or
+                        representatives be liable for funding denials, reduced approval rates, client complaints related to
+                        funding outcomes, lost revenue or commissions, or any indirect, incidental, consequential, or special
+                        damages. If User elects to override system requirements, all resulting outcomes are the sole
+                        responsibility of the User.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">5. No Guarantee of Lender Approval</div>
+                      <div>
+                        The Score Machine is not a lender, does not issue credit, does not make underwriting decisions, does
+                        not control lender criteria, and does not control approval algorithms. All funding decisions are made
+                        solely by independent third-party lenders.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">6. Indemnification</div>
+                      <div>
+                        User agrees to indemnify, defend, and hold harmless The Score Machine from and against any claims,
+                        client disputes, regulatory complaints, chargebacks, lawsuits, damages, and legal fees arising from
+                        the User’s decision to override system fundability requirements.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">7. No Reliance on System Override</div>
+                      <div>
+                        User acknowledges that the system override feature is provided as a configurable tool and not as a
+                        recommendation. The Company does not recommend bypassing fundability thresholds.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">8. Electronic Acceptance</div>
+                      <div>
+                        By enabling the Funding Override setting, User confirms they understand the risks, accept full
+                        responsibility, waive claims against The Score Machine, and legally agree to this Agreement.
+                        Electronic activation constitutes binding acceptance.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">9. Governing Law</div>
+                      <div>
+                        This Agreement shall be governed by the laws of the Company’s principal place of business
+                        jurisdiction.
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="font-semibold">10. Entire Agreement</div>
+                      <div>
+                        This Agreement supplements and does not replace the Master Terms of Service. In the event of
+                        conflict, this Funding Override Agreement shall control with respect to funding eligibility settings.
+                      </div>
+                    </div>
+                  </div>
+                </ScrollArea>
+                <Dialog open={fundingOverrideDialogOpen} onOpenChange={setFundingOverrideDialogOpen}>
+                  <DialogContent className="max-w-xl">
+                    <DialogHeader>
+                      <DialogTitle>⚠️ Warning</DialogTitle>
+                      <DialogDescription>
+                        You are disabling The Score Machine’s minimum fundability safeguards. This may increase client denials.
+                        All approval outcomes will be your responsibility. The Score Machine is not liable for funding results.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm">
+                        Confirm you understand the risks before enabling the override.
+                      </div>
+                      <div className="flex items-start space-x-2">
+                        <Checkbox
+                          id="funding-override-ack"
+                          checked={fundingOverrideAcknowledged}
+                          onCheckedChange={(checked) => setFundingOverrideAcknowledged(checked === true)}
+                        />
+                        <Label htmlFor="funding-override-ack" className="text-sm">
+                          I acknowledge and accept full responsibility.
+                        </Label>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="funding-override-signature">Signature (full legal name)</Label>
+                        <Input
+                          id="funding-override-signature"
+                          placeholder="Full legal name"
+                          value={fundingOverrideSignature}
+                          onChange={(e) => setFundingOverrideSignature(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex justify-end space-x-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setFundingOverrideDialogOpen(false)}
+                          disabled={fundingOverrideSaving}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          className="gradient-primary hover:opacity-90"
+                          onClick={handleConfirmFundingOverride}
+                          disabled={
+                            fundingOverrideSaving || !fundingOverrideAcknowledged || !fundingOverrideSignature.trim()
+                          }
+                        >
+                          {fundingOverrideSaving ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Enabling...
+                            </>
+                          ) : (
+                            "Enable Override"
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </CardContent>
+            </Card>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-8">

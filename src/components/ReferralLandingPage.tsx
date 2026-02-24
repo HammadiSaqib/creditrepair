@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { CheckCircle, Star, Users, ArrowRight, Shield, BarChart3, Menu, Play, Zap, FileText, TrendingUp, Mail, DollarSign, Sparkles, Globe, Target } from 'lucide-react';
+import { CheckCircle, Star, Users, ArrowRight, Shield, BarChart3, Menu, Play, Zap, FileText, TrendingUp, Mail, DollarSign, Sparkles, Globe, Phone, Target } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import FallingMoney from '@/components/ui/FallingMoney'; // Assuming this is available as in Index.tsx
 import { Helmet } from "react-helmet-async";
@@ -55,12 +55,20 @@ const ReferralFooter: React.FC<{ affiliate: AffiliateData }> = ({ affiliate }) =
               Empowering financial futures through AI-driven credit intelligence and professional management tools.
             </p>
             <div className="flex items-center gap-4 pt-2">
-              <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 border border-slate-800">
-                <Globe className="w-4 h-4" />
-              </div>
-              <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 border border-slate-800">
+              <a
+                href="tel:+14752598768"
+                className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 border border-slate-800"
+                aria-label="Call (475) 259-8768"
+              >
+                <Phone className="w-4 h-4" />
+              </a>
+              <a
+                href="mailto:support@thescoremachine.com"
+                className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-slate-400 border border-slate-800"
+                aria-label="Email support@thescoremachine.com"
+              >
                 <Mail className="w-4 h-4" />
-              </div>
+              </a>
             </div>
           </div>
 

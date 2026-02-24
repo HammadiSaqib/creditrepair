@@ -3,6 +3,18 @@ import { runQuery, getQuery, allQuery } from "../database/databaseAdapter.js";
 import { AuthRequest } from "../middleware/authMiddleware.js";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
 
+async function resolveAnalyticsUserId(user: AuthRequest["user"]): Promise<number> {
+  if (!user) return 0;
+  if (user.role === "admin" || user.role === "super_admin") return user.id;
+  if (user.role === "client") return user.id;
+  const employeeLink = await getQuery(
+    "SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1",
+    [user.id, "active"],
+  );
+  if (employeeLink?.admin_id) return Number(employeeLink.admin_id);
+  return user.id;
+}
+
 function getGa4Credentials():
   | { client_email: string; private_key: string }
   | undefined {
@@ -37,7 +49,7 @@ function getGa4Credentials():
 // Get dashboard overview analytics
 export async function getDashboardAnalytics(req: AuthRequest, res: Response) {
   try {
-    const userId = req.user!.id;
+    const userId = await resolveAnalyticsUserId(req.user);
     console.log("getDashboardAnalytics called for user ID:", userId);
 
     // Get current date ranges
@@ -212,7 +224,7 @@ export async function getDashboardAnalytics(req: AuthRequest, res: Response) {
 export async function getRevenue(req: AuthRequest, res: Response) {
   try {
     const { period = "monthly" } = req.query;
-    const userId = req.user!.id;
+    const userId = await resolveAnalyticsUserId(req.user);
 
     // Mock revenue data based on client count (in real app, you'd have a payments table)
     let dateFormat: string;
@@ -273,7 +285,7 @@ export async function getRevenue(req: AuthRequest, res: Response) {
 // Get performance metrics
 export async function getPerformanceMetrics(req: AuthRequest, res: Response) {
   try {
-    const userId = req.user!.id;
+    const userId = await resolveAnalyticsUserId(req.user);
 
     // Client acquisition metrics
     const acquisitionData = await allQuery(`
@@ -345,7 +357,7 @@ export async function getPerformanceMetrics(req: AuthRequest, res: Response) {
 // Get client analytics
 export async function getClientAnalytics(req: AuthRequest, res: Response) {
   try {
-    const userId = req.user!.id;
+    const userId = await resolveAnalyticsUserId(req.user);
 
     // Client status distribution
     const statusDistribution = await allQuery(`
@@ -413,7 +425,7 @@ export async function getClientAnalytics(req: AuthRequest, res: Response) {
 // Get financial insights
 export async function getFinancialInsights(req: AuthRequest, res: Response) {
   try {
-    const userId = req.user!.id;
+    const userId = await resolveAnalyticsUserId(req.user);
 
     // Monthly recurring revenue (MRR) - mock calculation
     const { mrr } = await getQuery(`
@@ -483,7 +495,7 @@ export async function getFinancialInsights(req: AuthRequest, res: Response) {
 export async function getRevenueAnalytics(req: AuthRequest, res: Response) {
   try {
     const { period = 'monthly' } = req.query;
-    const userId = req.user!.id;
+    const userId = await resolveAnalyticsUserId(req.user);
 
     // Determine date format based on period
     let dateFormat: string;
@@ -530,7 +542,7 @@ export async function getRevenueAnalytics(req: AuthRequest, res: Response) {
 export async function getRecentActivities(req: AuthRequest, res: Response) {
   try {
     const { limit = 10 } = req.query;
-    const userId = req.user!.id;
+    const userId = await resolveAnalyticsUserId(req.user);
 
     // Sanitize and enforce a safe numeric limit (avoid binding LIMIT as a param)
     const parsedLimit = parseInt(String(limit), 10);

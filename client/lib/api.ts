@@ -197,6 +197,8 @@ export const authApi = {
     nmi_password?: string;
     nmi_test_mode?: boolean;
     nmi_gateway_logo?: string;
+    funding_override_enabled?: boolean;
+    funding_override_signature_text?: string;
   }) =>
     api.put('/api/auth/profile', profileData),
   

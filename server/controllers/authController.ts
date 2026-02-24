@@ -1180,6 +1180,9 @@ export class AuthController {
         company_name: user.company_name,
         credit_repair_url: user.credit_repair_url || null,
         onboarding_slug: user.onboarding_slug || null,
+        funding_override_enabled: user.funding_override_enabled ? true : false,
+        funding_override_signature_text: user.funding_override_signature_text || null,
+        funding_override_signed_at: user.funding_override_signed_at || null,
         phone: user.phone,
         address: user.address,
         city: user.city,
@@ -1260,6 +1263,8 @@ export class AuthController {
         company_name: z.string().nullable().optional(),
         credit_repair_url: z.string().optional(),
         onboarding_slug: z.string().optional(),
+        funding_override_enabled: z.boolean().optional(),
+        funding_override_signature_text: z.string().optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
         address: z.string().optional(),
@@ -1336,6 +1341,23 @@ export class AuthController {
         const role = req.user!.role;
         if (!['admin', 'super_admin', 'funding_manager'].includes(role)) {
           return res.status(403).json({ error: 'Insufficient permissions to update funding settings' });
+        }
+      }
+
+      const includesFundingOverrideUpdate = Object.prototype.hasOwnProperty.call(profileUpdates, 'funding_override_enabled')
+        || Object.prototype.hasOwnProperty.call(profileUpdates, 'funding_override_signature_text');
+      if (includesFundingOverrideUpdate) {
+        const role = req.user!.role;
+        if (!['admin', 'super_admin'].includes(role)) {
+          return res.status(403).json({ error: 'Insufficient permissions to update funding override' });
+        }
+        if (profileUpdates.funding_override_enabled === true) {
+          const signatureText = (profileUpdates as any).funding_override_signature_text;
+          if (!signatureText || !String(signatureText).trim()) {
+            return res.status(400).json({ error: 'Signature is required to enable funding override' });
+          }
+          (profileUpdates as any).funding_override_signature_text = String(signatureText).trim();
+          (profileUpdates as any).funding_override_signed_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
         }
       }
 
@@ -1494,6 +1516,9 @@ export class AuthController {
           company_name: updatedUser.company_name,
           credit_repair_url: updatedUser.credit_repair_url,
           onboarding_slug: updatedUser.onboarding_slug || null,
+          funding_override_enabled: updatedUser.funding_override_enabled ? true : false,
+          funding_override_signature_text: updatedUser.funding_override_signature_text || null,
+          funding_override_signed_at: updatedUser.funding_override_signed_at || null,
           phone: updatedUser.phone,
           address: updatedUser.address,
           city: updatedUser.city,

@@ -93,7 +93,7 @@ const VideoThumbnail = ({ src, alt, className }: { src: string; alt?: string; cl
     };
   }, [src]);
   if (thumb) {
-    return <img src={thumb} alt={alt || ""} className={`w-full h-full object-cover ${className || ""}`} />;
+    return <img src={thumb} alt={alt || ""} loading="lazy" decoding="async" className={`w-full h-full object-cover ${className || ""}`} />;
   }
   if (failed) {
     return <div className={`w-full h-full ${className || ""} bg-gradient-to-b from-slate-900 to-slate-800`} />;
@@ -561,7 +561,7 @@ export default function Index() {
       <SiteHeader />
 
       {/* --- HERO SECTION --- */}
-      <section ref={heroRef} className="relative min-h-[100vh] flex items-center pt-20 lg:pt-0 overflow-hidden">
+      <section ref={heroRef} className="relative min-h-[100vh] flex items-center pt-20 lg:pt-0">
         
         {/* Animated Background Layer */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none select-none">
@@ -625,6 +625,8 @@ export default function Index() {
                 <img
                   src="/frame_chrome_mac_dark.png"
                   alt="Score Machine dashboard preview"
+                  loading="lazy"
+                  decoding="async"
                   className="relative w-full max-w-[720px] rounded-3xl shadow-2xl border border-slate-200"
                 />
               </div>
@@ -804,8 +806,14 @@ export default function Index() {
                     {!videoPlaying ? (
                        <div className="absolute inset-0 cursor-pointer group" onClick={() => setVideoPlaying(true)}>
                           <img 
-                            src="https://img.youtube.com/vi/4KwPYMarpbo/maxresdefault.jpg" 
-                            alt="Score Machine Pro Full Walkthrough (2025)" 
+                            src="https://img.youtube.com/vi/4KwPYMarpbo/maxresdefault.jpg"
+                            srcSet="https://img.youtube.com/vi/4KwPYMarpbo/mqdefault.jpg 320w, https://img.youtube.com/vi/4KwPYMarpbo/hqdefault.jpg 480w, https://img.youtube.com/vi/4KwPYMarpbo/sddefault.jpg 640w, https://img.youtube.com/vi/4KwPYMarpbo/maxresdefault.jpg 1280w"
+                            sizes="(max-width: 640px) 100vw, 600px"
+                            alt="Score Machine Pro Full Walkthrough (2025)"
+                            loading="lazy"
+                            decoding="async"
+                            width="1280"
+                            height="720"
                             className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity duration-500"
                           />
                           <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/0 transition-colors">
