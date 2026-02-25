@@ -61,6 +61,55 @@ export async function initializeStripe() {
   }
 }
 
+async function getOrCreateStripeCustomer(userId: number) {
+  let userRow: any = null;
+  let isAffiliate = false;
+  const users = await executeQuery<any[]>(
+    'SELECT id, stripe_customer_id, email, first_name, last_name FROM users WHERE id = ? LIMIT 1',
+    [userId]
+  );
+  if (Array.isArray(users) && users.length > 0) {
+    userRow = users[0];
+  } else {
+    const affiliates = await executeQuery<any[]>(
+      'SELECT id, stripe_customer_id, email, first_name, last_name FROM affiliates WHERE id = ? LIMIT 1',
+      [userId]
+    );
+    if (Array.isArray(affiliates) && affiliates.length > 0) {
+      userRow = affiliates[0];
+      isAffiliate = true;
+    }
+  }
+
+  if (!userRow) {
+    return null;
+  }
+
+  if (!stripe) {
+    await initializeStripe();
+  }
+  if (!stripe) {
+    return null;
+  }
+
+  let customerId = userRow.stripe_customer_id ? String(userRow.stripe_customer_id) : null;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: String(userRow.email || ''),
+      name: `${userRow.first_name || ''} ${userRow.last_name || ''}`.trim(),
+      metadata: { userId: String(userId) }
+    });
+    customerId = customer.id;
+    if (isAffiliate) {
+      await executeQuery('UPDATE affiliates SET stripe_customer_id = ? WHERE id = ?', [customerId, userId]);
+    } else {
+      await executeQuery('UPDATE users SET stripe_customer_id = ? WHERE id = ?', [customerId, userId]);
+    }
+  }
+
+  return customerId;
+}
+
 // Get billing history for authenticated user
 router.get('/history', authenticateToken, async (req, res) => {
   try {
@@ -1703,6 +1752,72 @@ router.post('/cancel-subscription', authenticateToken, async (req, res) => {
   } catch (error: any) {
     console.error('❌ Error canceling subscription:', error);
     res.status(500).json({ success: false, error: 'Failed to cancel subscription', details: error?.message || 'Unknown error' });
+  }
+});
+
+router.post('/billing-portal', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+    if (!stripe) {
+      await initializeStripe();
+    }
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+    const customerId = await getOrCreateStripeCustomer(userId);
+    if (!customerId) {
+      return res.status(404).json({ error: 'Stripe customer not found for user' });
+    }
+    const origin = req.get('origin') || 'https://thescoremachine.com';
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${origin}/subscription`
+    });
+    res.json({ success: true, url: session.url });
+  } catch (error: any) {
+    console.error('Error creating billing portal session:', error);
+    res.status(500).json({ error: 'Failed to create billing portal session', details: error?.message || 'Unknown error' });
+  }
+});
+
+router.post('/retry-payment', authenticateToken, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+    if (!stripe) {
+      await initializeStripe();
+    }
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+    const rows = await executeQuery<any[]>(
+      'SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1',
+      [userId]
+    );
+    if (!Array.isArray(rows) || rows.length === 0 || !rows[0]?.stripe_subscription_id) {
+      return res.status(404).json({ error: 'Stripe subscription not found for user' });
+    }
+    const subscriptionId = String(rows[0].stripe_subscription_id);
+    const invoices = await stripe.invoices.list({
+      subscription: subscriptionId,
+      status: 'open',
+      limit: 1
+    });
+    if (!invoices.data.length) {
+      return res.status(404).json({ error: 'No open invoices to retry' });
+    }
+    const invoice = await stripe.invoices.pay(invoices.data[0].id);
+    res.json({
+      success: true,
+      invoice: {
+        id: invoice.id,
+        status: invoice.status,
+        amount_due: typeof invoice.amount_due === 'number' ? invoice.amount_due / 100 : 0,
+        currency: (invoice.currency || 'usd').toUpperCase()
+      }
+    });
+  } catch (error: any) {
+    console.error('Error retrying payment:', error);
+    res.status(500).json({ error: 'Failed to retry payment', details: error?.message || 'Unknown error' });
   }
 });
 

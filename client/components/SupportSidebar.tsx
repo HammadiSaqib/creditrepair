@@ -25,6 +25,7 @@ import {
   Newspaper,
   Video,
   ClipboardList,
+  Mail,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -67,6 +68,12 @@ export default function SupportSidebar({ className }: SupportSidebarProps) {
       name: "Users",
       href: "/support/users",
       icon: Users,
+      badge: null,
+    },
+    {
+      name: "Email Campaign",
+      href: "/support/email-campaign",
+      icon: Mail,
       badge: null,
     },
     {

@@ -93,6 +93,7 @@ const BlogEditor = React.lazy(() => import("./pages/Support/Blog/BlogEditor"));
 const BlogCategories = React.lazy(() => import("./pages/Support/Blog/BlogCategories"));
 const BlogTags = React.lazy(() => import("./pages/Support/Blog/BlogTags"));
 const SupportAdminManagement = React.lazy(() => import("./pages/SupportAdminManagement"));
+const EmailCampaign = React.lazy(() => import("./pages/EmailCampaign"));
 const AffiliateLogin = React.lazy(() => import("./pages/AffiliateLogin"));
 const AffiliateDashboard = React.lazy(() => import("./pages/AffiliateDashboard"));
 const AffiliateReferrals = React.lazy(() => import("./pages/AffiliateReferrals"));
@@ -827,6 +828,22 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
               <SupportProtectedRoute>
                 <BlogTags />
               </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/support/email-campaign"
+            element={
+              <SupportProtectedRoute>
+                <EmailCampaign />
+              </SupportProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/email-campaign"
+            element={
+              <SuperAdminProtectedRoute>
+                <EmailCampaign />
+              </SuperAdminProtectedRoute>
             }
           />
           <Route

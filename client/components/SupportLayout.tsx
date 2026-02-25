@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   Newspaper,
   ClipboardList,
+  Mail,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useState, useEffect } from "react";
@@ -66,6 +67,7 @@ export default function SupportLayout({
     { label: "Tasks", href: "/support/tasks", Icon: ClipboardList },
     { label: "Live Chat", href: "/support/live-chat", Icon: MessageSquare },
     { label: "Users", href: "/support/users", Icon: Users },
+    { label: "Email", href: "/support/email-campaign", Icon: Mail },
     { label: "Admins", href: "/support/admin-management", Icon: UserCog },
     { label: "Knowledge", href: "/support/knowledge-base", Icon: BookOpen },
     { label: "Blog", href: "/support/blog", Icon: Newspaper },

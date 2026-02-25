@@ -43,6 +43,7 @@ import supportChatRoutes from "./routes/supportChat.js";
 import supportReportsRoutes from "./routes/supportReports.js";
 import supportDashboardRoutes from "./routes/supportDashboard.js";
 import supportSettingsRoutes from "./routes/supportSettings.js";
+import emailCampaignRoutes from "./routes/emailCampaign.js";
 import adminNotificationRoutes from "./routes/adminNotifications.js";
 import knowledgeBaseRoutes from "./routes/knowledgeBase.js";
 import pricingRoutes from "./routes/pricing.js";
@@ -466,6 +467,7 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // SUPPORT USERS ROUTES
   // =============================================================================
   app.use(supportUsersRoutes);
+  app.use("/api/email-campaign", emailCampaignRoutes);
 
   // =============================================================================
   // SUPPORT TICKETS ROUTES

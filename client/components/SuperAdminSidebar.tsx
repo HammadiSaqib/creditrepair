@@ -23,6 +23,7 @@ import {
   Headphones,
   GraduationCap,
   ClipboardList,
+  Mail,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -83,6 +84,12 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       name: "Support Users",
       href: "/super-admin/support-users",
       icon: Headphones,
+      badge: null,
+    },
+    {
+      name: "Email Campaign",
+      href: "/super-admin/email-campaign",
+      icon: Mail,
       badge: null,
     },
     {

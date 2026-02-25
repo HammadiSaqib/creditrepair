@@ -7577,16 +7577,17 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                 const accountGroupTracker = new Set(); // Track unique account groups by first 5 digits + account type
                 
                 reportData.accounts.forEach(account => {
-                  const creditorName = account.CreditorName || account.creditor || 'Unknown';
+                  const accountAny = account as any;
+                  const creditorName = accountAny.CreditorName || accountAny.creditor || 'Unknown';
                   const accountNumber =
-                    account.AccountNumber ||
-                    account.accountNumber ||
-                    account.MaskAccountNumber ||
-                    account.maskAccountNumber ||
-                    account.MaskedAccountNumber ||
-                    account.maskedAccountNumber ||
+                    accountAny.AccountNumber ||
+                    accountAny.accountNumber ||
+                    accountAny.MaskAccountNumber ||
+                    accountAny.maskAccountNumber ||
+                    accountAny.MaskedAccountNumber ||
+                    accountAny.maskedAccountNumber ||
                     'N/A';
-                  const accountType = account.AccountTypeDescription || account.CreditType || account.type || 'N/A';
+                  const accountType = accountAny.AccountTypeDescription || accountAny.CreditType || accountAny.type || 'N/A';
                   
                   // Get first 5 digits of account number for grouping
                   const normalizedAccountNumber = accountNumber.toString().replace(/[\s\-]/g, '');

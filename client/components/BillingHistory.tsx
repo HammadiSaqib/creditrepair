@@ -39,6 +39,8 @@ const BillingHistory: React.FC = () => {
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
   const { toast } = useToast();
 
   const fetchBillingData = async () => {
@@ -99,6 +101,61 @@ const BillingHistory: React.FC = () => {
   const handleRefresh = async () => {
     setRefreshing(true);
     await fetchBillingData();
+  };
+
+  const handleUpdatePaymentMethod = async () => {
+    try {
+      setPortalLoading(true);
+      const response = await api.post('/api/billing/billing-portal');
+      const url = response.data?.url;
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      toast({
+        title: 'Error',
+        description: 'Unable to open billing portal',
+        variant: 'destructive'
+      });
+    } catch (error) {
+      console.error('Error opening billing portal:', error);
+      toast({
+        title: 'Error',
+        description: 'Unable to open billing portal',
+        variant: 'destructive'
+      });
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const handleRetryPayment = async () => {
+    try {
+      setRetryLoading(true);
+      const response = await api.post('/api/billing/retry-payment');
+      if (response.data?.success) {
+        toast({
+          title: 'Payment retry sent',
+          description: 'Stripe is re-processing your payment now'
+        });
+        await fetchBillingData();
+        return;
+      }
+      toast({
+        title: 'Error',
+        description: response.data?.error || 'Unable to retry payment',
+        variant: 'destructive'
+      });
+    } catch (error) {
+      console.error('Error retrying payment:', error);
+      toast({
+        title: 'Error',
+        description: 'Unable to retry payment',
+        variant: 'destructive'
+      });
+    } finally {
+      setRetryLoading(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -228,9 +285,25 @@ const BillingHistory: React.FC = () => {
                 </p>
               </div>
             </div>
-            
-            {subscription.status === 'active' && !subscription.cancel_at_period_end && (
-              <div className="mt-4 pt-4 border-t">
+
+            <div className="mt-4 pt-4 border-t flex flex-wrap items-center gap-3">
+              <Button
+                onClick={handleUpdatePaymentMethod}
+                variant="outline"
+                disabled={portalLoading}
+              >
+                {portalLoading ? 'Opening...' : 'Update Payment Method'}
+              </Button>
+              {(subscription.status === 'past_due' || subscription.status === 'unpaid') && (
+                <Button
+                  onClick={handleRetryPayment}
+                  disabled={retryLoading}
+                  className="bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  {retryLoading ? 'Retrying...' : 'Retry Payment'}
+                </Button>
+              )}
+              {subscription.status === 'active' && !subscription.cancel_at_period_end && (
                 <Button
                   onClick={handleCancelSubscription}
                   variant="outline"
@@ -238,8 +311,8 @@ const BillingHistory: React.FC = () => {
                 >
                   Cancel Subscription
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
             
             {subscription.cancel_at_period_end && (
               <div className="mt-4 pt-4 border-t">

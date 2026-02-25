@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { Bell, Search, Settings, Menu, Moon, Sun, Monitor, LayoutDashboard, UserCheck, Package, Users, FileText, Receipt, HandHeart, ClipboardList } from "lucide-react";
+import { Bell, Search, Settings, Menu, Moon, Sun, Monitor, LayoutDashboard, UserCheck, Package, Users, FileText, Receipt, HandHeart, ClipboardList, Mail } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { authApi } from "@/lib/api";
@@ -115,6 +115,7 @@ export default function SuperAdminLayout({
     { name: 'Admins', href: '/super-admin/admins', icon: UserCheck },
     { name: 'Plans', href: '/super-admin/plans', icon: Package },
     { name: 'Users', href: '/super-admin/users', icon: Users },
+    { name: 'Email', href: '/super-admin/email-campaign', icon: Mail },
     { name: 'Reports', href: '/super-admin/reports', icon: FileText },
     { name: 'Tasks', href: '/super-admin/tasks', icon: ClipboardList },
     { name: 'Subscriptions', href: '/super-admin/subscriptions', icon: Receipt },
