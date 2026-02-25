@@ -113,9 +113,8 @@ export function useWebSocket({
     setState(prev => ({ ...prev, connecting: true, error: null }));
 
     try {
-      const serverUrl = process.env.NODE_ENV === 'production' 
-        ? window.location.origin 
-        : 'http://localhost:3001';
+      const serverUrl = import.meta.env.VITE_WS_URL || 
+        (typeof window !== 'undefined' ? window.location.origin : 'https://thescoremachine.com');
 
       const socketConfig: any = {
         transports: ['websocket', 'polling'],
