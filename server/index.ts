@@ -317,6 +317,46 @@ export async function createServer(vite?: ViteDevServer) {
   // =============================================================================
   // AUTHENTICATION ROUTES
   // =============================================================================
+  // SSR for main landing page (improves SEO: real HTML in initial response)
+  app.get("/", async (req, res) => {
+    try {
+      const isProd = process.env.NODE_ENV === "production" && !vite;
+      const templatePath = isProd
+        ? path.resolve(process.cwd(), "dist", "spa", "index.html")
+        : path.resolve(process.cwd(), "index.html");
+
+      let template = await fs.readFile(templatePath, "utf-8");
+      if (vite) {
+        template = await vite.transformIndexHtml(req.originalUrl, template);
+      }
+
+      let render: (url: string, blogSsrData: any) => Promise<{ appHtml: string; headTags: string }>;
+      if (vite) {
+        const mod = await vite.ssrLoadModule("/client/entry-server.tsx");
+        render = mod.render;
+      } else {
+        const entryServerPath = path.resolve(
+          process.cwd(),
+          "dist",
+          "ssr",
+          "entry-server.js",
+        );
+        const mod = await import(pathToFileURL(entryServerPath).href);
+        render = mod.render;
+      }
+
+      const { appHtml, headTags } = await render(req.originalUrl, null);
+      const html = template
+        .replace('<div id="root"></div>', `<div id="root">${appHtml}</div>`)
+        .replace("</head>", `${headTags}</head>`);
+
+      res.status(200).setHeader("Content-Type", "text/html").send(html);
+    } catch (error) {
+      console.error("Failed to render home SSR:", error);
+      res.status(500).send("Internal Server Error");
+    }
+  });
+
   app.use("/api/auth", authRoutes);
   app.use("/api/blog", blogRoutes);
   app.get("/blog/:slug", async (req, res) => {

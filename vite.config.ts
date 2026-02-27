@@ -40,7 +40,8 @@ function expressPlugin(): Plugin {
             const urlPath = req.url?.split("?")[0] || "";
             const isApi = urlPath.startsWith("/api");
             const isBlogSsr = /^\/blog\/[^/]+/.test(urlPath);
-            if (isApi || isBlogSsr) {
+            const isHomeSsr = urlPath === "/";
+            if (isApi || isBlogSsr || isHomeSsr) {
               if (isApi) {
                 console.log("Proxying API request:", req.url, req.method);
               }
