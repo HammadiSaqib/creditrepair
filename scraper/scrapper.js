@@ -14,11 +14,22 @@ export class Scraper {
 
   async initialize() {
     const userAgent = new UserAgent({ deviceCategory: "desktop" });
-    // Use default puppeteer configuration without executablePath
+    const configuredHeadless = this.conf?.puppeteerConfig?.headless;
+    const forceHeaded = process.env.SCRAPER_HEADED === '1' || configuredHeadless === false;
+
+    // Use effective puppeteer configuration and force headed mode when requested
     const puppeteerConfig = {
-      headless: this.conf.puppeteerConfig.headless,
+      ...this.conf.puppeteerConfig,
+      headless: forceHeaded ? false : configuredHeadless,
+      devtools: forceHeaded ? true : !!this.conf.puppeteerConfig.devtools,
       args: this.conf.puppeteerConfig.args || []
     };
+
+    console.log('Launching Puppeteer with mode:', {
+      headless: puppeteerConfig.headless,
+      devtools: puppeteerConfig.devtools,
+      forceHeaded
+    });
     
     this.browser = await puppeteer.launch(puppeteerConfig);
     this.page = await this.browser.newPage();
@@ -49,93 +60,462 @@ export class Scraper {
       await this.initialize();
       await this.navigateTo(this.conf.url);
       let data = {};
+      const responseCandidates = [];
+      const inquiryPayloadsByBureau = { EFX: [], EXP: [], TU: [] };
+
+      const inquiryEndpoints = {
+        EFX: 'https://api.myfreescorenow.com/api/member/equifax/inquiries',
+        EXP: 'https://api.myfreescorenow.com/api/member/experian/inquiries',
+        TU: 'https://api.myfreescorenow.com/api/member/transunion/inquiries',
+      };
+
+      const inferBureauFromUrl = (url = '') => {
+        const u = String(url).toLowerCase();
+        if (u.includes('/equifax/')) return 'EFX';
+        if (u.includes('/experian/')) return 'EXP';
+        if (u.includes('/transunion/')) return 'TU';
+        return '';
+      };
+
+      const addInquiryPayload = (url, payload) => {
+        const bureau = inferBureauFromUrl(url);
+        if (!bureau || !payload || typeof payload !== 'object') return;
+        inquiryPayloadsByBureau[bureau].push(payload);
+      };
+
+      const countInquiryPayloads = (source) => {
+        return ['EFX', 'EXP', 'TU'].reduce((sum, bureau) => {
+          const value = source?.[bureau];
+          if (Array.isArray(value)) return sum + value.length;
+          return sum + (value ? 1 : 0);
+        }, 0);
+      };
+
+      const hasInquiryLikeData = (node, depth = 0) => {
+        if (depth > 8 || node === null || node === undefined) return false;
+        if (Array.isArray(node)) return node.some((item) => hasInquiryLikeData(item, depth + 1));
+        if (typeof node !== 'object') return false;
+
+        for (const [key, value] of Object.entries(node)) {
+          const k = String(key).toLowerCase();
+          if (k.includes('inquir') && value) {
+            if (Array.isArray(value) && value.length > 0) return true;
+            if (typeof value === 'object') return true;
+          }
+          if (hasInquiryLikeData(value, depth + 1)) return true;
+        }
+        return false;
+      };
+
+      const fetchInquiriesPerBureau = async () => {
+        if (!this.page) return { EFX: [], EXP: [], TU: [] };
+        const result = await this.page.evaluate(async (endpoints) => {
+          const out = { EFX: [], EXP: [], TU: [] };
+          const entries = Object.entries(endpoints || {});
+
+          for (const [bureau, url] of entries) {
+            try {
+              const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                  'content-type': 'application/json',
+                },
+                body: '{}',
+              });
+
+              if (!response.ok) continue;
+              const text = await response.text();
+              if (!text) continue;
+
+              let parsed = null;
+              try {
+                parsed = JSON.parse(text);
+              } catch (_) {
+                continue;
+              }
+              out[bureau] = parsed;
+            } catch (_) {
+              // continue best-effort
+            }
+          }
+
+          return out;
+        }, inquiryEndpoints);
+
+        return result || { EFX: [], EXP: [], TU: [] };
+      };
+
+      const scorePayload = (payload, url) => {
+        let score = 0;
+        if (!payload || typeof payload !== 'object') return score;
+        if (payload.BundleComponents) score += 10;
+        if (payload.TrueLinkCreditReportType) score += 10;
+        if (payload.rawCreditData) score += 8;
+        if (payload.sections) score += 6;
+        if (payload.CreditReport || payload.Score || payload.Accounts) score += 5;
+        if (url.includes('/dsply.aspx')) score += 4;
+        if (url.includes('credit-report')) score += 2;
+        return score;
+      };
+
+      const collectCandidate = (payload, url) => {
+        if (!payload || typeof payload !== 'object') return;
+        responseCandidates.push({ payload, url, score: scorePayload(payload, url) });
+      };
+
+      const tryParsePayloads = (text) => {
+        const parsed = [];
+        if (!text || typeof text !== 'string') return parsed;
+
+        try {
+          parsed.push(JSON.parse(text));
+        } catch (_) {
+          // continue
+        }
+
+        const jsonpMatch = text.match(/^[\w$]+\((.*)\);?$/s);
+        if (jsonpMatch && jsonpMatch[1]) {
+          try {
+            parsed.push(JSON.parse(jsonpMatch[1]));
+          } catch (_) {
+            // continue
+          }
+        }
+
+        const firstBrace = text.indexOf('{');
+        const lastBrace = text.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+          const maybeJson = text.slice(firstBrace, lastBrace + 1);
+          try {
+            parsed.push(JSON.parse(maybeJson));
+          } catch (_) {
+            // continue
+          }
+        }
+
+        return parsed;
+      };
+
       this.page.on('response', async (response) => {
         const url = response.url();
-        if (url.includes('/dsply.aspx')) {
-          const text = await response.text();
-          // Remove JSONP wrapper
-          const jsonString = text.replace(/^jsonp_callback\(/, '').replace(/\);$/, '');
-          // Parse the JSON string
+        const lowerUrl = url.toLowerCase();
+        const headers = response.headers() || {};
+        const contentType = (headers['content-type'] || '').toLowerCase();
+        const isLikelyReportPayload =
+          lowerUrl.includes('/dsply.aspx') ||
+          lowerUrl.includes('/credit-report') ||
+          lowerUrl.includes('report') ||
+          lowerUrl.includes('bundle') ||
+          contentType.includes('application/json') ||
+          contentType.includes('text/javascript');
+
+        if (!isLikelyReportPayload) return;
+
+        let text;
+        try {
+          text = await response.text();
+        } catch (_) {
+          return;
+        }
+
+        const parsedPayloads = tryParsePayloads(text);
+        if (parsedPayloads.length > 0) {
+          for (const payload of parsedPayloads) {
+            collectCandidate(payload, url);
+            if (lowerUrl.includes('inquir')) addInquiryPayload(url, payload);
+          }
+
+          const bestCandidate = responseCandidates
+            .slice()
+            .sort((a, b) => b.score - a.score)[0];
+
+          if (bestCandidate && bestCandidate.score > 0) {
+            data = bestCandidate.payload;
+          }
+          return;
+        }
+
+        if (lowerUrl.includes('/dsply.aspx')) {
           try {
-            // Parse JSON response if applicable
-            data = JSON.parse(jsonString)
-          } catch (error) {
-            try {
-              // If not JSON, parse as text
-              const textResponse = await response.text();
-            } catch (innerError) {
-              console.error('Failed to parse response:', innerError);
-              throw innerError;
-            }
+            const jsonString = text.replace(/^jsonp_callback\(/, '').replace(/\);$/, '');
+            const parsed = JSON.parse(jsonString);
+            collectCandidate(parsed, url);
+            data = parsed;
+          } catch (_) {
+            // ignore non-JSONP responses
           }
         }
       });
-      // Wait for login button and perform login
-      await this.page.waitForSelector('button[type="submit"][name="loginbttn"]', { timeout: 30000 });
-      await this.page.type('#j_username', username);
-      await this.page.type('#j_password', password);
-      await this.page.click('button[type="submit"][name="loginbttn"]');
-      await this.page.setDefaultNavigationTimeout(60000);
+      // Wait for login fields and perform login using resilient selectors
+      const possibleUsernameSelectors = [
+        this.conf.selectors?.click_to_username_field,
+        '#email',
+        'input[name="email"]',
+        'input[type="email"]',
+        '#j_username',
+        'input[name="username"]',
+        'input[autocomplete="username"]',
+        'input[type="text"]'
+      ].filter(Boolean);
 
-      // Give the dashboard a moment to load
-      await sleep(2000);
+      const possiblePasswordSelectors = [
+        this.conf.selectors?.click_to_password_field,
+        '#password',
+        'input[name="password"]',
+        'input[type="password"]',
+        'input[autocomplete="current-password"]',
+        '#j_password'
+      ].filter(Boolean);
 
-      // Try multiple possible selectors for the credit report link
-      const possibleReportLinkSelectors = [
-        'a[href="/member/credit-report/smart-3b/"]',
-        'a[href*="credit-report"]',
-        'a[href*="smart-3b"]',
-        'a[href*="/member/credit-report"]',
-        'a[href*="/credit/report"]'
-      ];
+      const possibleSigninSelectors = [
+        this.conf.selectors?.click_to_signin,
+        'button[type="submit"]',
+        'input[type="submit"]'
+      ].filter(Boolean);
 
-      let reportLinkFound = false;
-      let reportLinkSelector = null;
+      const isHeadlessRun = !(process.env.SCRAPER_HEADED === '1') && this.conf?.puppeteerConfig?.headless !== false;
+      const selectorTimeout = isHeadlessRun ? 5000 : 2500;
+      let skipLogin = false;
 
-      for (const selector of possibleReportLinkSelectors) {
+      // In headless mode, SPA hydration can lag a little; wait for any login-like input before selector loops.
+      await this.page.waitForFunction(() => {
+        return Boolean(
+          document.querySelector('#email') ||
+          document.querySelector('input[name="email"]') ||
+          document.querySelector('input[type="email"]') ||
+          document.querySelector('#j_username') ||
+          document.querySelector('input[name="username"]') ||
+          document.querySelector('input[type="text"]')
+        );
+      }, { timeout: isHeadlessRun ? 9000 : 4000 }).catch(() => null);
+
+      let usernameSelector = null;
+      for (const selector of possibleUsernameSelectors) {
         try {
-          await this.page.waitForSelector(selector, { timeout: 10000 });
-          reportLinkSelector = selector;
-          reportLinkFound = true;
+          await this.page.waitForSelector(selector, { timeout: selectorTimeout });
+          usernameSelector = selector;
           break;
         } catch (e) {
-          // continue to next selector
+          // continue
+        }
+      }
+      if (!usernameSelector) {
+        const authenticatedSessionDetected = await this.page.evaluate(() => {
+          const href = (window.location.href || '').toLowerCase();
+          if (
+            href.includes('/dashboard') ||
+            href.includes('/credit-report') ||
+            href.includes('/billing') ||
+            href.includes('/account')
+          ) {
+            return true;
+          }
+
+          const text = (document.body?.innerText || '').toLowerCase();
+          return (
+            text.includes('log out') ||
+            text.includes('logout') ||
+            text.includes('sign out') ||
+            text.includes('credit report') ||
+            text.includes('billing date') ||
+            text.includes('billing frequency')
+          );
+        }).catch(() => false);
+
+        if (authenticatedSessionDetected) {
+          skipLogin = true;
+          console.log('Login form not present; continuing with detected authenticated session.');
+        }
+
+        if (!skipLogin) {
+        if (isHeadlessRun) {
+          try {
+            fs.mkdirSync('./scraper-output/debug', { recursive: true });
+            await this.page.screenshot({ path: './scraper-output/debug/headless-login-missing-field.png', fullPage: true });
+            const html = await this.page.content();
+            fs.writeFileSync('./scraper-output/debug/headless-login-missing-field.html', html);
+          } catch (_) {
+            // no-op
+          }
+        }
+        throw new Error('Could not find username/email field');
         }
       }
 
-      // If not found by selector, try scanning all links by text/href
-      if (!reportLinkFound) {
-        const clicked = await this.page.evaluate(() => {
-          const links = Array.from(document.querySelectorAll('a'));
-          const match = links.find(link => {
-            const text = (link.textContent || '').toLowerCase();
-            const href = (link.getAttribute('href') || '').toLowerCase();
-            return /credit report|view report|my report/.test(text) || /credit-report|smart-3b/.test(href);
-          });
-          if (match) {
-            match.click();
-            return true;
+      if (!skipLogin) {
+        let passwordSelector = null;
+        for (const selector of possiblePasswordSelectors) {
+          try {
+            await this.page.waitForSelector(selector, { timeout: selectorTimeout });
+            passwordSelector = selector;
+            break;
+          } catch (e) {
+            // continue
           }
-          return false;
-        });
-        reportLinkFound = clicked;
+        }
+        if (!passwordSelector) throw new Error('Could not find password field');
+
+        await this.page.click(usernameSelector, { clickCount: 3 });
+        await this.page.type(usernameSelector, username);
+        await this.page.click(passwordSelector, { clickCount: 3 });
+        await this.page.type(passwordSelector, password);
+
+        let signinClicked = false;
+        for (const selector of possibleSigninSelectors) {
+          try {
+            await this.page.waitForSelector(selector, { timeout: selectorTimeout });
+            await this.page.click(selector);
+            signinClicked = true;
+            break;
+          } catch (e) {
+            // continue
+          }
+        }
+
+        // Fallback: click button by visible text for MUI/SPA logins
+        if (!signinClicked) {
+          signinClicked = await this.page.evaluate(() => {
+            const candidates = Array.from(document.querySelectorAll('button, input[type="submit"], [role="button"]'));
+            const btn = candidates.find((el) => {
+              const text = (el.textContent || el.getAttribute('value') || '').trim().toLowerCase();
+              return text === 'login' || text.includes('log in') || text.includes('sign in');
+            });
+            if (!btn) return false;
+            btn.click();
+            return true;
+          });
+        }
+
+        if (!signinClicked) {
+          throw new Error('Could not find/click login submit button');
+        }
+
+        await this.page.setDefaultNavigationTimeout(30000);
+        await Promise.race([
+          this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
+          sleep(1500)
+        ]);
       }
 
-      if (!reportLinkFound) {
-        // Capture debugging artifacts
-        const dashboardScreenshotPath = './dashboard-page-screenshot.png';
-        await this.page.screenshot({ path: dashboardScreenshotPath, fullPage: true });
-        const dashboardHtml = await this.page.content();
-        fs.writeFileSync('./dashboard-page.html', dashboardHtml);
-        throw new Error('Could not find credit report link');
+      // Ensure dashboard page is loaded after login, then navigate directly to report page
+      const dashboardUrl = 'https://app.myfreescorenow.com/dashboard';
+      const creditReportUrl = 'https://app.myfreescorenow.com/credit-report';
+      const equifaxReportEndpoint = 'https://api.myfreescorenow.com/api/member/equifax/credit-report';
+
+      const reachedDashboard = await Promise.race([
+        this.page.waitForFunction(
+          () => window.location.href.includes('/dashboard'),
+          { timeout: 10000 }
+        ).then(() => true).catch(() => false),
+        sleep(1000).then(() => this.page.url().includes('/dashboard'))
+      ]);
+
+      if (!reachedDashboard) {
+        try {
+          await this.page.goto(dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        } catch (e) {
+          // continue to credit-report attempt below
+        }
       }
 
-      // Click using selector when available
-      if (reportLinkSelector) {
-        await this.page.evaluate((selector) => {
-          const link = document.querySelector(selector);
-          if (link) link.click();
-        }, reportLinkSelector);
+      const exactReportResponsePromise = this.page.waitForResponse((res) => {
+        if (res.url() !== equifaxReportEndpoint) return false;
+        if (res.request().method() !== 'POST') return false;
+        const postData = (res.request().postData() || '').trim();
+        return postData === '{}' || postData === '';
+      }, { timeout: 12000 }).catch(() => null);
+
+      await this.page.goto(creditReportUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      if (!this.page.url().includes('/credit-report')) {
+        throw new Error('Failed to navigate to credit report page');
+      }
+
+      const exactReportResponse = await exactReportResponsePromise;
+      if (exactReportResponse) {
+        try {
+          const responseText = await exactReportResponse.text();
+          const parsedPayloads = tryParsePayloads(responseText);
+          if (parsedPayloads.length > 0) {
+            for (const payload of parsedPayloads) {
+              collectCandidate(payload, equifaxReportEndpoint);
+            }
+            const bestExact = parsedPayloads
+              .slice()
+              .sort((a, b) => scorePayload(b, equifaxReportEndpoint) - scorePayload(a, equifaxReportEndpoint))[0];
+            if (bestExact) data = bestExact;
+            console.log('Captured exact Equifax report XHR response');
+          }
+        } catch (e) {
+          console.log('Failed to parse exact Equifax report XHR response');
+        }
+      }
+
+      // Allow API/XHR calls to settle and capture payload responses
+      await Promise.race([
+        this.page.waitForResponse((res) => {
+          const u = res.url().toLowerCase();
+          return u.includes('/dsply.aspx') || u.includes('credit-report') || u.includes('report');
+        }, { timeout: 7000 }).catch(() => null),
+        sleep(2000)
+      ]);
+
+      if (responseCandidates.length > 0) {
+        const latestCandidate = responseCandidates[responseCandidates.length - 1];
+        if (latestCandidate && latestCandidate.payload) {
+          data = latestCandidate.payload;
+          console.log(`Using latest captured JSON candidate: #${responseCandidates.length}`);
+        }
+      }
+
+      console.log('Captured JSON response candidates:', responseCandidates.length);
+
+      if (responseCandidates.length > 0) {
+        try {
+          const latest = responseCandidates[responseCandidates.length - 1];
+          if (latest) {
+            const captureDir = './scraper-output/captured-json';
+            fs.mkdirSync(captureDir, { recursive: true });
+            const selectedLatestPayload = {
+              selectedStrategy: 'latest-candidate',
+              selectedIndex: responseCandidates.length,
+              totalCandidates: responseCandidates.length,
+              url: latest.url,
+              score: latest.score,
+              capturedAt: new Date().toISOString(),
+              data: latest.payload
+            };
+            fs.writeFileSync(`${captureDir}/selected_latest.json`, JSON.stringify(selectedLatestPayload, null, 2));
+            console.log('Saved selected latest JSON candidate to: ./scraper-output/captured-json/selected_latest.json');
+          }
+        } catch (saveCandidatesError) {
+          console.error('Failed to save captured JSON candidates:', saveCandidatesError?.message || saveCandidatesError);
+        }
+      }
+
+      const payloadRoot = (data && data.data && data.data.data)
+        ? data.data.data
+        : (data && data.reportData && data.reportData.data)
+          ? data.reportData.data
+          : data;
+
+      if (payloadRoot && typeof payloadRoot === 'object' && !hasInquiryLikeData(payloadRoot)) {
+        const fromCaptured = inquiryPayloadsByBureau;
+        const capturedCount = countInquiryPayloads(fromCaptured);
+
+        if (capturedCount > 0) {
+          payloadRoot.fetchedInquiries = fromCaptured;
+          console.log(`Attached inquiries from captured responses (${capturedCount} payloads)`);
+        } else {
+          const fetchedInquiries = await fetchInquiriesPerBureau();
+          const fetchedCount = countInquiryPayloads(fetchedInquiries);
+          if (fetchedCount > 0) {
+            payloadRoot.fetchedInquiries = fetchedInquiries;
+            console.log(`Fetched fallback inquiries per bureau (${fetchedCount} payloads)`);
+          } else {
+            console.log('No inquiry data found in raw payload or fallback inquiry endpoints');
+          }
+        }
       }
 
       // Try multiple possible selectors for the report container and do not hard-fail
@@ -152,7 +532,7 @@ export class Scraper {
       let reportContainerFound = false;
       for (const selector of possibleReportContainerSelectors) {
         try {
-          await this.page.waitForSelector(selector, { timeout: 10000 });
+          await this.page.waitForSelector(selector, { timeout: 2500 });
           reportContainerFound = true;
           break;
         } catch (e) {
@@ -161,13 +541,15 @@ export class Scraper {
       }
 
       // Even if the container isn’t found, continue and try extracting data
-      await sleep(10000);
+      await sleep(2000);
 
       // Take a screenshot for debugging
-      const screenshotPath = './credit-report-screenshot.png';
-      await this.page.screenshot({ path: screenshotPath, fullPage: true });
+      if (debug) {
+        const screenshotPath = './credit-report-screenshot.png';
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+      }
 
-      // If no data was captured from the response, try extracting from the page
+      // If no data was captured from responses, try extracting from the page
       if (!data || Object.keys(data).length === 0) {
         try {
           const html = await this.page.content();
@@ -231,7 +613,11 @@ export class Scraper {
         }
       }
 
-      return this.Parse(data)
+      const parsedReport = await this.Parse(data);
+      if (parsedReport && Object.keys(parsedReport).length > 0) {
+        return parsedReport;
+      }
+      return data;
     } catch (error) {
       console.log(error);
       throw error;

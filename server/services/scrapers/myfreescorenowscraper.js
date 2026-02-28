@@ -7,10 +7,34 @@
 import fs from 'fs';
 import path from 'path';
 import { Scraper } from '../../../scraper/scrapper.js';
+import { convertNewToLegacy } from './converter.js';
 
-// Load the configuration file
-const configPath = path.resolve(process.cwd(), 'configs/pupeeter_saad.json');
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const LEGACY_REPORT_KEYS = [
+  'CreditReport',
+  'Name',
+  'Address',
+  'DOB',
+  'Score',
+  'Employer',
+  'Inquiries',
+  'PublicRecords',
+  'Accounts',
+];
+
+function hasWrapperKeys(reportData) {
+  if (!reportData || typeof reportData !== 'object') return false;
+  return (
+    Object.prototype.hasOwnProperty.call(reportData, 'success') ||
+    Object.prototype.hasOwnProperty.call(reportData, 'message') ||
+    Object.prototype.hasOwnProperty.call(reportData, 'data')
+  );
+}
+
+function isStrictLegacyReportData(reportData) {
+  if (!reportData || typeof reportData !== 'object') return false;
+  if (hasWrapperKeys(reportData)) return false;
+  return LEGACY_REPORT_KEYS.every((key) => Array.isArray(reportData[key]));
+}
 
 // Helper function to safely stringify objects with circular references and non-serializable values
 const safeStringify = (obj) => {
@@ -51,6 +75,8 @@ const safeStringify = (obj) => {
  */
 async function fetchMyFreeScoreNowReport(username, password, options = {}) {
   const { outputDir = './scraper-output', clientId } = options;
+  const configPath = path.resolve(process.cwd(), 'configs/pupeeter_saad.json');
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   
   // Create output directory if it doesn't exist
   if (!fs.existsSync(outputDir)) {
@@ -62,7 +88,40 @@ async function fetchMyFreeScoreNowReport(username, password, options = {}) {
     const scraper = new Scraper(config);
     
     // Perform the scraping
-    const reportData = await scraper.Scrap(false, username, password);
+    const scrapedData = await scraper.Scrap(false, username, password);
+    let convertedPayload = null;
+    if (isStrictLegacyReportData(scrapedData)) {
+      convertedPayload = {
+        clientInfo: {
+          clientId: clientId || 'unknown',
+          username,
+          timestamp: new Date().toISOString(),
+        },
+        reportData: scrapedData,
+      };
+    } else {
+      convertedPayload = convertNewToLegacy(
+        {
+          clientInfo: {
+            clientId: clientId || 'unknown',
+            username,
+            timestamp: new Date().toISOString(),
+          },
+          reportData: scrapedData,
+        },
+        clientId || 'unknown',
+        username
+      );
+      console.log('Converted MyFreeScoreNow payload to strict legacy report format');
+    }
+
+    const reportData = convertedPayload.reportData;
+    if (!isStrictLegacyReportData(reportData)) {
+      throw new Error('Invalid converted reportData: strict legacy keys missing');
+    }
+    if (hasWrapperKeys(reportData)) {
+      throw new Error('Invalid converted reportData: success/message/data wrapper keys are not allowed');
+    }
     
     // Save the report data to a file
     let filePath = null;
@@ -80,6 +139,11 @@ async function fetchMyFreeScoreNowReport(username, password, options = {}) {
           reportDate: new Date().toLocaleDateString()
         },
         reportData
+      };
+
+      reportWithClientInfo.clientInfo = {
+        ...reportWithClientInfo.clientInfo,
+        ...convertedPayload.clientInfo,
       };
       
       // Write the JSON file using safeStringify

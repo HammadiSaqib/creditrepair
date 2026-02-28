@@ -34,7 +34,7 @@ async function fetchCreditReport(username, password) {
     });
 
     // Navigate to login page
-    await page.goto('https://member.myfreescorenow.com/login/', { waitUntil: 'networkidle0' });
+    await page.goto('https://app.myfreescorenow.com/login', { waitUntil: 'networkidle0' });
 
     // Wait for login form
     const usernameSelector = '#j_username';
@@ -59,9 +59,9 @@ async function fetchCreditReport(username, password) {
       throw new Error(`Login failed: ${errorText}`);
     }
 
-    // Navigate to Smart 3B report page
-    await page.goto('https://member.myfreescorenow.com/member/credit-report/smart-3b/', { waitUntil: 'networkidle0' });
-    console.log('📄 Smart 3B Report page loaded');
+    // Navigate to credit report page
+    await page.goto('https://app.myfreescorenow.com/credit-report', { waitUntil: 'networkidle0' });
+    console.log('📄 Credit Report page loaded');
 
     // Switch to Classic view
     const classicButtonSelector = '.btn.btn-sm.btn-secondary.fs-12';

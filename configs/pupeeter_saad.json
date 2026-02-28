@@ -1,7 +1,7 @@
 {
-  "url": "https://member.myfreescorenow.com/login/",
+  "url": "https://app.myfreescorenow.com/login",
   "puppeteerConfig": {
-    "headless": "new",
+    "headless": true,
     "ignoreHTTPSErrors": false,
     "userDataDir": "./userData",
     "devtools": false,

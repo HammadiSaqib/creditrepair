@@ -297,69 +297,32 @@ export class Scraper implements ScraperInterface {
       await this.page.click(signinButton);
       await this.page.setDefaultNavigationTimeout(60000);
 
-      console.log('Waiting for credit report link...');
-      
-      // Try multiple possible selectors for the credit report link
-      const possibleReportSelectors = [
-        'a[href="/member/credit-report/smart-3b/"]',
-        'a[href*="credit-report"]',
-        'a:contains("Credit Report")',
-        'a:contains("Report")',
-        '.report-link',
-        'a[href*="report"]'
-      ];
-      
-      console.log('Trying possible report link selectors:', possibleReportSelectors);
-      
-      let reportLinkFound = false;
-      let reportLinkSelector = null;
-      
-      for (const selector of possibleReportSelectors) {
+      const dashboardUrl = 'https://app.myfreescorenow.com/dashboard';
+      const creditReportUrl = 'https://app.myfreescorenow.com/credit-report';
+      console.log('Waiting for dashboard URL after login...');
+
+      const reachedDashboard = await Promise.race([
+        this.page.waitForFunction(
+          () => window.location.href.includes('/dashboard'),
+          { timeout: 20000 }
+        ).then(() => true).catch(() => false),
+        Utils.Sleep(3000).then(() => this.page.url().includes('/dashboard'))
+      ]);
+
+      if (!reachedDashboard) {
+        console.log('Dashboard not detected, navigating directly to dashboard URL...');
         try {
-          console.log(`Trying report link selector: ${selector}`);
-          await this.page.waitForSelector(selector, { timeout: 10000 });
-          reportLinkSelector = selector;
-          reportLinkFound = true;
-          console.log(`Found report link: ${selector}`);
-          break;
+          await this.page.goto(dashboardUrl, { waitUntil: 'networkidle0', timeout: 30000 });
         } catch (e) {
-          console.log(`Report link selector not found: ${selector}`);
+          console.log('Direct dashboard navigation failed, continuing to credit-report attempt...');
         }
       }
-      
-      if (!reportLinkFound) {
-        console.error('Could not find any credit report links');
-        // Take a screenshot to see what's on the page after login
-        const dashboardScreenshotPath = './dashboard-page-screenshot.png';
-        await this.page.screenshot({ path: dashboardScreenshotPath, fullPage: true });
-        console.log(`Dashboard page screenshot saved to ${dashboardScreenshotPath}`);
-        
-        // Save HTML for debugging
-        const dashboardHtml = await this.page.content();
-        fs.writeFileSync('./dashboard-page.html', dashboardHtml);
-        console.log('Dashboard page HTML saved to ./dashboard-page.html');
-        
-        // Try to find any links on the page for debugging
-        const links = await this.page.evaluate(() => {
-          const allLinks = Array.from(document.querySelectorAll('a'));
-          return allLinks.map(link => ({
-            text: link.textContent?.trim(),
-            href: link.getAttribute('href'),
-            classes: link.getAttribute('class')
-          }));
-        });
-        
-        console.log('Available links on the page:', JSON.stringify(links, null, 2));
-        throw new Error('Could not find credit report link');
+
+      console.log('Navigating directly to credit report URL...');
+      await this.page.goto(creditReportUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+      if (!this.page.url().includes('/credit-report')) {
+        throw new Error('Failed to navigate to credit report page');
       }
-      
-      console.log('Credit report link found, navigating to report page...');
-      
-      await this.page.evaluate((selector) => {
-        const link = document.querySelector(selector);
-        if (link) (link as HTMLAnchorElement).click();
-        else console.error('Credit report link not found');
-      }, reportLinkSelector);
 
       // Try multiple possible selectors for the report container
       const possibleReportContainerSelectors = [
