@@ -96,6 +96,42 @@ function normalizeSlug(value: string) {
     .replace(/^-|-$/g, '');
 }
 
+async function resolveAdminIdFromIntake(tokenRaw: unknown, slugRaw: unknown): Promise<number> {
+  const token = String(tokenRaw || '');
+  const rawSlug = String(slugRaw || '').trim();
+  const slug = normalizeSlug(rawSlug);
+
+  if (token) {
+    let payload: any;
+    try {
+      payload = jwt.verify(token, ENV_CONFIG.JWT_SECRET);
+    } catch {
+      throw new Error('Invalid or expired intake token');
+    }
+    if (!payload?.adminId || payload?.scope !== 'client_intake') {
+      throw new Error('Invalid intake token scope');
+    }
+    return Number(payload.adminId);
+  }
+
+  if (rawSlug && !slug) {
+    throw new Error('Invalid onboarding slug');
+  }
+
+  if (slug) {
+    const adminRecord = await getQuery(
+      "SELECT id FROM users WHERE onboarding_slug = ? AND role IN ('admin','super_admin') LIMIT 1",
+      [slug]
+    );
+    if (!adminRecord?.id) {
+      throw new Error('Onboarding link not found');
+    }
+    return Number(adminRecord.id);
+  }
+
+  throw new Error('Intake token required');
+}
+
 function fallbackNameFromEmail(email: string) {
   const emailLocal = (email || '').split('@')[0] || '';
   const parts = emailLocal.replace(/[^a-zA-Z._\-\s]/g, ' ').split(/[._\-\s]+/).filter(Boolean);
@@ -551,37 +587,69 @@ export async function createClientIntakeToken(req: AuthRequest, res: Response) {
   res.json({ token, expiresIn: '7d' });
 }
 
+export async function getClientIntakeConfig(req: Request, res: Response) {
+  try {
+    const adminId = await resolveAdminIdFromIntake((req.query as any)?.token, (req.query as any)?.slug);
+    const admin = await getQuery(
+      `SELECT
+         intake_redirect_url,
+         intake_logo_url,
+         intake_primary_color,
+         onboarding_slug
+       FROM users
+       WHERE id = ? AND role IN ('admin','super_admin')
+       LIMIT 1`,
+      [adminId]
+    );
+
+    if (!admin) {
+      return res.status(404).json({ error: 'Onboarding link not found' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        onboardingSlug: admin.onboarding_slug || null,
+        redirectUrl: admin.intake_redirect_url || null,
+        logoUrl: admin.intake_logo_url || null,
+        primaryColor: admin.intake_primary_color || null,
+      }
+    });
+  } catch (error: any) {
+    const message = String(error?.message || 'Internal server error');
+    if (message === 'Invalid or expired intake token') {
+      return res.status(401).json({ error: message });
+    }
+    if (['Invalid intake token scope', 'Intake token required', 'Invalid onboarding slug'].includes(message)) {
+      return res.status(400).json({ error: message });
+    }
+    if (message === 'Onboarding link not found') {
+      return res.status(404).json({ error: message });
+    }
+    console.error('Error fetching intake config:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 export async function submitClientIntake(req: Request, res: Response) {
   try {
-    const token = String((req.query as any)?.token || (req.body as any)?.token || '');
-    const rawSlug = String((req.query as any)?.slug || (req.body as any)?.slug || '').trim();
-    const slug = normalizeSlug(rawSlug);
     let adminId: number | null = null;
-    if (token) {
-      let payload: any;
-      try {
-        payload = jwt.verify(token, ENV_CONFIG.JWT_SECRET);
-      } catch {
-        return res.status(401).json({ error: 'Invalid or expired intake token' });
+    try {
+      adminId = await resolveAdminIdFromIntake((req.query as any)?.token || (req.body as any)?.token, (req.query as any)?.slug || (req.body as any)?.slug);
+    } catch (error: any) {
+      const message = String(error?.message || 'Invalid intake request');
+      if (message === 'Invalid or expired intake token') {
+        return res.status(401).json({ error: message });
       }
-      if (!payload?.adminId || payload?.scope !== 'client_intake') {
-        return res.status(403).json({ error: 'Invalid intake token scope' });
+      if (message === 'Onboarding link not found') {
+        return res.status(404).json({ error: message });
       }
-      adminId = Number(payload.adminId);
-    } else if (rawSlug && !slug) {
-      return res.status(400).json({ error: 'Invalid onboarding slug' });
-    } else if (slug) {
-      const adminRecord = await getQuery(
-        "SELECT id FROM users WHERE onboarding_slug = ? AND role IN ('admin','super_admin') LIMIT 1",
-        [slug]
-      );
-      if (!adminRecord?.id) {
-        return res.status(404).json({ error: 'Onboarding link not found' });
+      if (message === 'Invalid intake token scope') {
+        return res.status(403).json({ error: message });
       }
-      adminId = Number(adminRecord.id);
-    } else {
-      return res.status(401).json({ error: 'Intake token required' });
+      return res.status(400).json({ error: message });
     }
+
     if (!adminId) {
       return res.status(403).json({ error: 'Invalid intake token scope' });
     }

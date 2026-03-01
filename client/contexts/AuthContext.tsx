@@ -7,14 +7,23 @@ interface UserProfile {
   first_name: string;
   last_name: string;
   company_name?: string;
+  title?: string;
   phone?: string;
   address?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  country?: string;
+  timezone?: string;
   role: string;
   avatar?: string;
   email_verified?: boolean;
   // Custom credit repair URL override
   credit_repair_url?: string;
   onboarding_slug?: string;
+  intake_redirect_url?: string | null;
+  intake_logo_url?: string | null;
+  intake_primary_color?: string | null;
   // NMI gateway settings (privileged roles only)
   nmi_merchant_id?: string;
   nmi_public_key?: string;

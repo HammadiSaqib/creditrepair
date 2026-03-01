@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate, useSearchParams, useParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,13 +26,28 @@ const normalizeSlug = (value: string) => {
     .replace(/^-|-$/g, "");
 };
 
+const normalizeHexColor = (value?: string | null) => {
+  const color = String(value || "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toUpperCase();
+  return "#16A34A";
+};
+
 const ClientIntake = () => {
   const [searchParams] = useSearchParams();
   const { slug } = useParams<{ slug?: string }>();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const token = searchParams.get("token") || "";
   const intakeSlug = normalizeSlug(slug || "");
+  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [intakeConfig, setIntakeConfig] = useState<{
+    redirectUrl: string | null;
+    logoUrl: string | null;
+    primaryColor: string;
+  }>({
+    redirectUrl: null,
+    logoUrl: null,
+    primaryColor: "#16A34A",
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [successData, setSuccessData] = useState<{ clientName?: string; clientId?: number | string } | null>(null);
@@ -54,11 +69,46 @@ const ClientIntake = () => {
     if (token) return `${window.location.origin}/client-intake?token=${encodeURIComponent(token)}`;
     return "";
   }, [intakeSlug, token]);
-  const loginTarget = useMemo(() => {
-    const email = formData.email.trim();
-    if (!email) return "/member/login";
-    return `/member/login?email=${encodeURIComponent(email)}`;
-  }, [formData.email]);
+
+  const intakePrimaryColor = useMemo(() => normalizeHexColor(intakeConfig.primaryColor), [intakeConfig.primaryColor]);
+  const intakeTint = useMemo(() => `${intakePrimaryColor}22`, [intakePrimaryColor]);
+
+  useEffect(() => {
+    const fetchIntakeConfig = async () => {
+      if (!token && !intakeSlug) {
+        setLoadingConfig(false);
+        return;
+      }
+      try {
+        const response = await clientsApi.getClientIntakeConfig({
+          token: token || undefined,
+          slug: intakeSlug || undefined,
+        });
+        const data = response.data?.data || response.data;
+        setIntakeConfig({
+          redirectUrl: data?.redirectUrl || null,
+          logoUrl: data?.logoUrl || null,
+          primaryColor: normalizeHexColor(data?.primaryColor),
+        });
+      } catch (error: any) {
+        const message = error?.response?.data?.error || error?.message || "Unable to load intake branding settings.";
+        toast({
+          title: "Intake link issue",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingConfig(false);
+      }
+    };
+    fetchIntakeConfig();
+  }, [token, intakeSlug, toast]);
+
+  const handleSuccessRedirect = () => {
+    const redirectUrl = intakeConfig.redirectUrl;
+    if (!redirectUrl) return;
+    window.location.assign(redirectUrl);
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -117,6 +167,11 @@ const ClientIntake = () => {
         title: "Intake completed",
         description: "Your credit report is being prepared.",
       });
+      if (intakeConfig.redirectUrl) {
+        setTimeout(() => {
+          handleSuccessRedirect();
+        }, 1200);
+      }
     } catch (error: any) {
       const message = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Failed to submit intake form.";
       toast({
@@ -140,41 +195,58 @@ const ClientIntake = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-emerald-100 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: `linear-gradient(140deg, #F8FAFC 10%, ${intakeTint} 90%)` }}>
       <div className="w-full max-w-xl">
         <Card className="shadow-xl border-0">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-3 p-3 bg-emerald-100 rounded-full w-fit">
-              <User className="h-6 w-6 text-emerald-600" />
-            </div>
+            {intakeConfig.logoUrl ? (
+              <img
+                src={intakeConfig.logoUrl}
+                alt="Brand logo"
+                className="mx-auto mb-3 max-h-14 object-contain"
+                onError={(event) => {
+                  (event.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            ) : (
+              <div className="mx-auto mb-3 p-3 rounded-full w-fit" style={{ backgroundColor: intakeTint }}>
+                <User className="h-6 w-6" style={{ color: intakePrimaryColor }} />
+              </div>
+            )}
             <CardTitle className="text-2xl font-bold text-gray-900">Client Intake</CardTitle>
             <CardDescription className="text-gray-600">
               Securely connect your credit monitoring platform to begin your report.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {!token && !intakeSlug ? (
+            {loadingConfig ? (
+              <div className="rounded-lg border p-4 text-sm text-slate-600" style={{ borderColor: intakeTint, backgroundColor: `${intakeTint}55` }}>
+                Loading intake configuration...
+              </div>
+            ) : (!token && !intakeSlug ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                 This intake link is missing or invalid. Please request a new link from your admin.
               </div>
             ) : successData ? (
               <div className="space-y-6">
-                <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                  <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+                <div className="flex items-start gap-3 rounded-lg border p-4" style={{ borderColor: intakeTint, backgroundColor: `${intakeTint}55` }}>
+                  <CheckCircle2 className="h-6 w-6" style={{ color: intakePrimaryColor }} />
                   <div>
-                    <div className="text-sm font-semibold text-emerald-900">
+                    <div className="text-sm font-semibold" style={{ color: "#14532D" }}>
                       {successData.clientName ? `Thanks, ${successData.clientName}.` : "Thanks for submitting your intake."}
                     </div>
-                    <div className="text-sm text-emerald-700">
+                    <div className="text-sm" style={{ color: "#166534" }}>
                       Your report details are on the way. Use the client portal to track progress.
                     </div>
                   </div>
                 </div>
                 <div className="grid gap-3">
-                  <Button onClick={() => navigate(loginTarget)} className="w-full">
-                    Go to Client Login
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
+                  {intakeConfig.redirectUrl ? (
+                    <Button onClick={handleSuccessRedirect} className="w-full" style={{ backgroundColor: intakePrimaryColor }}>
+                      Continue
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  ) : null}
                   <Button variant="outline" onClick={handleCopyLink} className="w-full">
                     <LinkIcon className="mr-2 h-4 w-4" />
                     Copy Intake Link
@@ -259,7 +331,7 @@ const ClientIntake = () => {
                   {isSubmitting ? "Submitting..." : "Submit Intake"}
                 </Button>
               </form>
-            )}
+            ))}
           </CardContent>
         </Card>
       </div>

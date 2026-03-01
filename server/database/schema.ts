@@ -212,6 +212,9 @@ async function createTables() {
       avatar TEXT,
       credit_repair_url TEXT,
       onboarding_slug TEXT,
+      intake_redirect_url TEXT,
+      intake_logo_url TEXT,
+      intake_primary_color TEXT,
       funding_override_enabled BOOLEAN DEFAULT 0,
       funding_override_signature_text TEXT,
       funding_override_signed_at DATETIME,
@@ -235,6 +238,18 @@ async function createTables() {
   }
   try {
     await runQuery(`ALTER TABLE users ADD COLUMN onboarding_slug TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN intake_redirect_url TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN intake_logo_url TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN intake_primary_color TEXT`);
   } catch (err) {
   }
   try {

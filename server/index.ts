@@ -101,6 +101,7 @@ import {
   getClient,
   createClient,
   createClientIntakeToken,
+  getClientIntakeConfig,
   submitClientIntake,
   submitGhlWebhook,
   updateClient,
@@ -571,6 +572,7 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.use("/api/contracts-admin", contractsAdminRoutes);
 
   app.post("/api/clients/intake", submitClientIntake);
+  app.get("/api/clients/intake-config", getClientIntakeConfig);
   app.post("/api/webhooks/ghl/:integration_hash", submitGhlWebhook);
   app.post("/api/clients/intake-token", authenticateToken, requireSignedAdminContract, createClientIntakeToken);
 

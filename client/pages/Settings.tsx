@@ -159,6 +159,11 @@ export default function Settings() {
   const [savingCreditRepair, setSavingCreditRepair] = useState(false);
   const [onboardingSlug, setOnboardingSlug] = useState("");
   const [savingOnboardingSlug, setSavingOnboardingSlug] = useState(false);
+  const [intakeRedirectUrl, setIntakeRedirectUrl] = useState("");
+  const [intakeLogoUrl, setIntakeLogoUrl] = useState("");
+  const [intakeLogoFile, setIntakeLogoFile] = useState<File | null>(null);
+  const [intakePrimaryColor, setIntakePrimaryColor] = useState("#16A34A");
+  const [savingIntakeBranding, setSavingIntakeBranding] = useState(false);
   const [ghlIntegration, setGhlIntegration] = useState<GhlIntegrationStatus | null>(null);
   const [ghlAccessToken, setGhlAccessToken] = useState("");
   const [ghlLocationId, setGhlLocationId] = useState("");
@@ -214,6 +219,12 @@ export default function Settings() {
   useEffect(() => {
     setOnboardingSlug(userProfile?.onboarding_slug || "");
   }, [userProfile?.onboarding_slug]);
+
+  useEffect(() => {
+    setIntakeRedirectUrl((userProfile as any)?.intake_redirect_url || "");
+    setIntakeLogoUrl((userProfile as any)?.intake_logo_url || "");
+    setIntakePrimaryColor((userProfile as any)?.intake_primary_color || "#16A34A");
+  }, [(userProfile as any)?.intake_redirect_url, (userProfile as any)?.intake_logo_url, (userProfile as any)?.intake_primary_color]);
 
   const effectiveCreditRepairUrl = useMemo(() => {
     const envUrl = import.meta.env.VITE_CREDIT_REPAIR_URL as string | undefined;
@@ -328,6 +339,108 @@ export default function Settings() {
       });
     } finally {
       setSavingCreditRepair(false);
+    }
+  };
+
+  const intakeLogoPreview = useMemo(() => {
+    if (intakeLogoFile) {
+      try {
+        return URL.createObjectURL(intakeLogoFile);
+      } catch {
+        return intakeLogoUrl || "";
+      }
+    }
+    return intakeLogoUrl || "";
+  }, [intakeLogoFile, intakeLogoUrl]);
+
+  useEffect(() => {
+    if (!intakeLogoFile || !intakeLogoPreview) return;
+    return () => {
+      try {
+        URL.revokeObjectURL(intakeLogoPreview);
+      } catch {}
+    };
+  }, [intakeLogoFile, intakeLogoPreview]);
+
+  const handleSaveIntakeBranding = async () => {
+    try {
+      setSavingIntakeBranding(true);
+      const redirect = intakeRedirectUrl.trim();
+      let logo = intakeLogoUrl.trim();
+      const color = intakePrimaryColor.trim();
+
+      if (redirect && !/^https?:\/\//i.test(redirect)) {
+        toast({
+          title: "Invalid Redirect URL",
+          description: "Use a full URL starting with http:// or https://",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (logo && !/^https?:\/\//i.test(logo)) {
+        toast({
+          title: "Invalid Logo URL",
+          description: "Use a full URL starting with http:// or https://",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+        toast({
+          title: "Invalid Color",
+          description: "Primary color must be in hex format like #16A34A",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (intakeLogoFile) {
+        if (!intakeLogoFile.type.startsWith("image/")) {
+          toast({
+            title: "Invalid Logo File",
+            description: "Please select a valid image file.",
+            variant: "destructive",
+          });
+          return;
+        }
+        if (intakeLogoFile.size > 2 * 1024 * 1024) {
+          toast({
+            title: "Logo Too Large",
+            description: "Please upload a logo smaller than 2MB.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const uploadResponse = await authApi.uploadIntakeLogo(intakeLogoFile);
+        const uploadedLogoUrl = uploadResponse?.data?.logoUrl;
+        if (!uploadedLogoUrl) {
+          throw new Error("Failed to upload intake logo");
+        }
+        logo = uploadedLogoUrl;
+      }
+
+      await authApi.updateProfile({
+        intake_redirect_url: redirect,
+        intake_logo_url: logo,
+        intake_primary_color: color.toUpperCase(),
+      });
+      await refreshProfile();
+      setIntakeLogoFile(null);
+      toast({
+        title: "Saved",
+        description: "Client intake branding updated.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.response?.data?.error || "Failed to update intake branding",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingIntakeBranding(false);
     }
   };
 
@@ -2016,6 +2129,147 @@ export default function Settings() {
                       <>
                         <Save className="h-4 w-4 mr-2" />
                         Save Link
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {canEditOnboardingSlug ? (
+            <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="gradient-text-primary flex items-center">
+                  <Palette className="h-5 w-5 mr-2" />
+                  Client Intake Branding & Redirect
+                </CardTitle>
+                <CardDescription>
+                  Set the success redirect URL, logo URL, and brand color for your intake page and iframe embed.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="intakeRedirectUrl">Success Redirect URL</Label>
+                    <Input
+                      id="intakeRedirectUrl"
+                      placeholder="https://yourdomain.com/client-intake/isellmoney/success"
+                      value={intakeRedirectUrl}
+                      onChange={(e) => setIntakeRedirectUrl(e.target.value)}
+                      className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Client is redirected here after successful intake submission.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="intakeLogoUrl">Logo URL</Label>
+                    <Input
+                      id="intakeLogoUrl"
+                      placeholder="https://yourdomain.com/logo.png"
+                      value={intakeLogoUrl}
+                      onChange={(e) => setIntakeLogoUrl(e.target.value)}
+                      className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Optional. Displayed at the top of your client intake page.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4 items-start">
+                  <div className="space-y-2">
+                    <Label htmlFor="intakeLogoFile">Upload Logo</Label>
+                    <Input
+                      id="intakeLogoFile"
+                      type="file"
+                      accept="image/*"
+                      className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        if (!file) {
+                          setIntakeLogoFile(null);
+                          return;
+                        }
+                        if (!file.type.startsWith("image/")) {
+                          toast({
+                            title: "Invalid Logo File",
+                            description: "Please choose an image file.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        if (file.size > 2 * 1024 * 1024) {
+                          toast({
+                            title: "Logo Too Large",
+                            description: "Logo size must be less than 2MB.",
+                            variant: "destructive",
+                          });
+                          return;
+                        }
+                        setIntakeLogoFile(file);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">PNG/JPG/GIF/WEBP up to 2MB.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Logo Preview</Label>
+                    <div className="h-20 rounded-md border border-border/40 bg-white flex items-center justify-center overflow-hidden">
+                      {intakeLogoPreview ? (
+                        <img src={intakeLogoPreview} alt="Intake logo preview" className="max-h-16 object-contain" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No logo selected</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4 items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor="intakePrimaryColor">Primary Color</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="intakePrimaryColorPicker"
+                        type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(intakePrimaryColor) ? intakePrimaryColor : '#16A34A'}
+                        onChange={(e) => setIntakePrimaryColor(e.target.value.toUpperCase())}
+                        className="w-16 h-10 p-1 bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                      />
+                      <Input
+                        id="intakePrimaryColor"
+                        placeholder="#16A34A"
+                        value={intakePrimaryColor}
+                        onChange={(e) => setIntakePrimaryColor(e.target.value)}
+                        className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                      />
+                      <div
+                        className="h-10 w-10 rounded-md border border-slate-200 dark:border-slate-600"
+                        style={{ backgroundColor: /^#[0-9a-fA-F]{6}$/.test(intakePrimaryColor) ? intakePrimaryColor : '#16A34A' }}
+                      />
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground border border-border/40 rounded-md p-3">
+                    <div className="font-semibold mb-1">Iframe embed (same branding applies)</div>
+                    <code className="break-all">{onboardingLink ? `<iframe src="${onboardingLink}" style="width:100%; height:900px; border:0;" title="Client Intake"></iframe>` : 'Save onboarding slug first to generate embed code.'}</code>
+                  </div>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    className="gradient-primary hover:opacity-90"
+                    onClick={handleSaveIntakeBranding}
+                    disabled={savingIntakeBranding}
+                  >
+                    {savingIntakeBranding ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Intake Branding
                       </>
                     )}
                   </Button>

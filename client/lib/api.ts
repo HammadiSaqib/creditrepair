@@ -189,6 +189,9 @@ export const authApi = {
     // Custom credit repair URL override
     credit_repair_url?: string;
     onboarding_slug?: string;
+    intake_redirect_url?: string;
+    intake_logo_url?: string;
+    intake_primary_color?: string;
     // NMI gateway fields
     nmi_merchant_id?: string;
     nmi_public_key?: string;
@@ -227,6 +230,16 @@ export const authApi = {
     const formData = new FormData();
     formData.append('gateway_logo', file);
     return api.post('/api/profile/upload-gateway-logo', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  },
+
+  uploadIntakeLogo: (file: File) => {
+    const formData = new FormData();
+    formData.append('intake_logo', file);
+    return api.post('/api/profile/upload-intake-logo', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -276,6 +289,7 @@ export const clientsApi = {
   saveDebtPayoffPlan: (plan: any) => api.post('/api/debt-payoff', plan),
   deleteDebtPayoffPlan: (id: number) => api.delete(`/api/debt-payoff/${id}`),
   getClientIntakeToken: () => api.post('/api/clients/intake-token'),
+  getClientIntakeConfig: (params: { token?: string; slug?: string }) => api.get('/api/clients/intake-config', { params }),
   submitClientIntake: (data: { token?: string; slug?: string; platform: string; email: string; password: string; ssnLast4?: string }) =>
     api.post('/api/clients/intake', data),
 };

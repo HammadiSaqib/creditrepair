@@ -29,6 +29,35 @@ const storage = multer.diskStorage({
   }
 });
 
+const intakeLogoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.resolve(process.cwd(), 'uploads/intake-logos');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'intake-logo-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const intakeLogoUpload = multer({
+  storage: intakeLogoStorage,
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Invalid file type. Only JPEG, JPG, PNG, GIF, and WEBP files are allowed.'));
+  }
+});
+
 const upload = multer({ 
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit for profile images
@@ -196,6 +225,40 @@ router.post('/upload-gateway-logo', authenticateToken, gatewayUpload.single('gat
   } catch (error) {
     console.error('Error uploading gateway logo:', error);
     res.status(500).json({ message: 'Error uploading gateway logo' });
+  }
+});
+
+router.post('/upload-intake-logo', authenticateToken, intakeLogoUpload.single('intake_logo'), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
+
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    if (!userRole || !['admin', 'super_admin'].includes(userRole)) {
+      return res.status(403).json({ message: 'Insufficient permissions to upload intake logo' });
+    }
+
+    const baseUrl = getServerBaseUrl(req);
+    const logoUrl = `${baseUrl}/uploads/intake-logos/${req.file.filename}`;
+
+    await runQuery(
+      'UPDATE users SET intake_logo_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [logoUrl, userId]
+    );
+
+    res.json({
+      message: 'Intake logo uploaded successfully',
+      logoUrl,
+    });
+  } catch (error) {
+    console.error('Error uploading intake logo:', error);
+    res.status(500).json({ message: 'Error uploading intake logo' });
   }
 });
 

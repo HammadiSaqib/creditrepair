@@ -1180,6 +1180,9 @@ export class AuthController {
         company_name: user.company_name,
         credit_repair_url: user.credit_repair_url || null,
         onboarding_slug: user.onboarding_slug || null,
+        intake_redirect_url: user.intake_redirect_url || null,
+        intake_logo_url: user.intake_logo_url || null,
+        intake_primary_color: user.intake_primary_color || null,
         funding_override_enabled: user.funding_override_enabled ? true : false,
         funding_override_signature_text: user.funding_override_signature_text || null,
         funding_override_signed_at: user.funding_override_signed_at || null,
@@ -1263,6 +1266,9 @@ export class AuthController {
         company_name: z.string().nullable().optional(),
         credit_repair_url: z.string().optional(),
         onboarding_slug: z.string().optional(),
+        intake_redirect_url: z.string().optional(),
+        intake_logo_url: z.string().optional(),
+        intake_primary_color: z.string().optional(),
         funding_override_enabled: z.boolean().optional(),
         funding_override_signature_text: z.string().optional(),
         email: z.string().email().optional(),
@@ -1301,6 +1307,58 @@ export class AuthController {
           return res.status(400).json({ error: 'Onboarding slug must be 1-80 characters and URL-safe' });
         }
         (profileUpdates as any).onboarding_slug = normalizedSlug;
+      }
+
+      const hasIntakeBrandingUpdate =
+        typeof (profileUpdates as any).intake_redirect_url !== 'undefined'
+        || typeof (profileUpdates as any).intake_logo_url !== 'undefined'
+        || typeof (profileUpdates as any).intake_primary_color !== 'undefined';
+
+      if (hasIntakeBrandingUpdate) {
+        const role = req.user!.role;
+        if (!['admin', 'super_admin'].includes(role)) {
+          return res.status(403).json({ error: 'Insufficient permissions to update intake branding' });
+        }
+
+        if (typeof (profileUpdates as any).intake_redirect_url !== 'undefined') {
+          const raw = String((profileUpdates as any).intake_redirect_url || '').trim();
+          if (!/^https?:\/\//i.test(raw)) {
+            return res.status(400).json({ error: 'Redirect URL must start with http:// or https://' });
+          }
+          try {
+            const parsed = new URL(raw);
+            if (!parsed.protocol.startsWith('http')) {
+              return res.status(400).json({ error: 'Redirect URL must be http or https' });
+            }
+            (profileUpdates as any).intake_redirect_url = parsed.toString();
+          } catch {
+            return res.status(400).json({ error: 'Invalid redirect URL' });
+          }
+        }
+
+        if (typeof (profileUpdates as any).intake_logo_url !== 'undefined') {
+          const raw = String((profileUpdates as any).intake_logo_url || '').trim();
+          if (!/^https?:\/\//i.test(raw)) {
+            return res.status(400).json({ error: 'Logo URL must start with http:// or https://' });
+          }
+          try {
+            const parsed = new URL(raw);
+            if (!parsed.protocol.startsWith('http')) {
+              return res.status(400).json({ error: 'Logo URL must be http or https' });
+            }
+            (profileUpdates as any).intake_logo_url = parsed.toString();
+          } catch {
+            return res.status(400).json({ error: 'Invalid logo URL' });
+          }
+        }
+
+        if (typeof (profileUpdates as any).intake_primary_color !== 'undefined') {
+          const color = String((profileUpdates as any).intake_primary_color || '').trim();
+          if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+            return res.status(400).json({ error: 'Primary color must be a hex color like #16A34A' });
+          }
+          (profileUpdates as any).intake_primary_color = color.toUpperCase();
+        }
       }
       
       // Handle password change if provided
@@ -1516,6 +1574,9 @@ export class AuthController {
           company_name: updatedUser.company_name,
           credit_repair_url: updatedUser.credit_repair_url,
           onboarding_slug: updatedUser.onboarding_slug || null,
+          intake_redirect_url: updatedUser.intake_redirect_url || null,
+          intake_logo_url: updatedUser.intake_logo_url || null,
+          intake_primary_color: updatedUser.intake_primary_color || null,
           funding_override_enabled: updatedUser.funding_override_enabled ? true : false,
           funding_override_signature_text: updatedUser.funding_override_signature_text || null,
           funding_override_signed_at: updatedUser.funding_override_signed_at || null,
