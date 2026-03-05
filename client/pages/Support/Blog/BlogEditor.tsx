@@ -89,7 +89,8 @@ const BlogEditor = () => {
     width: string;
     height: string;
     alt: string;
-  }>({ visible: false, x: 0, y: 0, image: null, width: '', height: '', alt: '' });
+    align: 'left' | 'center' | 'right' | 'none';
+  }>({ visible: false, x: 0, y: 0, image: null, width: '', height: '', alt: '', align: 'none' });
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Sync content to editor when switching to visual mode
@@ -541,6 +542,12 @@ const BlogEditor = () => {
     if (e.target instanceof HTMLImageElement) {
       e.preventDefault();
       setSelectedImage(e.target);
+      
+      let align: 'left' | 'center' | 'right' | 'none' = 'none';
+      if (e.target.style.float === 'left') align = 'left';
+      else if (e.target.style.float === 'right') align = 'right';
+      else if (e.target.style.display === 'block' && e.target.style.margin === 'auto') align = 'center';
+
       setImageContextMenu({
         visible: true,
         x: e.clientX,
@@ -548,7 +555,8 @@ const BlogEditor = () => {
         image: e.target,
         width: e.target.offsetWidth.toString(),
         height: e.target.offsetHeight.toString(),
-        alt: e.target.alt || ''
+        alt: e.target.alt || '',
+        align
       });
     } else {
       setImageContextMenu(prev => ({ ...prev, visible: false }));
@@ -1155,6 +1163,35 @@ const BlogEditor = () => {
                     className="h-8 text-sm"
                   />
                 </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Alignment</Label>
+                  <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-md border">
+                    <Button 
+                      size="sm" 
+                      variant={imageContextMenu.align === 'left' ? 'secondary' : 'ghost'} 
+                      className="h-7 flex-1 px-0"
+                      onClick={() => setImageContextMenu(prev => ({ ...prev, align: 'left' }))}
+                    >
+                      <AlignLeft className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant={imageContextMenu.align === 'center' ? 'secondary' : 'ghost'} 
+                      className="h-7 flex-1 px-0"
+                      onClick={() => setImageContextMenu(prev => ({ ...prev, align: 'center' }))}
+                    >
+                      <AlignCenter className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant={imageContextMenu.align === 'right' ? 'secondary' : 'ghost'} 
+                      className="h-7 flex-1 px-0"
+                      onClick={() => setImageContextMenu(prev => ({ ...prev, align: 'right' }))}
+                    >
+                      <AlignRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
                 <Button 
                   size="sm" 
                   className="w-full mt-2"
@@ -1164,8 +1201,28 @@ const BlogEditor = () => {
                       imageContextMenu.image.style.height = `${imageContextMenu.height}px`;
                       imageContextMenu.image.alt = imageContextMenu.alt;
                       
+                      // Handle Alignment
+                      imageContextMenu.image.style.float = '';
+                      imageContextMenu.image.style.display = '';
+                      imageContextMenu.image.style.margin = '';
+                      
+                      if (imageContextMenu.align === 'left') {
+                        imageContextMenu.image.style.float = 'left';
+                        imageContextMenu.image.style.marginRight = '1em';
+                        imageContextMenu.image.style.marginBottom = '1em';
+                      } else if (imageContextMenu.align === 'right') {
+                        imageContextMenu.image.style.float = 'right';
+                        imageContextMenu.image.style.marginLeft = '1em';
+                        imageContextMenu.image.style.marginBottom = '1em';
+                      } else if (imageContextMenu.align === 'center') {
+                        imageContextMenu.image.style.display = 'block';
+                        imageContextMenu.image.style.margin = 'auto';
+                      }
+
                       if (editorRef.current) {
                         setValue('content', editorRef.current.innerHTML, { shouldDirty: true, shouldValidate: true });
+                        // Update selection handles if image moved
+                        setTimeout(updateImageRect, 50);
                       }
                     }
                     setImageContextMenu(prev => ({ ...prev, visible: false }));
