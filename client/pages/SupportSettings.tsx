@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import type { ChangeEvent, DragEvent } from "react";
 import SupportLayout from "@/components/SupportLayout";
-import { supportApi } from "@/lib/api";
+import { supportApi, authApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,9 @@ import {
   BarChart3,
   Timer,
   UserPlus,
-  UserMinus
+  UserMinus,
+  Upload,
+  User as UserIcon
 } from "lucide-react";
 
 interface TeamMember {
@@ -107,8 +110,17 @@ interface GeneralSettings {
 }
 
 export default function SupportSettings() {
-  const { user } = useAuth();
+  const { user, refreshAuth } = useAuth();
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [profileData, setProfileData] = useState({
+    first_name: "",
+    last_name: "",
+    avatar: ""
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingProfileImg, setUploadingProfileImg] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [notifications, setNotifications] = useState<NotificationSettings>({
     email_notifications: true,
     push_notifications: true,
@@ -313,10 +325,93 @@ export default function SupportSettings() {
     }
   };
 
-  // Load data on component mount
+  const loadProfile = useCallback(async () => {
+    try {
+      setProfileLoading(true);
+      const response = await authApi.getProfile();
+      const profile = response.data?.user;
+      setProfileData({
+        first_name: profile?.first_name || "",
+        last_name: profile?.last_name || "",
+        avatar: profile?.avatar || ""
+      });
+    } catch (err) {
+      console.error('Failed to load profile:', err);
+      setError('Failed to load profile information');
+    } finally {
+      setProfileLoading(false);
+    }
+  }, [setError]);
+
   useEffect(() => {
     fetchAllSettings();
   }, []);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const handleProfileImageUpload = async (
+    event: ChangeEvent<HTMLInputElement> | DragEvent<HTMLDivElement>
+  ) => {
+    let file: File | undefined;
+
+    if ('dataTransfer' in event) {
+      event.preventDefault();
+      file = event.dataTransfer?.files?.[0];
+    } else {
+      file = event.target.files?.[0];
+    }
+
+    if (!file) return;
+
+    setUploadingProfileImg(true);
+
+    try {
+      const response = await authApi.uploadAvatar(file);
+      const newAvatarUrl = response.data?.avatarUrl || response.data?.avatar;
+      if (newAvatarUrl) {
+        setProfileData(prev => ({ ...prev, avatar: newAvatarUrl }));
+      }
+      await refreshAuth();
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+      setError('Failed to upload avatar');
+    } finally {
+      setUploadingProfileImg(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    try {
+      setSavingProfile(true);
+      setError(null);
+      const response = await authApi.updateProfile({
+        first_name: profileData.first_name || undefined,
+        last_name: profileData.last_name || undefined
+      });
+
+      const updatedUser = response.data?.user;
+      if (updatedUser) {
+        setProfileData(prev => ({
+          ...prev,
+          first_name: updatedUser.first_name || prev.first_name,
+          last_name: updatedUser.last_name || prev.last_name,
+          avatar: updatedUser.avatar || prev.avatar
+        }));
+      }
+
+      await refreshAuth();
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      setError('Failed to save profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const availablePermissions = [
     { id: "manage_tickets", label: "Manage Tickets", description: "Create, edit, and close tickets" },
@@ -416,7 +511,7 @@ export default function SupportSettings() {
            : updatedMember.permissions,
          phone: updatedMember.phone,
          department: updatedMember.department
-       };
+       } as any; // Cast to any to bypass the Partial<TeamMember> type check which expects string[] for permissions
       
       const success = await updateTeamMember(selectedMember.id, memberData);
       if (success) {
@@ -434,8 +529,8 @@ export default function SupportSettings() {
     }
   };
 
-  const handleUpdateMemberStatus = async (memberId: number, status: "active" | "inactive" | "away") => {
-    const success = await updateTeamMember(memberId, { status });
+  const handleUpdateMemberStatus = async (memberId: number, status: string) => {
+    const success = await updateTeamMember(memberId, { status: status as "active" | "inactive" });
     if (!success) {
       console.error('Failed to update member status');
     }
@@ -480,14 +575,118 @@ export default function SupportSettings() {
             </div>
           </div>
         )}
-        <Tabs defaultValue="general" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+        <Tabs defaultValue="profile" className="w-full">
+          <TabsList className="grid w-full grid-cols-6 mb-8">
+            <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="team">Team</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
             <TabsTrigger value="hours">Working Hours</TabsTrigger>
             <TabsTrigger value="integrations">Integrations</TabsTrigger>
           </TabsList>
+
+          {/* Profile Settings */}
+          <TabsContent value="profile" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <UserIcon className="h-5 w-5" />
+                  My Profile
+                </CardTitle>
+                <CardDescription>
+                  Manage your personal information and avatar
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {profileLoading ? (
+                  <div className="flex justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-col md:flex-row gap-8">
+                      {/* Avatar Upload Area */}
+                      <div className="flex flex-col items-center space-y-4">
+                        <Avatar className="h-32 w-32 border-4 border-muted">
+                          <AvatarImage src={profileData.avatar} className="object-cover" />
+                          <AvatarFallback className="text-4xl">
+                            {profileData.first_name?.[0]}{profileData.last_name?.[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        
+                        <div 
+                          className="border-2 border-dashed rounded-md p-6 text-center hover:bg-muted/50 transition-colors relative cursor-pointer w-64"
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={handleProfileImageUpload}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                           <input
+                            type="file"
+                            className="hidden"
+                            ref={fileInputRef}
+                            onChange={handleProfileImageUpload}
+                            accept="image/*"
+                            disabled={uploadingProfileImg}
+                          />
+                          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                            {uploadingProfileImg ? <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div> : <Upload className="h-8 w-8" />}
+                            <span className="text-xs font-medium">Drag an image here or click to upload</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Personal Info Area */}
+                      <div className="flex-1 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="firstName">First Name</Label>
+                            <Input
+                              id="firstName"
+                              value={profileData.first_name}
+                              onChange={(e) => setProfileData(prev => ({ ...prev, first_name: e.target.value }))}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="lastName">Last Name</Label>
+                            <Input
+                              id="lastName"
+                              value={profileData.last_name}
+                              onChange={(e) => setProfileData(prev => ({ ...prev, last_name: e.target.value }))}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                            <Label>Email</Label>
+                            <Input value={user?.email || ''} disabled className="bg-muted" />
+                            <p className="text-xs text-muted-foreground">Email address cannot be changed</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button 
+                        onClick={handleSaveProfile} 
+                        disabled={savingProfile || uploadingProfileImg}
+                        className="bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        {savingProfile ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="h-4 w-4 mr-2" />
+                            Save Profile
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* General Settings */}
           <TabsContent value="general" className="space-y-6">
