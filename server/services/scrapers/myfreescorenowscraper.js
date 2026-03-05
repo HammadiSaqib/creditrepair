@@ -6,6 +6,8 @@
 
 import fs from 'fs';
 import path from 'path';
+import puppeteer from 'puppeteer';
+import UserAgent from 'user-agents';
 import { Scraper } from '../../../scraper/scrapper.js';
 import { convertNewToLegacy } from './converter.js';
 
@@ -20,6 +22,62 @@ const LEGACY_REPORT_KEYS = [
   'PublicRecords',
   'Accounts',
 ];
+
+// Incognito variant of Scraper that uses a fresh browser context per run
+class IncognitoScraper extends Scraper {
+  async initialize() {
+    const userAgent = new UserAgent({ deviceCategory: 'desktop' });
+
+    const configuredHeadless = this.conf?.puppeteerConfig?.headless;
+    const forceHeaded = process.env.SCRAPER_HEADED === '1' || configuredHeadless === false;
+    const puppeteerConfig = {
+      ...this.conf.puppeteerConfig,
+      headless: forceHeaded ? false : configuredHeadless,
+      devtools: forceHeaded ? true : !!this.conf.puppeteerConfig?.devtools,
+      args: (this.conf.puppeteerConfig?.args || [])
+    };
+
+    // Remove persistent profile to avoid cross-client cookies/storage
+    if (puppeteerConfig && Object.prototype.hasOwnProperty.call(puppeteerConfig, 'userDataDir')) {
+      try { delete puppeteerConfig.userDataDir; } catch {}
+    }
+
+    this.browser = await puppeteer.launch(puppeteerConfig);
+
+    if (typeof this.browser.createBrowserContext === 'function') {
+      this.context = await this.browser.createBrowserContext();
+      this.page = await this.context.newPage();
+    } else {
+      this.page = await this.browser.newPage();
+    }
+
+    this.page.setUserAgent(userAgent.toString());
+
+    // Preload script if present
+    if (this.conf.puppeteerPreloadJs && this.conf.puppeteerPreloadJs[0] && fs.existsSync(this.conf.puppeteerPreloadJs[0])) {
+      const preloadFile = fs.readFileSync(this.conf.puppeteerPreloadJs[0], { encoding: 'utf-8' });
+      await this.page.evaluateOnNewDocument(preloadFile);
+    }
+
+    await this.page.setViewport(this.conf.puppeteerResolution);
+    await this.page.evaluateOnNewDocument(() => {
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+    });
+    await this.page.setExtraHTTPHeaders(this.conf.puppeteerHttpHeaders);
+  }
+
+  async initializeTest() {
+    await this.initialize();
+  }
+
+  async close() {
+    if (!this.browser) throw new Error('Browser is not initialized. Call initialize() first.');
+    if (this.page) await this.page.close();
+    if (this.context) { try { await this.context.close(); } catch {} }
+    await this.browser.close();
+  }
+}
 
 function hasWrapperKeys(reportData) {
   if (!reportData || typeof reportData !== 'object') return false;
@@ -76,7 +134,18 @@ const safeStringify = (obj) => {
 async function fetchMyFreeScoreNowReport(username, password, options = {}) {
   const { outputDir = './scraper-output', clientId } = options;
   const configPath = path.resolve(process.cwd(), 'configs/pupeeter_saad.json');
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const baseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  // Enforce isolation for MyFreeScoreNow: incognito + no persistent userDataDir
+  const config = {
+    ...baseConfig,
+    useIncognito: true,
+    puppeteerConfig: {
+      ...baseConfig.puppeteerConfig
+    }
+  };
+  if (config.puppeteerConfig && Object.prototype.hasOwnProperty.call(config.puppeteerConfig, 'userDataDir')) {
+    try { delete config.puppeteerConfig.userDataDir; } catch {}
+  }
   
   // Create output directory if it doesn't exist
   if (!fs.existsSync(outputDir)) {
@@ -85,7 +154,7 @@ async function fetchMyFreeScoreNowReport(username, password, options = {}) {
   
   try {
     // Initialize the scraper with the configuration
-    const scraper = new Scraper(config);
+    const scraper = new IncognitoScraper(config);
     
     // Perform the scraping
     const scrapedData = await scraper.Scrap(false, username, password);

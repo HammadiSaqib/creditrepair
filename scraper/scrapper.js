@@ -146,6 +146,71 @@ export class Scraper {
         return result || { EFX: [], EXP: [], TU: [] };
       };
 
+      // Fallback: fetch credit report JSON per bureau if not captured automatically
+      const reportEndpoints = {
+        EFX: 'https://api.myfreescorenow.com/api/member/equifax/credit-report',
+        EXP: 'https://api.myfreescorenow.com/api/member/experian/credit-report',
+        TU:  'https://api.myfreescorenow.com/api/member/transunion/credit-report',
+      };
+
+      const fetchReportsPerBureau = async () => {
+        if (!this.page) return { EFX: null, EXP: null, TU: null };
+        const result = await this.page.evaluate(async (endpoints) => {
+          const out = { EFX: null, EXP: null, TU: null };
+          // Extract CSRF token from cookies and possible Bearer token from localStorage
+          const cookieStr = document.cookie || '';
+          const cookieMap = cookieStr.split(';').reduce((acc, c) => {
+            const parts = c.split('=');
+            const k = (parts.shift() || '').trim();
+            const v = decodeURIComponent(parts.join('='));
+            if (k) acc[k] = v;
+            return acc;
+          }, {});
+          const xsrf = cookieMap['XSRF-TOKEN'] || cookieMap['xsrf-token'] || cookieMap['X_XSRF_TOKEN'] || cookieMap['csrf'] || cookieMap['csrftoken'] || null;
+          let auth = null;
+          try {
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              const val = (localStorage.getItem(key) || '').trim();
+              if (/^Bearer\s+/i.test(val)) { auth = val; break; }
+              if (key && /token|auth|access/i.test(key) && val && val.length > 10) { auth = 'Bearer ' + val.replace(/^"|"$/g, ''); break; }
+            }
+          } catch {}
+          const buildHeaders = () => {
+            const h = { 'content-type': 'application/json' };
+            if (xsrf) h['x-xsrf-token'] = xsrf;
+            if (auth) h['authorization'] = auth;
+            return h;
+          };
+
+          const entries = Object.entries(endpoints || {});
+          for (const [bureau, url] of entries) {
+            try {
+              let response = await fetch(url, {
+                method: 'POST',
+                credentials: 'include',
+                headers: buildHeaders(),
+                body: '{}',
+              });
+              if (!response.ok) {
+                // Retry as GET if POST is not accepted
+                response = await fetch(url, {
+                  method: 'GET',
+                  credentials: 'include',
+                  headers: buildHeaders()
+                });
+              }
+              if (!response.ok) continue;
+              const text = await response.text();
+              if (!text) continue;
+              try { out[bureau] = JSON.parse(text); } catch {}
+            } catch {}
+          }
+          return out;
+        }, reportEndpoints);
+        return result || { EFX: null, EXP: null, TU: null };
+      };
+
       const scorePayload = (payload, url) => {
         let score = 0;
         if (!payload || typeof payload !== 'object') return score;
@@ -461,14 +526,34 @@ export class Scraper {
       ]);
 
       if (responseCandidates.length > 0) {
-        const latestCandidate = responseCandidates[responseCandidates.length - 1];
-        if (latestCandidate && latestCandidate.payload) {
-          data = latestCandidate.payload;
-          console.log(`Using latest captured JSON candidate: #${responseCandidates.length}`);
+        const best = responseCandidates.slice().sort((a, b) => b.score - a.score)[0];
+        if (best && best.payload) {
+          data = best.payload;
+          console.log(`Using best captured JSON candidate by score: ${best.score}`);
         }
       }
 
       console.log('Captured JSON response candidates:', responseCandidates.length);
+
+      // If we still don't have a convincing report payload, try explicit fetch to credit-report endpoints
+      const looksLikeReport = (obj) => {
+        if (!obj || typeof obj !== 'object') return false;
+        return Boolean(
+          obj.BundleComponents || obj.TrueLinkCreditReportType || obj.rawCreditData || obj.sections ||
+          obj.CreditReport || obj.Score || obj.Accounts
+        );
+      };
+
+      if (!data || Object.keys(data).length === 0 || !looksLikeReport(data)) {
+        try {
+          const reports = await fetchReportsPerBureau();
+          const preferred = reports.EFX || reports.EXP || reports.TU;
+          if (preferred && looksLikeReport(preferred)) {
+            data = preferred;
+            console.log('Using fallback bureau credit-report fetch');
+          }
+        } catch {}
+      }
 
       if (responseCandidates.length > 0) {
         try {

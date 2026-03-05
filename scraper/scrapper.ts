@@ -1,4 +1,4 @@
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteer, { Browser, Page, BrowserContext } from 'puppeteer';
 import * as fs from 'fs';
 import { Utils } from './utils';
 // import { HttpProxyAgent, HttpProxyAgentOptions } from "http-proxy-agent"
@@ -56,6 +56,7 @@ export interface PuppeteerConfiguration {
   puppeteerHttpHeaders: Record<string, string>;
   evaluations: Evaluations;
   selectors: PuppeteerSelectors;
+  useIncognito?: boolean;
 }
 
 export interface ScraperInterface {
@@ -69,6 +70,8 @@ export interface ScraperInterface {
 export class Scraper implements ScraperInterface {
   protected browser!: Browser;
   protected page!: Page;
+  protected context: BrowserContext | null = null;
+  protected incognito: boolean = false;
   protected conf: PuppeteerConfiguration;
 
 
@@ -93,12 +96,22 @@ export class Scraper implements ScraperInterface {
   protected async initialize() {
     const userAgent = new UserAgent({ deviceCategory: "desktop" });
     this.browser = await puppeteer.launch(this.conf.puppeteerConfig);
-    this.page = await this.browser.newPage();
+    this.incognito = process.env.SCRAPER_INCOGNITO === '1' || !!this.conf.useIncognito;
+    if (this.incognito) {
+      this.context = await this.browser.createBrowserContext();
+      this.page = await this.context.newPage();
+    } else {
+      this.page = await this.browser.newPage();
+    }
     this.page.setUserAgent(userAgent.toString())
 
     const preloadFile = fs.readFileSync(this.conf.puppeteerPreloadJs[0], { encoding: 'utf-8' });
     await this.page.setViewport(this.conf.puppeteerResolution)
     await this.page.evaluateOnNewDocument(preloadFile)
+    await this.page.evaluateOnNewDocument(() => {
+      try { localStorage.clear(); } catch {}
+      try { sessionStorage.clear(); } catch {}
+    })
     await this.page.setExtraHTTPHeaders(this.conf.puppeteerHttpHeaders)
     // let promises = await Promise.all([
     // ])
@@ -106,7 +119,13 @@ export class Scraper implements ScraperInterface {
 
   protected async initializeTest() {
     this.browser = await puppeteer.launch();
-    this.page = await this.browser.newPage();
+    this.incognito = process.env.SCRAPER_INCOGNITO === '1' || !!this.conf.useIncognito;
+    if (this.incognito) {
+      this.context = await this.browser.createBrowserContext();
+      this.page = await this.context.newPage();
+    } else {
+      this.page = await this.browser.newPage();
+    }
   }
 
 
@@ -717,6 +736,12 @@ export class Scraper implements ScraperInterface {
       if (this.page) await this.page.close();
     } catch (error) {
       console.log('Warning: Error closing page, it may already be closed');
+    }
+    
+    try {
+      if (this.incognito && this.context) await this.context.close();
+    } catch (error) {
+      console.log('Warning: Error closing context, it may already be closed');
     }
     
     try {

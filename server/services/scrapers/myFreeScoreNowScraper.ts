@@ -45,6 +45,11 @@ async function fetchMyFreeScoreNowReport(username, password, options = {}) {
     console.log('Loading configuration from:', configPath);
     const configData = fs.readFileSync(configPath, 'utf8');
     const config = JSON.parse(configData) as PuppeteerConfiguration;
+    // Force incognito context per client to avoid cross-session persistence
+    (config as any).useIncognito = true;
+    if ((config as any).puppeteerConfig && Object.prototype.hasOwnProperty.call((config as any).puppeteerConfig, 'userDataDir')) {
+      try { delete (config as any).puppeteerConfig.userDataDir; } catch {}
+    }
     
     // Log configuration details for debugging
     console.log('Configuration loaded:', {
