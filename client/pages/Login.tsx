@@ -70,9 +70,12 @@ export default function Login() {
     confirmPassword: "",
     first_name: "",
     last_name: "",
+    phone: "",
     company_name: "",
     terms: false,
   });
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [showSignupConfirm, setShowSignupConfirm] = useState(false);
 
   const [verificationData, setVerificationData] = useState({
     email: "",
@@ -256,6 +259,23 @@ export default function Login() {
       });
       return;
     }
+    const normalizedPhone = signupData.phone.replace(/[^\d+]/g, '');
+    if (!normalizedPhone) {
+      toast({
+        title: "Validation Error",
+        description: "Phone number is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!/^\+?[0-9]{7,15}$/.test(normalizedPhone)) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a valid phone number",
+        variant: "destructive",
+      });
+      return;
+    }
     if (signupData.password.length < 8) {
       toast({
         title: "Validation Error",
@@ -288,6 +308,7 @@ export default function Login() {
         first_name: signupData.first_name,
         last_name: signupData.last_name,
         email: signupData.email,
+        phone: normalizedPhone,
         company_name: signupData.company_name || null,
         password: signupData.password,
       };

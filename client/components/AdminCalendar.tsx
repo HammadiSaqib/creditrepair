@@ -11,6 +11,9 @@ import {
 } from './ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { cn } from '../lib/utils';
+import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
+import { Label } from './ui/label';
 
 interface CalendarEvent {
   id: string;
@@ -85,6 +88,11 @@ const AdminCalendar: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState('calendar');
   const [selectedDayDateStr, setSelectedDayDateStr] = useState<string | null>(null);
+  const [selectedDayHasEvents, setSelectedDayHasEvents] = useState(false);
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [isSavingNote, setIsSavingNote] = useState(false);
 
   // Derive upcoming events from calendar events if API returns none
   const computeUpcomingFallback = () => {
@@ -408,19 +416,25 @@ const AdminCalendar: React.FC = () => {
                       !day.isCurrentMonth && day.isPrevMonth && "bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-700 border-emerald-200 dark:text-white dark:border-slate-700",
                       !day.isCurrentMonth && day.isNextMonth && "bg-gradient-to-br from-blue-50 to-blue-100 text-blue-700 border-blue-200 dark:text-white dark:border-slate-700",
                       day.isToday && "bg-blue-50 border-blue-300 dark:text-white dark:border-slate-700",
-                      day.events.length > 0 && "cursor-pointer"
+                      "cursor-pointer"
                     )}
                     onClick={() => {
-                      if (day.events.length === 0) return;
                       setSelectedDayDateStr(day.dateStr);
+                      setSelectedDayHasEvents(day.events.length > 0);
+                      setNoteTitle('');
+                      setNoteContent('');
+                      setNoteError(null);
                     }}
-                    role={day.events.length > 0 ? "button" : undefined}
-                    tabIndex={day.events.length > 0 ? 0 : undefined}
+                    role="button"
+                    tabIndex={0}
                     onKeyDown={(e) => {
-                      if (day.events.length === 0) return;
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         setSelectedDayDateStr(day.dateStr);
+                        setSelectedDayHasEvents(day.events.length > 0);
+                        setNoteTitle('');
+                        setNoteContent('');
+                        setNoteError(null);
                       }
                     }}
                   >
@@ -552,14 +566,25 @@ const AdminCalendar: React.FC = () => {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={!!selectedDayDateStr} onOpenChange={(open) => (!open ? setSelectedDayDateStr(null) : undefined)}>
+      <Dialog
+        open={!!selectedDayDateStr}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedDayDateStr(null);
+            setSelectedDayHasEvents(false);
+            setNoteTitle('');
+            setNoteContent('');
+            setNoteError(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               {selectedDayDateStr ? formatDate(selectedDayDateStr) : "Day Events"}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-6">
             {selectedDayEvents.length > 0 ? (
               selectedDayEvents
                 .slice()
@@ -631,7 +656,100 @@ const AdminCalendar: React.FC = () => {
             ) : (
               <div className="text-center py-6 text-gray-500">
                 <Calendar className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                <p>No events for this day</p>
+                <p>No events for this day yet</p>
+              </div>
+            )}
+            {selectedDayDateStr && (
+              <div className="pt-4 border-t border-gray-200 space-y-4">
+                <div>
+                  <h4 className="font-medium text-gray-900">Add Admin Note</h4>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Create a quick note that stays pinned to this calendar date for administrators.
+                  </p>
+                </div>
+                <div className="grid gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="calendar-note-title">Title</Label>
+                    <Input
+                      id="calendar-note-title"
+                      value={noteTitle}
+                      onChange={(e) => setNoteTitle(e.target.value)}
+                      placeholder="e.g. Follow up call"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="calendar-note-description">Note</Label>
+                    <Textarea
+                      id="calendar-note-description"
+                      value={noteContent}
+                      onChange={(e) => setNoteContent(e.target.value)}
+                      placeholder="Add any important reminders or details for this day"
+                      rows={4}
+                    />
+                  </div>
+                  {noteError && (
+                    <p className="text-sm text-red-600">{noteError}</p>
+                  )}
+                  <div className="flex justify-between items-center text-sm text-gray-500">
+                    <span>{selectedDayHasEvents ? 'Existing events will stay visible.' : 'No events scheduled yet.'}</span>
+                    <Button
+                      size="sm"
+                      onClick={async () => {
+                        if (!selectedDayDateStr) return;
+                        if (!noteContent.trim()) {
+                          setNoteError('Please enter a note before saving.');
+                          return;
+                        }
+                        try {
+                          setIsSavingNote(true);
+                          setNoteError(null);
+                          const token = localStorage.getItem('auth_token');
+                          if (!token) {
+                            throw new Error('Authentication required.');
+                          }
+                          const payload = {
+                            title: noteTitle.trim() || 'Admin Note',
+                            description: noteContent.trim(),
+                            date: `${selectedDayDateStr}T12:00:00`,
+                            time: null,
+                            type: 'other',
+                            duration: 'All-day',
+                            is_virtual: false,
+                            is_physical: false,
+                            visible_to_admins: true,
+                          };
+                          const response = await fetch('/api/calendar/events', {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`,
+                            },
+                            body: JSON.stringify(payload),
+                          });
+                          if (!response.ok) {
+                            const data = await response.json().catch(() => null);
+                            throw new Error(data?.error || 'Failed to save note');
+                          }
+                          await fetchCalendarEvents(selectedDate.getMonth() + 1, selectedDate.getFullYear());
+                          await fetchUpcomingEvents();
+                          setSelectedDayDateStr(null);
+                          setNoteTitle('');
+                          setNoteContent('');
+                          setNoteError(null);
+                        } catch (err) {
+                          console.error('Error saving calendar note:', err);
+                          setNoteError(err instanceof Error ? err.message : 'Failed to save note');
+                        } finally {
+                          setIsSavingNote(false);
+                        }
+                      }}
+                      disabled={isSavingNote}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {isSavingNote ? 'Saving...' : 'Save Note'}
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </div>

@@ -27,11 +27,14 @@ export default function Register() {
     first_name: '',
     last_name: '',
     email: '',
+    phone: '',
     company_name: '',
     password: '',
     confirmPassword: '',
     terms: false
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     const affiliateIdParam = searchParams.get('ref');
@@ -71,6 +74,15 @@ export default function Register() {
       toast.error('Please enter a valid email address');
       return false;
     }
+    const normalizedPhone = formData.phone.replace(/[^\d+]/g, '');
+    if (!normalizedPhone) {
+      toast.error('Phone number is required');
+      return false;
+    }
+    if (!/^\+?[0-9]{7,15}$/.test(normalizedPhone)) {
+      toast.error('Please enter a valid phone number');
+      return false;
+    }
     if (formData.password.length < 8) {
       toast.error('Password must be at least 8 characters long');
       return false;
@@ -93,10 +105,12 @@ export default function Register() {
 
     setLoading(true);
     try {
+      const normalizedPhone = formData.phone.replace(/[^\d+]/g, '');
       const registrationData = {
         first_name: formData.first_name,
         last_name: formData.last_name,
         email: formData.email,
+        phone: normalizedPhone,
         company_name: formData.company_name || null,
         password: formData.password,
         // Send referral affiliate id under the server-supported key
@@ -243,6 +257,19 @@ export default function Register() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="phone">Phone Number *</Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => handleInputChange('phone', e.target.value)}
+                      className="border-gray-300 focus:border-ocean-blue focus:ring-ocean-blue"
+                      placeholder="e.g. +15551234567"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="company_name">Company Name (Optional)</Label>
                     <Input
                       id="company_name"
@@ -256,26 +283,50 @@ export default function Register() {
 
                   <div className="space-y-2">
                     <Label htmlFor="password">Password *</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => handleInputChange('password', e.target.value)}
-                      className="border-gray-300 focus:border-ocean-blue focus:ring-ocean-blue"
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={formData.password}
+                        onChange={(e) => handleInputChange('password', e.target.value)}
+                        className="border-gray-300 focus:border-ocean-blue focus:ring-ocean-blue pr-12"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute inset-y-0 right-0 h-full px-3 text-gray-500 hover:text-gray-700"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="confirmPassword">Confirm Password *</Label>
-                    <Input
-                      id="confirmPassword"
-                      type="password"
-                      value={formData.confirmPassword}
-                      onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
-                      className="border-gray-300 focus:border-ocean-blue focus:ring-ocean-blue"
-                      required
-                    />
+                    <div className="relative">
+                      <Input
+                        id="confirmPassword"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        value={formData.confirmPassword}
+                        onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                        className="border-gray-300 focus:border-ocean-blue focus:ring-ocean-blue pr-12"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute inset-y-0 right-0 h-full px-3 text-gray-500 hover:text-gray-700"
+                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="flex items-center space-x-2">

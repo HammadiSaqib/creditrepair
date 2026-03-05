@@ -157,7 +157,9 @@ export const authApi = {
     password: string; 
     first_name: string; 
     last_name: string; 
+    phone: string;
     company_name?: string;
+    referral_affiliate_id?: string;
   }) =>
     api.post('/api/auth/register', userData),
   

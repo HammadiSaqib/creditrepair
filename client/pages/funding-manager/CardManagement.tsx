@@ -69,6 +69,7 @@ const CardManagement: React.FC = () => {
     card_link: '',
     card_type: 'business' as 'business' | 'personal',
     funding_type: '',
+    credit_bureaus: [] as string[],
   });
   
   const [bankFilterOpen, setBankFilterOpen] = useState(false);
@@ -219,12 +220,48 @@ const CardManagement: React.FC = () => {
       
       const data = await response.json();
       console.log('cards api raw data', data.cards);
-      const normalizedCards: Card[] = (data.cards || []).map((c: any) => ({
-        ...c,
-        states: Array.isArray(c?.states)
-          ? c.states
-          : (() => { try { return JSON.parse(c?.states || '[]'); } catch { return []; } })()
-      }));
+      const normalizedCards: Card[] = (data.cards || []).map((c: any) => {
+        const rawStates = c?.states;
+        const parsedStates = Array.isArray(rawStates)
+          ? rawStates
+          : (() => {
+              try {
+                const parsed = JSON.parse(rawStates || '[]');
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            })();
+
+        const rawBureaus = c?.credit_bureaus;
+        let creditBureaus: string[] = [];
+        if (Array.isArray(rawBureaus)) {
+          creditBureaus = rawBureaus.filter((bureau): bureau is string => typeof bureau === 'string' && bureau.trim().length > 0);
+        } else if (typeof rawBureaus === 'string' && rawBureaus.trim().length > 0) {
+          try {
+            const parsed = JSON.parse(rawBureaus);
+            if (Array.isArray(parsed)) {
+              creditBureaus = parsed.filter((bureau): bureau is string => typeof bureau === 'string' && bureau.trim().length > 0);
+            } else {
+              creditBureaus = rawBureaus
+                .split(',')
+                .map((bureau) => bureau.trim())
+                .filter((bureau) => bureau.length > 0);
+            }
+          } catch {
+            creditBureaus = rawBureaus
+              .split(',')
+              .map((bureau) => bureau.trim())
+              .filter((bureau) => bureau.length > 0);
+          }
+        }
+
+        return {
+          ...c,
+          credit_bureaus: creditBureaus,
+          states: parsedStates,
+        };
+      });
       console.log('normalized cards states sample', normalizedCards.map((c) => ({ id: c.id, states: c.states, state: c.state })).slice(0, 10));
       setCards(normalizedCards);
       if (data.pagination) {
@@ -275,6 +312,7 @@ const CardManagement: React.FC = () => {
       card_link: '',
       card_type: 'business',
       funding_type: '',
+      credit_bureaus: [],
     });
     setEditingCard(null);
     setShowAddForm(false);
@@ -331,6 +369,11 @@ const CardManagement: React.FC = () => {
           card_link: fetched.card_link,
           card_type: fetched.card_type,
           funding_type: fetched.funding_type,
+          credit_bureaus: Array.isArray(fetched.credit_bureaus)
+            ? fetched.credit_bureaus
+            : typeof fetched.credit_bureaus === 'string' && fetched.credit_bureaus.trim().length > 0
+              ? fetched.credit_bureaus.split(',').map((bureau: string) => bureau.trim()).filter((bureau: string) => bureau.length > 0)
+              : [],
         });
       } else {
         // Fallback to existing list data
@@ -341,6 +384,7 @@ const CardManagement: React.FC = () => {
           card_link: card.card_link,
           card_type: card.card_type,
           funding_type: card.funding_type,
+          credit_bureaus: card.credit_bureaus || [],
         });
       }
     } catch {
@@ -352,6 +396,7 @@ const CardManagement: React.FC = () => {
         card_link: card.card_link,
         card_type: card.card_type,
         funding_type: card.funding_type,
+        credit_bureaus: card.credit_bureaus || [],
       });
     }
   };
@@ -1029,7 +1074,7 @@ const CardManagement: React.FC = () => {
 
                 <div className="mb-3">
                   <div className="flex flex-wrap gap-1">
-                    {card.credit_bureaus.map((bureau) => (
+                    {(card.credit_bureaus && card.credit_bureaus.length > 0 ? card.credit_bureaus : []).map((bureau) => (
                       <span
                         key={bureau}
                         className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"

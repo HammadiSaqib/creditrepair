@@ -167,7 +167,7 @@ const getScoreChange = (current: number, previous: number) => {
 export default function Dashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { userProfile } = useAuthContext();
+  const { userProfile, refreshProfile, isLoading: authLoading } = useAuthContext();
   const subscriptionStatus = useSubscriptionStatus();
   const [isAddClientOpen, setIsAddClientOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -190,6 +190,10 @@ export default function Dashboard() {
   const [clients, setClients] = useState<DashboardClient[]>([]);
   const [recentActivity, setRecentActivity] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showPhoneDialog, setShowPhoneDialog] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [isSavingPhone, setIsSavingPhone] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState([
     { date: 20, month: new Date().getMonth(), year: new Date().getFullYear(), client: "John Smith", type: "Letter", description: "Letter sending day" },
     { date: 15, month: new Date().getMonth(), year: new Date().getFullYear(), client: "Sarah Johnson", type: "Class", description: "Class online" },
@@ -229,6 +233,21 @@ export default function Dashboard() {
       setClientIntakeLink(onboardingIntakeLink);
     }
   }, [onboardingIntakeLink]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (
+      userProfile &&
+      ['admin', 'super_admin'].includes(userProfile.role) &&
+      (!userProfile.phone || !String(userProfile.phone).trim())
+    ) {
+      setPhoneInput('');
+      setPhoneError(null);
+      setShowPhoneDialog(true);
+    } else {
+      setShowPhoneDialog(false);
+    }
+  }, [authLoading, userProfile]);
 
   // Open email verification modal ONLY after purchase (active subscription)
   useEffect(() => {
@@ -698,6 +717,33 @@ export default function Dashboard() {
     }
   };
 
+  const handleSavePhone = async () => {
+    const normalizedPhone = phoneInput.replace(/[^\d+]/g, '');
+    if (!normalizedPhone) {
+      setPhoneError('Phone number is required');
+      return;
+    }
+    if (!/^\+?[0-9]{7,15}$/.test(normalizedPhone)) {
+      setPhoneError('Please enter a valid phone number');
+      return;
+    }
+
+    try {
+      setIsSavingPhone(true);
+      setPhoneError(null);
+      await authApi.updateProfile({ phone: normalizedPhone });
+      await refreshProfile();
+      setShowPhoneDialog(false);
+      toast({ title: 'Phone number saved', description: 'Thanks! Your profile is now complete.' });
+    } catch (error: any) {
+      console.error('Failed to save phone number:', error);
+      const message = error?.response?.data?.error || error?.message || 'Failed to save phone number';
+      setPhoneError(message);
+    } finally {
+      setIsSavingPhone(false);
+    }
+  };
+
   const handleOpenCreditReportLink = () => {
     window.open(creditReportRegisterUrl, "_blank", "noopener,noreferrer");
   };
@@ -1033,6 +1079,53 @@ export default function Dashboard() {
       description="Monitor your funding business performance and client progress"
       onAddClient={handleAddClient}
     >
+      <Dialog open={showPhoneDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowPhoneDialog(true);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Complete Your Profile</DialogTitle>
+            <DialogDescription>
+              Please add a contact phone number to continue using the dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label htmlFor="phone-required-input">Phone Number</Label>
+              <Input
+                id="phone-required-input"
+                type="tel"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                placeholder="e.g. +15551234567"
+                autoFocus
+              />
+            </div>
+            {phoneError && (
+              <p className="text-sm text-red-600">{phoneError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={handleSavePhone}
+              disabled={isSavingPhone}
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-500/90 hover:to-teal-500/90 text-white"
+            >
+              {isSavingPhone ? (
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Saving...
+                </div>
+              ) : (
+                'Save Phone Number'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Payment Prompt for Unpaid Users */}
       {!subscriptionStatus.hasActiveSubscription && !subscriptionStatus.isLoading && (
         <div className="mb-8">

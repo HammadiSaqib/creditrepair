@@ -98,6 +98,7 @@ interface GeneralSettings {
   id?: number;
   company_name: string;
   support_email: string;
+  support_phone?: string;
   timezone: string;
   language: string;
   auto_assignment: boolean;
@@ -203,7 +204,11 @@ export default function SupportSettings() {
     }
   };
 
-  const saveTeamMember = async (memberData: Omit<TeamMember, 'id' | 'created_at' | 'updated_at'>) => {
+  type TeamMemberPayload = Omit<TeamMember, 'id' | 'created_at' | 'updated_at' | 'permissions'> & {
+    permissions: string;
+  };
+
+  const saveTeamMember = async (memberData: TeamMemberPayload) => {
     try {
       const response = await supportApi.updateTeamMember('new', memberData);
       
@@ -477,7 +482,7 @@ export default function SupportSettings() {
   const handleAddMember = async () => {
     if (!newMember.name || !newMember.email) return;
 
-    const memberData = {
+    const memberData: TeamMemberPayload = {
         name: newMember.name,
         email: newMember.email,
         role: newMember.role,
@@ -724,8 +729,8 @@ export default function SupportSettings() {
                       <Label htmlFor="supportPhone">Support Phone</Label>
                       <Input
                         id="supportPhone"
-                        value={generalSettings.supportPhone}
-                        onChange={(e) => setGeneralSettings(prev => ({ ...prev, supportPhone: e.target.value }))}
+                        value={generalSettings.support_phone || ''}
+                        onChange={(e) => setGeneralSettings(prev => ({ ...prev, support_phone: e.target.value }))}
                       />
                     </div>
                     <div>
@@ -895,7 +900,7 @@ export default function SupportSettings() {
                           </div>
                           <p className="text-gray-600 text-sm">{member.email}</p>
                           <p className="text-gray-500 text-xs">
-                            Last active: {new Date(member.lastActive).toLocaleString()}
+                            Last active: {member.last_active ? new Date(member.last_active).toLocaleString() : 'N/A'}
                           </p>
                         </div>
                       </div>

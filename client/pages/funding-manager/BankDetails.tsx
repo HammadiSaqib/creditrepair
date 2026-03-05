@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, CreditCard, AlertCircle, Edit, Trash2, Plus } from 'lucide-react';
+import { ArrowLeft, Building2, CreditCard, AlertCircle, Edit, Trash2, Plus, LayoutGrid, List as ListIcon } from 'lucide-react';
 import FundingManagerLayout from '@/components/FundingManagerLayout';
 
 interface Bank {
@@ -37,6 +37,7 @@ const BankDetails: React.FC = () => {
   const [cards, setCards] = useState<Card[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   useEffect(() => {
     if (id) {
@@ -190,103 +191,215 @@ const BankDetails: React.FC = () => {
 
         {/* Cards Section */}
         <div className="bg-white rounded-lg shadow">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-medium text-gray-900">Bank Cards</h2>
-            <p className="text-sm text-gray-500">All credit cards offered by {bank.name}</p>
+          <div className="px-6 py-4 border-b border-gray-200 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-medium text-gray-900">Bank Cards</h2>
+              <p className="text-sm text-gray-500">All credit cards offered by {bank.name}</p>
+            </div>
+            {cards.length > 0 && (
+              <div className="inline-flex rounded-md border border-gray-300 overflow-hidden self-start md:self-auto" role="group" aria-label="Toggle card view mode">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('grid')}
+                  className={`${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'} px-3 py-2 text-sm inline-flex items-center`}
+                  aria-pressed={viewMode === 'grid'}
+                  aria-label="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4 mr-2" />
+                  Grid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={`${viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'} px-3 py-2 text-sm inline-flex items-center border-l border-gray-300`}
+                  aria-pressed={viewMode === 'list'}
+                  aria-label="List view"
+                >
+                  <ListIcon className="h-4 w-4 mr-2" />
+                  List
+                </button>
+              </div>
+            )}
           </div>
           
           <div className="p-6">
             {cards.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {cards.map((card) => (
-                  <div
-                    key={card.id}
-                    onClick={() => handleCardClick(card.card_link)}
-                    className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer hover:border-blue-300"
-                  >
-                    <div className="p-4">
-                      <div className="flex flex-col items-center text-center">
-                        {/* Card Image */}
-                        <div className="mb-4">
-                          {card.card_image ? (
-                            <img
-                              src={card.card_image}
-                              alt={card.card_name}
-                              className="h-24 w-38 object-contain rounded-lg border border-gray-200"
-                              onError={(e) => {
-                                e.currentTarget.src = '/uploads/card.png';
-                              }}
-                            />
-                          ) : (
-                            <img
-                              src="/uploads/card.png"
-                              alt="Default card"
-                              className="h-24 w-38 object-contain rounded-lg border border-gray-200"
-                            />
-                          )}
-                        </div>
-                        
-                        {/* Card Name */}
-                        <h3 className="text-sm font-semibold text-gray-900 mb-2 line-clamp-2">{card.card_name}</h3>
-                        
-                        {/* Card Type */}
-                        <div className="mb-2">
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            card.card_type === 'business' 
-                              ? 'bg-blue-100 text-blue-800' 
-                              : 'bg-purple-100 text-purple-800'
-                          }`}>
-                            {card.card_type === 'business' ? 'Business' : 'Personal'}
-                          </span>
-                        </div>
-                        
-                        {/* Funding Type */}
-                        <p className="text-xs text-gray-600 mb-2">{card.funding_type}</p>
-                        
-                        {/* Credit Bureaus */}
-                        <div className="flex flex-wrap gap-1 mb-3">
-                          {Array.isArray(card.credit_bureaus) ? card.credit_bureaus.map((bureau) => (
-                            <span
-                              key={bureau}
-                              className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-                            >
-                              {bureau}
-                            </span>
-                          )) : null}
-                        </div>
-                        
-                        {/* Card Metrics */}
-                        {(card.amount_approved || card.no_of_usage || card.average_amount) && (
-                          <div className="text-xs text-gray-500 space-y-1">
-                            {card.amount_approved && (
-                              <div>Approved: ${card.amount_approved.toLocaleString()}</div>
-                            )}
-                            {card.no_of_usage && (
-                              <div>Usage: {card.no_of_usage}</div>
-                            )}
-                            {card.average_amount && (
-                              <div>Avg: ${card.average_amount.toLocaleString()}</div>
-                            )}
+              <>
+                {viewMode === 'grid' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {cards.map((card) => {
+                      const creditBureaus = Array.isArray(card.credit_bureaus) ? card.credit_bureaus : [];
+                      return (
+                        <div
+                          key={card.id}
+                          onClick={() => handleCardClick(card.card_link)}
+                          className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer hover:border-blue-300"
+                        >
+                          <div className="p-4">
+                            <div className="flex flex-col items-center text-center">
+                              <div className="mb-4">
+                                {card.card_image ? (
+                                  <img
+                                    src={card.card_image}
+                                    alt={card.card_name}
+                                    className="h-24 w-38 object-contain rounded-lg border border-gray-200"
+                                    onError={(e) => {
+                                      e.currentTarget.src = '/uploads/card.png';
+                                    }}
+                                  />
+                                ) : (
+                                  <img
+                                    src="/uploads/card.png"
+                                    alt="Default card"
+                                    className="h-24 w-38 object-contain rounded-lg border border-gray-200"
+                                  />
+                                )}
+                              </div>
+                              <h3 className="text-sm font-semibold text-gray-900 mb-2 line-clamp-2">{card.card_name}</h3>
+                              <div className="mb-2">
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  card.card_type === 'business' 
+                                    ? 'bg-blue-100 text-blue-800' 
+                                    : 'bg-purple-100 text-purple-800'
+                                }`}>
+                                  {card.card_type === 'business' ? 'Business' : 'Personal'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-600 mb-2">{card.funding_type}</p>
+                              <div className="flex flex-wrap gap-1 mb-3">
+                                {creditBureaus.map((bureau) => (
+                                  <span
+                                    key={bureau}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+                                  >
+                                    {bureau}
+                                  </span>
+                                ))}
+                              </div>
+                              {(card.amount_approved || card.no_of_usage || card.average_amount) && (
+                                <div className="text-xs text-gray-500 space-y-1">
+                                  {card.amount_approved ? (
+                                    <div>Approved: ${card.amount_approved.toLocaleString()}</div>
+                                  ) : null}
+                                  {card.no_of_usage ? (
+                                    <div>Usage: {card.no_of_usage}</div>
+                                  ) : null}
+                                  {card.average_amount ? (
+                                    <div>Avg: ${card.average_amount.toLocaleString()}</div>
+                                  ) : null}
+                                </div>
+                              )}
+                              <div className="mt-2">
+                                <span
+                                  className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                    card.is_active
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-red-100 text-red-800'
+                                  }`}
+                                >
+                                  {card.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                        )}
-                        
-                        {/* Status */}
-                        <div className="mt-2">
-                          <span
-                            className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              card.is_active
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {card.is_active ? 'Active' : 'Inactive'}
-                          </span>
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                ) : (
+                  <div className="space-y-4">
+                    {cards.map((card) => {
+                      const creditBureaus = Array.isArray(card.credit_bureaus) ? card.credit_bureaus : [];
+                      return (
+                        <div
+                          key={card.id}
+                          onClick={() => handleCardClick(card.card_link)}
+                          className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer hover:border-blue-300"
+                        >
+                          <div className="p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 md:gap-6">
+                            <div className="flex items-center gap-4 min-w-0">
+                              <div className="flex-shrink-0">
+                                {card.card_image ? (
+                                  <img
+                                    src={card.card_image}
+                                    alt={card.card_name}
+                                    className="h-16 w-24 object-contain rounded-lg border border-gray-200"
+                                    onError={(e) => {
+                                      e.currentTarget.src = '/uploads/card.png';
+                                    }}
+                                  />
+                                ) : (
+                                  <img
+                                    src="/uploads/card.png"
+                                    alt="Default card"
+                                    className="h-16 w-24 object-contain rounded-lg border border-gray-200"
+                                  />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="text-sm font-semibold text-gray-900 truncate max-w-[240px] md:max-w-[320px]">{card.card_name}</h3>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    card.card_type === 'business'
+                                      ? 'bg-blue-100 text-blue-800'
+                                      : 'bg-purple-100 text-purple-800'
+                                  }`}>
+                                    {card.card_type === 'business' ? 'Business' : 'Personal'}
+                                  </span>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    card.is_active
+                                      ? 'bg-green-100 text-green-800'
+                                      : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {card.is_active ? 'Active' : 'Inactive'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-600 mt-1">{card.funding_type}</p>
+                                {creditBureaus.length > 0 && (
+                                  <div className="flex flex-wrap gap-1 mt-2">
+                                    {creditBureaus.map((bureau) => (
+                                      <span
+                                        key={bureau}
+                                        className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
+                                      >
+                                        {bureau}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-gray-600">
+                              <div>
+                                <div className="text-gray-500">Approved</div>
+                                <div className="font-medium text-gray-900">
+                                  {card.amount_approved ? `$${card.amount_approved.toLocaleString()}` : '—'}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-gray-500">Usage</div>
+                                <div className="font-medium text-gray-900">
+                                  {card.no_of_usage ?? '—'}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-gray-500">Avg Amount</div>
+                                <div className="font-medium text-gray-900">
+                                  {card.average_amount ? `$${card.average_amount.toLocaleString()}` : '—'}
+                                </div>
+                              </div>
+                              <div className="col-span-2 sm:col-span-1">
+                                <div className="text-gray-500">Link</div>
+                                <div className="font-medium text-blue-600 truncate">{card.card_link}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             ) : (
               <div className="text-center py-12">
                 <CreditCard className="mx-auto h-12 w-12 text-gray-400" />
