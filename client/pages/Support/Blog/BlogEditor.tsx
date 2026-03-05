@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import SupportLayout from '@/components/SupportLayout';
@@ -73,7 +73,24 @@ const BlogEditor = () => {
   const [viewMode, setViewMode] = useState<'visual' | 'code'>('visual');
   
   const editorRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const savedSelection = useRef<Range | null>(null);
+
+  const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null);
+  const [imageRect, setImageRect] = useState<{ top: number, left: number, width: number, height: number } | null>(null);
+
+  const [resizingImage, setResizingImage] = useState<HTMLImageElement | null>(null);
+  const resizeStart = useRef<{ x: number, y: number, w: number, h: number, direction?: string } | null>(null);
+  const [imageContextMenu, setImageContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    image: HTMLImageElement | null;
+    width: string;
+    height: string;
+    alt: string;
+  }>({ visible: false, x: 0, y: 0, image: null, width: '', height: '', alt: '' });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Sync content to editor when switching to visual mode
   useEffect(() => {
@@ -111,6 +128,101 @@ const BlogEditor = () => {
       }
     }
   }, [fetching, contentValue]);
+
+  // Image selection overlay rect calculation
+  const updateImageRect = useCallback(() => {
+    if (selectedImage && wrapperRef.current && viewMode === 'visual') {
+      const wrapperRect = wrapperRef.current.getBoundingClientRect();
+      const imgRect = selectedImage.getBoundingClientRect();
+      setImageRect({
+        top: imgRect.top - wrapperRect.top + wrapperRef.current.scrollTop,
+        left: imgRect.left - wrapperRect.left + wrapperRef.current.scrollLeft,
+        width: imgRect.width,
+        height: imgRect.height
+      });
+    } else {
+      setImageRect(null);
+    }
+  }, [selectedImage, viewMode]);
+
+  useEffect(() => {
+    updateImageRect();
+    window.addEventListener('resize', updateImageRect);
+    document.addEventListener('scroll', updateImageRect, true); // Capture all scroll events
+    
+    return () => {
+      window.removeEventListener('resize', updateImageRect);
+      document.removeEventListener('scroll', updateImageRect, true);
+    };
+  }, [updateImageRect]);
+
+  useEffect(() => {
+    if (!selectedImage) return;
+    const resizeObserver = new ResizeObserver(() => updateImageRect());
+    resizeObserver.observe(selectedImage);
+    selectedImage.addEventListener('load', updateImageRect);
+
+    return () => {
+      resizeObserver.disconnect();
+      selectedImage.removeEventListener('load', updateImageRect);
+    };
+  }, [selectedImage, updateImageRect]);
+
+  // Image Resizing Drag Logic
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (resizingImage && resizeStart.current) {
+        e.preventDefault(); // Prevent text selection
+        const { x, w, h, direction } = resizeStart.current;
+        
+        let dx = e.clientX - x;
+        if (direction === 'sw' || direction === 'nw') {
+            dx = x - e.clientX; // Reverse delta if dragging from left side
+        }
+
+        const newWidth = Math.max(50, w + dx);
+        const newHeight = (newWidth / w) * h;
+        
+        resizingImage.style.width = `${newWidth}px`;
+        resizingImage.style.height = `${newHeight}px`;
+        updateImageRect();
+      }
+    };
+    
+    const handleMouseUp = () => {
+      if (resizingImage) {
+        setResizingImage(null);
+        resizeStart.current = null;
+        if (editorRef.current) {
+           setValue('content', editorRef.current.innerHTML, { shouldDirty: true });
+        }
+      }
+    };
+    
+    if (resizingImage) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizingImage, setValue, updateImageRect]);
+
+  // Image Context Menu Click Outside Logic
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (imageContextMenu.visible && contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setImageContextMenu(prev => ({ ...prev, visible: false }));
+      }
+    };
+    
+    if (imageContextMenu.visible) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [imageContextMenu.visible]);
 
   // API Calls
   const fetchCategories = async () => {
@@ -415,6 +527,34 @@ const BlogEditor = () => {
     }
   };
 
+  const handleEditorClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target instanceof HTMLImageElement) {
+      setSelectedImage(e.target);
+      // Small delay to ensure layout is settled before rect calc
+      setTimeout(updateImageRect, 10);
+    } else {
+      setSelectedImage(null);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target instanceof HTMLImageElement) {
+      e.preventDefault();
+      setSelectedImage(e.target);
+      setImageContextMenu({
+        visible: true,
+        x: e.clientX,
+        y: e.clientY,
+        image: e.target,
+        width: e.target.offsetWidth.toString(),
+        height: e.target.offsetHeight.toString(),
+        alt: e.target.alt || ''
+      });
+    } else {
+      setImageContextMenu(prev => ({ ...prev, visible: false }));
+    }
+  };
+
   // Toolbar Button Component
   const ToolbarBtn = ({ icon: Icon, onClick, tooltip, disabled = false, active = false }: any) => (
     <Tooltip>
@@ -535,9 +675,9 @@ const BlogEditor = () => {
                   </div>
 
                   {/* WYSIWYG Editor Area */}
-                  <div className="bg-background rounded-xl shadow-sm border flex flex-col min-h-[700px] transition-all hover:shadow-md relative overflow-hidden group">
+                  <div ref={wrapperRef} className="bg-background rounded-xl shadow-sm border flex flex-col min-h-[700px] transition-all hover:shadow-md relative group">
                     {/* Sticky Editor Toolbar */}
-                    <div className="sticky top-0 z-30 bg-background/95 backdrop-blur border-b p-2 flex items-center gap-1 flex-wrap supports-[backdrop-filter]:bg-background/80">
+                    <div className="sticky top-16 z-30 bg-background/95 backdrop-blur border-b rounded-t-xl p-2 flex items-center gap-1 flex-wrap supports-[backdrop-filter]:bg-background/80 shadow-sm">
                       <div className="flex items-center gap-0.5 border-r pr-2 mr-1">
                         <Select onValueChange={(val) => execCommand('formatBlock', val)} disabled={viewMode === 'code'}>
                           <SelectTrigger className="h-8 w-[130px] border-none bg-transparent hover:bg-muted focus:ring-0">
@@ -636,6 +776,7 @@ const BlogEditor = () => {
                         data-placeholder="Start writing your story..."
                         onInput={(e) => {
                           setValue('content', e.currentTarget.innerHTML, { shouldDirty: true, shouldValidate: true });
+                          setSelectedImage(null);
                         }}
                         onBlur={() => {
                           if (editorRef.current) {
@@ -648,7 +789,12 @@ const BlogEditor = () => {
                              e.preventDefault();
                              execCommand('insertHTML', '&nbsp;&nbsp;&nbsp;&nbsp;');
                            }
+                           if (e.key !== 'Shift' && e.key !== 'Control' && e.key !== 'Meta') {
+                             setSelectedImage(null);
+                           }
                         }}
+                        onMouseUp={handleEditorClick}
+                        onContextMenu={handleContextMenu}
                       />
                     ) : (
                       <textarea
@@ -668,6 +814,79 @@ const BlogEditor = () => {
                         <span>{contentValue.replace(/<[^>]*>/g, '').length} characters</span>
                       </div>
                     </div>
+
+                    {/* Image Selection & Resize Overlay */}
+                    {selectedImage && imageRect && viewMode === 'visual' && (
+                      <div 
+                        style={{
+                          position: 'absolute',
+                          top: imageRect.top,
+                          left: imageRect.left,
+                          width: imageRect.width,
+                          height: imageRect.height,
+                          border: '2px solid #3b82f6',
+                          pointerEvents: 'none',
+                          zIndex: 20
+                        }}
+                      >
+                        {/* Top Left Handle */}
+                        <div
+                          style={{
+                            position: 'absolute', top: -6, left: -6, width: 12, height: 12,
+                            backgroundColor: '#3b82f6', border: '2px solid white', borderRadius: '50%',
+                            cursor: 'nwse-resize', pointerEvents: 'auto'
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setResizingImage(selectedImage);
+                            resizeStart.current = { x: e.clientX, y: e.clientY, w: selectedImage.offsetWidth, h: selectedImage.offsetHeight, direction: 'nw' };
+                          }}
+                        />
+                        {/* Top Right Handle */}
+                        <div
+                          style={{
+                            position: 'absolute', top: -6, right: -6, width: 12, height: 12,
+                            backgroundColor: '#3b82f6', border: '2px solid white', borderRadius: '50%',
+                            cursor: 'nesw-resize', pointerEvents: 'auto'
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setResizingImage(selectedImage);
+                            resizeStart.current = { x: e.clientX, y: e.clientY, w: selectedImage.offsetWidth, h: selectedImage.offsetHeight, direction: 'ne' };
+                          }}
+                        />
+                        {/* Bottom Left Handle */}
+                        <div
+                          style={{
+                            position: 'absolute', bottom: -6, left: -6, width: 12, height: 12,
+                            backgroundColor: '#3b82f6', border: '2px solid white', borderRadius: '50%',
+                            cursor: 'nesw-resize', pointerEvents: 'auto'
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setResizingImage(selectedImage);
+                            resizeStart.current = { x: e.clientX, y: e.clientY, w: selectedImage.offsetWidth, h: selectedImage.offsetHeight, direction: 'sw' };
+                          }}
+                        />
+                        {/* Bottom Right Handle */}
+                        <div
+                          style={{
+                            position: 'absolute', bottom: -6, right: -6, width: 12, height: 12,
+                            backgroundColor: '#3b82f6', border: '2px solid white', borderRadius: '50%',
+                            cursor: 'nwse-resize', pointerEvents: 'auto'
+                          }}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setResizingImage(selectedImage);
+                            resizeStart.current = { x: e.clientX, y: e.clientY, w: selectedImage.offsetWidth, h: selectedImage.offsetHeight, direction: 'se' };
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -675,7 +894,7 @@ const BlogEditor = () => {
 
             {/* Sidebar Column - Only visible in Edit Mode */}
             {!showPreview && (
-              <div className="col-span-12 lg:col-span-3 space-y-6">
+              <div className="col-span-12 lg:col-span-3 space-y-6 lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100vh-8rem)] overflow-y-auto pb-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 <Tabs defaultValue="settings" className="w-full">
                   <TabsList className="w-full grid grid-cols-2">
                     <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -891,6 +1110,72 @@ const BlogEditor = () => {
               </div>
             )}
           </div>
+          {/* Image Context Menu */}
+          {imageContextMenu.visible && (
+            <div 
+              ref={contextMenuRef}
+              className="fixed z-50 bg-background border shadow-lg rounded-md p-4 w-64 space-y-3"
+              style={{ 
+                left: Math.min(imageContextMenu.x, typeof window !== 'undefined' ? window.innerWidth - 260 : imageContextMenu.x), 
+                top: Math.min(imageContextMenu.y, typeof window !== 'undefined' ? window.innerHeight - 250 : imageContextMenu.y) 
+              }}
+            >
+              <div className="flex justify-between items-center">
+                <h4 className="font-medium text-sm">Image Properties</h4>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setImageContextMenu(prev => ({ ...prev, visible: false }))}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Width (px)</Label>
+                    <Input 
+                      value={imageContextMenu.width} 
+                      onChange={e => setImageContextMenu(prev => ({ ...prev, width: e.target.value }))}
+                      className="h-8 text-sm"
+                      type="number"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Height (px)</Label>
+                    <Input 
+                      value={imageContextMenu.height} 
+                      onChange={e => setImageContextMenu(prev => ({ ...prev, height: e.target.value }))}
+                      className="h-8 text-sm"
+                      type="number"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Alt Text</Label>
+                  <Input 
+                    value={imageContextMenu.alt} 
+                    onChange={e => setImageContextMenu(prev => ({ ...prev, alt: e.target.value }))}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <Button 
+                  size="sm" 
+                  className="w-full mt-2"
+                  onClick={() => {
+                    if (imageContextMenu.image) {
+                      imageContextMenu.image.style.width = `${imageContextMenu.width}px`;
+                      imageContextMenu.image.style.height = `${imageContextMenu.height}px`;
+                      imageContextMenu.image.alt = imageContextMenu.alt;
+                      
+                      if (editorRef.current) {
+                        setValue('content', editorRef.current.innerHTML, { shouldDirty: true, shouldValidate: true });
+                      }
+                    }
+                    setImageContextMenu(prev => ({ ...prev, visible: false }));
+                  }}
+                >
+                  Apply Changes
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </TooltipProvider>
     </SupportLayout>
