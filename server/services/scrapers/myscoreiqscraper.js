@@ -390,129 +390,52 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
     }
     // ==================================================================
 
-    // Wait for dashboard/cookies/or captured responses to indicate login success
-    let loginSucceeded = false;
-    if (rawCreditData) loginSucceeded = true;
-    if (!loginSucceeded) {
-      const indicators = config.selectors?.dashboard_indicators || ['#dashboard','.dashboard','.account','.home','a[href*="account"]'];
-      for (const sel of indicators) {
-        try { await page.waitForSelector(sel, { timeout: 6000 }); loginSucceeded = true; console.log('[MyScoreIQ] Dashboard indicator found:', sel); break; } catch {}
-      }
-    }
-    if (!loginSucceeded) {
-      const cookies = await page.cookies();
-      if (cookies && cookies.length > 5) { loginSucceeded = true; console.log('[MyScoreIQ] Cookies present after login:', cookies.length); }
-    }
-    if (!loginSucceeded) {
-      console.error('[MyScoreIQ] Login did not reach dashboard; saving debug artifacts.');
-      await saveDebugArtifacts(page, outputDir, 'login_failed_post');
-      throw new Error('Login failed to reach dashboard after SSN step (if applicable)');
-    }
-    console.log('[MyScoreIQ] Login appears successful. Proceeding to report fetch.');
-    console.log('[MyScoreIQ] Dashboard ready. Ensuring cookies and session persistence.');
-    await sleep(3000 + Math.random() * 2000);
-    try { await page.mouse.move(Math.random()*800, Math.random()*600); } catch {}
+    console.log('[MyScoreIQ] Login appears successful. Navigating directly to JSON report view.');
+    const jsonEndpoint = 'https://member.myscoreiq.com/CreditReport.aspx?view=json';
+    let jsonResponse = null;
     try {
-      const cookies = await page.cookies();
-      if (cookies && cookies.length) {
-        const urlForCookies = page.url();
-        const withUrl = cookies.map(c => (c.url ? c : { ...c, url: urlForCookies }));
-        await page.setCookie(...withUrl);
-        console.log('[MyScoreIQ] Session cookies applied via page.setCookie:', withUrl.length);
-      }
-    } catch (e) { console.log('[MyScoreIQ] Failed to set cookies on page:', e?.message || e); }
-    try {
-      page.on('framenavigated', async (frame) => {
-        try {
-          const url = frame.url() || '';
-          if (url.startsWith('https://www.myscoreiq.com/')) {
-            console.warn('[Redirect noticed] Frame navigated to main site:', url);
-          }
-        } catch {}
+      jsonResponse = await page.goto(jsonEndpoint, {
+        waitUntil: 'networkidle0',
+        timeout: Math.max(30000, config.waitTimeouts?.navigation || 30000),
       });
-    } catch {}
-    try { await page.waitForTimeout(3000); } catch {}
+      console.log('[MyScoreIQ] Reached JSON endpoint with status', jsonResponse?.status?.() ?? 'unknown');
+    } catch (e) {
+      console.warn('[MyScoreIQ] Failed to navigate directly to JSON endpoint:', e?.message || e);
+    }
 
-    // Visit the chosen report page (CreditReport.aspx per your choice)
-    console.log('[MyScoreIQ] Attempting to open Credit Report from Dashboard...');
-
-    let reportOpened = false;
-
-    // 1. Direct <a href="/CreditReport.aspx"> click (your exact button)
-    try {
-      const clicked = await page.evaluate(() => {
-        const link = document.querySelector('a[href*="CreditReport.aspx"], a[href="/CreditReport.aspx"]');
-        if (link) {
-          link.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          link.click();
-          return true;
-        }
-        return false;
-      });
-      if (clicked) {
-        console.log('[MyScoreIQ] Success: Clicked direct <a href="/CreditReport.aspx">');
-        reportOpened = true;
-      }
-    } catch (e) {}
-
-    // 2. Fallback: button with exact text
-    if (!reportOpened) {
+    if (!rawCreditData && jsonResponse) {
       try {
-        const clicked = await page.evaluate(() => {
-          const buttons = Array.from(document.querySelectorAll('a, button'));
-          for (const b of buttons) {
-            const text = (b.innerText || b.textContent || '').trim();
-            if (text.includes('View Most Recent Report') || text.includes('View Credit Report')) {
-              b.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              b.click();
-              return true;
+        const text = await jsonResponse.text();
+        capturedResponses.push({ url: jsonEndpoint, status: jsonResponse.status?.() ?? null, size: (text || '').length });
+        if (text) {
+          let parsed = extractJsonLike(text);
+          if (!parsed) {
+            try {
+              parsed = JSON.parse(text);
+            } catch (err) {
+              parsed = null;
             }
           }
-          return false;
-        });
-        if (clicked) {
-          console.log('[MyScoreIQ] Success: Clicked button by visible text');
-          reportOpened = true;
-        }
-      } catch (e) {}
-    }
-
-    // 3. Final fallback: click any element inside .dashboard_score_btn
-    if (!reportOpened) {
-      try {
-        const clicked = await page.evaluate(() => {
-          const container = document.querySelector('.dashboard_score_btn, .fb_btn, [class*="score_btn"]');
-          if (container) {
-            const clickable = container.querySelector('a, button') || container;
-            clickable.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            clickable.click();
-            return true;
+          if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+            rawCreditData = parsed;
+            console.log('[MyScoreIQ] Captured credit report payload from direct JSON endpoint');
           }
-          return false;
-        });
-        if (clicked) {
-          console.log('[MyScoreIQ] Success: Clicked inside .dashboard_score_btn container');
-          reportOpened = true;
         }
+      } catch (e) {
+        console.log('[MyScoreIQ] Unable to parse direct JSON endpoint response:', e?.message || e);
+      }
+    }
+
+    if (!rawCreditData) {
+      try {
+        await page.waitForResponse((r) => {
+          const u = (r.url() || '').toLowerCase();
+          return (/dsply/.test(u) || /csid/.test(u) || /creditreport/.test(u) || /getreport/.test(u) || /report|scrape|trueLink|credit/i.test(u)) && r.status() === 200;
+        }, { timeout: Math.min(7000, config.waitTimeouts?.report_load || 7000) }).catch(() => null);
       } catch (e) {}
     }
 
-    if (!reportOpened) {
-      console.warn('[MyScoreIQ] Could not click report button automatically — manual click may be required');
-      // Optional: throw new Error('Failed to auto-click report button');
-    }
-    try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: Math.max(30000, config.waitTimeouts?.navigation || 30000) }); } catch {}
-    await sleep(8000);
-
-    // wait for report XHRs (best-effort)
-    try {
-      await page.waitForResponse((r) => {
-        const u = (r.url() || '').toLowerCase();
-        return (/dsply/.test(u) || /csid/.test(u) || /creditreport/.test(u) || /getreport/.test(u) || /report|scrape|trueLink|credit/i.test(u)) && r.status() === 200;
-      }, { timeout: Math.max(30000, config.waitTimeouts?.report_load || 60000) }).catch(()=>null);
-    } catch (e) {}
-
-    await sleep(1200);
+    await sleep(300);
 
     // choose frame that contains visible report text and poll longer if needed
     let reportCtx = page;
