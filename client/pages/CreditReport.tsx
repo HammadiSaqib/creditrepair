@@ -98,6 +98,7 @@ import {
   BarChart,
   LineChart,
   ArrowLeft,
+  Map as MapIcon,
   MapPin,
   User,
   Calendar as CalendarIcon,
@@ -1298,6 +1299,7 @@ export default function CreditReport() {
   const [lawEngineAutoMode, setLawEngineAutoMode] = useState(false);
   const [lawEngineNoticeOpen, setLawEngineNoticeOpen] = useState(false);
   const [pendingLawEngineTab, setPendingLawEngineTab] = useState<string | null>(null);
+  const [metro2ExpandedRows, setMetro2ExpandedRows] = useState<Record<string, boolean>>({});
   const [fundingAuditNoticeOpen, setFundingAuditNoticeOpen] = useState(false);
   const [pendingFundingAuditTab, setPendingFundingAuditTab] = useState<string | null>(null);
   const creditReportTabs = ['overview', 'personal', 'inquiries', 'public', 'accounts'] as const;
@@ -2044,7 +2046,9 @@ export default function CreditReport() {
   const [selectedTarget, setSelectedTarget] = useState<number>(30);
   // Default targets aligned with Pay Down table
   const paydownTargets = [30, 25, 20, 15, 10, 5, 0];
-  
+
+  const [creditBuildBureauFilter, setCreditBuildBureauFilter] = useState<'all' | 'all3' | 'tu' | 'ex' | 'eq'>('all');
+
   const resolveBureauIdFromText = (value: any) => {
     const text = String(value || '').toLowerCase();
     if (!text) return null;
@@ -4477,7 +4481,11 @@ export default function CreditReport() {
           {/* Work Area */}
           <div>
             <div className="text-xs font-semibold text-gray-500 mb-2">Work Area</div>
-            <TabsList className="grid w-full grid-cols-5 gap-1 text-xs overflow-x-auto">
+            <TabsList className="grid w-full grid-cols-6 gap-1 text-xs overflow-x-auto">
+              <TabsTrigger value="creditWarMap" className="min-w-0 flex items-center gap-2">
+                <MapIcon className="h-4 w-4" />
+                <span>Credit War Map</span>
+              </TabsTrigger>
               <TabsTrigger value="analysis" className="min-w-0 flex items-center gap-2">
                 <BarChart className="h-4 w-4" />
                 <span>Analysis</span>
@@ -4538,6 +4546,35 @@ export default function CreditReport() {
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-2">Work Area</div>
             <div className="hidden md:flex items-center justify-between bg-card rounded-2xl shadow-lg border border-border p-6 overflow-x-auto">
+              {/* Credit War Map */}
+              <div className="flex items-center">
+                <button
+                  onClick={() => setActiveTab('creditWarMap')}
+                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                    activeTab === 'creditWarMap'
+                      ? 'bg-slate-500 border-slate-500 text-white shadow-lg scale-110'
+                      : ['analysis','progress','underwriting','funding','fundingApplications','debtConsolidation'].includes(activeTab)
+                        ? 'bg-slate-500 border-slate-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-slate-300 hover:text-slate-500'
+                  }`}
+                >
+                  <MapIcon className="w-5 h-5" />
+                </button>
+                <div className="ml-3 hidden lg:block">
+                  <div className={`text-sm font-semibold ${activeTab === 'creditWarMap' ? 'text-slate-600' : 'text-muted-foreground'}`}>
+                    Credit War Map
+                  </div>
+                  <div className="text-xs text-muted-foreground">Strategy</div>
+                </div>
+              </div>
+
+              {/* Connector */}
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
+                  ['analysis','progress','underwriting','funding','fundingApplications','debtConsolidation'].includes(activeTab) ? 'w-full' : 'w-0'
+                }`}></div>
+              </div>
+
               {/* Analysis */}
               <div className="flex items-center">
                 <button
@@ -7306,6 +7343,7 @@ export default function CreditReport() {
 
 
 
+          {/* Pay Down */}
           {/* Do You Qualify */}
           <Card className={`${qualifyView === 'cards' ? 'hidden' : ''} border-0 shadow-xl bg-gradient-to-br from-white via-yellow-50/30 to-orange-50/50 dark:bg-none dark:bg-slate-800 dark:border dark:border-slate-700`}>
             <CardHeader>
@@ -8264,30 +8302,50 @@ export default function CreditReport() {
                           <TableCell>
                             {(() => {
                               const raw = inquiry?.bureau ?? inquiry?.Bureau ?? inquiry?.BureauName ?? inquiry?.bureauName ?? inquiry?.BureauId;
-                              let src = '';
-                              let alt = '';
+                              let src = "";
+                              let alt = "";
 
-                              if (typeof raw === 'number' && !Number.isNaN(raw)) {
-                                if (raw === 1) { src = '/TransUnion_logo.svg.png'; alt = 'TransUnion'; }
-                                else if (raw === 2) { src = '/Experian_logo.svg.png'; alt = 'Experian'; }
-                                else if (raw === 3) { src = '/Equifax_Logo.svg.png'; alt = 'Equifax'; }
+                              if (typeof raw === "number" && !Number.isNaN(raw)) {
+                                if (raw === 1) {
+                                  src = "/TransUnion_logo.svg.png";
+                                  alt = "TransUnion";
+                                } else if (raw === 2) {
+                                  src = "/Experian_logo.svg.png";
+                                  alt = "Experian";
+                                } else if (raw === 3) {
+                                  src = "/Equifax_Logo.svg.png";
+                                  alt = "Equifax";
+                                }
                               } else {
-                                const s = String(raw || '').toLowerCase();
-                                if (/\btu\b|trans[-\s]?union/.test(s)) { src = '/TransUnion_logo.svg.png'; alt = 'TransUnion'; }
-                                else if (/\bex\b|experian|xpn/.test(s)) { src = '/Experian_logo.svg.png'; alt = 'Experian'; }
-                                else if (/\beq\b|equifax|eqf/.test(s)) { src = '/Equifax_Logo.svg.png'; alt = 'Equifax'; }
-                                else {
-                                  const c = String(inquiry?.creditorName || inquiry?.company || inquiry?.CreditorName || '').toLowerCase();
-                                  if (/experian|xpn/.test(c)) { src = '/Experian_logo.svg.png'; alt = 'Experian'; }
-                                  else if (/trans\s*union/.test(c)) { src = '/TransUnion_logo.svg.png'; alt = 'TransUnion'; }
-                                  else if (/equifax|eqf/.test(c)) { src = '/Equifax_Logo.svg.png'; alt = 'Equifax'; }
+                                const s = String(raw || "").toLowerCase();
+                                if (/\btu\b|trans[-\s]?union/.test(s)) {
+                                  src = "/TransUnion_logo.svg.png";
+                                  alt = "TransUnion";
+                                } else if (/\bex\b|experian|xpn/.test(s)) {
+                                  src = "/Experian_logo.svg.png";
+                                  alt = "Experian";
+                                } else if (/\beq\b|equifax|eqf/.test(s)) {
+                                  src = "/Equifax_Logo.svg.png";
+                                  alt = "Equifax";
+                                } else {
+                                  const c = String(inquiry?.creditorName || inquiry?.company || inquiry?.CreditorName || "").toLowerCase();
+                                  if (/experian|xpn/.test(c)) {
+                                    src = "/Experian_logo.svg.png";
+                                    alt = "Experian";
+                                  } else if (/trans\s*union/.test(c)) {
+                                    src = "/TransUnion_logo.svg.png";
+                                    alt = "TransUnion";
+                                  } else if (/equifax|eqf/.test(c)) {
+                                    src = "/Equifax_Logo.svg.png";
+                                    alt = "Equifax";
+                                  }
                                 }
                               }
 
                               return src ? (
-                                <img src={src} alt={alt || 'Bureau'} className="h-6 w-auto" />
+                                <img src={src} alt={alt || "Bureau"} className="h-6 w-auto" />
                               ) : (
-                                <span className="text-gray-700 dark:text-white">{inquiry?.bureau || 'Unknown'}</span>
+                                <span className="text-gray-700 dark:text-white">{inquiry?.bureau || "Unknown"}</span>
                               );
                             })()}
                           </TableCell>
@@ -8295,11 +8353,13 @@ export default function CreditReport() {
                           <TableCell className="dark:text-white">
                             {(() => {
                               const d = inquiry?.dateOfInquiry || inquiry?.date || inquiry?.DateInquiry;
-                              return d ? new Date(d).toLocaleDateString('en-US', {
-                                month: '2-digit',
-                                day: '2-digit',
-                                year: 'numeric'
-                              }) : 'N/A';
+                              return d
+                                ? new Date(d).toLocaleDateString("en-US", {
+                                    month: "2-digit",
+                                    day: "2-digit",
+                                    year: "numeric",
+                                  })
+                                : "N/A";
                             })()}
                           </TableCell>
                         </TableRow>
@@ -8312,7 +8372,7 @@ export default function CreditReport() {
           </Card>
 
           {/* Pay Down */}
-          <Card id="uw-paydown" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
+          <Card id="credit-war-map-paydown" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
               <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Pay Down</CardTitle>
               <CardDescription className="text-muted-foreground">Payments needed to reach target utilization levels</CardDescription>
@@ -16240,6 +16300,1391 @@ export default function CreditReport() {
             </CardContent>
           </Card>
         </TabsContent> */}
+
+        {/* Credit War Map Tab */}
+        <TabsContent value="creditWarMap" className="space-y-6 mt-6">
+          <Card id="credit-war-map-inquiries" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">
+                Step 1 — Inquiry Attack
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                <div className="space-y-4 text-sm leading-relaxed">
+                  <p>
+                    Inquiries are addressed first because they are one of the simplest items on a credit report to
+                    verify and resolve. Each hard inquiry represents a company accessing your credit file, and you have
+                    the right to question any inquiry that you do not recognize or did not authorize.
+                  </p>
+                  <p>
+                    In this step, you will review the inquiries listed on your report and decide whether they should be
+                    verified with the credit bureaus.
+                  </p>
+                  <div>
+                    <p className="font-medium text-foreground dark:text-white">Score Machine provides two tools to help you take action:</p>
+                    <ul className="mt-2 space-y-2 list-disc list-inside">
+                      <li>Phone guidance to contact the credit bureaus and request verification of the inquiry.</li>
+                      <li>
+                        <span>Inquiry Exterminator GPT, which can generate a structured dispute letter based on the inquiry details.</span>
+                        <div className="mt-2">
+                          <Button asChild size="sm" className="bg-blue-600 text-white hover:bg-blue-700">
+                            <a href="https://chatgpt.com/g/g-69a9f4a2bae08191a91e627a2f1fc7ac-inquiry-exterminator-gpt" target="_blank" rel="noopener noreferrer">
+                              Launch Inquiry Exterminator GPT
+                            </a>
+                          </Button>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                  <p>
+                    Addressing unauthorized or questionable inquiries early can help reduce unnecessary inquiry activity
+                    on your report and simplify later steps in your credit analysis process.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Score Machine provides educational tools only. All disputes and communications with credit bureaus are
+                    performed directly by the consumer.
+                  </p>
+                </div>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4">
+                <Input placeholder="Search:" className="max-w-sm" />
+              </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="dark:border-slate-700">
+                      <TableHead className="dark:text-white">#</TableHead>
+                      <TableHead className="dark:text-white">Bureau</TableHead>
+                      <TableHead className="dark:text-white">Creditor</TableHead>
+                      <TableHead className="dark:text-white">Date of Inquiry</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(() => {
+                      const normalizeBureau = (inq: any) => {
+                        const raw = inq?.bureau ?? inq?.Bureau ?? inq?.BureauName ?? inq?.bureauName ?? inq?.BureauId;
+                        if (typeof raw === "number" && !Number.isNaN(raw)) {
+                          if (raw === 1) return "tu";
+                          if (raw === 2) return "ex";
+                          if (raw === 3) return "eq";
+                          return "unknown";
+                        }
+                        const s = String(raw || "").toLowerCase();
+                        if (/\btu\b|trans[-\s]?union/.test(s)) return "tu";
+                        if (/\bex\b|experian|xpn/.test(s)) return "ex";
+                        if (/\beq\b|equifax|eqf/.test(s)) return "eq";
+                        const c = String(inq?.creditorName || inq?.company || inq?.CreditorName || "").toLowerCase();
+                        if (/experian|xpn/.test(c)) return "ex";
+                        if (/trans\s*union/.test(c)) return "tu";
+                        if (/equifax|eqf/.test(c)) return "eq";
+                        return "unknown";
+                      };
+                      const orderIndex = (inq: any) => {
+                        const n = normalizeBureau(inq);
+                        if (n === "tu") return 0;
+                        if (n === "ex") return 1;
+                        if (n === "eq") return 2;
+                        return 3;
+                      };
+
+                      const arr = reportData?.inquiries || [];
+                      if (arr.length === 0) {
+                        return (
+                          <TableRow className="dark:border-slate-700">
+                            <TableCell colSpan={4} className="text-center py-8 text-gray-500 dark:text-gray-400">
+                              No inquiries found
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+                      const sorted = arr.slice().sort((a: any, b: any) => orderIndex(a) - orderIndex(b));
+                      return sorted.map((inquiry: any, index: number) => (
+                        <TableRow key={index} className="dark:border-slate-700">
+                          <TableCell className="dark:text-white">{index + 1}</TableCell>
+                          <TableCell>
+                            {(() => {
+                              const raw = inquiry?.bureau ?? inquiry?.Bureau ?? inquiry?.BureauName ?? inquiry?.bureauName ?? inquiry?.BureauId;
+                              let src = "";
+                              let alt = "";
+
+                              if (typeof raw === "number" && !Number.isNaN(raw)) {
+                                if (raw === 1) {
+                                  src = "/TransUnion_logo.svg.png";
+                                  alt = "TransUnion";
+                                } else if (raw === 2) {
+                                  src = "/Experian_logo.svg.png";
+                                  alt = "Experian";
+                                } else if (raw === 3) {
+                                  src = "/Equifax_Logo.svg.png";
+                                  alt = "Equifax";
+                                }
+                              } else {
+                                const s = String(raw || "").toLowerCase();
+                                if (/\btu\b|trans[-\s]?union/.test(s)) {
+                                  src = "/TransUnion_logo.svg.png";
+                                  alt = "TransUnion";
+                                } else if (/\bex\b|experian|xpn/.test(s)) {
+                                  src = "/Experian_logo.svg.png";
+                                  alt = "Experian";
+                                } else if (/\beq\b|equifax|eqf/.test(s)) {
+                                  src = "/Equifax_Logo.svg.png";
+                                  alt = "Equifax";
+                                } else {
+                                  const c = String(inquiry?.creditorName || inquiry?.company || inquiry?.CreditorName || "").toLowerCase();
+                                  if (/experian|xpn/.test(c)) {
+                                    src = "/Experian_logo.svg.png";
+                                    alt = "Experian";
+                                  } else if (/trans\s*union/.test(c)) {
+                                    src = "/TransUnion_logo.svg.png";
+                                    alt = "TransUnion";
+                                  } else if (/equifax|eqf/.test(c)) {
+                                    src = "/Equifax_Logo.svg.png";
+                                    alt = "Equifax";
+                                  }
+                                }
+                              }
+
+                              return src ? (
+                                <img src={src} alt={alt || "Bureau"} className="h-6 w-auto" />
+                              ) : (
+                                <span className="text-gray-700 dark:text-white">{inquiry?.bureau || "Unknown"}</span>
+                              );
+                            })()}
+                          </TableCell>
+                          <TableCell className="dark:text-white">{inquiry.creditorName}</TableCell>
+                          <TableCell className="dark:text-white">
+                            {(() => {
+                              const d = inquiry?.dateOfInquiry || inquiry?.date || inquiry?.DateInquiry;
+                              return d
+                                ? new Date(d).toLocaleDateString("en-US", {
+                                    month: "2-digit",
+                                    day: "2-digit",
+                                    year: "numeric",
+                                  })
+                                : "N/A";
+                            })()}
+                          </TableCell>
+                        </TableRow>
+                      ));
+                    })()}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          
+          {/* Credit Repair */}
+          <Card
+            id="credit-war-map-credit-repair"
+            className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700"
+          >
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">
+                Step 2 — Credit Product Optimization
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                <div className="space-y-4 text-sm leading-relaxed">
+                  <p>Recommended platforms to support credit repair workflows.</p>
+                  <p>
+                    This section focuses on reviewing and addressing negative items that appear on your credit report,
+                    such as late payments, collections, charge-offs, repossessions, or other derogatory records that may
+                    affect how lenders evaluate your credit profile.
+                  </p>
+                  <p>
+                    Score Machine organizes this process using principles similar to the M2 framework, which
+                    analyzes how different credit report factors may influence risk assessment and credit scoring
+                    behavior. By identifying and categorizing negative items, users can better understand which areas of
+                    their credit file may require attention.
+                  </p>
+                  <div>
+                    <p className="font-medium text-foreground dark:text-white">In this step, follow a structured approach:</p>
+                    <ol className="mt-2 space-y-2 list-decimal list-inside">
+                      <li>Review all negative items listed in the analysis.</li>
+                      <li>Verify the accuracy of each item, including dates, balances, status, and reporting details.</li>
+                      <li>
+                        Determine the appropriate action, such as requesting verification, disputing inaccurate
+                        information, or contacting the reporting company.
+                      </li>
+                    </ol>
+                  </div>
+                  <p>
+                    Users are free to manage this process using their own credit repair platform, dispute method, or
+                    professional service if they already have one in place. Score Machine simply provides the analysis
+                    and organization tools needed to identify and review negative items so users can take the next steps
+                    that best fit their situation.
+                  </p>
+                </div>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="dark:border-slate-700">
+                      <TableHead className="w-40 text-center dark:text-white">Platform</TableHead>
+                      <TableHead className="dark:text-white">Software</TableHead>
+                      <TableHead className="text-right dark:text-white">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow className="dark:border-slate-700">
+                      <TableCell>
+                        <div className="flex items-center justify-center">
+                          <img src="/m2ficoforge_logo.svg" alt="M2 FICO Forge" className="h-12 w-auto" />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-foreground dark:text-white">
+                        <div className="flex flex-col justify-center">
+                          <span className="text-lg font-semibold">M2 FICO Forge</span>
+                          <span className="text-sm text-muted-foreground">
+                            Dispute automation and credit repair software suite
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild size="sm">
+                          <a
+                            href="https://www.m2ficoforge.com/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-semibold"
+                          >
+                            Go To
+                          </a>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          
+
+          {/* Step 3 — Negative Item Identification */}
+          <Card
+            id="credit-war-map-negative-items"
+            className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700"
+          >
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">
+                Step 3 — Negative Item Identification
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                Surface every derogatory mark dragging the profile down
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const pickArray = (...values: any[]) => {
+                  for (const val of values) {
+                    if (Array.isArray(val) && val.length > 0) return val;
+                  }
+                  for (const val of values) {
+                    if (Array.isArray(val)) return val;
+                  }
+                  return [];
+                };
+
+                const parseDate = (value: any): Date | null => {
+                  if (!value) return null;
+                  const d = new Date(String(value));
+                  return Number.isNaN(d.getTime()) ? null : d;
+                };
+
+                const formatDate = (value: any) => {
+                  const d = parseDate(value);
+                  return d
+                    ? d.toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "2-digit",
+                        year: "numeric",
+                      })
+                    : "N/A";
+                };
+
+                const diffInMonths = (value: any) => {
+                  const date = parseDate(value);
+                  if (!date) return 0;
+                  const now = new Date();
+                  let months = (now.getFullYear() - date.getFullYear()) * 12 + (now.getMonth() - date.getMonth());
+                  if (now.getDate() < date.getDate()) months -= 1;
+                  return Math.max(0, months);
+                };
+
+                const formatRelativeAge = (value: any) => {
+                  const months = diffInMonths(value);
+                  if (months <= 0) return "N/A";
+                  const years = Math.floor(months / 12);
+                  const remainder = months % 12;
+                  const parts: string[] = [];
+                  if (years) parts.push(`${years} ${years === 1 ? "year" : "years"}`);
+                  if (remainder) parts.push(`${remainder} ${remainder === 1 ? "month" : "months"}`);
+                  return parts.join(", ") || "< 1 month";
+                };
+
+                const normalizeBureau = (value: any): string | null => {
+                  if (value === null || value === undefined) return null;
+                  if (typeof value === "number" && !Number.isNaN(value)) {
+                    if (value === 1) return "TransUnion";
+                    if (value === 2) return "Experian";
+                    if (value === 3) return "Equifax";
+                    return null;
+                  }
+                  const text = String(value || "").toLowerCase();
+                  if (/trans[-\s]?union|tu/.test(text)) return "TransUnion";
+                  if (/experian|xpn|ex/.test(text)) return "Experian";
+                  if (/equifax|eqf|eq/.test(text)) return "Equifax";
+                  return null;
+                };
+
+                const resolveAccountBureaus = (acc: any) => {
+                  const candidates = [
+                    normalizeBureau(acc?.BureauId),
+                    normalizeBureau(acc?.bureauId),
+                    normalizeBureau(acc?.bureau),
+                    normalizeBureau(acc?.Bureau),
+                    normalizeBureau(acc?.BureauName),
+                    normalizeBureau(acc?.bureauName),
+                    normalizeBureau(acc?.BureauID),
+                  ].filter(Boolean) as string[];
+                  return Array.from(new Set(candidates));
+                };
+
+                const renderBureauBadge = (name: string) => {
+                  if (name === "TransUnion") {
+                    return <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-5 w-auto" />;
+                  }
+                  if (name === "Experian") {
+                    return <img src="/Experian_logo.svg.png" alt="Experian" className="h-5 w-auto" />;
+                  }
+                  if (name === "Equifax") {
+                    return <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-5 w-auto" />;
+                  }
+                  return <span className="text-xs font-medium text-muted-foreground">{name || "Unknown"}</span>;
+                };
+
+                const maskAccountNumber = (value: any) => {
+                  const digits = String(value || "").replace(/[^0-9]/g, "");
+                  if (!digits) return "—";
+                  const last4 = digits.slice(-4);
+                  return digits.length > 4 ? `••${last4}` : last4;
+                };
+
+                const parseCurrency = (value: any) => {
+                  if (value === null || value === undefined) return 0;
+                  const normalized = String(value).replace(/[^0-9.-]/g, "");
+                  const num = Number(normalized);
+                  return Number.isFinite(num) ? num : 0;
+                };
+
+                const formatCurrency = (value: number) => {
+                  if (!Number.isFinite(value) || value === 0) return "—";
+                  return `$${Math.round(value).toLocaleString()}`;
+                };
+
+                const severityForCategory: Record<string, number> = {
+                  "public-record": 5,
+                  "charge-off": 4,
+                  collection: 4,
+                  "late-payment": 3,
+                  "hard-inquiry": 2,
+                  "soft-inquiry": 1,
+                  other: 1,
+                };
+
+                const categoryLabels: Record<string, string> = {
+                  "public-record": "Public Records",
+                  "charge-off": "Charge Offs",
+                  collection: "Collections",
+                  "late-payment": "Late Payments",
+                  "hard-inquiry": "Hard Inquiries",
+                  "soft-inquiry": "Soft Inquiries",
+                  other: "Other",
+                };
+
+                const severityBadgeClasses: Record<number, string> = {
+                  5: "bg-red-100 text-red-700 dark:bg-red-900/60 dark:text-red-100",
+                  4: "bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-100",
+                  3: "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-100",
+                  2: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-100",
+                  1: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200",
+                };
+
+                const items: any[] = [];
+                const seen = new Set<string>();
+
+                const pushItem = (item: any) => {
+                  const severity = severityForCategory[item.category] ?? 1;
+                  const key = `${item.category}|${(item.key || "").toString().toLowerCase()}`;
+                  if (seen.has(key)) return;
+                  seen.add(key);
+                  items.push({
+                    ...item,
+                    severity,
+                    severityLabel:
+                      severity === 5
+                        ? "Severe"
+                        : severity === 4
+                        ? "High"
+                        : severity === 3
+                        ? "Medium"
+                        : severity === 2
+                        ? "Low"
+                        : "Minimal",
+                  });
+                };
+
+                const resolveCreditor = (value: any) => {
+                  const text = String(value || "").trim();
+                  if (!text) return "Unknown Creditor";
+                  return text;
+                };
+
+                const rawAccounts = pickArray(
+                  (apiData as any)?.reportData?.reportData?.Accounts,
+                  (apiData as any)?.reportData?.Accounts,
+                  (apiData as any)?.Accounts,
+                  (reportData as any)?.accounts
+                );
+                const rawCollections = pickArray(
+                  (apiData as any)?.reportData?.reportData?.Collections,
+                  (apiData as any)?.reportData?.Collections,
+                  (apiData as any)?.Collections,
+                  (reportData as any)?.collections
+                );
+                const rawPublicRecords = pickArray(
+                  (apiData as any)?.reportData?.reportData?.PublicRecords,
+                  (apiData as any)?.reportData?.PublicRecords,
+                  (apiData as any)?.PublicRecords,
+                  (reportData as any)?.publicRecords
+                );
+                const rawInquiries = pickArray(
+                  (apiData as any)?.reportData?.reportData?.Inquiries,
+                  (apiData as any)?.reportData?.Inquiries,
+                  (apiData as any)?.Inquiries,
+                  (reportData as any)?.inquiries
+                );
+
+                rawAccounts.forEach((acc: any) => {
+                  const text = [
+                    acc?.PaymentStatus,
+                    acc?.AccountStatus,
+                    acc?.AccountCondition,
+                    acc?.Remark,
+                    acc?.Status,
+                    acc?.status,
+                    acc?.WorstPayStatus,
+                  ]
+                    .map((v: any) => String(v || "").toLowerCase())
+                    .join(" ");
+                  const amountPastDue = parseCurrency(acc?.AmountPastDue ?? acc?.PastDueAmount);
+                  const category = (() => {
+                    if (/bankrupt|judg|tax lien|tax-lien|foreclosure|repossession|garnishment/.test(text)) return "public-record";
+                    if (/charge ?off|repossession/.test(text)) return "charge-off";
+                    if (/collection/.test(text)) return "collection";
+                    if (/late|delinquent|past due|past-due|overdue|default/.test(text) || amountPastDue > 0) {
+                      return "late-payment";
+                    }
+                    return "other";
+                  })();
+                  if (category === "other") return;
+
+                  const accountDigits = String(
+                    acc?.AccountNumber || acc?.accountNumber || acc?.id || acc?.TradelineId || ""
+                  ).replace(/[^0-9]/g, "");
+                  const key = accountDigits ? accountDigits.slice(-6) : `${resolveCreditor(acc?.CreditorName || acc?.creditor)}|${category}`;
+
+                  pushItem({
+                    id: acc?.AccountNumber || acc?.accountNumber || acc?.TradelineId || key,
+                    key,
+                    category,
+                    type:
+                      category === "charge-off"
+                        ? "Charge Off"
+                        : category === "collection"
+                        ? "Collection"
+                        : "Late Payment",
+                    creditor: resolveCreditor(acc?.CreditorName || acc?.creditor || acc?.name),
+                    accountNumber: maskAccountNumber(acc?.AccountNumber || acc?.accountNumber || acc?.MaskAccountNumber),
+                    bureaus: resolveAccountBureaus(acc),
+                    reported: acc?.DateReported || acc?.dateReported || acc?.reported || acc?.DateOpened || acc?.openDate,
+                    ageLabel: formatRelativeAge(acc?.DateOpened || acc?.openDate || acc?.DateReported || acc?.reported),
+                    status:
+                      acc?.PaymentStatus || acc?.AccountStatus || acc?.AccountCondition || acc?.status || "Negative",
+                    amount: amountPastDue > 0 ? amountPastDue : parseCurrency(acc?.CurrentBalance || acc?.Balance),
+                  });
+                });
+
+                rawCollections.forEach((collection: any) => {
+                  const digits = String(collection?.AccountNumber || collection?.accountNumber || collection?.id || "").replace(/[^0-9]/g, "");
+                  const key = digits ? digits.slice(-6) : `${collection?.agency || collection?.CreditorName || "collection"}`;
+                  pushItem({
+                    id: collection?.id || key,
+                    key,
+                    category: "collection",
+                    type: "Collection",
+                    creditor: resolveCreditor(collection?.agency || collection?.originalCreditor || collection?.CreditorName),
+                    accountNumber: maskAccountNumber(collection?.AccountNumber || collection?.accountNumber),
+                    bureaus: [normalizeBureau(collection?.BureauId) || normalizeBureau(collection?.bureau) || "Multiple"].filter(Boolean),
+                    reported:
+                      collection?.DateReported ||
+                      collection?.dateReported ||
+                      collection?.lastActivity ||
+                      collection?.dateOpened,
+                    ageLabel: formatRelativeAge(
+                      collection?.DateOpened || collection?.dateOpened || collection?.DateReported || collection?.dateReported
+                    ),
+                    status: collection?.status || collection?.Status || "Open Collection",
+                    amount: parseCurrency(collection?.Amount || collection?.balance || collection?.BalanceOwed),
+                  });
+                });
+
+                rawPublicRecords.forEach((record: any) => {
+                  const digits = String(record?.caseNumber || record?.CaseNumber || record?.id || "").replace(/[^0-9]/g, "");
+                  const key = digits ? digits.slice(-6) : `${record?.type || record?.Type || "public"}`;
+                  pushItem({
+                    id: record?.id || key,
+                    key,
+                    category: "public-record",
+                    type: record?.type || record?.Type || "Public Record",
+                    creditor: resolveCreditor(record?.creditor || record?.Creditor || "Court / Government"),
+                    accountNumber: record?.caseNumber || record?.CaseNumber ? `Case ${record.caseNumber || record.CaseNumber}` : "—",
+                    bureaus: [normalizeBureau(record?.BureauId) || normalizeBureau(record?.bureau) || "Multiple"].filter(Boolean),
+                    reported: record?.filingDate || record?.dischargeDate || record?.DateFiled,
+                    ageLabel: formatRelativeAge(record?.filingDate || record?.dischargeDate || record?.DateFiled),
+                    status: record?.status || record?.Status || "Open",
+                    amount: parseCurrency(record?.amount || record?.Amount),
+                  });
+                });
+
+                rawInquiries.forEach((inquiry: any) => {
+                  const type = String(inquiry?.type || inquiry?.InquiryType || "").toLowerCase();
+                  const isHard = type === "hard" || type === "i" || /hard/.test(type);
+                  if (!isHard) return;
+                  const creditor = inquiry?.company || inquiry?.creditorName || inquiry?.CreditorName;
+                  const key = `${creditor || "inquiry"}|${inquiry?.date || inquiry?.DateInquiry || inquiry?.reported}`;
+                  pushItem({
+                    id: inquiry?.id || key,
+                    key,
+                    category: "hard-inquiry",
+                    type: "Hard Inquiry",
+                    creditor: resolveCreditor(creditor),
+                    accountNumber: inquiry?.id ? `Inquiry ${inquiry.id}` : "—",
+                    bureaus: [normalizeBureau(inquiry?.BureauId) || normalizeBureau(inquiry?.bureau) || "Multiple"].filter(Boolean),
+                    reported: inquiry?.date || inquiry?.DateInquiry || inquiry?.reported,
+                    ageLabel: formatRelativeAge(inquiry?.date || inquiry?.DateInquiry || inquiry?.reported),
+                    status: "Recorded",
+                    amount: 0,
+                  });
+                });
+
+                if (items.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      No negative items were detected across the latest report data.
+                    </div>
+                  );
+                }
+
+                const summaryEntries = Array.from(
+                  items.reduce((acc: Map<string, number>, item: any) => {
+                    acc.set(item.category, (acc.get(item.category) || 0) + 1);
+                    return acc;
+                  }, new Map<string, number>()).entries()
+                ).sort((a, b) => {
+                  const severityDelta = (severityForCategory[b[0]] ?? 0) - (severityForCategory[a[0]] ?? 0);
+                  if (severityDelta !== 0) return severityDelta;
+                  return b[1] - a[1];
+                });
+
+                const sortedItems = items
+                  .slice()
+                  .sort((a, b) => {
+                    const severityDelta = (b.severity ?? 0) - (a.severity ?? 0);
+                    if (severityDelta !== 0) return severityDelta;
+                    return diffInMonths(a.reported) - diffInMonths(b.reported);
+                  });
+
+                return (
+                  <div className="space-y-6">
+                    <div className="flex flex-wrap gap-2">
+                      {summaryEntries.map(([category, count]) => (
+                        <Badge
+                          key={category}
+                          variant="secondary"
+                          className="flex items-center gap-2 px-3 py-1 text-sm font-semibold bg-muted/60 dark:bg-slate-700/60"
+                        >
+                          <span className="uppercase tracking-wide text-xs text-muted-foreground">
+                            {categoryLabels[category] ?? category}
+                          </span>
+                          <span className="text-lg text-foreground dark:text-white">{count}</span>
+                        </Badge>
+                      ))}
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="dark:border-slate-700">
+                            <TableHead className="dark;text-white">Item</TableHead>
+                            <TableHead className="dark;text-white">Creditor</TableHead>
+                            <TableHead className="dark;text-white">Bureaus</TableHead>
+                            <TableHead className="dark;text-white">Reported</TableHead>
+                            <TableHead className="dark;text-white">Age</TableHead>
+                            <TableHead className="dark;text-white">Status</TableHead>
+                            <TableHead className="text-right dark:text-white">Balance / Past Due</TableHead>
+                            <TableHead className="dark:text-white">Severity</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sortedItems.map((item, index) => (
+                            <TableRow
+                              key={index}
+                              className="dark:border-slate-700 hover:bg-red-50/30 dark:hover:bg-red-900/30 transition-colors"
+                            >
+                              <TableCell className="text-foreground dark:text-white">
+                                <div className="font-semibold">{item.type}</div>
+                                <div className="text-xs text-muted-foreground">{item.accountNumber}</div>
+                              </TableCell>
+                              <TableCell className="text-foreground dark:text-white">{item.creditor}</TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {item.bureaus && item.bureaus.length > 0 ? (
+                                    item.bureaus.map((name: string) => (
+                                      <span key={name}>{renderBureauBadge(name)}</span>
+                                    ))
+                                  ) : (
+                                    <span className="text-sm text-muted-foreground">—</span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-foreground dark:text-white">{formatDate(item.reported)}</TableCell>
+                              <TableCell className="text-foreground dark:text-white">{item.ageLabel}</TableCell>
+                              <TableCell className="text-foreground dark:text-white">{item.status}</TableCell>
+                              <TableCell className="text-right font-semibold text-foreground dark:text-white">
+                                {formatCurrency(item.amount)}
+                              </TableCell>
+                              <TableCell>
+                                <span
+                                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                                    severityBadgeClasses[item.severity as number] || severityBadgeClasses[1]
+                                  }`}
+                                >
+                                  {item.severityLabel}
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+
+
+
+          {/* Pay Down */}
+          <Card id="credit-war-map-paydown" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Step 4 — Utilization Optimization</CardTitle>
+              <CardDescription className="text-muted-foreground">Payments needed to reach target utilization levels</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const targets = [30, 25, 20, 15, 10, 5, 0];
+                const formatCurrency = (n: number) => `$${Math.round(n).toLocaleString()}`;
+                const formatPercent = (n: number) => `${Math.round(n)}%`;
+
+                const parseDate = (dateLike: any): Date | null => {
+                  if (!dateLike) return null;
+                  const d = new Date(String(dateLike));
+                  return Number.isNaN(d.getTime()) ? null : d;
+                };
+
+                const getAccountAge = (dateLike: any): { years: number; months: number; totalMonths: number } => {
+                  const opened = parseDate(dateLike);
+                  if (!opened) return { years: 0, months: 0, totalMonths: 0 };
+                  const now = new Date();
+                  let months = (now.getFullYear() - opened.getFullYear()) * 12 + (now.getMonth() - opened.getMonth());
+                  if (now.getDate() < opened.getDate()) months -= 1;
+                  months = Math.max(0, months);
+                  return { years: Math.floor(months / 12), months: months % 12, totalMonths: months };
+                };
+
+                const formatAge = (dateLike: any): string => {
+                  const { years, months, totalMonths } = getAccountAge(dateLike);
+                  if (totalMonths <= 0) return "N/A";
+                  const y = years ? `${years} ${years === 1 ? "year" : "years"}` : "";
+                  const m = months ? `${months} ${months === 1 ? "month" : "months"}` : "";
+                  return [y, m].filter(Boolean).join(", ");
+                };
+
+                const resolveOwnership = (value: any): string => {
+                  const text = String(value || "").toLowerCase();
+                  if (text.includes("joint") || text.includes("co-borrower") || text.includes("co-maker") || text.includes("co signer") || text.includes("co-signer")) {
+                    return "Joint";
+                  }
+                  if (text.includes("authorized")) {
+                    return "Authorized";
+                  }
+                  return "Primary";
+                };
+
+                const getAccountBalance = (acc: any) => {
+                  const rawValue =
+                    acc?.CurrentBalance ??
+                    acc?.balance ??
+                    acc?.Balance ??
+                    acc?.currentBalance ??
+                    acc?.AmountPastDue ??
+                    acc?.amountPastDue ??
+                    0;
+                  const num = Number(String(rawValue).replace(/,/g, ""));
+                  return Number.isFinite(num) ? num : 0;
+                };
+
+                const apiAccounts =
+                  (apiData as any)?.Accounts ||
+                  (apiData as any)?.reportData?.Accounts ||
+                  (apiData as any)?.reportData?.reportData?.Accounts;
+                const sampleAccounts = (reportData as any)?.accounts;
+
+                let accounts: Array<{ creditor: string; accountNumber?: string; ownership?: string; limit: number; balance: number; opened?: any }> = [];
+
+                const isRevolvingAccount = (acc: any) => {
+                  const typeText = String(
+                    acc?.CreditType ||
+                    acc?.AccountTypeDescription ||
+                    acc?.AccountType ||
+                    acc?.type ||
+                    ""
+                  ).toLowerCase();
+                  const industryText = String(acc?.Industry || "").toLowerCase();
+                  return (
+                    typeText.includes("revolving") ||
+                    typeText.includes("credit card") ||
+                    typeText.includes("charge account") ||
+                    typeText.includes("flexible spending") ||
+                    industryText.includes("bank credit cards")
+                  );
+                };
+
+                const isOpenAccount = (acc: any) => {
+                  const statusText = String(
+                    acc?.AccountStatus ||
+                    acc?.AccountCondition ||
+                    acc?.status ||
+                    ""
+                  ).toLowerCase();
+                  return statusText.includes("open") || statusText.includes("current");
+                };
+
+                if (Array.isArray(apiAccounts) && apiAccounts.length > 0) {
+                  accounts = apiAccounts
+                    .filter((acc: any) => getAccountBalance(acc) > 0)
+                    .filter((acc: any) => isRevolvingAccount(acc) && isOpenAccount(acc))
+                    .map((acc: any) => ({
+                      creditor: acc.CreditorName || acc.Creditor || "—",
+                      accountNumber: acc.AccountNumber || acc.MaskAccountNumber,
+                      ownership: resolveOwnership(acc.AccountDesignator || acc.AccountOwnership || acc.Responsibility || acc.OwnershipType),
+                      limit: parseFloat(acc.CreditLimit) || parseFloat(acc.HighBalance) || 0,
+                      balance: getAccountBalance(acc),
+                      opened: acc.DateOpened || acc.DateReported || acc.OpenDate || acc.dateOpened,
+                    }));
+                } else if (Array.isArray(sampleAccounts) && sampleAccounts.length > 0) {
+                  accounts = sampleAccounts
+                    .filter((acc: any) => getAccountBalance(acc) > 0)
+                    .filter((acc: any) => isRevolvingAccount(acc) && isOpenAccount(acc))
+                    .map((acc: any) => ({
+                      creditor: acc.creditorName || acc.creditor || "—",
+                      accountNumber: acc.accountNumber,
+                      ownership: resolveOwnership(acc.ownership || acc.accountOwnership),
+                      limit: Number(acc.creditLimit ?? acc.limit ?? 0),
+                      balance: getAccountBalance(acc),
+                      opened: acc.opened || acc.dateOpened,
+                    }));
+                }
+
+                if (!accounts.length) {
+                  return (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      No accounts with balances found to compute paydown.
+                    </div>
+                  );
+                }
+
+                const sortedAccounts = accounts.slice().sort((a, b) => {
+                  const utilA = a.limit > 0 ? (a.balance / a.limit) * 100 : 0;
+                  const utilB = b.limit > 0 ? (b.balance / b.limit) * 100 : 0;
+                  if (utilA !== utilB) return utilB - utilA;
+                  if (utilA > 0 || utilB > 0) {
+                    return b.balance - a.balance;
+                  }
+                  const ageA = getAccountAge(a.opened).totalMonths;
+                  const ageB = getAccountAge(b.opened).totalMonths;
+                  return ageB - ageA;
+                });
+
+                return (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="dark:border-slate-700">
+                          <TableHead className="dark:text-white">Account</TableHead>
+                          <TableHead className="dark:text-white">Ownership</TableHead>
+                          <TableHead className="text-right dark:text-white">Limit</TableHead>
+                          <TableHead className="text-right dark:text-white">Balance</TableHead>
+                          <TableHead className="text-right dark:text-white">Utilization</TableHead>
+                          <TableHead className="text-right dark:text-white">Account Age</TableHead>
+                          {targets.map((t) => (
+                            <TableHead key={t} className="text-right dark:text-white">To {t}%</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sortedAccounts.map((acc, idx) => {
+                          const util = acc.limit > 0 ? (acc.balance / acc.limit) * 100 : 0;
+                          const rowAccent =
+                            util >= 80 ? "hover:bg-red-50/40 dark:hover:bg-red-900/40" :
+                            util >= 60 ? "hover:bg-orange-50/40 dark:hover:bg-orange-900/40" :
+                            util >= 40 ? "hover:bg-yellow-50/40 dark:hover:bg-yellow-900/40" :
+                            util > 0  ? "hover:bg-green-50/40 dark:hover:bg-green-900/40" : "hover:bg-gray-50/40 dark:hover:bg-gray-800/40";
+
+                          const utilStyles =
+                            util >= 80 ? "bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-white" :
+                            util >= 60 ? "bg-orange-50 text-orange-700 dark:bg-orange-900/50 dark:text-white" :
+                            util >= 40 ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/50 dark:text-white" :
+                            util > 0  ? "bg-green-50 text-green-700 dark:bg-green-900/50 dark:text-white" : "bg-gray-50 text-gray-600 dark:bg-slate-700 dark:text-gray-300";
+
+                          return (
+                            <TableRow
+                              key={idx}
+                              className={`cursor-pointer transition-colors dark:border-slate-700 ${rowAccent}`}
+                              onClick={() => {
+                                setSelectedPaydownAccount(acc);
+                                const initialUtil = acc.limit > 0 ? (acc.balance / acc.limit) * 100 : 0;
+                                const suggestedTarget = initialUtil >= 30 ? 30 : 10;
+                                setSelectedTarget(suggestedTarget);
+                                setPaydownDialogOpen(true);
+                              }}
+                            >
+                              <TableCell>
+                                <div className="font-medium text-gray-800 dark:text-white">{acc.creditor}</div>
+                                <div className="text-xs text-muted-foreground">{acc.accountNumber || ""}</div>
+                              </TableCell>
+                              <TableCell className="text-sm text-slate-700 dark:text-slate-300">{acc.ownership || "Primary"}</TableCell>
+                              <TableCell className="text-right font-semibold text-blue-700 dark:text-blue-400">{formatCurrency(acc.limit)}</TableCell>
+                              <TableCell className="text-right font-semibold text-purple-700 dark:text-purple-400">{formatCurrency(acc.balance)}</TableCell>
+                              <TableCell className={`text-right font-semibold rounded-md px-2 ${utilStyles}`}>{formatPercent(util)}</TableCell>
+                              <TableCell className="text-right text-slate-700 dark:text-slate-300">{formatAge(acc.opened)}</TableCell>
+                              {targets.map((t) => {
+                                const targetBal = Math.round(acc.limit * (t / 100));
+                                const payment = Math.max(0, Math.round(acc.balance - targetBal));
+                                const paymentRatio = acc.balance > 0 ? payment / acc.balance : 0;
+                                const paymentStyles =
+                                  payment === 0 ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300" :
+                                  paymentRatio <= 0.10 ? "bg-lime-50 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300" :
+                                  paymentRatio <= 0.25 ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300" :
+                                  paymentRatio <= 0.50 ? "bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" :
+                                  "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300";
+                                return (
+                                  <TableCell key={t} className={`text-right rounded-md px-2 ${paymentStyles}`}>
+                                    {formatCurrency(payment)}
+                                    <div className="text-[11px] opacity-80">→ target {formatCurrency(targetBal)}</div>
+                                  </TableCell>
+                                );
+                              })}
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+
+          {/* Credit Build & AUs */}
+          <Card id="credit-war-map-credit-build" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Step 5 — Account Aging Strategy</CardTitle>
+              <CardDescription className="text-muted-foreground">Prime accounts to build credit or use for authorized user strategy</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const formatCurrency = (n: number) => `$${Math.round(n).toLocaleString()}`;
+                const formatPercent = (n: number) => `${Math.round(n)}%`;
+
+                const parseDate = (dateLike: any): Date | null => {
+                  if (!dateLike) return null;
+                  const d = new Date(String(dateLike));
+                  return Number.isNaN(d.getTime()) ? null : d;
+                };
+
+                const getAccountAge = (dateLike: any): { years: number; months: number; totalMonths: number } => {
+                  const opened = parseDate(dateLike);
+                  if (!opened) return { years: 0, months: 0, totalMonths: 0 };
+                  const now = new Date();
+                  let months = (now.getFullYear() - opened.getFullYear()) * 12 + (now.getMonth() - opened.getMonth());
+                  if (now.getDate() < opened.getDate()) months -= 1;
+                  months = Math.max(0, months);
+                  return { years: Math.floor(months / 12), months: months % 12, totalMonths: months };
+                };
+
+                const formatAge = (dateLike: any): string => {
+                  const { years, months, totalMonths } = getAccountAge(dateLike);
+                  if (totalMonths <= 0) return "N/A";
+                  const y = years ? `${years} ${years === 1 ? "year" : "years"}` : "";
+                  const m = months ? `${months} ${months === 1 ? "month" : "months"}` : "";
+                  return [y, m].filter(Boolean).join(", ");
+                };
+
+                const resolveOwnership = (value: any): string => {
+                  const text = String(value || "").toLowerCase();
+                  if (text.includes("joint") || text.includes("co-borrower") || text.includes("co-maker") || text.includes("co signer") || text.includes("co-signer")) {
+                    return "Joint";
+                  }
+                  if (text.includes("authorized")) {
+                    return "Authorized";
+                  }
+                  return "Individual";
+                };
+
+                const classifyAccountType = (acc: any): string => {
+                  const creditType = String(acc?.CreditType || acc?.type || "").toLowerCase();
+                  const accountType = String(acc?.AccountType || acc?.AccountTypeDescription || "").toLowerCase();
+                  const industry = String(acc?.Industry || "").toLowerCase();
+                  if (creditType.includes("revolving") || accountType.includes("revolving") || accountType.includes("credit") || creditType.includes("credit")) {
+                    return "Revolving";
+                  }
+                  if (accountType.includes("mortgage") || industry.includes("real estate") || creditType.includes("mortgage")) {
+                    return "Mortgage";
+                  }
+                  if (creditType.includes("installment") || accountType.includes("installment")) {
+                    return "Installment";
+                  }
+                  return "Other";
+                };
+
+                const getAccountBalance = (acc: any) => {
+                  const rawValue =
+                    acc?.CurrentBalance ??
+                    acc?.balance ??
+                    acc?.Balance ??
+                    acc?.currentBalance ??
+                    acc?.AmountPastDue ??
+                    acc?.amountPastDue ??
+                    0;
+                  const num = Number(String(rawValue).replace(/,/g, ""));
+                  return Number.isFinite(num) ? num : 0;
+                };
+
+                const getAccountLimit = (acc: any) => {
+                  const rawValue = acc?.CreditLimit ?? acc?.creditLimit ?? acc?.HighBalance ?? acc?.highBalance ?? acc?.limit;
+                  const num = Number(String(rawValue ?? 0).toString().replace(/,/g, ""));
+                  return Number.isFinite(num) ? num : 0;
+                };
+
+                const normalizeBureau = (value: any): string | null => {
+                  if (value === null || value === undefined) return null;
+                  if (typeof value === "number" && !Number.isNaN(value)) {
+                    if (value === 1) return "tu";
+                    if (value === 2) return "ex";
+                    if (value === 3) return "eq";
+                    return null;
+                  }
+                  const text = String(value || "").toLowerCase();
+                  if (/\btu\b|trans[-\s]?union/.test(text)) return "tu";
+                  if (/\bex\b|experian|xpn/.test(text)) return "ex";
+                  if (/\beq\b|equifax|eqf/.test(text)) return "eq";
+                  return null;
+                };
+
+                const resolveBureausForAccount = (acc: any): string[] => {
+                  const possibles = [
+                    normalizeBureau(acc?.BureauId),
+                    normalizeBureau(acc?.Bureau),
+                    normalizeBureau(acc?.BureauName),
+                    normalizeBureau(acc?.bureau),
+                    normalizeBureau(acc?.bureauName)
+                  ];
+                  const unique = Array.from(new Set(possibles.filter(Boolean) as string[]));
+                  if (unique.length > 0) return unique;
+                  const creditor = String(acc?.CreditorName || acc?.creditor || "").toLowerCase();
+                  if (/experian|xpn/.test(creditor)) return ["ex"];
+                  if (/trans\s*union/.test(creditor)) return ["tu"];
+                  if (/equifax|eqf/.test(creditor)) return ["eq"];
+                  return [];
+                };
+
+                const formatOpened = (value: any) => {
+                  const d = parseDate(value);
+                  return d ? d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "N/A";
+                };
+
+                const maskAccountNumber = (value: any) => {
+                  const digits = String(value || "").replace(/[^0-9]/g, "");
+                  if (!digits) return "—";
+                  return `••${digits.slice(-4)}`;
+                };
+
+                const isOpenStatus = (status?: string) => {
+                  const normalized = String(status || "").toLowerCase();
+                  return /\bopen\b/.test(normalized) || normalized.includes("current");
+                };
+
+                const getAgeHighlightClasses = (months?: number, status?: string) => {
+                  if (!isOpenStatus(status) || !months || months <= 0) return "";
+                  if (months < 24) {
+                    return "bg-amber-100/60 dark:bg-amber-900/40 border border-amber-400/30";
+                  }
+                  return "bg-emerald-200/60 dark:bg-emerald-900/50 border border-emerald-500/40";
+                };
+
+                const getAgeTextClasses = (months?: number, status?: string) => {
+                  if (!isOpenStatus(status)) return "text-foreground dark:text-white";
+                  if (months && months >= 24) {
+                    return "text-emerald-700 dark:text-emerald-300 font-semibold";
+                  }
+                  if (months && months > 0) {
+                    return "text-amber-700 dark:text-amber-300 font-medium";
+                  }
+                  return "text-foreground dark:text-white";
+                };
+
+                const apiAccounts =
+                  (apiData as any)?.Accounts ||
+                  (apiData as any)?.reportData?.Accounts ||
+                  (apiData as any)?.reportData?.reportData?.Accounts;
+                const sampleAccounts = (reportData as any)?.accounts;
+
+                let accounts: any[] = [];
+                if (Array.isArray(apiAccounts) && apiAccounts.length > 0) {
+                  accounts = apiAccounts;
+                } else if (Array.isArray(sampleAccounts) && sampleAccounts.length > 0) {
+                  accounts = sampleAccounts;
+                }
+
+                const canonicalizeCreditor = (value: any) => String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+                const statusPriority = (value: string) => {
+                  const lower = String(value || "").toLowerCase();
+                  if (lower.includes("open") || lower.includes("current")) return 3;
+                  if (lower.includes("paid")) return 2;
+                  if (lower.includes("closed")) return 1;
+                  return 0;
+                };
+                const designatorPriority = (value: string) => {
+                  if (value === "Joint") return 3;
+                  if (value === "Authorized") return 2;
+                  if (value === "Individual") return 1;
+                  return 0;
+                };
+
+                const baseAccounts = accounts
+                  .map((acc: any) => {
+                    const limit = getAccountLimit(acc);
+                    const balance = getAccountBalance(acc);
+                    const openedValue = acc?.DateOpened || acc?.OpenDate || acc?.opened || acc?.dateOpened;
+                    const ageInfo = getAccountAge(openedValue);
+                    const creditor = acc?.CreditorName || acc?.creditor || acc?.name || "—";
+                    const rawAccountId = String(
+                      acc?.AccountNumber ||
+                      acc?.accountNumber ||
+                      acc?.MaskAccountNumber ||
+                      acc?.maskAccountNumber ||
+                      ""
+                    ).replace(/[^0-9a-z]/gi, "");
+                    return {
+                      type: classifyAccountType(acc),
+                      creditor,
+                      canonicalCreditor: canonicalizeCreditor(creditor),
+                      status: String(acc?.AccountStatus || acc?.AccountCondition || acc?.status || "Unknown"),
+                      designator: resolveOwnership(acc?.AccountDesignator || acc?.AccountOwnership || acc?.Responsibility || acc?.ownership || ""),
+                      opened: openedValue,
+                      ageMonths: ageInfo.totalMonths,
+                      limit,
+                      balance,
+                      rawAccountId,
+                      bureaus: resolveBureausForAccount(acc),
+                      accountNumber: maskAccountNumber(acc?.AccountNumber || acc?.accountNumber || acc?.maskAccountNumber)
+                    };
+                  })
+                  .filter((acc) => acc.limit > 0 || acc.balance > 0);
+
+                const aggregatedMap = new Map<string, any>();
+
+                baseAccounts.forEach((item) => {
+                  const parsedOpened = parseDate(item.opened);
+                  const openedKey = parsedOpened ? parsedOpened.toISOString().slice(0, 10) : String(item.opened || "");
+                  const key = [item.canonicalCreditor, item.rawAccountId, item.type.toLowerCase(), openedKey].join("|");
+                  const existing = aggregatedMap.get(key);
+                  if (!existing) {
+                    aggregatedMap.set(key, {
+                      ...item,
+                      bureausSet: new Set(item.bureaus),
+                    });
+                    return;
+                  }
+
+                  item.bureaus.forEach((code: string) => existing.bureausSet.add(code));
+                  existing.limit = Math.max(existing.limit, item.limit);
+                  existing.balance = Math.max(existing.balance, item.balance);
+                  if (designatorPriority(item.designator) > designatorPriority(existing.designator)) {
+                    existing.designator = item.designator;
+                  }
+                  if (statusPriority(item.status) > statusPriority(existing.status)) {
+                    existing.status = item.status;
+                  }
+                  if ((item.ageMonths ?? 0) > (existing.ageMonths ?? 0)) {
+                    existing.ageMonths = item.ageMonths ?? 0;
+                    existing.opened = item.opened;
+                  }
+                });
+
+                const prepared = Array.from(aggregatedMap.values())
+                  .map((item) => {
+                    const limit = item.limit;
+                    const balance = item.balance;
+                    const utilization = limit > 0 ? (balance / limit) * 100 : 0;
+                    return {
+                      type: item.type,
+                      creditor: item.creditor,
+                      status: item.status,
+                      designator: item.designator,
+                      opened: item.opened,
+                      ageMonths: item.ageMonths ?? 0,
+                      age: formatAge(item.opened),
+                      limit,
+                      balance,
+                      utilization,
+                      bureaus: Array.from(item.bureausSet) as string[],
+                      accountNumber: item.accountNumber,
+                    };
+                  })
+                  .sort((a, b) => {
+                    const ageDelta = (b.ageMonths ?? 0) - (a.ageMonths ?? 0);
+                    if (ageDelta !== 0) return ageDelta;
+                    const priorityType = (type: string) => {
+                      if (type === "Revolving") return 0;
+                      if (type === "Installment") return 1;
+                      if (type === "Mortgage") return 2;
+                      return 3;
+                    };
+                    const typeDelta = priorityType(a.type) - priorityType(b.type);
+                    if (typeDelta !== 0) return typeDelta;
+                    const statusDelta = statusPriority(a.status) - statusPriority(b.status);
+                    if (statusDelta !== 0) return statusDelta;
+                    return b.limit - a.limit;
+                  });
+
+                const renderBureauBadge = (code: string) => {
+                  if (code === "tu") return <img src="/TransUnion_logo.svg.png" alt="TransUnion" className="h-6 w-auto" />;
+                  if (code === "ex") return <img src="/Experian_logo.svg.png" alt="Experian" className="h-6 w-auto" />;
+                  if (code === "eq") return <img src="/Equifax_Logo.svg.png" alt="Equifax" className="h-6 w-auto" />;
+                  return null;
+                };
+
+                const filterOptions = [
+                  {
+                    key: 'all' as const,
+                    label: 'All Accounts',
+                    icon: (
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-200">
+                        All
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'tu' as const,
+                    label: 'TransUnion',
+                    icon: <img src="/TransUnion_logo.svg.png" alt="" className="h-5 w-auto" />,
+                  },
+                  {
+                    key: 'ex' as const,
+                    label: 'Experian',
+                    icon: <img src="/Experian_logo.svg.png" alt="" className="h-5 w-auto" />,
+                  },
+                  {
+                    key: 'eq' as const,
+                    label: 'Equifax',
+                    icon: <img src="/Equifax_Logo.svg.png" alt="" className="h-5 w-auto" />,
+                  },
+                ];
+
+                if (prepared.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      No qualifying accounts found for credit building recommendations.
+                    </div>
+                  );
+                }
+
+                const filtered = prepared.filter((acc) => {
+                  if (creditBuildBureauFilter === "all") return true;
+                  if (creditBuildBureauFilter === "all3") {
+                    return ["tu", "ex", "eq"].every((code) => acc.bureaus.includes(code));
+                  }
+                  return acc.bureaus.includes(creditBuildBureauFilter);
+                });
+
+                return (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {filterOptions.map((option) => (
+                        <Button
+                          key={option.key}
+                          variant={creditBuildBureauFilter === option.key ? "default" : "outline"}
+                          size="sm"
+                          className={`flex items-center justify-center px-3 py-2 ${
+                            creditBuildBureauFilter === option.key ? "shadow-md" : "bg-card"
+                          }`}
+                          onClick={() => setCreditBuildBureauFilter(option.key)}
+                        >
+                          {option.icon}
+                          {option.key === "all" ? null : <span className="sr-only">{option.label}</span>}
+                        </Button>
+                      ))}
+                    </div>
+
+                    {filtered.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        No accounts match the selected filter.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="dark:border-slate-700">
+                              <TableHead className="dark:text-white">Type</TableHead>
+                              <TableHead className="dark:text-white">Creditor</TableHead>
+                              <TableHead className="dark:text-white">Status</TableHead>
+                              <TableHead className="dark:text-white">Designator</TableHead>
+                              <TableHead className="dark:text-white">Opened</TableHead>
+                              <TableHead className="dark:text-white">Age</TableHead>
+                              <TableHead className="dark:text-white">Bureaus</TableHead>
+                              <TableHead className="dark:text-white">Account No.</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filtered.map((acc, index) => (
+                              <TableRow
+                                key={index}
+                                className={`dark:border-slate-700 transition-colors ${getAgeHighlightClasses(acc.ageMonths, acc.status)}`}
+                              >
+                                <TableCell className="font-medium text-foreground dark:text-white">{acc.type}</TableCell>
+                                <TableCell className="text-foreground dark:text-white">{acc.creditor}</TableCell>
+                                <TableCell
+                                  className={
+                                    acc.status.toLowerCase().includes("open")
+                                      ? "text-green-600 dark:text-green-400"
+                                      : "text-gray-600 dark:text-gray-300"
+                                  }
+                                >
+                                  {acc.status || "Unknown"}
+                                </TableCell>
+                                <TableCell className="text-foreground dark:text-white">{acc.designator}</TableCell>
+                                <TableCell className="text-foreground dark:text-white">{formatOpened(acc.opened)}</TableCell>
+                                <TableCell className={getAgeTextClasses(acc.ageMonths, acc.status)}>{acc.age}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    {acc.bureaus.length > 0 ? (
+                                      acc.bureaus.map((b) => <div key={b}>{renderBureauBadge(b)}</div>)
+                                    ) : (
+                                      <span className="text-sm text-muted-foreground">—</span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-foreground dark:text-white">{acc.accountNumber}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+
+          {(() => {
+            const fundableStatus = clientRecord?.fundable_status;
+            const showFundingCta = fundableStatus ? fundableStatus === "fundable" : effectiveFundingEligible;
+            const cardGradient = showFundingCta
+              ? "bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-600"
+              : "bg-gradient-to-br from-rose-600 via-rose-500 to-rose-600";
+            const descriptionTint = showFundingCta ? "text-emerald-100" : "text-rose-100";
+            const fundableButtonClass = "w-full py-5 text-lg font-semibold bg-white text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800";
+            const nonFundableButtonClass = "w-full py-5 text-lg font-semibold bg-white text-rose-700 hover:bg-rose-100 hover:text-rose-800 disabled:opacity-70 disabled:cursor-not-allowed";
+
+            return (
+              <Card
+                id="credit-war-map-funding-cta"
+                className={`border-0 shadow-xl ${cardGradient} text-white scroll-mt-24`}
+              >
+                <CardHeader className="space-y-1">
+                  <CardTitle className="text-2xl font-bold text-white">Step 6 — Funding Readiness</CardTitle>
+                  <CardDescription className={descriptionTint}>
+                    Determine the next step in the funding journey based on current eligibility
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="bg-transparent">
+                  {showFundingCta ? (
+                    <div className="space-y-4">
+                      <p className="text-lg font-medium">
+                        Great news! This client is flagged as fundable. Proceed to the funding workspace to launch curated applications.
+                      </p>
+                      <Button
+                        size="lg"
+                        onClick={() => goToDiyFunding('both')}
+                        className={fundableButtonClass}
+                      >
+                        Go To Funding
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <p className="text-lg font-medium">
+                        This client is not yet fundable. Rerun the funding audit to update status once key items are addressed.
+                      </p>
+                      <Button
+                        size="lg"
+                        disabled={isRerunningAudit}
+                        onClick={() => {
+                          if (isRerunningAudit) return;
+                          setIsRerunningAudit(true);
+                          setRefreshAuditNonce((n) => n + 1);
+                        }}
+                        className={nonFundableButtonClass}
+                      >
+                        {isRerunningAudit ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <RefreshCw className="h-5 w-5 animate-spin" />
+                            Rerunning Audit...
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-center gap-2">
+                            <RefreshCw className="h-5 w-5" />
+                            Rerun The Audit
+                          </span>
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
+
+        </TabsContent>
 
         {/* Comprehensive Credit Analysis Report */}
         <TabsContent value="analysis" className="space-y-8 mt-6">
