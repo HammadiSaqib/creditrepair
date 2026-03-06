@@ -4482,10 +4482,6 @@ export default function CreditReport() {
           <div>
             <div className="text-xs font-semibold text-gray-500 mb-2">Work Area</div>
             <TabsList className="grid w-full grid-cols-6 gap-1 text-xs overflow-x-auto">
-              <TabsTrigger value="creditWarMap" className="min-w-0 flex items-center gap-2">
-                <MapIcon className="h-4 w-4" />
-                <span>Credit War Map</span>
-              </TabsTrigger>
               <TabsTrigger value="analysis" className="min-w-0 flex items-center gap-2">
                 <BarChart className="h-4 w-4" />
                 <span>Analysis</span>
@@ -4497,6 +4493,10 @@ export default function CreditReport() {
               <TabsTrigger value="underwriting" className="min-w-0 flex items-center gap-2">
                 <Shield className="h-4 w-4" />
                 <span>Underwriting</span>
+              </TabsTrigger>
+              <TabsTrigger value="creditWarMap" className="min-w-0 flex items-center gap-2">
+                <MapIcon className="h-4 w-4" />
+                <span>Credit War Map</span>
               </TabsTrigger>
               <TabsTrigger value="debtConsolidation" className="min-w-0 flex items-center gap-2">
                 <PieChart className="h-4 w-4" />
@@ -4546,34 +4546,7 @@ export default function CreditReport() {
           <div>
             <div className="text-xs font-semibold text-muted-foreground mb-2">Work Area</div>
             <div className="hidden md:flex items-center justify-between bg-card rounded-2xl shadow-lg border border-border p-6 overflow-x-auto">
-              {/* Credit War Map */}
-              <div className="flex items-center">
-                <button
-                  onClick={() => setActiveTab('creditWarMap')}
-                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
-                    activeTab === 'creditWarMap'
-                      ? 'bg-slate-500 border-slate-500 text-white shadow-lg scale-110'
-                      : ['analysis','progress','underwriting','funding','fundingApplications','debtConsolidation'].includes(activeTab)
-                        ? 'bg-slate-500 border-slate-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-slate-300 hover:text-slate-500'
-                  }`}
-                >
-                  <MapIcon className="w-5 h-5" />
-                </button>
-                <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'creditWarMap' ? 'text-slate-600' : 'text-muted-foreground'}`}>
-                    Credit War Map
-                  </div>
-                  <div className="text-xs text-muted-foreground">Strategy</div>
-                </div>
-              </div>
-
-              {/* Connector */}
-              <div className="flex-1 h-0.5 bg-border mx-4">
-                <div className={`h-full bg-primary transition-all duration-500 ${
-                  ['analysis','progress','underwriting','funding','fundingApplications','debtConsolidation'].includes(activeTab) ? 'w-full' : 'w-0'
-                }`}></div>
-              </div>
+              
 
               {/* Analysis */}
               <div className="flex items-center">
@@ -4659,6 +4632,35 @@ export default function CreditReport() {
               <div className="flex-1 h-0.5 bg-border mx-4">
                 <div className={`h-full bg-primary transition-all duration-500 ${
                   lawEngineAutoMode || ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
+                }`}></div>
+              </div>
+
+              {/* Credit War Map */}
+              <div className="flex items-center">
+                <button
+                  onClick={() => setActiveTab('creditWarMap')}
+                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                    activeTab === 'creditWarMap'
+                      ? 'bg-slate-500 border-slate-500 text-white shadow-lg scale-110'
+                      : ['analysis','progress','underwriting','funding','fundingApplications','debtConsolidation'].includes(activeTab)
+                        ? 'bg-slate-500 border-slate-500 text-white'
+                        : 'bg-card border-border text-muted-foreground hover:border-slate-300 hover:text-slate-500'
+                  }`}
+                >
+                  <MapIcon className="w-5 h-5" />
+                </button>
+                <div className="ml-3 hidden lg:block">
+                  <div className={`text-sm font-semibold ${activeTab === 'creditWarMap' ? 'text-slate-600' : 'text-muted-foreground'}`}>
+                    Credit War Map
+                  </div>
+                  <div className="text-xs text-muted-foreground">Strategy</div>
+                </div>
+              </div>
+
+              {/* Connector */}
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
+                  ['analysis','progress','underwriting','funding','fundingApplications','debtConsolidation'].includes(activeTab) ? 'w-full' : 'w-0'
                 }`}></div>
               </div>
 
