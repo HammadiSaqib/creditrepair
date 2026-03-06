@@ -45,6 +45,7 @@ import {
   DollarSign,
   Rocket,
   Lightbulb,
+  Phone,
 } from "lucide-react";
 
 export default function Login() {
@@ -1224,6 +1225,33 @@ export default function Login() {
                               setSignupData({
                                 ...signupData,
                                 email: e.target.value,
+                              })
+                            }
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label
+                          htmlFor="signupPhone"
+                          className="text-sm font-medium"
+                        >
+                          Phone Number
+                        </Label>
+                        <div className="relative group">
+                          <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-ocean-blue transition-colors" />
+                          <Input
+                            id="signupPhone"
+                            type="tel"
+                            inputMode="tel"
+                            placeholder="+1 555 123 4567"
+                            className="pl-10 h-11 bg-gradient-light dark:bg-slate-700 border-border/40 focus:border-ocean-blue/40 focus:ring-ocean-blue/20"
+                            value={signupData.phone}
+                            onChange={(e) =>
+                              setSignupData({
+                                ...signupData,
+                                phone: e.target.value,
                               })
                             }
                             required

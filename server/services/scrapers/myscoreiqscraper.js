@@ -151,7 +151,7 @@ function parseReportDateFromSections(sectionsObj) {
 }
 
 async function fetchMyScoreIQReport(username, password, options = {}) {
-  const { outputDir = './scraper-output', clientId, ssnLast4, puppeteerOverrides = {}, saveHtml = true, takeScreenshots = true } = options;
+  const { outputDir = './scraper-output', clientId, ssnLast4, puppeteerOverrides = {} } = options;
   config = loadConfig();
   ensureDir(outputDir);
   console.log('[MyScoreIQ] Config reloaded. loginUrl=', config.loginUrl || config.url, 'base url=', config.url);
@@ -191,46 +191,40 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
     // response capture
     let rawCreditData = null;
     const capturedResponses = [];
-    let reportScreenshotPath = null;
-    let reportTextPath = null;
-    let reportSectionsPath = null;
-    let htmlDownloadPath = null;
     page.on('response', async (resp) => {
       try {
-        const url = resp.url();
-        if (!url) return;
-        // capture candidate report responses (broad)
-        if (/\/dsply\.aspx/i.test(url) || /dsply/i.test(url) || /csid/i.test(url) || /creditreport/i.test(url) || /GetReport/i.test(url) || /report/i.test(url)) {
-          // try to parse as JSON, else keep text for debug
-          const text = await resp.text().catch(() => '');
-          const parsed = extractJsonLike(text);
-          if (parsed && Object.keys(parsed || {}).length) {
-            rawCreditData = parsed;
-            capturedResponses.push({ url, status: resp.status(), size: (text||'').length });
-            console.log('[MyScoreIQ] Captured JSON-like response from', url);
-          } else {
-            capturedResponses.push({ url, status: resp.status(), length: (text||'').length });
+        const url = resp.url() || '';
+        if (!url.toLowerCase().includes('imc-us3.csid.co')) return;
+
+        const status = resp.status();
+        const text = await resp.text().catch(() => '');
+        capturedResponses.push({ url, status, size: (text || '').length });
+
+        if (rawCreditData) return;
+        if (!text) return;
+
+        let parsed = extractJsonLike(text);
+        if (!parsed) {
+          try {
+            parsed = JSON.parse(text);
+          } catch (e) {
+            parsed = null;
           }
         }
-      } catch (e) { /* ignore */ }
+
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length) {
+          rawCreditData = parsed;
+          console.log('[MyScoreIQ] Captured credit report payload from', url);
+        }
+      } catch (e) {
+        console.log('[MyScoreIQ] Response processing error:', e?.message || e);
+      }
     });
 
     const loginUrl = config.loginUrl || 'https://member.myscoreiq.com/';
     console.log('[MyScoreIQ] Navigating to login URL:', loginUrl);
     await page.goto(loginUrl, { waitUntil: 'networkidle2', timeout: config.waitTimeouts?.navigation || 120000 });
     await sleep(700); // let SPA hydrate
-
-    // optional ready screenshot
-    try {
-      const ts = new Date().toISOString().replace(/[:.]/g,'-');
-      if (takeScreenshots) await page.screenshot({ path: path.join(outputDir, `login_ready_${ts}.png`), fullPage: true });
-      console.log('[MyScoreIQ] Login ready screenshot saved to', takeScreenshots ? `login_ready_${ts}.png` : '(skipped)');
-      if (saveHtml) {
-        const htmlPath = path.join(outputDir, `login_ready_${ts}.html`);
-        fs.writeFileSync(htmlPath, await page.content(), 'utf8');
-        console.log('[MyScoreIQ] Login ready HTML saved to', htmlPath);
-      }
-    } catch (e) { console.log('[MyScoreIQ] Could not save ready screenshot/HTML:', e?.message||e); }
 
     // detect bot/captcha early
     const htmlInitial = await page.content();
@@ -505,19 +499,10 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
 
     if (!reportOpened) {
       console.warn('[MyScoreIQ] Could not click report button automatically — manual click may be required');
-      await saveDebugArtifacts(page, outputDir, 'dashboard_no_auto_click');
       // Optional: throw new Error('Failed to auto-click report button');
     }
     try { await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: Math.max(30000, config.waitTimeouts?.navigation || 30000) }); } catch {}
     await sleep(8000);
-    if (saveHtml) {
-      try {
-        const ts = new Date().toISOString().replace(/[:.]/g,'-');
-        const htmlPath = path.join(outputDir, `credit_report_page_${ts}.html`);
-        fs.writeFileSync(htmlPath, await page.content(), 'utf8');
-        console.log('[MyScoreIQ] Credit report page HTML saved to', htmlPath);
-      } catch (e) { console.log('[MyScoreIQ] Failed to save credit report page HTML:', e?.message || e); }
-    }
 
     // wait for report XHRs (best-effort)
     try {
@@ -550,75 +535,14 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
       } catch {}
     } catch (e) {}
 
-    // screenshot + text + sections
+    // Wait for JSON payload to populate; if unavailable fall back to DOM extraction for structure
     try {
-      const ts = new Date().toISOString().replace(/[:.]/g,'-');
-      reportScreenshotPath = path.join(outputDir, `credit_report_loaded_${ts}.png`);
-      await page.screenshot({ path: reportScreenshotPath, fullPage: true });
-      console.log('[MyScoreIQ] Credit report screenshot saved to', reportScreenshotPath);
-
-      const fullText = await reportCtx.evaluate(() => { try { return document.body ? (document.body.innerText || '') : ''; } catch { return ''; } });
-      reportTextPath = path.join(outputDir, `client_${clientId||'unknown'}_myscoreiq_credit_report_text_${ts}.txt`);
-      fs.writeFileSync(reportTextPath, fullText, 'utf8');
-      console.log('[MyScoreIQ] Credit report text saved to', reportTextPath);
-
-      // split into sections by known headings (keeps raw text per section)
-      const sections = await reportCtx.evaluate(() => {
-        const t = document.body ? (document.body.innerText || '') : '';
-        const heads = ['Personal Information','Credit Score','Risk Factors','Summary','Account History','Inquiries','Public Information','Creditor Contacts','Two-Year payment history','Account History','Summary','Credit Card'];
-        const found = [];
-        for (const h of heads) { const i = t.indexOf(h); if (i >= 0) found.push({ h, i }); }
-        // fallback: also detect headings by lines that are all uppercase and short
-        const lines = t.split('\n').map(l => l.trim()).filter(Boolean);
-        for (let i=0;i<lines.length;i++){
-          const l = lines[i];
-          if (l.length>3 && l.length<40 && l === l.toUpperCase() && /[A-Z]/.test(l)) {
-            if (!found.some(f=>f.h===l)) found.push({ h: l, i: t.indexOf(l) });
-          }
-        }
-        found.sort((a,b)=>a.i-b.i);
-        const obj = {};
-        for (let k=0;k<found.length;k++){
-          const start = found[k].i;
-          const end = k+1 < found.length ? found[k+1].i : t.length;
-          obj[found[k].h] = t.slice(start,end).trim();
-        }
-        // if no found headings, return entire body as one section
-        if (Object.keys(obj).length === 0) obj['full_text'] = t;
-        return obj;
-      });
-      reportSectionsPath = path.join(outputDir, `client_${clientId||'unknown'}_myscoreiq_sections_${ts}.json`);
-      fs.writeFileSync(reportSectionsPath, JSON.stringify(sections, null, 2), 'utf8');
-      console.log('[MyScoreIQ] Credit report sections saved to', reportSectionsPath);
-      try {
-        let popupPage = null;
-        page.once('popup', (p) => { popupPage = p; });
+      await page.waitForFunction(() => {
         try {
-          page.once('targetcreated', async (target) => {
-            try { const tpage = await target.page(); if (tpage) popupPage = tpage; } catch {}
-          });
-        } catch {}
-        const clicked = await reportCtx.evaluate(() => {
-          try {
-            if (typeof window.downloadCreditReport === 'function') { window.downloadCreditReport(); return true; }
-          } catch {}
-          const a = document.querySelector('a.imgDownloadAction, a.re-btn-link.imgDownloadAction, a[onclick*="downloadCreditReport"]');
-          if (a) { a.click(); return true; }
-          return false;
-        });
-        if (clicked) {
-          await Promise.race([sleep(1500), (async () => { try { await page.waitForFunction(() => document.readyState === 'complete', { timeout: 3000 }); } catch {} })() ]);
-          const dlPage = popupPage || page;
-          try { await dlPage.waitForFunction(() => document.readyState === 'complete', { timeout: 8000 }); } catch {}
-          const fname = `client_${clientId||'unknown'}_myscoreiq_download_${new Date().toISOString().replace(/[:.]/g,'-')}.html`;
-          const fpath = path.join(outputDir, fname);
-          const html = await dlPage.content();
-          fs.writeFileSync(fpath, html, 'utf8');
-          htmlDownloadPath = fpath;
-          console.log('[MyScoreIQ] Downloaded HTML report saved to', fpath);
-        }
-      } catch (e) { console.log('[MyScoreIQ] Download button handling failed:', e?.message || e); }
-    } catch (e) { console.log('[MyScoreIQ] Report screenshot/text extraction failed:', e?.message || e); }
+          return !!(window.BundleComponents || window.creditReportData || window.reportData || window.__CREDIT_REPORT_DATA__);
+        } catch { return false; }
+      }, { timeout: 15000 }).catch(() => null);
+    } catch {}
 
     // If we haven't captured rawCreditData yet, try to discover in global objects or script tags
     if (!rawCreditData) {
@@ -650,7 +574,6 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
       }
     }
 
-    // If still no rawCreditData, we already saved reportSectionsPath -> use sections as fallback for payload
     let reportStructured = {};
     if (rawCreditData) {
       try {
@@ -665,14 +588,7 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
     }
 
     // Build unified payload that will ALWAYS be written
-    const sectionsJson = (() => {
-      try {
-        if (reportSectionsPath && fs.existsSync(reportSectionsPath)) {
-          return JSON.parse(fs.readFileSync(reportSectionsPath, 'utf8'));
-        }
-      } catch (e) {}
-      return {};
-    })();
+    const sectionsJson = null;
 
     // scores & reportDate extraction: prefer rawCreditData -> parsed -> sections text
     let experian = null, equifax = null, transunion = null, reportDate = null;
@@ -694,18 +610,15 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
         reportDate = reportDate || reportStructured?.reportDate || null;
       } catch (e) {}
     }
-    if ((!experian && !equifax && !transunion) && sectionsJson && Object.keys(sectionsJson).length) {
-      const parsed = parseScoresFromSections(sectionsJson);
-      experian = experian || parsed.experian || null;
-      equifax = equifax || parsed.equifax || null;
-      transunion = transunion || parsed.transunion || null;
-      if (!experian && !equifax && !transunion && parsed.credit_score) reportStructured.summaryScore = parsed.credit_score;
-      reportDate = reportDate || parseReportDateFromSections(sectionsJson);
-    }
-
     // Build final payload and always save to JSON file
     const tsFinal = new Date().toISOString().replace(/[:.]/g,'-');
     const finalJsonPath = path.join(outputDir, `client_${clientId||'unknown'}_myscoreiq_unified_${tsFinal}.json`);
+    const artifactPaths = {
+      screenshot: null,
+      text: null,
+      sections: null,
+      downloadHtml: null,
+    };
     const payload = {
       clientInfo: {
         clientId: clientId || 'unknown',
@@ -714,15 +627,10 @@ async function fetchMyScoreIQReport(username, password, options = {}) {
         scrapedAt: new Date().toISOString(),
         reportUrl: (page && typeof page.url === 'function') ? page.url() : null,
       },
-      artifactPaths: {
-        screenshot: reportScreenshotPath || null,
-        text: reportTextPath || null,
-        sections: reportSectionsPath || null,
-        downloadHtml: htmlDownloadPath || null
-      },
+      artifactPaths,
       rawCreditData: rawCreditData || null,
       parsedStructured: reportStructured && Object.keys(reportStructured).length ? reportStructured : null,
-      sections: sectionsJson || null,
+      sections: sectionsJson,
       scores: {
         experian: experian || null,
         equifax: equifax || null,
