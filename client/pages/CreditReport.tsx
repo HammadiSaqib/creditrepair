@@ -674,6 +674,7 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
                  <TableHeader>
                    <TableRow>
                      <TableHead>Account Name</TableHead>
+                     <TableHead>Balance</TableHead>
                      <TableHead>Target Utilization</TableHead>
                      <TableHead>Payoff Timeline</TableHead>
                      <TableHead>Payment Date</TableHead>
@@ -683,46 +684,51 @@ const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientI
                    </TableRow>
                  </TableHeader>
                  <TableBody>
-                   {payoffPlans.length > 0 ? payoffPlans.map((plan, idx) => (
-                     <TableRow key={idx}>
-                       <TableCell className="font-medium">{plan.account_name}</TableCell>
-                       <TableCell>{plan.target_utilization}%</TableCell>
-                       <TableCell>{plan.payoff_timeline_months} months</TableCell>
-                       <TableCell>{plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</TableCell>
-                       <TableCell>
-                         {plan.reminder_enabled ? (
-                           <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-green-200">Active</Badge>
-                         ) : (
-                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
-                         )}
-                       </TableCell>
-                       <TableCell>
-                         {plan.track_enabled ? (
-                           <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200">Enabled</Badge>
-                         ) : (
-                           <Badge variant="outline" className="text-slate-500">Disabled</Badge>
-                         )}
-                       </TableCell>
-                       <TableCell>
-                         <Button 
-                           size="sm" 
-                           variant="ghost" 
-                           onClick={() => {
-                             const account = revolvingAccounts.find(a => String(a.id) === plan.account_id) || { id: plan.account_id, name: plan.account_name };
-                             handleEditClick(account);
-                           }}
-                         >
-                           <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
-                         </Button>
-                       </TableCell>
-                     </TableRow>
-                   )) : (
-                     <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                            No saved payoff plans found.
+                   {payoffPlans.length > 0 ? payoffPlans.map((plan, idx) => {
+                    const matchingAccount = revolvingAccounts.find(a => String(a.id) === plan.account_id);
+                    const balanceValue = matchingAccount?.balance;
+                    return (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium">{plan.account_name}</TableCell>
+                        <TableCell>{typeof balanceValue === 'number' ? `$${balanceValue.toLocaleString()}` : '—'}</TableCell>
+                        <TableCell>{plan.target_utilization}%</TableCell>
+                        <TableCell>{plan.payoff_timeline_months} months</TableCell>
+                        <TableCell>{plan.payment_date}{getOrdinalSuffix(plan.payment_date)}</TableCell>
+                        <TableCell>
+                          {plan.reminder_enabled ? (
+                            <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-green-200">Active</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                          )}
                         </TableCell>
-                     </TableRow>
-                   )}
+                        <TableCell>
+                          {plan.track_enabled ? (
+                            <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-200 border-blue-200">Enabled</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-slate-500">Disabled</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => {
+                              const account = matchingAccount || { id: plan.account_id, name: plan.account_name };
+                              handleEditClick(account);
+                            }}
+                          >
+                            <Settings className="h-4 w-4 text-slate-400 hover:text-indigo-500" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }) : (
+                    <TableRow>
+                       <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                           No saved payoff plans found.
+                       </TableCell>
+                    </TableRow>
+                  )}
                  </TableBody>
                </Table>
              </div>

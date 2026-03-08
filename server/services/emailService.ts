@@ -38,6 +38,20 @@ interface AdminLoginData {
     userType: 'admin' | 'affiliate' | 'client';
   }
 
+  interface PaymentThankYouEmailData {
+    firstName: string;
+    email: string;
+  }
+
+  interface UpcomingPaymentEmailData {
+    firstName: string;
+    email: string;
+    daysUntilRenewal: number;
+    renewalDate: string;
+    planName: string;
+    amount: number;
+  }
+
   interface AffiliateCreatedEmailData {
     firstName: string;
     email: string;
@@ -1095,73 +1109,198 @@ Score Machine Team
 
   async sendWelcomeEmail(data: WelcomeEmailData): Promise<boolean> {
     try {
-      const roleInfo = this.getRoleInfo(data.userType);
-      const baseUrl = this.getFrontendBaseUrl();
-      
+      const firstNameLine = data.firstName ? `Hi ${data.firstName},` : 'Hi,';
+
       const content = `
-        <div style="text-align: center; margin-bottom: 30px;">
-          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="80" height="80" style="margin: 0 auto 20px auto;">
-            <tr>
-              <td align="center" valign="middle" style="background: linear-gradient(135deg, #10b981, #059669); border-radius: 50%; text-align: center;">
-                <span style="display: inline-block; font-size: 32px; font-weight: bold; line-height: 1; color: #ffffff;">🎉</span>
-              </td>
-            </tr>
-          </table>
-          <h2 style="color: #0f172a; margin: 0; font-size: 28px; font-weight: 700;">Welcome to Score Machine!</h2>
-          <p style="color: #64748b; margin: 10px 0 0 0; font-size: 16px;">Your account has been successfully verified</p>
-        </div>
-
-        <div class="details-card" style="background: #ffffff; border-radius: 16px; padding: 24px; margin: 24px 0; border: 1px solid #10b981;">
-          <h3 style="color: #0f172a; margin: 0 0 16px 0; font-size: 20px; font-weight: 600;">
-            Hello ${data.firstName}! 👋
-          </h3>
-          
-          <p style="color: #374151; margin: 0 0 20px 0; font-size: 16px; line-height: 1.6;">
-            Congratulations! Your ${roleInfo.title} account has been successfully created and verified. 
-            You now have access to our comprehensive funding management system.
-          </p>
-
-          <div class="details-card" style="background: #ffffff; border-radius: 12px; padding: 20px; margin: 20px 0; border: 1px solid #d1fae5;">
-            <h4 style="color: #065f46; margin: 0 0 16px 0; font-size: 18px; font-weight: 600;">
-              🚀 What's Next?
-            </h4>
-            <ul style="margin: 0; padding-left: 20px; color: #374151;">
-              <li style="margin-bottom: 8px;">Complete your profile setup</li>
-              <li style="margin-bottom: 8px;">Explore the dashboard features</li>
-              <li style="margin-bottom: 8px;">Connect with your assigned team</li>
-              <li style="margin-bottom: 0;">Start your funding journey</li>
-            </ul>
+        <div style="padding: 40px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="80" height="80" style="margin: 0 auto 12px auto;">
+              <tr>
+                <td align="center" valign="middle" style="background: linear-gradient(135deg, #10b981, #059669); border-radius: 50%; text-align: center;">
+                  <span style="display: inline-block; font-size: 32px; font-weight: bold; line-height: 1; color: #ffffff;">🎉</span>
+                </td>
+              </tr>
+            </table>
+            <h2 style="color: #0f172a; margin: 0; font-size: 26px; font-weight: 700;">Welcome to The Score Machine</h2>
           </div>
-        </div>
 
-        <div class="details-card" style="background: #ffffff; border: 1px solid #3b82f6; border-radius: 12px; padding: 20px; margin: 24px 0;">
-          <h4 style="color: #1e40af; margin: 0 0 12px 0; font-size: 16px; font-weight: 600; display: flex; align-items: center;">
-            <span style="margin-right: 8px;">💡</span> Getting Started Tips
-          </h4>
-          <p style="color: #1e3a8a; margin: 0; font-size: 14px; line-height: 1.5;">
-            Take a few minutes to familiarize yourself with the platform. Our intuitive interface is designed to make funding management simple and effective.
-          </p>
-        </div>
+          <div class="details-card" style="background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #10b981;">
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">${firstNameLine}</p>
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              First off — thank you for signing up for The Score Machine. We truly appreciate you trusting us and becoming part of the ecosystem. You just made a powerful decision toward better clarity, smarter positioning, and stronger funding strategy. We’re excited to have you inside.
+            </p>
 
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${baseUrl}/dashboard" 
-             style="display: inline-block; background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); margin-right: 12px;">
-            Access Dashboard
-          </a>
-          <a href="${baseUrl}/help" 
-             style="display: inline-block; background: transparent; color: #10b981; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 16px; border: 2px solid #10b981;">
-            Get Help
-          </a>
+            <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 1px solid #10b981; border-radius: 12px; padding: 20px; margin: 24px 0;">
+              <h3 style="color: #047857; font-size: 18px; font-weight: 600; margin-bottom: 12px;">🎉 Exclusive Bonus for You</h3>
+              <p style="color: #065f46; font-size: 15px; line-height: 1.6; margin-bottom: 16px;">
+                We also have a private community called <strong>Paid In Full</strong>. Normally, access to this community is paid — but since you are now a member of The Score Machine, you get access completely free. Inside the community, we:
+              </p>
+              <ul style="color: #065f46; font-size: 15px; line-height: 1.6; margin: 0 0 16px 20px; padding: 0;">
+                <li>Share live sessions and updates</li>
+                <li>Provide strategy and education</li>
+                <li>Support each other and build together</li>
+              </ul>
+              <p style="color: #047857; font-size: 15px; line-height: 1.6; margin: 0;">
+                To get added, simply text: <strong>👉 “Community” to (914) 429-4188</strong>. Our team will set you up and get you added.
+              </p>
+            </div>
+
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              We’re grateful to have you with us and look forward to helping you win. If you need anything at all, just reply to this email — we’re here to support you.
+            </p>
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 0;">
+              Welcome to The Score Machine family.<br /><br />
+              Best regards,<br />
+              <strong>Score Machine Support</strong>
+            </p>
+          </div>
         </div>
       `;
 
       return await this.sendEmail({
         to: data.email,
-        subject: `🎉 Welcome to Score Machine - Account Verified!`,
-        html: this.getEmailTemplate(content, 'Welcome to Score Machine')
+        subject: `🎉 Welcome to The Score Machine`,
+        html: this.getEmailTemplate(content, 'Welcome to The Score Machine')
       });
     } catch (error) {
       console.error('Failed to send welcome email:', error);
+      return false;
+    }
+  }
+
+  async sendPaymentThankYouEmail(data: PaymentThankYouEmailData): Promise<boolean> {
+    try {
+      const firstNameLine = data.firstName ? `Hi ${data.firstName},` : 'Hi,';
+      const content = `
+        <div style="padding: 40px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="80" height="80" style="margin: 0 auto 12px auto;">
+              <tr>
+                <td align="center" valign="middle" style="background: linear-gradient(135deg, #10b981, #059669); border-radius: 50%; text-align: center;">
+                  <span style="display: inline-block; font-size: 32px; font-weight: bold; line-height: 1; color: #ffffff;">🙏</span>
+                </td>
+              </tr>
+            </table>
+            <h2 style="color: #0f172a; margin: 0; font-size: 26px; font-weight: 700;">Thank You</h2>
+          </div>
+
+          <div class="details-card" style="background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e2e8f0;">
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">${firstNameLine}</p>
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              We just wanted to take a quick moment to say thank you.
+            </p>
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              Thank you for being part of The Score Machine. Thank you for trusting us. Thank you for building with us. We truly appreciate every member inside our ecosystem, and we don’t take that lightly.
+            </p>
+
+            <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 1px solid #10b981; border-radius: 12px; padding: 20px; margin: 24px 0;">
+              <h3 style="color: #047857; font-size: 18px; font-weight: 600; margin-bottom: 12px;">Quick Reminder 👇</h3>
+              <p style="color: #065f46; font-size: 15px; line-height: 1.6; margin-bottom: 16px;">
+                If you’re not yet inside our private community <strong>Paid In Full</strong>, we’d love to have you there. It’s where we:
+              </p>
+              <ul style="color: #065f46; font-size: 15px; line-height: 1.6; margin: 0 0 16px 20px; padding: 0;">
+                <li>Share updates and announcements</li>
+                <li>Host live sessions</li>
+                <li>Provide additional insights and support</li>
+              </ul>
+              <p style="color: #047857; font-size: 15px; line-height: 1.6; margin: 0;">
+                If you’re not already in the community, simply text: <strong>👉 “Community” to (914) 429-4188</strong>. Our team will get you added.
+              </p>
+            </div>
+
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              We’re grateful to have you with us and look forward to continuing to support your journey. If you ever need anything, just reply to this email — we’re here for you.
+            </p>
+
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 0;">
+              Best regards,<br />
+              <strong>Score Machine Support</strong>
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await this.sendEmail({
+        to: data.email,
+        subject: 'Thank You from The Score Machine',
+        html: this.getEmailTemplate(content, 'Thank You')
+      });
+    } catch (error) {
+      console.error('Failed to send thank you email:', error);
+      return false;
+    }
+  }
+
+  async sendUpcomingPaymentEmail(data: UpcomingPaymentEmailData): Promise<boolean> {
+    try {
+      const firstNameLine = data.firstName ? `Hi ${data.firstName},` : 'Hi,';
+      const content = `
+        <div style="padding: 40px;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="80" height="80" style="margin: 0 auto 12px auto;">
+              <tr>
+                <td align="center" valign="middle" style="background: linear-gradient(135deg, #3b82f6, #2563eb); border-radius: 50%; text-align: center;">
+                  <span style="display: inline-block; font-size: 32px; font-weight: bold; line-height: 1; color: #ffffff;">📅</span>
+                </td>
+              </tr>
+            </table>
+            <h2 style="color: #0f172a; margin: 0; font-size: 26px; font-weight: 700;">Upcoming Payment Reminder</h2>
+          </div>
+
+          <div class="details-card" style="background: #ffffff; border-radius: 16px; padding: 28px; border: 1px solid #e2e8f0;">
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">${firstNameLine}</p>
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              We’re reaching out with a quick heads-up regarding your upcoming payment. You currently have <strong>${data.daysUntilRenewal} days</strong> before your next billing cycle, and we just wanted to make sure everything on your account is good to go.
+            </p>
+            
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin: 24px 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px;">
+                <span style="color: #64748b; font-weight: 500;">Plan:</span>
+                <span style="color: #0f172a; font-weight: 600;">${data.planName}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 12px;">
+                <span style="color: #64748b; font-weight: 500;">Renewal Date:</span>
+                <span style="color: #0f172a; font-weight: 600;">${data.renewalDate}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #64748b; font-weight: 500;">Amount:</span>
+                <span style="color: #0f172a; font-weight: 600;">$${data.amount.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              To avoid any interruptions in access, please take a moment to:
+            </p>
+            <ul style="color: #1f2937; font-size: 16px; line-height: 1.7; margin: 0 0 18px 20px; padding: 0;">
+              <li>Confirm your payment method is active</li>
+              <li>Ensure sufficient funds are available</li>
+              <li>Update any expired card information if needed</li>
+            </ul>
+
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              Our system will automatically process the payment once the billing date arrives, and we want to make sure everything runs smoothly for you.
+            </p>
+
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 18px;">
+              If you need to update your billing details or have any questions, feel free to reply to this email — our team is here to help.
+            </p>
+
+            <p style="color: #1f2937; font-size: 16px; line-height: 1.7; margin-bottom: 0;">
+              We appreciate you being part of the Score Machine ecosystem and look forward to continuing to support you.<br /><br />
+              Best regards,<br />
+              <strong>Score Machine Support</strong>
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await this.sendEmail({
+        to: data.email,
+        subject: 'Upcoming Payment Reminder - Score Machine',
+        html: this.getEmailTemplate(content, 'Upcoming Payment')
+      });
+    } catch (error) {
+      console.error('Failed to send upcoming payment email:', error);
       return false;
     }
   }
@@ -1363,7 +1502,7 @@ Score Machine Team
 
   async testConnection(): Promise<boolean> {
     try {
-      const transporter = await this.getTransporter();
+      const transporter = this.initializeTransporter();
       await transporter.verify();
       console.log('Email service connection verified successfully');
       return true;

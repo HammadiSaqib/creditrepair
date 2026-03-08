@@ -512,6 +512,32 @@ export async function initializeMySQLDatabase(): Promise<void> {
 
     try {
       const cols = await executeQuery(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'billing_transactions'`
+      );
+      const existing = new Set((cols as any[]).map((r: any) => r.COLUMN_NAME));
+      if (!existing.has('thank_you_email_sent_at')) {
+        await executeQuery(`ALTER TABLE billing_transactions ADD COLUMN thank_you_email_sent_at DATETIME NULL`);
+        console.log('✅ Added thank_you_email_sent_at to billing_transactions');
+      }
+    } catch (e) {
+      console.error('Failed to update billing_transactions schema:', e);
+    }
+
+    try {
+      const cols = await executeQuery(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'subscriptions'`
+      );
+      const existing = new Set((cols as any[]).map((r: any) => r.COLUMN_NAME));
+      if (!existing.has('last_payment_reminder_sent_at')) {
+        await executeQuery(`ALTER TABLE subscriptions ADD COLUMN last_payment_reminder_sent_at DATETIME NULL`);
+        console.log('✅ Added last_payment_reminder_sent_at to subscriptions');
+      }
+    } catch (e) {
+      console.error('Failed to update subscriptions schema:', e);
+    }
+
+    try {
+      const cols = await executeQuery(
         `SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'project_tasks'`
       );
       const existing = new Set((cols as any[]).map((r: any) => r.COLUMN_NAME));
