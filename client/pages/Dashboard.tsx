@@ -208,11 +208,12 @@ export default function Dashboard() {
   });
   const [dashboardAuthorization, setDashboardAuthorization] = useState(false);
   const [showDashboardPassword, setShowDashboardPassword] = useState(false);
-  const creditReportRegisterUrl = "https://member.myscoreiq.com/get-fico-max.aspx?offercode=432135JQ";
+  const creditReportRegisterUrl = "https://www.myscoreiq.com/get-fico-preferred.aspx?offercode=432142UK";
   const clientLoginUrl = `${window.location.origin}/member/login`;
   const [clientIntakeLink, setClientIntakeLink] = useState("");
   const [isGeneratingIntakeLink, setIsGeneratingIntakeLink] = useState(false);
   const [isClientIntakeShareOpen, setIsClientIntakeShareOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const onboardingSlug = (userProfile?.onboarding_slug || "").trim();
   const onboardingIntakeLink = useMemo(() => {
     if (!onboardingSlug) return "";
@@ -222,6 +223,10 @@ export default function Dashboard() {
     if (!clientIntakeLink) return "";
     return `<iframe src="${clientIntakeLink}" style="width:100%; height:900px; border:0;" title="Client Intake"></iframe>`;
   }, [clientIntakeLink]);
+  const qrEncodedLink = encodeURIComponent(creditReportRegisterUrl);
+  const smallQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${qrEncodedLink}`;
+  const largeQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${qrEncodedLink}`;
+  const qrLogoPath = "/image.png";
 
   useEffect(() => {
     fetchDashboardData();
@@ -1429,9 +1434,70 @@ export default function Dashboard() {
                   Register Now
                 </Button>
               </div>
+              <div className="flex flex-col items-center gap-3 p-4 bg-white/80 dark:bg-slate-800/70 rounded-xl border border-blue-100/80 dark:border-slate-700/80 shadow-sm min-w-[160px]">
+                <button
+                  type="button"
+                  onClick={() => setIsQrModalOpen(true)}
+                  className="relative h-32 w-32 rounded-lg overflow-hidden shadow-inner focus:outline-none focus:ring-2 focus:ring-ocean-blue/60"
+                  aria-label="Open large QR code"
+                >
+                  <img
+                    src={smallQrUrl}
+                    alt="Credit report registration QR code"
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="h-10 w-10 rounded-full bg-white/90 backdrop-blur border border-slate-200 shadow-sm flex items-center justify-center">
+                      <img
+                        src={qrLogoPath}
+                        alt="Score Machine logo"
+                        className="h-7 w-7 object-contain"
+                      />
+                    </div>
+                  </div>
+                </button>
+                <div className="text-xs text-center text-slate-600 dark:text-slate-300 px-1">
+                  Scan or tap to preview the registration link
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
+
+        <Dialog open={isQrModalOpen} onOpenChange={setIsQrModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-semibold">Credit Report Registration QR</DialogTitle>
+              <DialogDescription>
+                Scan the code below or tap "Open Link" to launch the registration page for MyScoreIQ.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-4 py-4">
+              <div className="relative h-80 w-80 max-w-full rounded-2xl overflow-hidden shadow-lg border border-slate-200 dark:border-slate-700 bg-white/95">
+                <img
+                  src={largeQrUrl}
+                  alt="Credit report registration QR code"
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="h-16 w-16 rounded-full bg-white/95 backdrop-blur border border-slate-200 shadow flex items-center justify-center">
+                    <img
+                      src={qrLogoPath}
+                      alt="Score Machine logo"
+                      className="h-12 w-12 object-contain"
+                    />
+                  </div>
+                </div>
+              </div>
+              <Button variant="outline" onClick={() => window.open(creditReportRegisterUrl, "_blank", "noopener")}>Open Link</Button>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsQrModalOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Card className="border-0 shadow-xl bg-gradient-to-br from-white to-emerald-50/50 dark:from-slate-800 dark:to-slate-700 mb-8">
           <CardContent className="p-6">

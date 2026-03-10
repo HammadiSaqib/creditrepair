@@ -50,7 +50,7 @@ const LoadingScreen = ({ message = "Loading Score Machine..." }: LoadingScreenPr
           />
           
           <img
-            src="/company-logo.svg"
+            src="/image.png"
             alt="Score Machine Logo"
             className="w-32 h-32 md:w-40 md:h-40 object-contain relative z-10"
           />
