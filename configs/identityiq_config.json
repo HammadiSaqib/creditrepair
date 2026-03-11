@@ -133,7 +133,7 @@
     "navigation": 120000,
     "element": 10000,
     "security_question": 45000,
-    "report_load": 30000
+    "report_load": 120000
   },
   "retryAttempts": {
     "login": 3,

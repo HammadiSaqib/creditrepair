@@ -106,6 +106,7 @@ async function fetchIdentityIQReport(username, password, options = {}) {
  */
 class IdentityIQScraper extends Scraper {
   private ssnLast4: string;
+  private creditReportData: any = null;
   
   constructor(conf: PuppeteerConfiguration, ssnLast4: string) {
     super(conf);
@@ -122,12 +123,17 @@ class IdentityIQScraper extends Scraper {
       // Initialize browser and page
       await this.initialize();
       
-      // Navigate to IdentityIQ login page
+      // Navigate to IdentityIQ login page before attaching the dashboard listener
       console.log('📍 Navigating to IdentityIQ login page...');
       await this.page.goto(this.conf.loginUrl || this.conf.url, { 
         waitUntil: 'networkidle2',
         timeout: this.conf.waitTimeouts?.navigation || 120000
       });
+      
+      // Listen for the dashboard consumer connect payload during login transitions
+      const reportTimeout = this.conf.waitTimeouts?.report_load || 120000;
+      const consumerConnectPromise = this.waitForConsumerConnectResponse(reportTimeout)
+        .then((response) => this.parseConsumerConnectResponse(response));
       
       if (debug) {
         await this.page.screenshot({ path: './scraper-output/01-login-page.png' });
@@ -139,14 +145,15 @@ class IdentityIQScraper extends Scraper {
       // Handle security question if present
       await this.handleSecurityQuestion(debug);
       
-      // Navigate to credit report page
-      await this.navigateToCreditReport(debug);
-      
-      // Extract credit report data
-      const reportData = await this.extractCreditReportData(debug);
+      const consumerConnectData = await consumerConnectPromise;
+      if (!consumerConnectData) {
+        throw new Error('Failed to capture IdentityIQ consumerconnect payload within the expected timeframe.');
+      }
+      this.creditReportData = consumerConnectData;
+      console.log('✅ Captured IdentityIQ report payload from consumerconnect dashboard call.');
       
       console.log('✅ IdentityIQ scraping completed successfully');
-      return reportData;
+      return this.creditReportData;
       
     } catch (error) {
       console.error('❌ IdentityIQ scraping failed:', error);
@@ -187,7 +194,7 @@ class IdentityIQScraper extends Scraper {
     
     // Wait for navigation or security question page
     await this.page.waitForNavigation({ 
-      waitUntil: 'networkidle2',
+      waitUntil: 'domcontentloaded',
       timeout: this.conf.waitTimeouts?.navigation || 120000
     });
     
@@ -227,7 +234,7 @@ class IdentityIQScraper extends Scraper {
         
         // Wait for navigation to dashboard
         await this.page.waitForNavigation({ 
-          waitUntil: 'networkidle2',
+          waitUntil: 'domcontentloaded',
           timeout: this.conf.waitTimeouts?.navigation || 120000
         });
         
@@ -245,6 +252,42 @@ class IdentityIQScraper extends Scraper {
     }
   }
   
+  private waitForConsumerConnectResponse(timeout: number) {
+    return this.page.waitForResponse(
+      (response) => response.url().includes('consumerconnect.tui.transunion.com'),
+      { timeout }
+    );
+  }
+
+  private async parseConsumerConnectResponse(response: any): Promise<any | null> {
+    if (!response) {
+      return null;
+    }
+    try {
+      const url = response.url();
+      console.log(`📥 Detected consumerconnect response: ${url}`);
+      const headers = response.headers();
+      const contentType = headers['content-type'] || headers['Content-Type'] || '';
+      const bodyText = await response.text();
+      if (!bodyText) {
+        console.warn('⚠️ consumerconnect response body was empty.');
+        return null;
+      }
+      if (contentType.includes('application/json')) {
+        return JSON.parse(bodyText);
+      }
+      try {
+        return JSON.parse(bodyText);
+      } catch (parseError) {
+        console.warn('⚠️ consumerconnect response was not JSON. Returning raw text.');
+        return bodyText;
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to parse consumerconnect response:', error);
+      return null;
+    }
+  }
+
   /**
    * Navigate to credit report page
    */
@@ -256,7 +299,7 @@ class IdentityIQScraper extends Scraper {
     if (!currentUrl.includes('Dashboard')) {
       console.log('🔄 Navigating to dashboard first...');
       await this.page.goto(this.conf.dashboardUrl, { 
-        waitUntil: 'networkidle2',
+        waitUntil: 'domcontentloaded',
         timeout: this.conf.waitTimeouts?.navigation || 120000
       });
     }
@@ -265,12 +308,71 @@ class IdentityIQScraper extends Scraper {
       await this.page.screenshot({ path: './scraper-output/06-dashboard.png' });
     }
     
-    // Navigate directly to credit report page
-    console.log('🔄 Navigating to credit report page...');
-    await this.page.goto(this.conf.creditReportUrl, { 
-      waitUntil: 'networkidle2',
-      timeout: this.conf.waitTimeouts?.navigation || 120000
-    });
+    const navigationTimeout = this.conf.waitTimeouts?.navigation || 120000;
+    const creditReportSelectors = this.conf.selectors?.credit_report_link ?? [];
+    let navigatedToReport = false;
+    
+    // Try clicking one of the configured credit report links first
+    for (const selector of creditReportSelectors) {
+      const linkHandle = await this.page.$(selector);
+      if (!linkHandle) {
+        continue;
+      }
+
+      console.log(`🔗 Attempting to open credit report via selector: ${selector}`);
+      try {
+        await Promise.all([
+          this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: navigationTimeout }),
+          linkHandle.click()
+        ]);
+        navigatedToReport = true;
+        console.log('✅ Navigated to credit report page via dashboard link');
+      } catch (error) {
+        const message = (error as Error).message ?? '';
+        if (message.includes('Navigation timeout')) {
+          console.warn('⚠️ Timed out waiting for navigation after clicking link. Checking current URL before falling back...');
+          if (this.page.url().includes('CreditReport')) {
+            navigatedToReport = true;
+            console.log('✅ Credit report URL detected despite timeout. Continuing...');
+          }
+        } else {
+          await linkHandle.dispose();
+          throw error;
+        }
+      }
+
+      await linkHandle.dispose();
+      if (navigatedToReport) {
+        break;
+      }
+    }
+    
+    // Fallback to direct navigation if clicking links did not succeed
+    if (!navigatedToReport) {
+      console.log('🔄 Direct navigation fallback to credit report page...');
+      try {
+        await this.page.goto(this.conf.creditReportUrl, { 
+          waitUntil: 'domcontentloaded',
+          timeout: navigationTimeout
+        });
+        navigatedToReport = true;
+      } catch (error) {
+        const message = (error as Error).message ?? '';
+        if (message.includes('Navigation timeout')) {
+          console.warn('⚠️ Direct navigation to credit report timed out. Will rely on selector wait as the page likely loaded.');
+          if (this.page.url().includes('CreditReport')) {
+            navigatedToReport = true;
+            console.log('✅ Credit report URL confirmed after timeout. Proceeding...');
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
+    
+    if (!navigatedToReport) {
+      throw new Error('Failed to navigate to IdentityIQ credit report page');
+    }
     
     if (debug) {
       await this.page.screenshot({ path: './scraper-output/07-credit-report-page.png' });
