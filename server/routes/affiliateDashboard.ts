@@ -438,30 +438,51 @@ router.get('/dashboard/recent-referrals', authenticateToken, requireAffiliateRol
     const limitParam = parseInt(req.query.limit as string);
     const safeLimit = Number.isFinite(limitParam) ? Math.max(1, Math.min(100, limitParam)) : 10;
     
+    const columnCheckQuery = `
+      SELECT COLUMN_NAME 
+      FROM information_schema.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() 
+        AND TABLE_NAME = 'affiliate_referrals' 
+        AND COLUMN_NAME IN ('plan_name', 'plan_price')
+    `;
+
+    let columnRows: any[] = [];
+    try {
+      columnRows = await executeQuery(columnCheckQuery, []);
+    } catch (columnErr) {
+      console.warn('[affiliate/dashboard/recent-referrals] Column check failed, continuing with defaults:', columnErr);
+      columnRows = [];
+    }
+    const columnSet = new Set((columnRows as any[]).map((row) => row.COLUMN_NAME));
+    const hasPlanNameColumn = columnSet.has('plan_name');
+    const hasPlanPriceColumn = columnSet.has('plan_price');
+
+    const selectColumns = [
+      'ar.id',
+      'ar.transaction_id',
+      hasPlanNameColumn ? 'ar.plan_name' : 'NULL AS plan_name',
+      hasPlanPriceColumn ? 'ar.plan_price' : 'NULL AS plan_price',
+      'ar.commission_amount',
+      'ar.status AS referral_status',
+      'ar.created_at AS signup_date',
+      'ar.conversion_date',
+      'u.first_name',
+      'u.last_name',
+      'u.email',
+      'u.phone',
+      'u.status AS user_status',
+      's.plan_name AS subscription_plan',
+      's.plan_type AS subscription_plan_type',
+      's.status AS subscription_status'
+    ];
+
     const referralsQuery = `
       SELECT 
-        ar.id,
-        ar.transaction_id,
-        ar.plan_name,
-        ar.plan_price,
-        ar.commission_amount,
-        ar.status AS referral_status,
-        ar.created_at AS signup_date,
-        ar.conversion_date,
-        u.first_name,
-        u.last_name,
-        u.email,
-        u.status AS user_status,
-        s.plan_name AS subscription_plan,
-        s.plan_type AS subscription_plan_type,
-        s.status AS subscription_status
+        ${selectColumns.join(',\n        ')}
       FROM affiliate_referrals ar
       JOIN users u ON ar.referred_user_id = u.id
       LEFT JOIN subscriptions s ON u.id = s.user_id
       WHERE ar.affiliate_id = ?
-        AND (u.email IS NULL OR u.email NOT LIKE '%test%')
-        AND (u.first_name IS NULL OR u.first_name NOT LIKE '%test%')
-        AND (u.last_name IS NULL OR u.last_name NOT LIKE '%test%')
       ORDER BY ar.created_at DESC
       LIMIT ${safeLimit}
     `;
@@ -488,7 +509,7 @@ router.get('/dashboard/recent-referrals', authenticateToken, requireAffiliateRol
       }
 
       const planName = referral.plan_name || referral.subscription_plan || 'Unknown Plan';
-      const planValue = referral.plan_price || 0;
+      const planValue = referral.plan_price != null ? Number(referral.plan_price) : 0;
       const commission = parseFloat(referral.commission_amount) || 0;
 
       return {
@@ -496,7 +517,7 @@ router.get('/dashboard/recent-referrals', authenticateToken, requireAffiliateRol
         transactionId: referral.transaction_id,
         customerName: `${referral.first_name || ''} ${referral.last_name || ''}`.trim() || `User ${referral.id}`,
         email: referral.email,
-      phone: referral.phone,
+        phone: referral.phone,
         status: normalizedStatus,
         planName,
         planValue,

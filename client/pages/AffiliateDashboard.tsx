@@ -205,12 +205,19 @@ export default function AffiliateDashboard() {
 
         // Fetch recent referrals
         console.log('👥 Fetching recent referrals...');
-        const referralsResponse = await affiliateApi.getRecentReferrals(5);
+        const referralsResponse = await affiliateApi.getRecentReferrals(10);
         console.log('👥 Referrals response:', referralsResponse);
         
         if (referralsResponse.data && referralsResponse.data.success) {
           console.log('✅ Referrals data received:', referralsResponse.data.data);
-          setRecentReferrals(referralsResponse.data.data || []);
+          const referrals = referralsResponse.data.data || [];
+          setRecentReferrals(referrals);
+          if (referrals.length > 0) {
+            setEarningsStats((prev) => ({
+              ...prev,
+              paidReferralsCount: referrals.filter((r: any) => r.status === 'paid').length,
+            }));
+          }
         } else {
           console.warn('⚠️ No referrals data received');
         }
@@ -600,11 +607,6 @@ export default function AffiliateDashboard() {
                         >
                           View
                         </Button>
-                        {referral.status === "pending" && (
-                          <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                            Follow Up
-                          </Button>
-                        )}
                       </div>
                     </div>
                   ))
