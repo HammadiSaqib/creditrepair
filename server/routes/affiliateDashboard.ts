@@ -116,69 +116,65 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
     const tables = await executeQuery(tablesQuery, []);
     console.log('🗄️ [AFFILIATE STATS] Available commission tables:', tables);
     
-    // Get monthly earnings (current month) - include both paid and pending commissions
-    const monthlyEarningsQuery = `
-      SELECT COALESCE(SUM(commission_amount), 0) as monthly_earnings
-      FROM affiliate_commissions 
-      WHERE affiliate_id = ? 
-        AND MONTH(created_at) = MONTH(CURRENT_DATE()) 
-        AND YEAR(created_at) = YEAR(CURRENT_DATE())
-        AND status IN ('paid', 'pending')
-    `;
-    
-    console.log('💰 [AFFILIATE STATS] Executing monthly earnings query:', monthlyEarningsQuery, 'with params:', [affiliateId]);
-    const monthlyResult = await executeQuery(monthlyEarningsQuery, [affiliateId]);
-    console.log('💰 [AFFILIATE STATS] Monthly earnings result:', monthlyResult);
-    const monthlyEarnings = monthlyResult[0]?.monthly_earnings || 0;
-    
-    // Get pending commissions (users who signed up but haven't paid for a plan yet)
-    const pendingQuery = `
-      SELECT COUNT(DISTINCT ar.referred_user_id) as pending_signups,
-             COALESCE(SUM(ar.commission_amount), 0) as potential_commissions
-      FROM affiliate_referrals ar
-      LEFT JOIN users u ON ar.referred_user_id = u.id
-      LEFT JOIN subscriptions s ON u.id = s.user_id
-      WHERE ar.affiliate_id = ? 
-        AND ar.status = 'pending'
-        AND (s.status IS NULL OR s.status NOT IN ('active'))
-    `;
-    
-    console.log('⏳ [AFFILIATE STATS] Executing pending commissions query:', pendingQuery, 'with params:', [affiliateId]);
-    const pendingResult = await executeQuery(pendingQuery, [affiliateId]);
-    console.log('⏳ [AFFILIATE STATS] Pending commissions result:', pendingResult);
-    const pendingSignups = pendingResult[0]?.pending_signups || 0;
-    const potentialCommissions = pendingResult[0]?.potential_commissions || 0;
-    
-    // Check if there are any commission records at all for this affiliate
-    const allCommissionsQuery = `
-      SELECT COUNT(*) as total_count, 
-             COALESCE(SUM(commission_amount), 0) as total_amount,
-             GROUP_CONCAT(DISTINCT status) as statuses
-      FROM affiliate_commissions 
+    // Earnings aggregations (paid only)
+    const earningsAggregationQuery = `
+      SELECT 
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN commission_amount ELSE 0 END), 0) AS paid_amount,
+        COALESCE(SUM(CASE WHEN status IN ('cancelled', 'refunded', 'chargeback') THEN commission_amount ELSE 0 END), 0) AS cancelled_amount,
+        COALESCE(SUM(CASE WHEN status = 'pending' THEN commission_amount ELSE 0 END), 0) AS pending_amount,
+        COALESCE(SUM(CASE WHEN status = 'paid' AND created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END), 0) AS month_paid_amount,
+        COALESCE(SUM(CASE WHEN status IN ('cancelled', 'refunded', 'chargeback') AND created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END), 0) AS month_cancelled_amount,
+        COALESCE(SUM(CASE WHEN status = 'paid' AND created_at >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01') AND created_at < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END), 0) AS prior_month_paid_amount,
+        COALESCE(SUM(CASE WHEN status IN ('cancelled', 'refunded', 'chargeback') AND created_at >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01') AND created_at < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END), 0) AS prior_month_cancelled_amount,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid_count
+      FROM affiliate_commissions
       WHERE affiliate_id = ?
     `;
-    
-    console.log('🔍 [AFFILIATE STATS] Checking all commissions:', allCommissionsQuery, 'with params:', [affiliateId]);
-    const allCommissionsResult = await executeQuery(allCommissionsQuery, [affiliateId]);
-    console.log('🔍 [AFFILIATE STATS] All commissions result:', allCommissionsResult);
-    
-    // Also check if there's a different commission table structure
-    try {
-      const alternateCommissionsQuery = `
-        SELECT COUNT(*) as total_count, 
-               COALESCE(SUM(amount), 0) as total_amount,
-               GROUP_CONCAT(DISTINCT status) as statuses
-        FROM commissions 
-        WHERE affiliate_id = ?
-      `;
-      
-      console.log('🔍 [AFFILIATE STATS] Checking alternate commissions table:', alternateCommissionsQuery, 'with params:', [affiliateId]);
-      const alternateResult = await executeQuery(alternateCommissionsQuery, [affiliateId]);
-      console.log('🔍 [AFFILIATE STATS] Alternate commissions result:', alternateResult);
-    } catch (altError) {
-      console.log('ℹ️ [AFFILIATE STATS] Alternate commissions table not found or different structure:', altError.message);
-    }
-    
+
+    const earningsAggregate = await executeQuery(earningsAggregationQuery, [affiliateId]);
+    const {
+      paid_amount: totalPaidAmountRaw = 0,
+      cancelled_amount: totalCancelledAmountRaw = 0,
+      pending_amount: totalPendingValueRaw = 0,
+      month_paid_amount: monthPaidAmountRaw = 0,
+      month_cancelled_amount: monthCancelledAmountRaw = 0,
+      prior_month_paid_amount: priorMonthPaidAmountRaw = 0,
+      prior_month_cancelled_amount: priorMonthCancelledAmountRaw = 0,
+      pending_count: pendingCountRaw = 0,
+      paid_count: paidCountRaw = 0,
+    } = earningsAggregate[0] || {};
+
+    const totalPaidAmount = parseFloat(totalPaidAmountRaw) || 0;
+    const totalCancelledAmount = parseFloat(totalCancelledAmountRaw) || 0;
+    const totalPendingValue = parseFloat(totalPendingValueRaw) || 0;
+    const currentMonthPaidGross = parseFloat(monthPaidAmountRaw) || 0;
+    const currentMonthCancelled = parseFloat(monthCancelledAmountRaw) || 0;
+    const priorMonthPaidGross = parseFloat(priorMonthPaidAmountRaw) || 0;
+    const priorMonthCancelled = parseFloat(priorMonthCancelledAmountRaw) || 0;
+    const pendingSignups = parseInt(pendingCountRaw) || 0;
+    const paidCommissionCount = parseInt(paidCountRaw) || 0;
+
+    const totalPaidEarnings = totalPaidAmount - totalCancelledAmount;
+    const currentMonthNet = currentMonthPaidGross - currentMonthCancelled;
+    const priorMonthNet = priorMonthPaidGross - priorMonthCancelled;
+
+    // Paid totals by status buckets (paid/cancelled/churned)
+    const statusBreakdownQuery = `
+      SELECT status, COALESCE(SUM(commission_amount), 0) AS amount, COUNT(*) AS count
+      FROM affiliate_commissions
+      WHERE affiliate_id = ? AND status IN ('paid', 'cancelled', 'refunded', 'chargeback')
+      GROUP BY status
+    `;
+    const statusBreakdown = await executeQuery(statusBreakdownQuery, [affiliateId]);
+    const cancelledTotal = statusBreakdown
+      .filter((row: any) => ['cancelled', 'refunded', 'chargeback'].includes(row.status))
+      .reduce((sum: number, row: any) => sum + parseFloat(row.amount || 0), 0);
+
+    const cancelledCount = statusBreakdown
+      .filter((row: any) => ['cancelled', 'refunded', 'chargeback'].includes(row.status))
+      .reduce((sum: number, row: any) => sum + (parseInt(row.count) || 0), 0);
+
     // Get active referrals count - only count approved/converted referrals (paid customers)
     const activeReferralsQuery = `
       SELECT COUNT(DISTINCT ar.id) as active_referrals
@@ -274,15 +270,12 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
 
     // Calculate non-renewals (referrals who were active but cancelled/expired in the last 30 days)
     const nonRenewalsQuery = `
-      SELECT COUNT(DISTINCT ar.id) as non_renewals_count,
+      SELECT COUNT(DISTINCT ac.id) as non_renewals_count,
              COALESCE(SUM(ac.commission_amount), 0) as lost_commission_amount
-      FROM affiliate_referrals ar
-      LEFT JOIN affiliate_commissions ac ON ar.id = ac.referral_id
-      LEFT JOIN users u ON ar.referred_user_id = u.id
-      WHERE ar.affiliate_id = ? 
-        AND ar.status IN ('cancelled', 'expired')
-        AND ar.updated_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
-        AND ac.status = 'paid'
+      FROM affiliate_commissions ac
+      WHERE ac.affiliate_id = ?
+        AND ac.status IN ('cancelled', 'refunded', 'chargeback')
+        AND ac.updated_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
     `;
     
     console.log('📉 [AFFILIATE STATS] Executing non-renewals query:', nonRenewalsQuery, 'with params:', [affiliateId]);
@@ -296,12 +289,12 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       SELECT COUNT(DISTINCT ar.id) as at_risk_referrals,
              COALESCE(AVG(ac.commission_amount), 0) as avg_commission
       FROM affiliate_referrals ar
-      LEFT JOIN affiliate_commissions ac ON ar.id = ac.referral_id
+      JOIN affiliate_commissions ac ON ar.id = ac.referral_id
       LEFT JOIN users u ON ar.referred_user_id = u.id
       WHERE ar.affiliate_id = ? 
-        AND ar.status = 'converted'
-        AND u.status = 'active'
+        AND ar.status IN ('approved', 'converted', 'paid')
         AND ac.status = 'paid'
+        AND (u.status IS NULL OR u.status = 'active')
     `;
     
     console.log('⚠️ [AFFILIATE STATS] Executing potential lost commission query:', potentialLostCommissionQuery, 'with params:', [affiliateId]);
@@ -345,32 +338,8 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
     } : null;
 
     // Calculate percentage changes (comparing current month to last month)
-    const currentMonthEarningsQuery = `
-      SELECT COALESCE(SUM(commission_amount), 0) as current_month
-      FROM affiliate_commissions 
-      WHERE affiliate_id = ? 
-        AND MONTH(created_at) = MONTH(CURRENT_DATE())
-        AND YEAR(created_at) = YEAR(CURRENT_DATE())
-        AND status = 'paid'
-    `;
-    
-    const lastMonthEarningsQuery = `
-      SELECT COALESCE(SUM(commission_amount), 0) as last_month
-      FROM affiliate_commissions 
-      WHERE affiliate_id = ? 
-        AND MONTH(created_at) = MONTH(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))
-        AND YEAR(created_at) = YEAR(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))
-        AND status = 'paid'
-    `;
-    
-    const currentMonthResult = await executeQuery(currentMonthEarningsQuery, [affiliateId]);
-    const lastMonthResult = await executeQuery(lastMonthEarningsQuery, [affiliateId]);
-    
-    const currentMonthEarnings = parseFloat(currentMonthResult[0]?.current_month) || 0;
-    const lastMonthEarnings = parseFloat(lastMonthResult[0]?.last_month) || 0;
-    
-    const earningsChangePercentage = lastMonthEarnings > 0 ? 
-      ((currentMonthEarnings - lastMonthEarnings) / lastMonthEarnings * 100) : 0;
+    const earningsChangePercentage = priorMonthNet > 0 ? 
+      ((currentMonthNet - priorMonthNet) / priorMonthNet * 100) : (currentMonthNet > 0 ? 100 : 0);
 
     // Calculate conversion rate change (current month vs last month)
     const currentMonthConversionsQuery = `
@@ -401,15 +370,15 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       ((currentConversions - lastConversions) / lastConversions * 100) : 0;
 
     const stats = {
-      totalEarnings: parseFloat(affiliateData.total_earnings) || 0,
-      monthlyEarnings: parseFloat(monthlyEarnings) || 0,
+      totalEarnings: totalPaidEarnings,
+      monthlyEarnings: currentMonthNet,
       yearlyEarnings: parseFloat(yearlyEarnings) || 0,
       totalReferrals: affiliateData.total_referrals || 0,
       activeReferrals: activeReferrals,
       clickThroughRate: 8.4, // Mock data - would need click tracking
       conversionRate: parseFloat(conversionRate.toFixed(1)),
-      pendingCommissions: parseInt(pendingSignups) || 0,
-      potentialCommissions: parseFloat(potentialCommissions) || 0,
+      pendingCommissions: totalPendingValue,
+      pendingSignupCount: pendingSignups,
       commissionRate: parseFloat(affiliateData.commission_rate) || 10,
       status: affiliateData.status,
       // New tier-related fields - prioritize subscription data if available
@@ -423,6 +392,8 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       // New non-renewals and lost commission fields
       nonRenewalsCount: parseInt(nonRenewalsCount) || 0,
       lostCommissionAmount: parseFloat(lostCommissionAmount) || 0,
+      churnedReferrals: cancelledCount,
+      churnedCommission: cancelledTotal,
       estimatedLostCommission: parseFloat(estimatedLostCommission.toFixed(2)) || 0,
       atRiskReferrals: parseInt(atRiskReferrals) || 0,
       // Payment information
@@ -467,45 +438,73 @@ router.get('/dashboard/recent-referrals', authenticateToken, requireAffiliateRol
     const limitParam = parseInt(req.query.limit as string);
     const safeLimit = Number.isFinite(limitParam) ? Math.max(1, Math.min(100, limitParam)) : 10;
     
-    const query = `
+    const referralsQuery = `
       SELECT 
         ar.id,
         ar.transaction_id,
+        ar.plan_name,
+        ar.plan_price,
+        ar.commission_amount,
+        ar.status AS referral_status,
+        ar.created_at AS signup_date,
+        ar.conversion_date,
         u.first_name,
         u.last_name,
         u.email,
-        ar.created_at as signup_date,
-        u.status as user_status,
-        COALESCE(ar.commission_amount, 0) as commission_earned,
-        'basic' as subscription_plan,
-        CASE 
-        WHEN ar.status = 'approved' THEN 'paid'
-        WHEN ar.status = 'converted' THEN 'paid'
-        WHEN u.status = 'inactive' THEN 'cancelled'
-        WHEN (SELECT s.status FROM subscriptions s WHERE s.user_id = u.id ORDER BY s.updated_at DESC LIMIT 1) IN ('canceled','unpaid','past_due') THEN 'cancelled'
-        ELSE 'unpaid'
-      END as referral_status
+        u.status AS user_status,
+        s.plan_name AS subscription_plan,
+        s.plan_type AS subscription_plan_type,
+        s.status AS subscription_status
       FROM affiliate_referrals ar
       JOIN users u ON ar.referred_user_id = u.id
+      LEFT JOIN subscriptions s ON u.id = s.user_id
       WHERE ar.affiliate_id = ?
+        AND (u.email IS NULL OR u.email NOT LIKE '%test%')
+        AND (u.first_name IS NULL OR u.first_name NOT LIKE '%test%')
+        AND (u.last_name IS NULL OR u.last_name NOT LIKE '%test%')
       ORDER BY ar.created_at DESC
       LIMIT ${safeLimit}
     `;
-    
-    const referrals = await executeQuery(query, [affiliateId]);
-    
-    const transformedReferrals = referrals.map((referral: any) => ({
-      id: referral.id,
-      customerName: `${referral.first_name || ''} ${referral.last_name || ''}`.trim() || `User ${referral.id}`,
-      email: referral.email,
-      status: referral.referral_status,
-      dateReferred: referral.signup_date,
-      commission: parseFloat(referral.commission_earned) || 0,
-      lifetimeValue: parseFloat(referral.commission_earned) || 0,
-      tier: parseFloat(referral.commission_earned) > 100 ? 'gold' : 
-            parseFloat(referral.commission_earned) > 50 ? 'silver' : 'bronze',
-      transactionId: referral.transaction_id
-    }));
+
+    const referrals = await executeQuery(referralsQuery, [affiliateId]);
+
+    const transformedReferrals = referrals.map((referral: any) => {
+      const baseStatus = String(referral.referral_status || '').toLowerCase();
+      const userStatus = String(referral.user_status || '').toLowerCase();
+      const subscriptionStatus = String(referral.subscription_status || '').toLowerCase();
+
+      let normalizedStatus: 'paid' | 'cancelled' | 'churned' | 'pending' | 'unpaid' = 'pending';
+
+      if (['paid', 'approved', 'converted'].includes(baseStatus)) {
+        normalizedStatus = 'paid';
+      } else if (['cancelled', 'refunded', 'expired'].includes(baseStatus)) {
+        normalizedStatus = 'cancelled';
+      } else if (['inactive', 'cancelled'].includes(userStatus) || ['canceled', 'cancelled', 'unpaid', 'past_due'].includes(subscriptionStatus)) {
+        normalizedStatus = 'churned';
+      } else if (baseStatus === 'pending') {
+        normalizedStatus = 'pending';
+      } else {
+        normalizedStatus = 'unpaid';
+      }
+
+      const planName = referral.plan_name || referral.subscription_plan || 'Unknown Plan';
+      const planValue = referral.plan_price || 0;
+      const commission = parseFloat(referral.commission_amount) || 0;
+
+      return {
+        id: referral.id,
+        transactionId: referral.transaction_id,
+        customerName: `${referral.first_name || ''} ${referral.last_name || ''}`.trim() || `User ${referral.id}`,
+        email: referral.email,
+      phone: referral.phone,
+        status: normalizedStatus,
+        planName,
+        planValue,
+        commission,
+        dateReferred: referral.signup_date,
+        conversionDate: referral.conversion_date,
+      };
+    });
     
     res.json({
       success: true,
@@ -934,6 +933,7 @@ router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, re
         u.first_name,
         u.last_name,
         u.email,
+        u.phone,
         ar.created_at as signup_date,
         ar.conversion_date,
         u.status as user_status,
@@ -1798,15 +1798,18 @@ router.get('/dashboard/leaderboard', authenticateToken, requireAffiliateRole, as
       LEFT JOIN affiliate_commissions ac ON a.id = ac.affiliate_id 
         AND ac.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
         AND ac.status = 'paid'
-      WHERE a.plan_type IN ('pro', 'premium', 'partner')
-        AND a.status = 'active'
+      WHERE a.status = 'active'
+        AND (
+          LOWER(COALESCE(a.plan_type, '')) NOT IN ('', 'free', 'starter', 'trial', 'basic')
+          OR a.commission_rate >= 20
+        )
       GROUP BY a.id, a.first_name, a.last_name, a.total_earnings, a.total_referrals, 
                a.paid_referrals_count, a.plan_type, a.commission_rate
       ORDER BY a.total_earnings DESC
       LIMIT 10
     `;
     
-    // Get top Free affiliates (free/starter plans)
+    // Get top Free affiliates (free/starter plans or low commission rate)
     const freeAffiliatesQuery = `
       SELECT 
         a.id,
@@ -1822,8 +1825,11 @@ router.get('/dashboard/leaderboard', authenticateToken, requireAffiliateRole, as
       LEFT JOIN affiliate_commissions ac ON a.id = ac.affiliate_id 
         AND ac.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
         AND ac.status = 'paid'
-      WHERE a.plan_type IN ('free', 'starter')
-        AND a.status = 'active'
+      WHERE a.status = 'active'
+        AND (
+          LOWER(COALESCE(a.plan_type, '')) IN ('', 'free', 'starter', 'trial', 'basic')
+          AND a.commission_rate < 20
+        )
       GROUP BY a.id, a.first_name, a.last_name, a.total_earnings, a.total_referrals, 
                a.paid_referrals_count, a.plan_type, a.commission_rate
       ORDER BY a.total_earnings DESC
@@ -1981,20 +1987,28 @@ router.get('/dashboard/team-performance', authenticateToken, requireAffiliateRol
 
 // Helper function to get tier display name from plan type
 function getTierFromPlanType(planType: string): string {
-  switch (planType?.toLowerCase()) {
-    case 'free':
-      return 'Free - Starter';
-    case 'starter':
-      return 'Free - Starter';
-    case 'pro':
-      return 'Pro - Advanced';
-    case 'premium':
-      return 'Premium - Partner';
-    case 'partner':
-      return 'Premium - Partner';
-    default:
-      return 'Free - Starter';
+  const normalized = planType?.toLowerCase() || '';
+
+  if (['free', 'starter', 'trial', 'basic', ''].includes(normalized)) {
+    return 'Free - Starter';
   }
+
+  if (normalized.includes('premium') || normalized.includes('partner')) {
+    return 'Premium - Partner';
+  }
+
+  if (
+    normalized.includes('pro') ||
+    normalized.includes('advanced') ||
+    normalized.includes('paid') ||
+    normalized.includes('vip') ||
+    normalized.includes('elite')
+  ) {
+    return 'Pro - Advanced';
+  }
+
+  // Fallback classification based on commission rate expectation handled earlier
+  return 'Pro - Advanced';
 }
 
 export default router;

@@ -127,6 +127,7 @@ import PersonalCardsDisplay from '../components/PersonalCardsDisplay';
 import BusinessCardsDisplay from '../components/BusinessCardsDisplay';
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 
 interface DebtConsolidationViewProps {
   accounts: any[];
@@ -156,6 +157,22 @@ const getNextReminderDate = (day: number) => {
         nextDate = new Date(today.getFullYear(), today.getMonth() + 1, day);
     }
     return nextDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatFundingTier = (amount?: number | null) => {
+  if (typeof amount !== 'number' || Number.isNaN(amount)) {
+    return 'N/A';
+  }
+
+  if (amount <= 50_000) {
+    return 'Starter File (0 to 50K)';
+  }
+
+  if (amount <= 100_000) {
+    return 'Mid-tier File (51K to 100K)';
+  }
+
+  return 'Upper-tier File (101K+)';
 };
 
 const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientId }: DebtConsolidationViewProps) => {
@@ -1286,7 +1303,8 @@ const detailedReport = {
 };
 
 export default function CreditReport() {
-  const { userProfile } = useAuthContext();
+  const { userProfile, isLoading: authLoading, refreshProfile } = useAuthContext();
+  const [affiliateCreditRepairLink, setAffiliateCreditRepairLink] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
@@ -1874,9 +1892,45 @@ export default function CreditReport() {
     );
   }, [reportData, apiData, isFundingEligible, userProfile]);
 
-  const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
-    || ((import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL)
-    || 'https://www.m2ficoforge.com/';
+  const creditRepairUrl = useMemo(() => {
+    const adminLink = userProfile?.credit_repair_url?.trim();
+    if (adminLink) return adminLink;
+    const affiliateLink = affiliateCreditRepairLink?.trim();
+    if (affiliateLink) return affiliateLink;
+    const envUrl = (import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL;
+    if (typeof envUrl === 'string' && envUrl.trim()) return envUrl.trim();
+    return 'https://www.m2ficoforge.com/';
+  }, [userProfile?.credit_repair_url, affiliateCreditRepairLink]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchAffiliateCreditRepairLink() {
+      try {
+        const response = await api.get('/api/auth/affiliate/status');
+        const data = response.data || response;
+        if (!isMounted) return;
+        if (data?.partner_credit_repair_link || data?.credit_repair_link) {
+          setAffiliateCreditRepairLink(String(data.partner_credit_repair_link || data.credit_repair_link));
+        } else {
+          setAffiliateCreditRepairLink(null);
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        setAffiliateCreditRepairLink(null);
+      }
+    }
+
+    if (userProfile?.role === 'affiliate' || userProfile?.role === 'admin' || userProfile?.role === 'super_admin') {
+      fetchAffiliateCreditRepairLink();
+    } else {
+      setAffiliateCreditRepairLink(null);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userProfile?.role]);
   
   // Bureau card tabs state - each account group has its own tab state
   const [bureauTabs, setBureauTabs] = useState<Record<string, string>>({});
@@ -2455,22 +2509,48 @@ export default function CreditReport() {
 
   // Download Analysis tab as PDF without splitting sections
   const downloadAnalysisPdf = async () => {
+    if (activeTab !== 'analysis') return;
+    const el = analysisRef.current;
+    if (!el) return;
+
+    const previousScrollY = window.scrollY;
+    const previousOverflow = document.body.style.overflow;
+
     try {
-      if (activeTab !== 'analysis') return;
-      const el = analysisRef.current;
-      if (!el) return;
       const html2pdf = (await import('html2pdf.js')).default;
+
+      document.body.style.overflow = 'hidden';
+      document.body.classList.add('pdf-exporting');
+      el.classList.add('pdf-export-active');
+      window.scrollTo({ top: 0, behavior: 'instant' });
+
       const opt = {
-        margin: [15, 15],
+        margin: [18, 14, 18, 14],
         filename: 'CreditReport-Analysis.pdf',
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], avoid: ['.pdf-avoid-break', '.analysis-pdf-root > *'] }
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: 1920,
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+        pagebreak: {
+          mode: ['css', 'avoid-all'],
+          avoid: ['.pdf-avoid-break', '.pdf-table-wrapper', '.analysis-pdf-root > *'],
+          before: ['.pdf-break-before', '.pdf-section-break'],
+        },
       } as any;
+
       await (html2pdf() as any).set(opt).from(el).save();
     } catch (err) {
       console.error('PDF export failed:', err);
+    } finally {
+      window.scrollTo({ top: previousScrollY, behavior: 'instant' });
+      document.body.style.overflow = previousOverflow;
+      document.body.classList.remove('pdf-exporting');
+      analysisRef.current?.classList.remove('pdf-export-active');
     }
   };
   const [loading, setLoading] = useState(true);
@@ -4488,31 +4568,53 @@ export default function CreditReport() {
           <div>
             <div className="text-xs font-semibold text-gray-500 mb-2">Work Area</div>
             <TabsList className="grid w-full grid-cols-6 gap-1 text-xs overflow-x-auto">
-              <TabsTrigger value="analysis" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="analysis"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-orange-200 via-orange-300 to-orange-400 text-orange-800 transition-all hover:from-orange-300 hover:via-orange-400 hover:to-orange-500 data-[state=active]:border-orange-500 data-[state=active]:from-orange-500 data-[state=active]:via-orange-600 data-[state=active]:to-orange-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <BarChart className="h-4 w-4" />
                 <span>Analysis</span>
               </TabsTrigger>
-              <TabsTrigger value="progress" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="progress"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-teal-200 via-teal-300 to-teal-400 text-teal-800 transition-all hover:from-teal-300 hover:via-teal-400 hover:to-teal-500 data-[state=active]:border-teal-500 data-[state=active]:from-teal-500 data-[state=active]:via-teal-600 data-[state=active]:to-teal-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <TrendingUp className="h-4 w-4" />
                 <span>Progress Report</span>
               </TabsTrigger>
-              <TabsTrigger value="underwriting" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="underwriting"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-indigo-200 via-indigo-300 to-indigo-400 text-indigo-800 transition-all hover:from-indigo-300 hover:via-indigo-400 hover:to-indigo-500 data-[state=active]:border-indigo-500 data-[state=active]:from-indigo-500 data-[state=active]:via-indigo-600 data-[state=active]:to-indigo-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <Shield className="h-4 w-4" />
                 <span>Underwriting</span>
               </TabsTrigger>
-              <TabsTrigger value="creditWarMap" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="creditWarMap"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-slate-200 via-slate-300 to-slate-400 text-slate-800 transition-all hover:from-slate-300 hover:via-slate-400 hover:to-slate-500 data-[state=active]:border-slate-500 data-[state=active]:from-slate-500 data-[state=active]:via-slate-600 data-[state=active]:to-slate-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <MapIcon className="h-4 w-4" />
                 <span>Credit War Map</span>
               </TabsTrigger>
-              <TabsTrigger value="debtConsolidation" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="debtConsolidation"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-rose-200 via-rose-300 to-rose-400 text-rose-800 transition-all hover:from-rose-300 hover:via-rose-400 hover:to-rose-500 data-[state=active]:border-rose-500 data-[state=active]:from-rose-500 data-[state=active]:via-rose-600 data-[state=active]:to-rose-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <PieChart className="h-4 w-4" />
                 <span>Debt Consolidation</span>
               </TabsTrigger>
-              <TabsTrigger value="funding" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="funding"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-emerald-200 via-emerald-300 to-emerald-400 text-emerald-800 transition-all hover:from-emerald-300 hover:via-emerald-400 hover:to-emerald-500 data-[state=active]:border-emerald-500 data-[state=active]:from-emerald-500 data-[state=active]:via-emerald-600 data-[state=active]:to-emerald-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <DollarSign className="h-4 w-4" />
                 <span>Funding Audit</span>
               </TabsTrigger>
-              <TabsTrigger value="fundingApplications" disabled={!effectiveFundingEligible} className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="fundingApplications"
+                disabled={!effectiveFundingEligible}
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-emerald-200 via-emerald-300 to-emerald-400 text-emerald-800 transition-all hover:from-emerald-300 hover:via-emerald-400 hover:to-emerald-500 data-[state=active]:border-emerald-500 data-[state=active]:from-emerald-500 data-[state=active]:via-emerald-600 data-[state=active]:to-emerald-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <Banknote className="h-4 w-4" />
                 <span>Funding</span>
               </TabsTrigger>
@@ -4523,23 +4625,39 @@ export default function CreditReport() {
           <div>
             <div className="text-xs font-semibold text-gray-500 mb-2">Credit Report</div>
             <TabsList className="grid w-full grid-cols-5 gap-1 text-xs overflow-x-auto">
-              <TabsTrigger value="overview" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="overview"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-blue-200 via-blue-300 to-blue-400 text-blue-800 transition-all hover:from-blue-300 hover:via-blue-400 hover:to-blue-500 data-[state=active]:border-blue-500 data-[state=active]:from-blue-500 data-[state=active]:via-blue-600 data-[state=active]:to-blue-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <Home className="h-4 w-4" />
                 <span>Overview</span>
               </TabsTrigger>
-              <TabsTrigger value="personal" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="personal"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-purple-200 via-purple-300 to-purple-400 text-purple-800 transition-all hover:from-purple-300 hover:via-purple-400 hover:to-purple-500 data-[state=active]:border-purple-500 data-[state=active]:from-purple-500 data-[state=active]:via-purple-600 data-[state=active]:to-purple-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <User className="h-4 w-4" />
                 <span>Personal</span>
               </TabsTrigger>
-              <TabsTrigger value="inquiries" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="inquiries"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-amber-200 via-amber-300 to-amber-400 text-amber-800 transition-all hover:from-amber-300 hover:via-amber-400 hover:to-amber-500 data-[state=active]:border-amber-500 data-[state=active]:from-amber-400 data-[state=active]:via-amber-500 data-[state=active]:to-amber-600 data-[state=active]:text-slate-900 data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <FileSearch className="h-4 w-4" />
                 <span>Inquiries</span>
               </TabsTrigger>
-              <TabsTrigger value="public" className="min-w-0 flex items-center gap-2">
+              <TabsTrigger
+                value="public"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-red-200 via-red-300 to-red-400 text-red-800 transition-all hover:from-red-300 hover:via-red-400 hover:to-red-500 data-[state=active]:border-red-500 data-[state=active]:from-red-500 data-[state=active]:via-red-600 data-[state=active]:to-red-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+              >
                 <ScrollText className="h-4 w-4" />
                 <span>Public Records</span>
               </TabsTrigger>
-              <TabsTrigger value="accounts" className="min-w-0 flex items-center gap-2" disabled={!subscriptionStatus.hasActiveSubscription}>
+              <TabsTrigger
+                value="accounts"
+                className="min-w-0 flex items-center gap-2 rounded-full border border-transparent bg-gradient-to-br from-green-200 via-green-300 to-green-400 text-green-800 transition-all hover:from-green-300 hover:via-green-400 hover:to-green-500 data-[state=active]:border-green-500 data-[state=active]:from-green-500 data-[state=active]:via-green-600 data-[state=active]:to-green-700 data-[state=active]:text-white data-[state=active]:shadow-lg disabled:bg-none disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
+                disabled={!subscriptionStatus.hasActiveSubscription}
+              >
                 <CreditCard className="h-4 w-4" />
                 <span>Accounts</span>
               </TabsTrigger>
@@ -4560,10 +4678,10 @@ export default function CreditReport() {
                   onClick={() => setActiveTab('analysis')}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'analysis'
-                      ? 'bg-orange-500 border-orange-500 text-white shadow-lg scale-110'
-                      : ['progress', 'underwriting', 'funding'].includes(activeTab)
-                      ? 'bg-orange-500 border-orange-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-orange-300 hover:text-orange-500'
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#ffedd5,#fb923c_55%,#ea580c)] border-orange-500 text-white shadow-[0_10px_25px_rgba(234,88,12,0.35)] scale-110'
+                      : ['progress', 'underwriting', 'funding', 'fundingApplications', 'creditWarMap', 'debtConsolidation'].includes(activeTab)
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#fed7aa,#fb923c_45%,#f97316)] border-orange-400 text-white shadow-[0_6px_18px_rgba(249,115,22,0.25)]'
+                      : 'bg-[radial-gradient(circle_at_30%_25%,#fff7ed,#fed7aa_55%,#fb923c)] border-transparent text-orange-600 hover:border-orange-200 hover:text-orange-700 hover:bg-[radial-gradient(circle_at_30%_25%,#fee8d6,#fdba74_55%,#f97316)]'
                   }`}
                 >
                   <BarChart3 className="w-5 h-5" />
@@ -4589,10 +4707,10 @@ export default function CreditReport() {
                   onClick={() => setActiveTab('progress')}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'progress'
-                      ? 'bg-teal-500 border-teal-500 text-white shadow-lg scale-110'
-                      : ['underwriting', 'funding'].includes(activeTab)
-                      ? 'bg-teal-500 border-teal-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-teal-300 hover:text-teal-500'
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#ccfbf1,#14b8a6_55%,#0f766e)] border-teal-500 text-white shadow-[0_10px_25px_rgba(15,118,110,0.35)] scale-110'
+                      : ['underwriting', 'funding', 'fundingApplications', 'debtConsolidation', 'creditWarMap'].includes(activeTab)
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#99f6e4,#2dd4bf_45%,#0d9488)] border-teal-400 text-white shadow-[0_6px_18px_rgba(13,148,136,0.25)]'
+                      : 'bg-[radial-gradient(circle_at_30%_25%,#ecfeff,#bef8f3_55%,#5eead4)] border-transparent text-teal-600 hover:border-teal-200 hover:text-teal-700 hover:bg-[radial-gradient(circle_at_30%_25%,#d9fbf7,#a5f3eb_55%,#34d399)]'
                   }`}
                 >
                   <TrendUp className="w-5 h-5" />
@@ -4618,10 +4736,10 @@ export default function CreditReport() {
                   onClick={() => setActiveTab('underwriting')}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'underwriting'
-                      ? 'bg-indigo-500 border-indigo-500 text-white shadow-lg scale-110'
-                      : ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab)
-                      ? 'bg-indigo-500 border-indigo-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-indigo-300 hover:text-indigo-500'
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#e0e7ff,#6366f1_55%,#4338ca)] border-indigo-500 text-white shadow-[0_10px_25px_rgba(67,56,202,0.35)] scale-110'
+                      : ['debtConsolidation', 'funding', 'fundingApplications', 'creditWarMap'].includes(activeTab)
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#c7d2fe,#818cf8_45%,#4f46e5)] border-indigo-400 text-white shadow-[0_6px_18px_rgba(79,70,229,0.25)]'
+                      : 'bg-[radial-gradient(circle_at_30%_25%,#eef2ff,#d6dcff_55%,#a5b4fc)] border-transparent text-indigo-600 hover:border-indigo-200 hover:text-indigo-700 hover:bg-[radial-gradient(circle_at_30%_25%,#e0e7ff,#c7d2fe_55%,#818cf8)]'
                   }`}
                 >
                   <FileSearch className="w-5 h-5" />
@@ -4647,10 +4765,10 @@ export default function CreditReport() {
                   onClick={() => setActiveTab('creditWarMap')}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'creditWarMap'
-                      ? 'bg-slate-500 border-slate-500 text-white shadow-lg scale-110'
-                      : ['analysis','progress','underwriting','funding','fundingApplications','debtConsolidation'].includes(activeTab)
-                        ? 'bg-slate-500 border-slate-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-slate-300 hover:text-slate-500'
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#e2e8f0,#64748b_55%,#1e293b)] border-slate-600 text-white shadow-[0_10px_25px_rgba(15,23,42,0.35)] scale-110'
+                      : ['analysis', 'progress', 'underwriting', 'funding', 'fundingApplications', 'debtConsolidation', 'lawEngine', 'lawEngineAuto'].includes(activeTab)
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#cbd5f5,#94a3b8_45%,#334155)] border-slate-500 text-white shadow-[0_6px_18px_rgba(51,65,85,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#f8fafc,#e2e8f0_55%,#cbd5f5)] border-transparent text-slate-600 hover:border-slate-200 hover:text-slate-700 hover:bg-[radial-gradient(circle_at_30%_25%,#eef2f7,#d5deeb_55%,#94a3b8)]'
                   }`}
                 >
                   <MapIcon className="w-5 h-5" />
@@ -4676,8 +4794,8 @@ export default function CreditReport() {
                   onClick={() => requestEnableLawEngine()}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     lawEngineAutoMode
-                      ? 'bg-purple-500 border-purple-500 text-white shadow-lg scale-110'
-                      : 'bg-card border-border text-muted-foreground hover:border-purple-300 hover:text-purple-500'
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#f3e8ff,#a855f7_55%,#7c3aed)] border-purple-500 text-white shadow-[0_10px_25px_rgba(124,58,237,0.35)] scale-110'
+                      : 'bg-[radial-gradient(circle_at_30%_25%,#faf5ff,#ede9fe_55%,#c4b5fd)] border-transparent text-purple-600 hover:border-purple-200 hover:text-purple-700 hover:bg-[radial-gradient(circle_at_30%_25%,#f3e8ff,#e9d5ff_55%,#c084fc)]'
                   }`}
                 >
                   <Gauge className="w-5 h-5" />
@@ -4703,10 +4821,10 @@ export default function CreditReport() {
                   onClick={() => setActiveTab('debtConsolidation')}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'debtConsolidation'
-                      ? 'bg-rose-500 border-rose-500 text-white shadow-lg scale-110'
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#ffe4e6,#fb7185_55%,#be123c)] border-rose-500 text-white shadow-[0_10px_25px_rgba(190,18,60,0.35)] scale-110'
                       : ['funding', 'fundingApplications'].includes(activeTab)
-                      ? 'bg-rose-500 border-rose-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-rose-300 hover:text-rose-500'
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#fecdd3,#f43f5e_45%,#be123c)] border-rose-400 text-white shadow-[0_6px_18px_rgba(244,63,94,0.25)]'
+                      : 'bg-[radial-gradient(circle_at_30%_25%,#fff1f2,#ffe4e6_55%,#fda4af)] border-transparent text-rose-600 hover:border-rose-200 hover:text-rose-700 hover:bg-[radial-gradient(circle_at_30%_25%,#ffe4e6,#fecdd3_55%,#fb7185)]'
                   }`}
                 >
                   <PieChart className="w-5 h-5" />
@@ -4732,8 +4850,10 @@ export default function CreditReport() {
                   onClick={requestOpenFundingAudit}
                   className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                     activeTab === 'funding'
-                      ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg scale-110'
-                      : 'bg-card border-border text-muted-foreground hover:border-emerald-300 hover:text-emerald-500'
+                      ? 'bg-[radial-gradient(circle_at_30%_25%,#d1fae5,#34d399_55%,#047857)] border-emerald-500 text-white shadow-[0_10px_25px_rgba(4,120,87,0.35)] scale-110'
+                      : activeTab === 'fundingApplications'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#a7f3d0,#10b981_45%,#047857)] border-emerald-400 text-white shadow-[0_6px_18px_rgba(16,185,129,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#ecfdf5,#d1fae5_55%,#6ee7b7)] border-transparent text-emerald-600 hover:border-emerald-200 hover:text-emerald-700 hover:bg-[radial-gradient(circle_at_30%_25%,#d1fae5,#a7f3d0_55%,#34d399)]'
                   }`}
                 >
                   <Banknote className="w-5 h-5" />
@@ -4762,8 +4882,8 @@ export default function CreditReport() {
                     !effectiveFundingEligible
                       ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
                       : activeTab === 'fundingApplications'
-                        ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg scale-110'
-                        : 'bg-card border-border text-muted-foreground hover:border-emerald-300 hover:text-emerald-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#d1fae5,#34d399_55%,#047857)] border-emerald-500 text-white shadow-[0_10px_25px_rgba(4,120,87,0.35)] scale-110'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#ecfdf5,#d1fae5_55%,#6ee7b7)] border-transparent text-emerald-600 hover:border-emerald-200 hover:text-emerald-700 hover:bg-[radial-gradient(circle_at_30%_25%,#d1fae5,#a7f3d0_55%,#34d399)]'
                   }`}
                 >
                   <Wallet className="w-5 h-5" />
@@ -4787,10 +4907,10 @@ export default function CreditReport() {
                     onClick={() => requestEnableLawEngine('overview')}
                     className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                       activeTab === 'overview'
-                        ? 'bg-blue-500 border-blue-500 text-white shadow-lg scale-110'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#dbeafe,#3b82f6_55%,#1d4ed8)] border-blue-500 text-white shadow-[0_10px_25px_rgba(29,78,216,0.35)] scale-110'
                         : ['accounts','inquiries','personal','public'].includes(activeTab)
-                        ? 'bg-blue-500 border-blue-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-blue-300 hover:text-blue-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#bfdbfe,#60a5fa_45%,#2563eb)] border-blue-400 text-white shadow-[0_6px_18px_rgba(37,99,235,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#eff6ff,#dbeafe_55%,#bfdbfe)] border-transparent text-blue-600 hover:border-blue-200 hover:text-blue-700 hover:bg-[radial-gradient(circle_at_30%_25%,#e0efff,#c7ddff_55%,#60a5fa)]'
                     }`}
                   >
                     <Home className="w-5 h-5" />
@@ -4812,10 +4932,10 @@ export default function CreditReport() {
                     onClick={() => requestEnableLawEngine('personal')}
                     className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                       activeTab === 'personal'
-                        ? 'bg-purple-500 border-purple-500 text-white shadow-lg scale-110'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#f3e8ff,#a855f7_55%,#7c3aed)] border-purple-500 text-white shadow-[0_10px_25px_rgba(124,58,237,0.35)] scale-110'
                         : ['inquiries','public','accounts'].includes(activeTab)
-                        ? 'bg-purple-500 border-purple-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-purple-300 hover:text-purple-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#e9d5ff,#c084fc_45%,#7c3aed)] border-purple-400 text-white shadow-[0_6px_18px_rgba(124,58,237,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#faf5ff,#ede9fe_55%,#c4b5fd)] border-transparent text-purple-600 hover:border-purple-200 hover:text-purple-700 hover:bg-[radial-gradient(circle_at_30%_25%,#f3e8ff,#e9d5ff_55%,#c084fc)]'
                     }`}
                   >
                     <UserCheck className="w-5 h-5" />
@@ -4837,10 +4957,10 @@ export default function CreditReport() {
                     onClick={() => requestEnableLawEngine('inquiries')}
                     className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                       activeTab === 'inquiries'
-                        ? 'bg-yellow-500 border-yellow-500 text-white shadow-lg scale-110'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#fef3c7,#facc15_55%,#ca8a04)] border-amber-500 text-slate-900 shadow-[0_10px_25px_rgba(202,138,4,0.35)] scale-110'
                         : ['public','accounts'].includes(activeTab)
-                        ? 'bg-yellow-500 border-yellow-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-yellow-300 hover:text-yellow-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#fde68a,#f59e0b_45%,#b45309)] border-amber-400 text-white shadow-[0_6px_18px_rgba(180,83,9,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#fefce8,#fef3c7_55%,#fde68a)] border-transparent text-amber-700 hover:border-amber-200 hover:text-amber-800 hover:bg-[radial-gradient(circle_at_30%_25%,#fff7c2,#fee08a_55%,#f59e0b)]'
                     }`}
                   >
                     <Search className="w-5 h-5" />
@@ -4862,10 +4982,10 @@ export default function CreditReport() {
                     onClick={() => requestEnableLawEngine('public')}
                     className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                       activeTab === 'public'
-                        ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#fee2e2,#ef4444_55%,#b91c1c)] border-red-500 text-white shadow-[0_10px_25px_rgba(185,28,28,0.35)] scale-110'
                         : ['accounts'].includes(activeTab)
-                        ? 'bg-red-500 border-red-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#fecaca,#f87171_45%,#b91c1c)] border-red-400 text-white shadow-[0_6px_18px_rgba(185,28,28,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#fef2f2,#fee2e2_55%,#fecaca)] border-transparent text-red-600 hover:border-red-200 hover:text-red-700 hover:bg-[radial-gradient(circle_at_30%_25%,#ffe8e8,#fecaca_55%,#f87171)]'
                     }`}
                   >
                     <ScrollText className="w-5 h-5" />
@@ -4890,8 +5010,8 @@ export default function CreditReport() {
                       !subscriptionStatus.hasActiveSubscription
                         ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
                         : activeTab === 'accounts'
-                        ? 'bg-green-500 border-green-500 text-white shadow-lg scale-110'
-                        : 'bg-card border-border text-muted-foreground hover:border-green-300 hover:text-green-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#d1fae5,#34d399_55%,#047857)] border-emerald-500 text-white shadow-[0_10px_25px_rgba(4,120,87,0.35)] scale-110'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#ecfdf5,#d1fae5_55%,#6ee7b7)] border-transparent text-emerald-600 hover:border-emerald-200 hover:text-emerald-700 hover:bg-[radial-gradient(circle_at_30%_25%,#d1fae5,#a7f3d0_55%,#34d399)]'
                     }`}
                   >
                     <CreditCard className="w-5 h-5" />
@@ -4915,10 +5035,10 @@ export default function CreditReport() {
                     onClick={() => { setLawEngineAutoMode(false); setActiveTab('overview'); }}
                     className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                       activeTab === 'overview'
-                        ? 'bg-blue-500 border-blue-500 text-white shadow-lg scale-110'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#dbeafe,#3b82f6_55%,#1d4ed8)] border-blue-500 text-white shadow-[0_10px_25px_rgba(29,78,216,0.35)] scale-110'
                         : ['accounts','inquiries','personal','public'].includes(activeTab)
-                        ? 'bg-blue-500 border-blue-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-blue-300 hover:text-blue-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#bfdbfe,#60a5fa_45%,#2563eb)] border-blue-400 text-white shadow-[0_6px_18px_rgba(37,99,235,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#eff6ff,#dbeafe_55%,#bfdbfe)] border-transparent text-blue-600 hover:border-blue-200 hover:text-blue-700 hover:bg-[radial-gradient(circle_at_30%_25%,#e0efff,#c7ddff_55%,#60a5fa)]'
                     }`}
                   >
                     <Home className="w-5 h-5" />
@@ -4944,10 +5064,10 @@ export default function CreditReport() {
                     onClick={() => { setLawEngineAutoMode(false); setActiveTab('personal'); }}
                     className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                       activeTab === 'personal'
-                        ? 'bg-purple-500 border-purple-500 text-white shadow-lg scale-110'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#f3e8ff,#a855f7_55%,#7c3aed)] border-purple-500 text-white shadow-[0_10px_25px_rgba(124,58,237,0.35)] scale-110'
                         : ['inquiries','public','accounts'].includes(activeTab)
-                        ? 'bg-purple-500 border-purple-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-purple-300 hover:text-purple-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#e9d5ff,#c084fc_45%,#7c3aed)] border-purple-400 text-white shadow-[0_6px_18px_rgba(124,58,237,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#faf5ff,#ede9fe_55%,#c4b5fd)] border-transparent text-purple-600 hover:border-purple-200 hover:text-purple-700 hover:bg-[radial-gradient(circle_at_30%_25%,#f3e8ff,#e9d5ff_55%,#c084fc)]'
                     }`}
                   >
                     <UserCheck className="w-5 h-5" />
@@ -4973,10 +5093,10 @@ export default function CreditReport() {
                     onClick={() => { setLawEngineAutoMode(false); setActiveTab('inquiries'); }}
                     className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                       activeTab === 'inquiries'
-                        ? 'bg-yellow-500 border-yellow-500 text-white shadow-lg scale-110'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#fef3c7,#facc15_55%,#ca8a04)] border-amber-500 text-slate-900 shadow-[0_10px_25px_rgba(202,138,4,0.35)] scale-110'
                         : ['public','accounts'].includes(activeTab)
-                        ? 'bg-yellow-500 border-yellow-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-yellow-300 hover:text-yellow-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#fde68a,#f59e0b_45%,#b45309)] border-amber-400 text-white shadow-[0_6px_18px_rgba(180,83,9,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#fefce8,#fef3c7_55%,#fde68a)] border-transparent text-amber-700 hover:border-amber-200 hover:text-amber-800 hover:bg-[radial-gradient(circle_at_30%_25%,#fff7c2,#fee08a_55%,#f59e0b)]'
                     }`}
                   >
                     <Search className="w-5 h-5" />
@@ -5001,10 +5121,10 @@ export default function CreditReport() {
                     onClick={() => { setLawEngineAutoMode(false); setActiveTab('public'); }}
                     className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
                       activeTab === 'public'
-                        ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#fee2e2,#ef4444_55%,#b91c1c)] border-red-500 text-white shadow-[0_10px_25px_rgba(185,28,28,0.35)] scale-110'
                         : ['accounts'].includes(activeTab)
-                        ? 'bg-red-500 border-red-500 text-white'
-                        : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#fecaca,#f87171_45%,#b91c1c)] border-red-400 text-white shadow-[0_6px_18px_rgba(185,28,28,0.25)]'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#fef2f2,#fee2e2_55%,#fecaca)] border-transparent text-red-600 hover:border-red-200 hover:text-red-700 hover:bg-[radial-gradient(circle_at_30%_25%,#ffe8e8,#fecaca_55%,#f87171)]'
                     }`}
                   >
                     <ScrollText className="w-5 h-5" />
@@ -5033,8 +5153,8 @@ export default function CreditReport() {
                       !subscriptionStatus.hasActiveSubscription
                         ? 'bg-muted border-border text-muted-foreground cursor-not-allowed'
                         : activeTab === 'accounts'
-                        ? 'bg-green-500 border-green-500 text-white shadow-lg scale-110'
-                        : 'bg-card border-border text-muted-foreground hover:border-green-300 hover:text-green-500'
+                        ? 'bg-[radial-gradient(circle_at_30%_25%,#d1fae5,#34d399_55%,#047857)] border-emerald-500 text-white shadow-[0_10px_25px_rgba(4,120,87,0.35)] scale-110'
+                        : 'bg-[radial-gradient(circle_at_30%_25%,#ecfdf5,#d1fae5_55%,#6ee7b7)] border-transparent text-emerald-600 hover:border-emerald-200 hover:text-emerald-700 hover:bg-[radial-gradient(circle_at_30%_25%,#d1fae5,#a7f3d0_55%,#34d399)]'
                     }`}
                   >
                     <CreditCard className="w-5 h-5" />
@@ -7877,37 +7997,59 @@ export default function CreditReport() {
             const criteriaMetCount = Object.values(criteriaFlags).reduce((acc, flags) => acc + (flags.every(Boolean) ? 1 : 0), 0);
             const criteriaTotal = Object.values(criteriaFlags).length;
 
+            const nextStepsCardGradient = effectiveEligible
+              ? "bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-600"
+              : "bg-gradient-to-br from-rose-600 via-rose-500 to-rose-600";
+            const nextStepsDescriptionTint = effectiveEligible ? "text-emerald-100" : "text-rose-100";
+            const nextStepsPrimaryButtonClass = "w-full py-5 text-lg font-semibold bg-white text-emerald-700 hover:bg-emerald-100 hover:text-emerald-800";
+            const nextStepsSecondaryButtonClass = "w-full py-5 text-lg font-semibold bg-white text-rose-700 hover:bg-rose-100 hover:text-rose-800";
+
             return (
-              <Card className="border-0 shadow-xl bg-gradient-to-br from-white via-green-50/30 to-emerald-50/50 dark:bg-none dark:bg-slate-800 dark:border dark:border-slate-700">
-                <CardHeader>
-                  <CardTitle className="text-2xl font-bold text-foreground">Next Steps</CardTitle>
-                  <CardDescription>
+              <Card className={`border-0 shadow-xl ${nextStepsCardGradient} text-white`}> 
+                <CardHeader className="space-y-1">
+                  <CardTitle className="text-2xl font-bold text-white">Next Steps</CardTitle>
+                  <CardDescription className={nextStepsDescriptionTint}>
                     {effectiveEligible
                       ? "You meet the underwriting criteria. Proceed to funding."
                       : `You meet ${criteriaMetCount} of ${criteriaTotal} criteria. Improve remaining items to qualify.`}
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="bg-transparent">
                   {effectiveEligible ? (
-                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                      <div className="flex items-center gap-2 text-green-700 font-medium">
-                        <CheckCircle2 className="h-5 w-5" />
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 text-white/90 text-lg font-semibold">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/20">
+                          <CheckCircle2 className="h-5 w-5" />
+                        </span>
                         Qualified for funding
                       </div>
-                      <Button onClick={() => goToDiyFunding('both')} className="bg-green-600 hover:bg-green-700">
+                      <Button
+                        size="lg"
+                        onClick={() => goToDiyFunding('both')}
+                        className={nextStepsPrimaryButtonClass}
+                      >
                         Go to Funding
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Button>
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2 text-amber-700 font-medium">
-                        <AlertCircle className="h-5 w-5" />
+                    <div className="space-y-4 text-white/90">
+                      <div className="flex items-center gap-3 text-lg font-semibold">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15">
+                          <AlertCircle className="h-5 w-5" />
+                        </span>
                         Not quite eligible yet
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => window.open(CREDIT_REPAIR_URL, '_blank')}>
-                          Go to Credit Repair
+                      <p className="text-sm text-white/80">
+                        Focus on outstanding criteria, then rerun the audit to unlock full funding strategies.
+                      </p>
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <Button
+                          size="lg"
+                          className={nextStepsSecondaryButtonClass}
+                          onClick={() => window.open(creditRepairUrl, '_blank')}
+                        >
+                          Schedule Credit Repair Session
                           <ExternalLink className="ml-2 h-4 w-4" />
                         </Button>
                       </div>
@@ -8736,7 +8878,7 @@ export default function CreditReport() {
         {/* Comprehensive Credit Analysis Progress Report */}
         <TabsContent value="progress" className="space-y-8 mt-6">
           {/* Header Section */}
-          <div className="bg-card rounded-2xl p-8 border-0 shadow-lg pdf-avoid-break">
+          <div className="bg-card rounded-2xl p-8 border-0 shadow-lg pdf-avoid-break pdf-section">
             <div className="text-center">
               <h1 className="text-4xl font-bold text-foreground mb-2">
                 My Credit Analysis
@@ -9279,104 +9421,118 @@ export default function CreditReport() {
             {/* Circular Score Charts Card - Takes 1/3 of the width */}
             <div className="xl:col-span-1 flex min-w-0">
               <div className="w-full min-w-0">
-                <ScoreChartsCard 
+                <ScoreChartsCard
                   currentScores={(() => {
-                    // Use real API data if available, otherwise fall back to mock data
-                    if (apiData?.Score && Array.isArray(apiData.Score)) {
-                      const scoreData = apiData.Score;
-                      const scores = [];
-                      
-                      scoreData.forEach((score) => {
-                        let bureau = '';
-                        let color = '';
-                        
-                        // Map BureauId to bureau names and colors
-                        if (score.BureauId === 1) {
-                          bureau = 'TransUnion';
-                          color = '#3B82F6';
-                        } else if (score.BureauId === 2) {
-                          bureau = 'Experian';
-                          color = '#10B981';
-                        } else if (score.BureauId === 3) {
-                          bureau = 'Equifax';
-                          color = '#8B5CF6';
-                        }
-                        
-                        if (bureau) {
-                          scores.push({
+                    const isVantagePreferred = (() => {
+                      const scoreArray = Array.isArray(apiData?.Score)
+                        ? apiData?.Score
+                        : Array.isArray(reportData?.Score)
+                        ? reportData?.Score
+                        : Array.isArray(reportData?.Scores)
+                        ? reportData?.Scores
+                        : [];
+
+                      if (scoreArray.length === 0) {
+                        return false;
+                      }
+
+                      // Determine if all provided scores are Vantage-based
+                      return scoreArray.every((score: any) =>
+                        typeof score?.ScoreType === 'string' && score.ScoreType.toLowerCase().includes('vantage')
+                      );
+                    })();
+
+                    const fallbackScores = isVantagePreferred
+                      ? [
+                          {
+                            bureau: 'VantageScore',
+                            score: 735,
+                            scoreType: 'VantageScore',
+                            date: 'Static',
+                            color: '#F97316',
+                          },
+                        ]
+                      : [
+                          {
+                            bureau: 'FICO Score',
+                            score: 740,
+                            scoreType: 'FICO',
+                            date: 'Static',
+                            color: '#2563EB',
+                          },
+                          {
+                            bureau: 'VantageScore',
+                            score: 735,
+                            scoreType: 'VantageScore',
+                            date: 'Static',
+                            color: '#F97316',
+                          },
+                        ];
+
+                    // Use API/report derived data when available
+                    const derivedScores = (() => {
+                      const scoreArray = Array.isArray(apiData?.Score)
+                        ? apiData?.Score
+                        : Array.isArray(reportData?.Score)
+                        ? reportData?.Score
+                        : Array.isArray(reportData?.Scores)
+                        ? reportData?.Scores
+                        : null;
+
+                      if (!scoreArray) {
+                        return null;
+                      }
+
+                      const mapped = scoreArray
+                        .map((score: any) => {
+                          if (!score || typeof score !== 'object') return null;
+
+                          const scoreTypeRaw = String(score.ScoreType || '').toLowerCase();
+                          const scoreType = scoreTypeRaw.includes('vantage') ? 'VantageScore' : 'FICO';
+                          const bureau =
+                            scoreType === 'VantageScore'
+                              ? 'VantageScore'
+                              : 'FICO Score';
+
+                          return {
                             bureau,
-                            score: parseInt(score.Score) || 0,
-                            scoreType: score.ScoreType || 'FICO',
-                            date: score.DateReported || score.DateUpdated || 'N/A',
-                            color
-                          });
-                        }
-                      });
-                      
-                      return scores.length > 0 ? scores : [
-                        {
-                          bureau: 'Experian',
-                          score: parseInt(reportData.scores.experian) || 0,
-                          scoreType: reportData.scoreTypes?.experian || 'FICO',
-                          date: reportData.bureauDates?.experian || 'N/A',
-                          color: '#10B981'
-                        },
-                        {
-                          bureau: 'Equifax', 
-                          score: parseInt(reportData.scores.equifax) || 0,
-                          scoreType: reportData.scoreTypes?.equifax || 'FICO',
-                          date: reportData.bureauDates?.equifax || 'N/A',
-                          color: '#8B5CF6'
-                        },
-                        {
-                          bureau: 'TransUnion',
-                          score: parseInt(reportData.scores.transunion) || 0,
-                          scoreType: reportData.scoreTypes?.transunion || 'FICO',
-                          date: reportData.bureauDates?.transunion || 'N/A',
-                          color: '#3B82F6'
-                        }
-                      ];
-                    } else {
-                      // Fall back to mock data
-                      return [
-                        {
-                          bureau: 'Experian',
-                          score: parseInt(reportData.scores.experian) || 0,
-                          scoreType: reportData.scoreTypes?.experian || 'FICO',
-                          date: reportData.bureauDates?.experian || 'N/A',
-                          color: '#10B981'
-                        },
-                        {
-                          bureau: 'Equifax', 
-                          score: parseInt(reportData.scores.equifax) || 0,
-                          scoreType: reportData.scoreTypes?.equifax || 'FICO',
-                          date: reportData.bureauDates?.equifax || 'N/A',
-                          color: '#8B5CF6'
-                        },
-                        {
-                          bureau: 'TransUnion',
-                          score: parseInt(reportData.scores.transunion) || 0,
-                          scoreType: reportData.scoreTypes?.transunion || 'FICO',
-                          date: reportData.bureauDates?.transunion || 'N/A',
-                          color: '#3B82F6'
-                        }
-                      ];
-                    }
+                            score: Number(score.Score) || 0,
+                            scoreType,
+                            date: score.DateReported || score.DateScore || score.DateUpdated || score.score_dt || 'N/A',
+                            color: scoreType === 'VantageScore' ? '#F97316' : '#2563EB',
+                          };
+                        })
+                        .filter(Boolean);
+
+                      return mapped.length > 0 ? mapped : null;
+                    })();
+
+                    return derivedScores ?? fallbackScores;
                   })()}
-                  accounts={(() => {
-                    // Pass account data if available for credit factors calculation
-                    if (apiData?.Accounts && Array.isArray(apiData.Accounts)) {
-                      return apiData.Accounts.map((account: any) => ({
-                        accountType: account.AccountTypeDescription || 'Unknown',
-                        currentBalance: parseFloat(account.CurrentBalance) || 0,
-                        creditLimit: parseFloat(account.HighBalance) || parseFloat(account.CreditLimit) || 0,
-                        paymentHistory: account.PaymentHistory || 'Unknown',
-                        accountAge: account.DateOpened ? 
-                          Math.floor((new Date().getTime() - new Date(account.DateOpened).getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : 0,
-                        isDerogatory: account.AccountStatus?.toLowerCase().includes('derogatory') || 
-                                     account.AccountStatus?.toLowerCase().includes('collection') ||
-                                     account.AccountStatus?.toLowerCase().includes('charge') || false
-                      }));
+                  preferredScoreType={(() => {
+                    const scoreArray = Array.isArray(apiData?.Score)
+                      ? apiData?.Score
+                      : Array.isArray(reportData?.Score)
+                      ? reportData?.Score
+                      : Array.isArray(reportData?.Scores)
+                      ? reportData?.Scores
+                      : [];
+
+                    if (scoreArray.length === 0) {
+                      return undefined;
+                    }
+
+                    const normalized = scoreArray.map((score: any) =>
+                      String(score?.ScoreType || '').toLowerCase()
+                    );
+                    const allVantage = normalized.every((type) => type.includes('vantage'));
+                    const allFico = normalized.every((type) => type.includes('fico'));
+
+                    if (allVantage) {
+                      return 'VantageScore' as const;
+                    }
+                    if (allFico) {
+                      return 'FICO' as const;
                     }
                     return undefined;
                   })()}
@@ -16527,65 +16683,6 @@ export default function CreditReport() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="dark:border-slate-700">
-                      <TableHead className="w-40 text-center dark:text-white">Platform</TableHead>
-                      <TableHead className="dark:text-white">Software</TableHead>
-                      <TableHead className="text-right dark:text-white">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow className="dark:border-slate-700">
-                      <TableCell>
-                        <div className="flex items-center justify-center">
-                          <img src="/m2ficoforge_logo.svg" alt="M2 FICO Forge" className="h-12 w-auto" />
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-foreground dark:text-white">
-                        <div className="flex flex-col justify-center">
-                          <span className="text-lg font-semibold">M2 FICO Forge</span>
-                          <span className="text-sm text-muted-foreground">
-                            Dispute automation and credit repair software suite
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button asChild size="sm">
-                          <a
-                            href="https://www.m2ficoforge.com/"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-semibold"
-                          >
-                            Go To
-                          </a>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-
-          
-
-          {/* Step 3 — Negative Item Identification */}
-          <Card
-            id="credit-war-map-negative-items"
-            className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700"
-          >
-            <CardHeader>
-              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">
-                Step 3 — Negative Item Identification
-              </CardTitle>
-              <CardDescription className="text-muted-foreground">
-                Surface every derogatory mark dragging the profile down
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
               {(() => {
                 const pickArray = (...values: any[]) => {
                   for (const val of values) {
@@ -16993,15 +17090,57 @@ export default function CreditReport() {
                   </div>
                 );
               })()}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="dark:border-slate-700">
+                      <TableHead className="w-40 text-center dark:text-white">Platform</TableHead>
+                      <TableHead className="dark:text-white">Software</TableHead>
+                      <TableHead className="text-right dark:text-white">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow className="dark:border-slate-700">
+                      <TableCell>
+                        <div className="flex items-center justify-center">
+                          <img src="/m2ficoforge_logo.svg" alt="M2 FICO Forge" className="h-12 w-auto" />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-foreground dark:text-white">
+                        <div className="flex flex-col justify-center">
+                          <span className="text-lg font-semibold">M2 FICO Forge</span>
+                          <span className="text-sm text-muted-foreground">
+                            Dispute automation and credit repair software suite
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild size="sm">
+                          <a
+                            href={creditRepairUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-semibold"
+                          >
+                            Go To
+                          </a>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
+
+          
 
 
 
           {/* Pay Down */}
           <Card id="credit-war-map-paydown" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Step 4 — Utilization Optimization</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Step 3 — Utilization Optimization</CardTitle>
               <CardDescription className="text-muted-foreground">Payments needed to reach target utilization levels</CardDescription>
             </CardHeader>
             <CardContent>
@@ -17223,7 +17362,7 @@ export default function CreditReport() {
           {/* Credit Build & AUs */}
           <Card id="credit-war-map-credit-build" className="border-0 shadow-xl bg-card scroll-mt-24 dark:bg-slate-800 dark:border dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Step 5 — Account Aging Strategy</CardTitle>
+              <CardTitle className="text-2xl font-bold text-foreground dark:text-white">Step 4 — Account Aging Strategy</CardTitle>
               <CardDescription className="text-muted-foreground">Prime accounts to build credit or use for authorized user strategy</CardDescription>
             </CardHeader>
             <CardContent>
@@ -17639,7 +17778,7 @@ export default function CreditReport() {
                 className={`border-0 shadow-xl ${cardGradient} text-white scroll-mt-24`}
               >
                 <CardHeader className="space-y-1">
-                  <CardTitle className="text-2xl font-bold text-white">Step 6 — Funding Readiness</CardTitle>
+                  <CardTitle className="text-2xl font-bold text-white">Step 5 — Funding Readiness</CardTitle>
                   <CardDescription className={descriptionTint}>
                     Determine the next step in the funding journey based on current eligibility
                   </CardDescription>
@@ -17743,7 +17882,7 @@ export default function CreditReport() {
           </div>
 
           {/* Understanding Your Credit Section Header */}
-          <div className="bg-card rounded-2xl p-6 border-0 shadow-lg pdf-avoid-break">
+          <div className="bg-card rounded-2xl p-6 border-0 shadow-lg pdf-avoid-break pdf-section-break">
               <div className="flex items-center gap-2 text-2xl font-bold text-foreground mb-2">
                 <Info className="h-8 w-8 text-blue-600" />
                 Understanding Your Credit
@@ -17754,7 +17893,7 @@ export default function CreditReport() {
           </div>
 
               {/* What Are Credit Bureaus */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break">
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break pdf-section pdf-break-before">
                 <h3 className="text-xl font-bold text-gray-800 mb-4">
                   What Are Credit Bureaus?
                 </h3>
@@ -17801,7 +17940,7 @@ export default function CreditReport() {
               </div>
 
               {/* What Is in My Credit Report */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break">
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break pdf-break-before">
                 <h3 className="text-xl font-bold text-gray-800 mb-4">
                   What Is in My Credit Report?
                 </h3>
@@ -17895,7 +18034,7 @@ export default function CreditReport() {
               </div>
 
               {/* Why Is a Credit Report Important */}
-              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break pb-5">
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm pdf-avoid-break pdf-section pdf-break-before pb-5">
                 <h3 className="text-xl font-bold text-gray-800 mb-4">
                   Why Is a Credit Report Important?
                 </h3>
@@ -17941,7 +18080,7 @@ export default function CreditReport() {
               </div>
   
             {/* How Credit Affects You Section Header */}
-            <div className="bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+            <div className="bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break pdf-section-break">
                 <div className="flex items-center gap-2 text-2xl font-bold text-green-800 mb-2">
                   <Target className="h-8 w-8 text-green-600" />
                   How Credit Affects You
@@ -18005,7 +18144,7 @@ export default function CreditReport() {
               </div>
 
               {/* Major Life Decisions */}
-              <div className="bg-white rounded-xl p-6 border border-green-200 shadow-sm">
+              <div className="bg-white rounded-xl p-6 border border-green-200 shadow-sm pdf-section pdf-break-before">
                 <h3 className="text-xl font-bold text-gray-800 mb-6">
                   How Credit Impacts Major Life Decisions
                 </h3>
@@ -18088,7 +18227,7 @@ export default function CreditReport() {
               </div>
   
             {/* Your Current Credit Status Header */}
-            <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+            <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break pdf-section pdf-break-before">
                 <div className="flex items-center gap-2 text-2xl font-bold text-blue-800 mb-2">
                   <BarChart3 className="h-8 w-8 text-blue-600" />
                   Your Current Credit Status
@@ -18692,7 +18831,7 @@ export default function CreditReport() {
               </div>
   
             {/* Inquiries - Recent Inquiries Header */}
-            <div className="bg-gradient-to-br from-orange-50 via-yellow-50 to-amber-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+            <div className="bg-gradient-to-br from-orange-50 via-yellow-50 to-amber-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break pdf-section-break">
                 <div className="flex items-center gap-2 text-2xl font-bold text-orange-800 mb-2">
                   <Search className="h-8 w-8 text-orange-600" />
                   Recent Inquiries
@@ -18702,7 +18841,7 @@ export default function CreditReport() {
                 </div>
             </div>
   
-              <div className="bg-white rounded-xl border border-orange-200 overflow-x-auto pdf-avoid-break">
+              <div className="bg-white rounded-xl border border-orange-200 overflow-x-auto pdf-avoid-break pdf-table-wrapper">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -18769,7 +18908,7 @@ export default function CreditReport() {
                 </Table>
               </div>
             {/* Negative Aspects - Bad Accounts Header */}
-            <div className="bg-gradient-to-br from-red-50 via-rose-50 to-pink-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break">
+            <div className="bg-gradient-to-br from-red-50 via-rose-50 to-pink-50 rounded-2xl p-6 border-0 shadow-xl pdf-avoid-break pdf-section-break">
                 <div className="flex items-center gap-2 text-2xl font-bold text-red-800 mb-2">
                   <ThumbsDown className="h-8 w-8 text-red-600" />
                   Bad Accounts
@@ -18779,7 +18918,7 @@ export default function CreditReport() {
                 </div>
             </div>
 
-              <div className="bg-white rounded-xl border border-red-200 overflow-x-auto pdf-avoid-break">
+              <div className="bg-white rounded-xl border border-red-200 overflow-x-auto pdf-avoid-break pdf-table-wrapper">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -18883,7 +19022,7 @@ export default function CreditReport() {
                 </div>
             </div>
 
-              <div className="bg-white rounded-xl border border-green-200 overflow-x-auto pdf-avoid-break">
+              <div className="bg-white rounded-xl border border-green-200 overflow-x-auto pdf-avoid-break pdf-table-wrapper">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -19158,7 +19297,7 @@ export default function CreditReport() {
                         <div>
                           <span className="font-semibold text-gray-800">Estimated Funding:</span>
                           <span className="ml-2 text-lg font-bold text-blue-600">
-                            ${scoringModelData.fundingProjection.personal.estimatedFunding.toLocaleString()}
+                            {formatFundingTier(scoringModelData.fundingProjection.personal.estimatedFunding)}
                           </span>
                         </div>
                       </div>
@@ -19271,7 +19410,7 @@ export default function CreditReport() {
                         <div>
                           <span className="font-semibold text-gray-800">Estimated Funding:</span>
                           <span className="ml-2 text-lg font-bold text-green-600">
-                            ${scoringModelData.fundingProjection.business.estimatedFunding.toLocaleString()}
+                            {formatFundingTier(scoringModelData.fundingProjection.business.estimatedFunding)}
                           </span>
                         </div>
                       </div>
@@ -19592,282 +19731,306 @@ export default function CreditReport() {
                   </Card> */}
 
                   {/* Table B: Key Signals & Rationale */}
-                  <Card className="border-0 shadow-lg dark:bg-slate-900 dark:border dark:border-slate-800">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 dark:text-white">
-                        <BarChart3 className="h-5 w-5 text-green-600 dark:text-green-400" />
-                        Key Signals & Rationale
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="overflow-x-auto">
-                        <table className="w-full border-collapse">
-                          <thead>
-                            <tr className="border-b-2 border-gray-200 dark:border-gray-700">
-                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Signal</th>
-                              <th className="text-center p-3 font-semibold text-gray-800 dark:text-white">Value</th>
-                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">How Computed</th>
-                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Why It Matters</th>
-                              <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Effect</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800 dark:text-gray-300">
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Total Aggregate Credit Limit</td>
-                              <td className="p-3 text-center font-bold">${auditAnalysis.signals.totalAggregateLimit.toLocaleString()}</td>
-                              <td className="p-3 text-sm">Sum of all open revolving credit limits</td>
-                              <td className="p-3 text-sm">Shows existing credit capacity and lender confidence</td>
-                              <td className="p-3 text-sm text-green-600">Higher limits increase anchor exposure</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Highest Single Revolving Limit</td>
-                              <td className="p-3 text-center font-bold">${auditAnalysis.signals.highestSingleLimit.toLocaleString()}</td>
-                              <td className="p-3 text-sm">Maximum individual credit line amount</td>
-                              <td className="p-3 text-sm">Indicates premium lender relationships and creditworthiness</td>
-                              <td className="p-3 text-sm text-green-600">Boosts anchor calculation significantly</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">High-Limit Tradelines</td>
-                              <td className="p-3 text-center font-bold">
-                                <div>≥$10k: {auditAnalysis.signals.highLimitTradelines.over10k}</div>
-                                <div>≥$25k: {auditAnalysis.signals.highLimitTradelines.over25k}</div>
-                              </td>
-                              <td className="p-3 text-sm">Count of accounts with limits above thresholds</td>
-                              <td className="p-3 text-sm">Premium accounts signal strong credit profile</td>
-                              <td className="p-3 text-sm text-green-600">Increases supply score component</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Average Revolving Utilization</td>
-                              <td className="p-3 text-center font-bold">{auditAnalysis.signals.averageUtilization.toFixed(1)}%</td>
-                              <td className="p-3 text-sm">Mean balance-to-limit ratio across all revolving accounts</td>
-                              <td className="p-3 text-sm">Primary factor in credit scoring and risk assessment</td>
-                              <td className="p-3 text-sm text-blue-600">Lower utilization improves behavior score</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Open Revolving Accounts</td>
-                              <td className="p-3 text-center font-bold">{auditAnalysis.signals.openRevolvingCount}</td>
-                              <td className="p-3 text-sm">Count of active revolving credit accounts</td>
-                              <td className="p-3 text-sm">Shows credit mix and management capability</td>
-                              <td className="p-3 text-sm text-green-600">More accounts increase supply diversity</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Average Account Age</td>
-                              <td className="p-3 text-center font-bold">{Math.floor(auditAnalysis.signals.averageAccountAge / 12)} years {Math.floor(auditAnalysis.signals.averageAccountAge % 12)} months</td>
-                              <td className="p-3 text-sm">Mean age of all open revolving accounts</td>
-                              <td className="p-3 text-sm">Demonstrates credit history depth and stability</td>
-                              <td className="p-3 text-sm text-green-600">Longer history improves seasoning score</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Inquiries by Bureau</td>
-                              <td className="p-3 text-center font-bold">
-                                <div>EQ: {auditAnalysis.signals.inquiriesByBureau.equifax}</div>
-                                <div>EX: {auditAnalysis.signals.inquiriesByBureau.experian}</div>
-                                <div>TU: {auditAnalysis.signals.inquiriesByBureau.transunion}</div>
-                              </td>
-                              <td className="p-3 text-sm">Hard inquiries in last 6 months per bureau</td>
-                              <td className="p-3 text-sm">Determines available inquiry headroom for new applications</td>
-                              <td className="p-3 text-sm text-orange-600">Limits maximum card strategy</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Installment Load</td>
-                              <td className="p-3 text-center font-bold">{(auditAnalysis.signals.installmentLoad * 100).toFixed(1)}%</td>
-                              <td className="p-3 text-sm">Average balance to original amount ratio on installment loans</td>
-                              <td className="p-3 text-sm">Shows debt management and payment behavior</td>
-                              <td className="p-3 text-sm text-blue-600">Lower load improves behavior score</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Late Payment Counts</td>
-                              <td className="p-3 text-center font-bold">
-                                <div>30-day: {auditAnalysis.signals.latePaymentCounts.late30}</div>
-                                <div>60-day: {auditAnalysis.signals.latePaymentCounts.late60}</div>
-                                <div>90-day: {auditAnalysis.signals.latePaymentCounts.late90}</div>
-                              </td>
-                              <td className="p-3 text-sm">Total count of late payments by severity</td>
-                              <td className="p-3 text-sm">Direct indicator of payment reliability and risk</td>
-                              <td className="p-3 text-sm text-red-600">Late payments reduce behavior score</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Derogatory Records</td>
-                              <td className="p-3 text-center font-bold">{auditAnalysis.signals.hasDerogatory ? 'Yes' : 'No'}</td>
-                              <td className="p-3 text-sm">Presence of charge-offs, collections, or public records</td>
-                              <td className="p-3 text-sm">Major negative factors affecting creditworthiness</td>
-                              <td className="p-3 text-sm text-red-600">Significantly reduces all scores</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                              <td className="p-3 font-medium">Mortgage Present</td>
-                              <td className="p-3 text-center font-bold">{auditAnalysis.signals.hasMortgage ? 'Yes' : 'No'}</td>
-                              <td className="p-3 text-sm">Active mortgage account on credit report</td>
-                              <td className="p-3 text-sm">Shows major credit responsibility and stability</td>
-                              <td className="p-3 text-sm text-green-600">Boosts seasoning and relationship score</td>
-                            </tr>
-                            <tr className="hover:bg-purple-50 border-t-2 border-purple-200">
-                              <td className="p-3 font-bold text-purple-800">Implied Capacity Index (ICI)</td>
-                              <td className="p-3 text-center font-bold text-purple-600">{auditAnalysis.ici.toFixed(3)}</td>
-                              <td className="p-3 text-sm">Weighted combination of Supply (40%), Behavior (40%), and Seasoning (20%)</td>
-                              <td className="p-3 text-sm">Comprehensive creditworthiness metric for funding capacity</td>
-                              <td className="p-3 text-sm text-purple-600">Primary multiplier for anchor exposure</td>
-                            </tr>
-                            <tr className="hover:bg-purple-50">
-                              <td className="p-3 font-bold text-purple-800">Anchor Exposure</td>
-                              <td className="p-3 text-center font-bold text-purple-600">${auditAnalysis.anchorExposure.toLocaleString()}</td>
-                              <td className="p-3 text-sm">ICI × (Total Aggregate Limits + Highest Single Limit)</td>
-                              <td className="p-3 text-sm">Base calculation for all product mapping and funding projections</td>
-                              <td className="p-3 text-sm text-purple-600">Foundation for personal and business card amounts</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  {false && (
+                    <Card className="border-0 shadow-lg dark:bg-slate-900 dark:border dark:border-slate-800">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 dark:text-white">
+                          <BarChart3 className="h-5 w-5 text-green-600 dark:text-green-400" />
+                          Key Signals & Rationale
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className="border-b-2 border-gray-200 dark:border-gray-700">
+                                <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Signal</th>
+                                <th className="text-center p-3 font-semibold text-gray-800 dark:text-white">Value</th>
+                                <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">How Computed</th>
+                                <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Why It Matters</th>
+                                <th className="text-left p-3 font-semibold text-gray-800 dark:text-white">Effect</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800 dark:text-gray-300">
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Total Aggregate Credit Limit</td>
+                                <td className="p-3 text-center font-bold">${auditAnalysis.signals.totalAggregateLimit.toLocaleString()}</td>
+                                <td className="p-3 text-sm">Sum of all open revolving credit limits</td>
+                                <td className="p-3 text-sm">Shows existing credit capacity and lender confidence</td>
+                                <td className="p-3 text-sm text-green-600">Higher limits increase anchor exposure</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Highest Single Revolving Limit</td>
+                                <td className="p-3 text-center font-bold">${auditAnalysis.signals.highestSingleLimit.toLocaleString()}</td>
+                                <td className="p-3 text-sm">Maximum individual credit line amount</td>
+                                <td className="p-3 text-sm">Indicates premium lender relationships and creditworthiness</td>
+                                <td className="p-3 text-sm text-green-600">Boosts anchor calculation significantly</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">High-Limit Tradelines</td>
+                                <td className="p-3 text-center font-bold">
+                                  <div>≥$10k: {auditAnalysis.signals.highLimitTradelines.over10k}</div>
+                                  <div>≥$25k: {auditAnalysis.signals.highLimitTradelines.over25k}</div>
+                                </td>
+                                <td className="p-3 text-sm">Count of accounts with limits above thresholds</td>
+                                <td className="p-3 text-sm">Premium accounts signal strong credit profile</td>
+                                <td className="p-3 text-sm text-green-600">Increases supply score component</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Average Revolving Utilization</td>
+                                <td className="p-3 text-center font-bold">{auditAnalysis.signals.averageUtilization.toFixed(1)}%</td>
+                                <td className="p-3 text-sm">Mean balance-to-limit ratio across all revolving accounts</td>
+                                <td className="p-3 text-sm">Primary factor in credit scoring and risk assessment</td>
+                                <td className="p-3 text-sm text-blue-600">Lower utilization improves behavior score</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Open Revolving Accounts</td>
+                                <td className="p-3 text-center font-bold">{auditAnalysis.signals.openRevolvingCount}</td>
+                                <td className="p-3 text-sm">Count of active revolving credit accounts</td>
+                                <td className="p-3 text-sm">Shows credit mix and management capability</td>
+                                <td className="p-3 text-sm text-green-600">More accounts increase supply diversity</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Average Account Age</td>
+                                <td className="p-3 text-center font-bold">{Math.floor(auditAnalysis.signals.averageAccountAge / 12)} years {Math.floor(auditAnalysis.signals.averageAccountAge % 12)} months</td>
+                                <td className="p-3 text-sm">Mean age of all open revolving accounts</td>
+                                <td className="p-3 text-sm">Demonstrates credit history depth and stability</td>
+                                <td className="p-3 text-sm text-green-600">Longer history improves seasoning score</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Inquiries by Bureau</td>
+                                <td className="p-3 text-center font-bold">
+                                  <div>EQ: {auditAnalysis.signals.inquiriesByBureau.equifax}</div>
+                                  <div>EX: {auditAnalysis.signals.inquiriesByBureau.experian}</div>
+                                  <div>TU: {auditAnalysis.signals.inquiriesByBureau.transunion}</div>
+                                </td>
+                                <td className="p-3 text-sm">Hard inquiries in last 6 months per bureau</td>
+                                <td className="p-3 text-sm">Determines available inquiry headroom for new applications</td>
+                                <td className="p-3 text-sm text-orange-600">Limits maximum card strategy</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Installment Load</td>
+                                <td className="p-3 text-center font-bold">{(auditAnalysis.signals.installmentLoad * 100).toFixed(1)}%</td>
+                                <td className="p-3 text-sm">Average balance to original amount ratio on installment loans</td>
+                                <td className="p-3 text-sm">Shows debt management and payment behavior</td>
+                                <td className="p-3 text-sm text-blue-600">Lower load improves behavior score</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Late Payment Counts</td>
+                                <td className="p-3 text-center font-bold">
+                                  <div>30-day: {auditAnalysis.signals.latePaymentCounts.late30}</div>
+                                  <div>60-day: {auditAnalysis.signals.latePaymentCounts.late60}</div>
+                                  <div>90-day: {auditAnalysis.signals.latePaymentCounts.late90}</div>
+                                </td>
+                                <td className="p-3 text-sm">Total count of late payments by severity</td>
+                                <td className="p-3 text-sm">Direct indicator of payment reliability and risk</td>
+                                <td className="p-3 text-sm text-red-600">Late payments reduce behavior score</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Derogatory Records</td>
+                                <td className="p-3 text-center font-bold">{auditAnalysis.signals.hasDerogatory ? 'Yes' : 'No'}</td>
+                                <td className="p-3 text-sm">Presence of charge-offs, collections, or public records</td>
+                                <td className="p-3 text-sm">Major negative factors affecting creditworthiness</td>
+                                <td className="p-3 text-sm text-red-600">Significantly reduces all scores</td>
+                              </tr>
+                              <tr className="hover:bg-gray-50">
+                                <td className="p-3 font-medium">Mortgage Present</td>
+                                <td className="p-3 text-center font-bold">{auditAnalysis.signals.hasMortgage ? 'Yes' : 'No'}</td>
+                                <td className="p-3 text-sm">Active mortgage account on credit report</td>
+                                <td className="p-3 text-sm">Shows major credit responsibility and stability</td>
+                                <td className="p-3 text-sm text-green-600">Boosts seasoning and relationship score</td>
+                              </tr>
+                              <tr className="hover:bg-purple-50 border-t-2 border-purple-200">
+                                <td className="p-3 font-bold text-purple-800">Implied Capacity Index (ICI)</td>
+                                <td className="p-3 text-center font-bold text-purple-600">{auditAnalysis.ici.toFixed(3)}</td>
+                                <td className="p-3 text-sm">Weighted combination of Supply (40%), Behavior (40%), and Seasoning (20%)</td>
+                                <td className="p-3 text-sm">Comprehensive creditworthiness metric for funding capacity</td>
+                                <td className="p-3 text-sm text-purple-600">Primary multiplier for anchor exposure</td>
+                              </tr>
+                              <tr className="hover:bg-purple-50">
+                                <td className="p-3 font-bold text-purple-800">Anchor Exposure</td>
+                                <td className="p-3 text-center font-bold text-purple-600">${auditAnalysis.anchorExposure.toLocaleString()}</td>
+                                <td className="p-3 text-sm">ICI × (Total Aggregate Limits + Highest Single Limit)</td>
+                                <td className="p-3 text-sm">Base calculation for all product mapping and funding projections</td>
+                                <td className="p-3 text-sm text-purple-600">Foundation for personal and business card amounts</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Credit Decay Analysis Section */}
-                  <Card className="border-0 shadow-lg">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <TrendingDown className="h-5 w-5 text-red-600" />
-                        Credit Decay Analysis
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="overflow-x-auto">
-                        <table className="w-full border-collapse">
-                          <thead>
-                            <tr className="bg-red-50 border-b border-red-200">
-                              <th className="p-3 text-left font-semibold text-red-800">Analysis Type</th>
-                              <th className="p-3 text-center font-semibold text-red-800">Value</th>
-                              <th className="p-3 text-left font-semibold text-red-800">Calculation</th>
-                              <th className="p-3 text-left font-semibold text-red-800">Rationale</th>
-                              <th className="p-3 text-left font-semibold text-red-800">Impact</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            <tr className="hover:bg-red-50">
-                              <td className="p-3 font-bold text-red-800">Credit Decay Analysis</td>
-                              <td className="p-3 text-center font-bold text-red-600">
-                                <div>Total Potential: ${auditAnalysis.creditDecay.totalPotentialLimit.toLocaleString()}</div>
-                              </td>
-                              <td className="p-3 text-sm">
-                                <div>Exponential decay: 0.95^inquiries</div>
-                                <div className="text-xs text-gray-600 mt-1">Example: 3 inquiries → 0.95³ = 0.857 (14.3% reduction)</div>
-                              </td>
-                              <td className="p-3 text-sm">Shows impact of credit fatigue on future approvals</td>
-                              <td className="p-3 text-sm text-red-600">Reduces effective credit capacity</td>
-                            </tr>
-                            <tr className="hover:bg-red-50">
-                              <td className="p-3 font-medium text-red-700">Equifax Decay</td>
-                              <td className="p-3 text-center font-bold">
-                                <div>${auditAnalysis.creditDecay.bureauLimits.equifax.finalLimit.toLocaleString()}</div>
-                                <div className="text-sm text-red-600">(-{(auditAnalysis.creditDecay.decayAnalysis.equifax.decayPercentage || 0).toFixed(1)}%)</div>
-                              </td>
-                              <td className="p-3 text-sm">
-                                <div>Base ${auditAnalysis.creditDecay.bureauLimits.equifax.baseLimit.toLocaleString()} × 0.95^{auditAnalysis.creditDecay.decayAnalysis.equifax.inquiries}</div>
-                                <div className="text-xs text-gray-600">= ${auditAnalysis.creditDecay.bureauLimits.equifax.baseLimit.toLocaleString()} × {Number(auditAnalysis.creditDecay.decayAnalysis.equifax.decayFactor || 1).toFixed(3)}</div>
-                              </td>
-                              <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.equifax.inquiries} inquiries reduce approval odds</td>
-                              <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.equifax.limitReduction.toLocaleString()}</td>
-                            </tr>
-                            <tr className="hover:bg-red-50">
-                              <td className="p-3 font-medium text-red-700">Experian Decay</td>
-                              <td className="p-3 text-center font-bold">
-                                <div>${auditAnalysis.creditDecay.bureauLimits.experian.finalLimit.toLocaleString()}</div>
-                                <div className="text-sm text-red-600">(-{(auditAnalysis.creditDecay.decayAnalysis.experian.decayPercentage || 0).toFixed(1)}%)</div>
-                              </td>
-                              <td className="p-3 text-sm">
-                                <div>Base ${auditAnalysis.creditDecay.bureauLimits.experian.baseLimit.toLocaleString()} × 0.95^{auditAnalysis.creditDecay.decayAnalysis.experian.inquiries}</div>
-                                <div className="text-xs text-gray-600">= ${auditAnalysis.creditDecay.bureauLimits.experian.baseLimit.toLocaleString()} × {Number(auditAnalysis.creditDecay.decayAnalysis.experian.decayFactor || 1).toFixed(3)}</div>
-                              </td>
-                              <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.experian.inquiries} inquiries reduce approval odds</td>
-                              <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.experian.limitReduction.toLocaleString()}</td>
-                            </tr>
-                            <tr className="hover:bg-red-50">
-                              <td className="p-3 font-medium text-red-700">TransUnion Decay</td>
-                              <td className="p-3 text-center font-bold">
-                                <div>${auditAnalysis.creditDecay.bureauLimits.transunion.finalLimit.toLocaleString()}</div>
-                                <div className="text-sm text-red-600">(-{(auditAnalysis.creditDecay.decayAnalysis.transunion.decayPercentage || 0).toFixed(1)}%)</div>
-                              </td>
-                              <td className="p-3 text-sm">
-                                <div>Base ${auditAnalysis.creditDecay.bureauLimits.transunion.baseLimit.toLocaleString()} × 0.95^{auditAnalysis.creditDecay.decayAnalysis.transunion.inquiries}</div>
-                                <div className="text-xs text-gray-600">= ${auditAnalysis.creditDecay.bureauLimits.transunion.baseLimit.toLocaleString()} × {Number(auditAnalysis.creditDecay.decayAnalysis.transunion.decayFactor || 1).toFixed(3)}</div>
-                              </td>
-                              <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.transunion.inquiries} inquiries reduce approval odds</td>
-                              <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.transunion.limitReduction.toLocaleString()}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  {false && (
+                    <Card className="border-0 shadow-lg">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <TrendingDown className="h-5 w-5 text-red-600" />
+                          Credit Decay Analysis
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="overflow-x-auto">
+                          <table className="w-full border-collapse">
+                            <thead>
+                              <tr className="bg-red-50 border-b border-red-200">
+                                <th className="p-3 text-left font-semibold text-red-800">Analysis Type</th>
+                                <th className="p-3 text-center font-semibold text-red-800">Value</th>
+                                <th className="p-3 text-left font-semibold text-red-800">Calculation</th>
+                                <th className="p-3 text-left font-semibold text-red-800">Rationale</th>
+                                <th className="p-3 text-left font-semibold text-red-800">Impact</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                              <tr className="hover:bg-red-50">
+                                <td className="p-3 font-bold text-red-800">Credit Decay Analysis</td>
+                                <td className="p-3 text-center font-bold text-red-600">
+                                  <div>Total Potential: ${auditAnalysis.creditDecay.totalPotentialLimit.toLocaleString()}</div>
+                                </td>
+                                <td className="p-3 text-sm">
+                                  <div>Exponential decay: 0.95^inquiries</div>
+                                  <div className="text-xs text-gray-600 mt-1">Example: 3 inquiries → 0.95³ = 0.857 (14.3% reduction)</div>
+                                </td>
+                                <td className="p-3 text-sm">Shows impact of credit fatigue on future approvals</td>
+                                <td className="p-3 text-sm text-red-600">Reduces effective credit capacity</td>
+                              </tr>
+                              <tr className="hover:bg-red-50">
+                                <td className="p-3 font-medium text-red-700">Equifax Decay</td>
+                                <td className="p-3 text-center font-bold">
+                                  <div>${auditAnalysis.creditDecay.bureauLimits.equifax.finalLimit.toLocaleString()}</div>
+                                  <div className="text-sm text-red-600">(-{(auditAnalysis.creditDecay.decayAnalysis.equifax.decayPercentage || 0).toFixed(1)}%)</div>
+                                </td>
+                                <td className="p-3 text-sm">
+                                  <div>Base ${auditAnalysis.creditDecay.bureauLimits.equifax.baseLimit.toLocaleString()} × 0.95^{auditAnalysis.creditDecay.decayAnalysis.equifax.inquiries}</div>
+                                  <div className="text-xs text-gray-600">= ${auditAnalysis.creditDecay.bureauLimits.equifax.baseLimit.toLocaleString()} × {Number(auditAnalysis.creditDecay.decayAnalysis.equifax.decayFactor || 1).toFixed(3)}</div>
+                                </td>
+                                <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.equifax.inquiries} inquiries reduce approval odds</td>
+                                <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.equifax.limitReduction.toLocaleString()}</td>
+                              </tr>
+                              <tr className="hover:bg-red-50">
+                                <td className="p-3 font-medium text-red-700">Experian Decay</td>
+                                <td className="p-3 text-center font-bold">
+                                  <div>${auditAnalysis.creditDecay.bureauLimits.experian.finalLimit.toLocaleString()}</div>
+                                  <div className="text-sm text-red-600">(-{(auditAnalysis.creditDecay.decayAnalysis.experian.decayPercentage || 0).toFixed(1)}%)</div>
+                                </td>
+                                <td className="p-3 text-sm">
+                                  <div>Base ${auditAnalysis.creditDecay.bureauLimits.experian.baseLimit.toLocaleString()} × 0.95^{auditAnalysis.creditDecay.decayAnalysis.experian.inquiries}</div>
+                                  <div className="text-xs text-gray-600">= ${auditAnalysis.creditDecay.bureauLimits.experian.baseLimit.toLocaleString()} × {Number(auditAnalysis.creditDecay.decayAnalysis.experian.decayFactor || 1).toFixed(3)}</div>
+                                </td>
+                                <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.experian.inquiries} inquiries reduce approval odds</td>
+                                <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.experian.limitReduction.toLocaleString()}</td>
+                              </tr>
+                              <tr className="hover:bg-red-50">
+                                <td className="p-3 font-medium text-red-700">TransUnion Decay</td>
+                                <td className="p-3 text-center font-bold">
+                                  <div>${auditAnalysis.creditDecay.bureauLimits.transunion.finalLimit.toLocaleString()}</div>
+                                  <div className="text-sm text-red-600">(-{(auditAnalysis.creditDecay.decayAnalysis.transunion.decayPercentage || 0).toFixed(1)}%)</div>
+                                </td>
+                                <td className="p-3 text-sm">
+                                  <div>Base ${auditAnalysis.creditDecay.bureauLimits.transunion.baseLimit.toLocaleString()} × 0.95^{auditAnalysis.creditDecay.decayAnalysis.transunion.inquiries}</div>
+                                  <div className="text-xs text-gray-600">= ${auditAnalysis.creditDecay.bureauLimits.transunion.baseLimit.toLocaleString()} × {Number(auditAnalysis.creditDecay.decayAnalysis.transunion.decayFactor || 1).toFixed(3)}</div>
+                                </td>
+                                <td className="p-3 text-sm">{auditAnalysis.creditDecay.decayAnalysis.transunion.inquiries} inquiries reduce approval odds</td>
+                                <td className="p-3 text-sm text-red-600">-${auditAnalysis.creditDecay.decayAnalysis.transunion.limitReduction.toLocaleString()}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Bureau Routing Plan and Narrative */}
-                  <Card className="border-0 shadow-lg">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <MapPin className="h-5 w-5 text-orange-600" />
-                        Bureau Routing Plan & Analysis
+                  <Card className="relative overflow-hidden border-0 shadow-xl bg-gradient-to-br from-orange-50 via-white to-amber-100 dark:from-orange-950/30 dark:via-slate-950 dark:to-amber-950/20">
+                    <div className="absolute inset-0 opacity-60 dark:opacity-40 bg-[radial-gradient(circle_at_top_left,rgba(253,230,138,0.6),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(249,115,22,0.45),transparent_60%)]" />
+                    <CardHeader className="relative z-10 pb-6">
+                      <CardTitle className="flex items-center gap-3 text-orange-900 dark:text-orange-200">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-[0_8px_18px_rgba(249,115,22,0.35)]">
+                          <MapPin className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <div className="text-lg font-bold tracking-wide">Bureau Routing Plan & Analysis</div>
+                          <p className="text-xs font-medium uppercase text-orange-600 dark:text-orange-300 tracking-[0.2em]">Route smarter · Fund faster</p>
+                        </div>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="relative z-10 space-y-6">
                       {/* Bureau Routing Strategy */}
-                      <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                        <h4 className="font-semibold text-orange-800 mb-3">Optimal Bureau Routing Strategy</h4>
-                        <div className="grid md:grid-cols-3 gap-4 mb-4">
-                          <div className="text-center p-3 bg-white rounded-lg border">
-                            <div className="font-bold text-lg text-gray-800">{auditAnalysis.bureauRouting.primary.name}</div>
-                            <div className="text-sm text-gray-600">Primary Bureau</div>
-                            <div className="text-xs text-green-600 font-medium">{auditAnalysis.bureauRouting.primary.headroom} pulls available</div>
+                      <div className="rounded-2xl border border-orange-200/70 bg-white/80 p-6 backdrop-blur-sm shadow-[0_18px_40px_rgba(248,187,107,0.25)] dark:bg-slate-900/70 dark:border-orange-900/40">
+                        <div className="flex items-center justify-between gap-4 flex-wrap">
+                          <h4 className="text-lg font-semibold text-orange-800 dark:text-orange-200">Optimal Bureau Routing Strategy</h4>
+                          <Badge variant="secondary" className="bg-orange-100 text-orange-700 border border-orange-200 dark:bg-orange-900/40 dark:text-orange-200 dark:border-orange-800">
+                            Strategy focus: {auditAnalysis.bureauRouting.strategy.charAt(0).toUpperCase() + auditAnalysis.bureauRouting.strategy.slice(1)}
+                          </Badge>
+                        </div>
+                        <div className="mt-5 grid gap-4 md:grid-cols-3">
+                          <div className="group relative overflow-hidden rounded-xl border border-orange-200/70 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:from-slate-900 dark:via-slate-900/70 dark:to-amber-900/30 dark:border-orange-900/40">
+                            <div className="absolute inset-x-4 top-0 h-1 rounded-b-full bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500 opacity-70" />
+                            <div className="relative">
+                              <p className="text-xs uppercase tracking-[0.25em] text-orange-500 dark:text-orange-300">Primary</p>
+                              <h5 className="mt-2 text-xl font-bold text-gray-900 dark:text-white">{auditAnalysis.bureauRouting.primary.name}</h5>
+                              <div className="mt-3 flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
+                                <span>Headroom</span>
+                                <Badge className="bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-900/60">
+                                  {auditAnalysis.bureauRouting.primary.headroom} pulls
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-center p-3 bg-white rounded-lg border">
-                            <div className="font-bold text-lg text-gray-800">{auditAnalysis.bureauRouting.secondary.name}</div>
-                            <div className="text-sm text-gray-600">Secondary Bureau</div>
-                            <div className="text-xs text-green-600 font-medium">{auditAnalysis.bureauRouting.secondary.headroom} pulls available</div>
+                          <div className="group relative overflow-hidden rounded-xl border border-orange-200/70 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:from-slate-900 dark:via-slate-900/70 dark:to-amber-900/30 dark:border-orange-900/40">
+                            <div className="absolute inset-x-4 top-0 h-1 rounded-b-full bg-gradient-to-r from-orange-300 via-amber-300 to-orange-400 opacity-70" />
+                            <div className="relative">
+                              <p className="text-xs uppercase tracking-[0.25em] text-orange-500 dark:text-orange-300">Secondary</p>
+                              <h5 className="mt-2 text-xl font-bold text-gray-900 dark:text-white">{auditAnalysis.bureauRouting.secondary.name}</h5>
+                              <div className="mt-3 flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
+                                <span>Headroom</span>
+                                <Badge className="bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-900/60">
+                                  {auditAnalysis.bureauRouting.secondary.headroom} pulls
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-center p-3 bg-white rounded-lg border">
-                            <div className="font-bold text-lg text-gray-800">{auditAnalysis.bureauRouting.tertiary.name}</div>
-                            <div className="text-sm text-gray-600">Tertiary Bureau</div>
-                            <div className="text-xs text-green-600 font-medium">{auditAnalysis.bureauRouting.tertiary.headroom} pulls available</div>
+                          <div className="group relative overflow-hidden rounded-xl border border-orange-200/70 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-4 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:from-slate-900 dark:via-slate-900/70 dark:to-amber-900/30 dark:border-orange-900/40">
+                            <div className="absolute inset-x-4 top-0 h-1 rounded-b-full bg-gradient-to-r from-orange-200 via-amber-300 to-orange-400 opacity-70" />
+                            <div className="relative">
+                              <p className="text-xs uppercase tracking-[0.25em] text-orange-500 dark:text-orange-300">Tertiary</p>
+                              <h5 className="mt-2 text-xl font-bold text-gray-900 dark:text-white">{auditAnalysis.bureauRouting.tertiary.name}</h5>
+                              <div className="mt-3 flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
+                                <span>Headroom</span>
+                                <Badge className="bg-emerald-100 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-900/60">
+                                  {auditAnalysis.bureauRouting.tertiary.headroom} pulls
+                                </Badge>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <p className="text-sm text-orange-700">
-                          <strong>Strategy:</strong> {auditAnalysis.bureauRouting.strategy.charAt(0).toUpperCase() + auditAnalysis.bureauRouting.strategy.slice(1)}
-                        </p>
+                        <div className="mt-6 h-1 rounded-full bg-gradient-to-r from-orange-400/60 via-amber-400/70 to-orange-500/60" />
                       </div>
 
                       {/* Detailed Narrative */}
-                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                        <h4 className="font-semibold text-gray-800 mb-3">Comprehensive Analysis Narrative</h4>
-                        <div className="space-y-3 text-sm text-gray-700 leading-relaxed">
-                          <p>
-                            <strong>Credit Profile Assessment:</strong> The analysis reveals an Implied Capacity Index of {auditAnalysis.ici.toFixed(3)}, 
-                            calculated through a weighted combination of supply factors (credit limits and account diversity), 
-                            behavioral patterns (utilization and payment history), and seasoning elements (account age and mortgage presence). 
-                            This ICI score, when multiplied by the combined total aggregate credit limit of ${auditAnalysis.signals.totalAggregateLimit.toLocaleString()} 
-                            and highest single limit of ${auditAnalysis.signals.highestSingleLimit.toLocaleString()}, produces an anchor exposure 
-                            of ${auditAnalysis.anchorExposure.toLocaleString()}.
+                      <div className="rounded-2xl border border-gray-200/70 bg-white/85 p-6 backdrop-blur-sm shadow-[0_20px_45px_rgba(148,163,184,0.25)] dark:bg-slate-900/70 dark:border-slate-800/70">
+                        <h4 className="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-800 dark:text-gray-100">
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-slate-900 to-slate-700 text-white dark:from-orange-500 dark:to-amber-500">
+                            <MapIcon className="h-4 w-4" />
+                          </span>
+                          Comprehensive Analysis Narrative
+                        </h4>
+                        <div className="space-y-4 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                          <p className="rounded-lg border border-orange-200/60 bg-orange-50/60 p-4 text-orange-900 shadow-sm dark:border-orange-900/40 dark:bg-orange-950/30 dark:text-orange-200">
+                            <strong>Credit Profile Assessment:</strong> The analysis reveals an Implied Capacity Index of {auditAnalysis.ici.toFixed(3)}, calculated through a weighted combination of supply factors (credit limits and account diversity), behavioral patterns (utilization and payment history), and seasoning elements (account age and mortgage presence). This ICI score, when multiplied by the combined total aggregate credit limit of ${auditAnalysis.signals.totalAggregateLimit.toLocaleString()} and highest single limit of ${auditAnalysis.signals.highestSingleLimit.toLocaleString()}, produces an anchor exposure of ${auditAnalysis.anchorExposure.toLocaleString()}.
                           </p>
-                          <p>
-                            <strong>Product Mapping Logic:</strong> Personal credit cards are mapped at 15% of anchor exposure, 
-                            yielding ${auditAnalysis.scenarios.personalSingle.amount.toLocaleString()} per card, while business credit cards 
-                            utilize a 22% multiplier, resulting in ${auditAnalysis.scenarios.businessSingle.amount.toLocaleString()} per card. 
-                            All amounts are rounded down to the nearest $5,000 increment to maintain conservative projections and account for 
-                            underwriting variations.
+                          <p className="rounded-lg border border-amber-200/60 bg-amber-50/60 p-4 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/30">
+                            <strong>Product Mapping Logic:</strong> Personal credit cards are mapped at 15% of anchor exposure, yielding ${auditAnalysis.scenarios.personalSingle.amount.toLocaleString()} per card, while business credit cards utilize a 22% multiplier, resulting in ${auditAnalysis.scenarios.businessSingle.amount.toLocaleString()} per card. All amounts are rounded down to the nearest $5,000 increment to maintain conservative projections and account for underwriting variations.
                           </p>
-                          <p>
-                            <strong>Multi-Card Discount Policy:</strong> When pursuing multiple cards within the same bureau, 
-                            position-based discounts apply: first card receives 100% of the calculated amount, second card receives 75%, 
-                            third card receives 60%, and fourth card receives 50%. This reflects the diminishing returns and increased 
-                            scrutiny that typically accompany multiple applications within a short timeframe.
+                          <p className="rounded-lg border border-gray-200/60 bg-white/70 p-4 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/60">
+                            <strong>Multi-Card Discount Policy:</strong> When pursuing multiple cards within the same bureau, position-based discounts apply: first card receives 100% of the calculated amount, second card receives 75%, third card receives 60%, and fourth card receives 50%. This reflects the diminishing returns and increased scrutiny that typically accompany multiple applications within a short timeframe.
                           </p>
-                          <p>
-                            <strong>Inquiry Management:</strong> Current inquiry counts show {auditAnalysis.signals.inquiriesByBureau.equifax} Equifax, {auditAnalysis.signals.inquiriesByBureau.experian} Experian, 
-                            and {auditAnalysis.signals.inquiriesByBureau.transunion} TransUnion hard pulls in the last six months. 
-                            With the standard limit of 4 pulls per bureau, available headroom totals {auditAnalysis.bureauRouting.primary.headroom + auditAnalysis.bureauRouting.secondary.headroom + auditAnalysis.bureauRouting.tertiary.headroom} applications 
-                            across all three bureaus, enabling a maximum {auditAnalysis.scenarios.maxByInquiries.cards}-card strategy 
-                            with total potential funding of ${auditAnalysis.scenarios.maxByInquiries.grandTotal.toLocaleString()}.
+                          <p className="rounded-lg border border-emerald-200/60 bg-emerald-50/50 p-4 shadow-sm dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                            <strong>Inquiry Management:</strong> Current inquiry counts show {auditAnalysis.signals.inquiriesByBureau.equifax} Equifax, {auditAnalysis.signals.inquiriesByBureau.experian} Experian, and {auditAnalysis.signals.inquiriesByBureau.transunion} TransUnion hard pulls in the last six months. With the standard limit of 4 pulls per bureau, available headroom totals {auditAnalysis.bureauRouting.primary.headroom + auditAnalysis.bureauRouting.secondary.headroom + auditAnalysis.bureauRouting.tertiary.headroom} applications across all three bureaus, enabling a maximum {auditAnalysis.scenarios.maxByInquiries.cards}-card strategy with total potential funding of ${auditAnalysis.scenarios.maxByInquiries.grandTotal.toLocaleString()}.
                           </p>
-                          <p>
-                            <strong>Risk Considerations:</strong> The current utilization rate of {auditAnalysis.signals.averageUtilization.toFixed(1)}% 
-                            and average account age of {Math.floor(auditAnalysis.signals.averageAccountAge / 12)} years {Math.floor(auditAnalysis.signals.averageAccountAge % 12)} months 
-                            contribute positively to the overall risk profile. {auditAnalysis.signals.hasDerogatory ? 'However, the presence of derogatory records requires careful consideration and may limit approval rates.' : 'The absence of derogatory records supports strong approval probability.'} 
+                          <p className="rounded-lg border border-slate-200/60 bg-slate-50/70 p-4 shadow-sm dark:border-slate-800/60 dark:bg-slate-900/60">
+                            <strong>Risk Considerations:</strong> The current utilization rate of {auditAnalysis.signals.averageUtilization.toFixed(1)}% and average account age of {Math.floor(auditAnalysis.signals.averageAccountAge / 12)} years {Math.floor(auditAnalysis.signals.averageAccountAge % 12)} months contribute positively to the overall risk profile. {auditAnalysis.signals.hasDerogatory ? 'However, the presence of derogatory records requires careful consideration and may limit approval rates.' : 'The absence of derogatory records supports strong approval probability.'}
                             {auditAnalysis.signals.hasMortgage ? ' The presence of an active mortgage further strengthens the creditworthiness assessment.' : ''}
                           </p>
                         </div>

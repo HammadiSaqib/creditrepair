@@ -208,7 +208,8 @@ export default function Dashboard() {
   });
   const [dashboardAuthorization, setDashboardAuthorization] = useState(false);
   const [showDashboardPassword, setShowDashboardPassword] = useState(false);
-  const creditReportRegisterUrl = "https://www.myscoreiq.com/get-fico-preferred.aspx?offercode=432142UK";
+  const defaultMonitoringLink = "https://www.myscoreiq.com/get-fico-preferred.aspx?offercode=432142UK";
+  const [partnerMonitoringLink, setPartnerMonitoringLink] = useState<string | null>(null);
   const clientLoginUrl = `${window.location.origin}/member/login`;
   const [clientIntakeLink, setClientIntakeLink] = useState("");
   const [isGeneratingIntakeLink, setIsGeneratingIntakeLink] = useState(false);
@@ -223,7 +224,12 @@ export default function Dashboard() {
     if (!clientIntakeLink) return "";
     return `<iframe src="${clientIntakeLink}" style="width:100%; height:900px; border:0;" title="Client Intake"></iframe>`;
   }, [clientIntakeLink]);
-  const qrEncodedLink = encodeURIComponent(creditReportRegisterUrl);
+  const creditReportLink = useMemo(() => {
+    const trimmed = partnerMonitoringLink?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : defaultMonitoringLink;
+  }, [partnerMonitoringLink]);
+
+  const qrEncodedLink = encodeURIComponent(creditReportLink);
   const smallQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${qrEncodedLink}`;
   const largeQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${qrEncodedLink}`;
   const qrLogoPath = "/image.png";
@@ -270,7 +276,7 @@ export default function Dashboard() {
     if (userProfile?.role === 'admin' || userProfile?.role === 'super_admin') {
       try {
         const affiliateResponse = await api.get('/api/auth/affiliate/status');
-        const { status, affiliate_id, referral_slug } = affiliateResponse.data || {};
+        const { status, affiliate_id, referral_slug, partner_monitoring_link } = affiliateResponse.data || {};
         setHasAffiliateAccess(true);
         setAffiliateVerificationStatus(status || null);
         if (affiliate_id) {
@@ -279,15 +285,18 @@ export default function Dashboard() {
             ? referral_slug 
             : String(affiliate_id);
           setAffiliateLink(`${window.location.origin}/ref/${refPart}`);
+          setPartnerMonitoringLink(typeof partner_monitoring_link === 'string' ? partner_monitoring_link : null);
         } else {
           setAffiliateId(null);
           setAffiliateLink("");
+          setPartnerMonitoringLink(null);
         }
       } catch (error) {
         setHasAffiliateAccess(false);
         setAffiliateVerificationStatus(null);
         setAffiliateId(null);
         setAffiliateLink("");
+        setPartnerMonitoringLink(null);
       }
     }
   };
@@ -645,7 +654,7 @@ export default function Dashboard() {
 
   const handleCopyCreditReportLink = async () => {
     try {
-      await navigator.clipboard.writeText(creditReportRegisterUrl);
+      await navigator.clipboard.writeText(creditReportLink);
       toast({ title: "Link copied", description: "Credit report link copied to clipboard" });
     } catch (e) {
       toast({ title: "Copy failed", description: "Please copy the link manually", variant: "destructive" });
@@ -750,7 +759,7 @@ export default function Dashboard() {
   };
 
   const handleOpenCreditReportLink = () => {
-    window.open(creditReportRegisterUrl, "_blank", "noopener,noreferrer");
+    window.open(creditReportLink, "_blank", "noopener,noreferrer");
   };
 
   const handleViewReports = (clientId: number) => {
@@ -1419,7 +1428,7 @@ export default function Dashboard() {
               <div className="flex-1 min-w-[280px]">
                 <Label htmlFor="credit-report-link" className="text-sm font-medium">Credit Report Link</Label>
                 <div className="mt-2 flex items-center gap-2">
-                  <Input id="credit-report-link" value={creditReportRegisterUrl} readOnly className="font-mono text-xs bg-slate-50 dark:bg-slate-800" />
+                  <Input id="credit-report-link" value={creditReportLink} readOnly className="font-mono text-xs bg-slate-50 dark:bg-slate-800" />
                   <Button
                     size="sm"
                     className="gradient-primary hover:opacity-90"
@@ -1491,7 +1500,7 @@ export default function Dashboard() {
                   </div>
                 </div>
               </div>
-              <Button variant="outline" onClick={() => window.open(creditReportRegisterUrl, "_blank", "noopener")}>Open Link</Button>
+              <Button variant="outline" onClick={() => window.open(creditReportLink, "_blank", "noopener")}>Open Link</Button>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsQrModalOpen(false)}>Close</Button>
@@ -2175,7 +2184,7 @@ export default function Dashboard() {
                 onCheckedChange={(checked) => setDashboardAuthorization(checked === true)}
               />
               <Label htmlFor="dashboard-authorization" className="text-sm text-slate-600">
-                I confirm this is my clent credit report and I am authorized to use for educational analysis.
+                I confirm this is my client credit report and I am authorized to use for educational analysis.
               </Label>
             </div>
 

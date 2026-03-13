@@ -947,7 +947,7 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
                 onCheckedChange={(checked) => setManualAuthorization(checked === true)}
               />
               <Label htmlFor="manual-authorization" className="text-sm text-slate-600">
-                I confirm this is my clent credit report and I am authorized to use for educational analysis.
+                I confirm this is my client credit report and I am authorized to use for educational analysis.
               </Label>
             </div>
             <DialogFooter className="gap-2">

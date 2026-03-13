@@ -996,7 +996,7 @@ const getScoreChange = (current: number, previous: number) => {
                     onCheckedChange={(checked) => setAddAuthorization(checked === true)}
                   />
                   <Label htmlFor="inline-authorization" className="text-sm text-slate-600">
-                    I confirm this is my clent credit report and I am authorized to use for educational analysis.
+                    I confirm this is my client credit report and I am authorized to use for educational analysis.
                   </Label>
                 </div>
                 <Button type="submit" size="sm" disabled={isAddingClient}>

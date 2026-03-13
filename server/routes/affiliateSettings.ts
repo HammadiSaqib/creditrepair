@@ -71,7 +71,8 @@ router.get('/settings', authenticateToken, requireAffiliateRole, async (req, res
     const profileQuery = `
       SELECT 
         id, email, first_name, last_name, company_name, phone, 
-        address, city, state, zip_code, status, email_verified, logo_url${hasSlug ? ', referral_slug' : ', NULL as referral_slug'}
+        address, city, state, zip_code, status, email_verified, logo_url,
+        partner_monitoring_link, credit_repair_link${hasSlug ? ', referral_slug' : ', NULL as referral_slug'}
       FROM affiliates 
       WHERE id = ?
     `;
@@ -191,7 +192,7 @@ router.put('/settings/profile', authenticateToken, requireAffiliateRole, async (
     }
     const {
       first_name, last_name, company_name, phone,
-      address, city, state, zip_code
+      address, city, state, zip_code, partner_monitoring_link, credit_repair_link
     } = req.body;
     
     // Validate required fields
@@ -199,18 +200,45 @@ router.put('/settings/profile', authenticateToken, requireAffiliateRole, async (
       return res.status(400).json({ error: 'First name and last name are required' });
     }
     
+    let sanitizedPartnerLink: string | null = partner_monitoring_link || null;
+    if (sanitizedPartnerLink) {
+      const urlPattern = /^(https?:\/\/[\w.-]+(?:\.[\w\.-]+)+(?:[\w\-\.,@?^=%&:/~+#]*[\w\-@?^=%&/~+#])?)$/i;
+      if (!urlPattern.test(sanitizedPartnerLink)) {
+        return res.status(400).json({ error: 'Partner link must be a valid URL starting with http:// or https://' });
+      }
+      if (sanitizedPartnerLink.length > 512) {
+        return res.status(400).json({ error: 'Partner link is too long (max 512 characters)' });
+      }
+    }
+
+    let sanitizedCreditRepairLink: string | null = credit_repair_link || null;
+    if (sanitizedCreditRepairLink) {
+      const urlPattern = /^(https?:\/\/[\w.-]+(?:\.[\w\.-]+)+(?:[\w\-\.,@?^=%&:/~+#]*[\w\-@?^=%&/~+#])?)$/i;
+      if (!urlPattern.test(sanitizedCreditRepairLink)) {
+        return res.status(400).json({ error: 'Credit repair link must be a valid URL starting with http:// or https://' });
+      }
+      if (sanitizedCreditRepairLink.length > 512) {
+        return res.status(400).json({ error: 'Credit repair link is too long (max 512 characters)' });
+      }
+    }
+
     const updateQuery = `
       UPDATE affiliates 
       SET 
         first_name = ?, last_name = ?, company_name = ?, phone = ?,
         address = ?, city = ?, state = ?, zip_code = ?,
+        partner_monitoring_link = ?,
+        credit_repair_link = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `;
     
     await executeQuery(updateQuery, [
       first_name, last_name, company_name, phone,
-      address, city, state, zip_code, affiliateId
+      address, city, state, zip_code,
+      sanitizedPartnerLink,
+      sanitizedCreditRepairLink,
+      affiliateId
     ]);
     
     securityLogger.logSecurityEvent('affiliate_profile_updated', {

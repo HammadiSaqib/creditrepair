@@ -209,9 +209,11 @@ export default function AffiliateReferrals() {
   };
 
   const filteredReferrals = referrals.filter((referral) => {
-    const matchesSearch = (referral.customerName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-                         (referral.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-                         (referral.id?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+    const searchValue = searchTerm.toLowerCase();
+    const matchesSearch = (referral.customerName?.toLowerCase() || '').includes(searchValue) ||
+                         (referral.email?.toLowerCase() || '').includes(searchValue) ||
+                         (referral.id?.toLowerCase() || '').includes(searchValue) ||
+                         (referral.phone?.toLowerCase() || '').includes(searchValue);
     const matchesStatus = statusFilter === "all" || referral.status === statusFilter;
     const matchesTier = tierFilter === "all" || referral.tier === tierFilter;
     return matchesSearch && matchesStatus && matchesTier;
@@ -244,11 +246,12 @@ export default function AffiliateReferrals() {
 
   const exportReferrals = () => {
     const csvContent = [
-      ['ID', 'Name', 'Email', 'Status', 'Tier', 'Signup Date', 'Commission', 'Lifetime Value'].join(','),
+      ['ID', 'Name', 'Email', 'Phone', 'Status', 'Tier', 'Signup Date', 'Commission', 'Lifetime Value'].join(','),
       ...filteredReferrals.map(referral => [
         referral.id,
         referral.customerName,
         referral.email,
+        referral.phone || '',
         referral.status,
         referral.tier,
         referral.signupDate,
@@ -398,13 +401,14 @@ export default function AffiliateReferrals() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Referral</TableHead>
-                    <TableHead>Contact</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Phone</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Tier</TableHead>
-                    <TableHead>Transaction ID</TableHead>
                     <TableHead>Signup Date</TableHead>
                     <TableHead>Commission</TableHead>
                     <TableHead>Lifetime Value</TableHead>
+                    <TableHead>Transaction ID</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -446,18 +450,20 @@ export default function AffiliateReferrals() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="space-y-1">
-                            <div className="flex items-center space-x-2">
-                              <Mail className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-sm">{referral.email}</span>
-                            </div>
-                            {referral.phone && (
-                              <div className="flex items-center space-x-2">
-                                <Phone className="h-3 w-3 text-muted-foreground" />
-                                <span className="text-sm">{referral.phone}</span>
-                              </div>
-                            )}
+                          <div className="flex items-center space-x-2">
+                            <Mail className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-sm">{referral.email}</span>
                           </div>
+                        </TableCell>
+                        <TableCell>
+                          {referral.phone ? (
+                            <div className="flex items-center space-x-2">
+                              <Phone className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-sm">{referral.phone}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(referral.status)}>
@@ -468,15 +474,6 @@ export default function AffiliateReferrals() {
                           <Badge className={getTierColor(referral.tier)}>
                             {referral.tier}
                           </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {referral.transactionId ? (
-                            <span className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded font-mono">
-                              {referral.transactionId}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">-</span>
-                          )}
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
@@ -497,6 +494,15 @@ export default function AffiliateReferrals() {
                           <span className="font-medium">
                             ${(referral.lifetimeValue || 0).toLocaleString()}
                           </span>
+                        </TableCell>
+                        <TableCell>
+                          {referral.transactionId ? (
+                            <span className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded font-mono">
+                              {referral.transactionId}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))

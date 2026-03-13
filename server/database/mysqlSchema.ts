@@ -504,6 +504,8 @@ export async function initializeMySQLDatabase(): Promise<void> {
       const existing = new Set((cols as any[]).map((r: any) => r.COLUMN_NAME));
       const alters: string[] = [];
       if (!existing.has('logo_url')) alters.push('ADD COLUMN logo_url VARCHAR(500)');
+      if (!existing.has('partner_monitoring_link')) alters.push('ADD COLUMN partner_monitoring_link VARCHAR(512) NULL');
+      if (!existing.has('credit_repair_link')) alters.push('ADD COLUMN credit_repair_link VARCHAR(512) NULL');
       if (alters.length) {
         await executeQuery(`ALTER TABLE affiliates ${alters.join(', ')}`);
       }
@@ -1676,6 +1678,8 @@ async function createMySQLTables(): Promise<void> {
       zip_code VARCHAR(10),
       avatar VARCHAR(500),
       logo_url VARCHAR(500),
+      partner_monitoring_link VARCHAR(512) NULL,
+      credit_repair_link VARCHAR(512) NULL,
       plan_type ENUM('free', 'paid_partner') NOT NULL DEFAULT 'free',
       paid_referrals_count INT NOT NULL DEFAULT 0,
       commission_rate DECIMAL(5,2) NOT NULL DEFAULT 10.00,
@@ -1759,7 +1763,8 @@ async function createMySQLTables(): Promise<void> {
       referral_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       conversion_date DATETIME NULL,
       payment_date DATETIME NULL,
-      notes TEXT,
+      plan_name VARCHAR(150) NULL,
+      plan_price DECIMAL(10,2) NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_affiliate_id (affiliate_id),
@@ -2845,6 +2850,8 @@ export interface SupportGeneralSettings {
     logo_url?: string;
     referral_slug?: string;
     plan_type: 'free' | 'paid_partner';
+    partner_monitoring_link?: string | null;
+    credit_repair_link?: string | null;
     paid_referrals_count: number;
     commission_rate: number;
     parent_commission_rate: number;

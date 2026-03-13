@@ -20,6 +20,7 @@ interface AffiliateProfile {
   id: string;
   firstName: string;
   lastName: string;
+  companyName: string;
   email: string;
   phone: string;
   address: string;
@@ -39,6 +40,8 @@ interface AffiliateProfile {
   logoUrl: string;
   timezone: string;
   language: string;
+  partnerLink: string;
+  creditRepairLink: string;
 }
 
 interface NotificationSettings {
@@ -66,6 +69,7 @@ export default function AffiliateSettings() {
     id: "",
     firstName: "",
     lastName: "",
+    companyName: "",
     email: "",
     phone: "",
     address: "",
@@ -84,7 +88,9 @@ export default function AffiliateSettings() {
     avatar: "",
     logoUrl: "",
     timezone: "UTC",
-    language: "en"
+    language: "en",
+    partnerLink: "",
+    creditRepairLink: ""
   });
 
   const [notifications, setNotifications] = useState<NotificationSettings>({
@@ -140,8 +146,11 @@ export default function AffiliateSettings() {
           id: responseData.profile.id?.toString() || "",
           firstName: responseData.profile.first_name || "",
           lastName: responseData.profile.last_name || "",
+          companyName: responseData.profile.company_name || "",
           email: responseData.profile.email || "",
           phone: responseData.profile.phone || "",
+          partnerLink: responseData.profile.partner_monitoring_link || "",
+          creditRepairLink: responseData.profile.credit_repair_link || "",
           address: responseData.profile.address || "",
           city: responseData.profile.city || "",
           state: responseData.profile.state || "",
@@ -335,24 +344,25 @@ export default function AffiliateSettings() {
     }
   };
 
-  const handleProfileUpdate = async () => {
+  const handleProfileUpdate = async (overrides?: Partial<AffiliateProfile>) => {
     try {
       setLoading(true);
+      const nextProfile = { ...profile, ...overrides };
       
       // Get current profile data to preserve company_name
-      const currentSettings = await affiliateApi.getSettings();
-      const currentProfile = currentSettings.data?.profile || currentSettings.profile;
-      
       await affiliateApi.updateProfile({
-        first_name: profile.firstName,
-        last_name: profile.lastName,
-        company_name: currentProfile?.company_name || null,
-        phone: profile.phone,
-        address: profile.address,
-        city: profile.city,
-        state: profile.state,
-        zip_code: profile.zipCode
+        first_name: nextProfile.firstName,
+        last_name: nextProfile.lastName,
+        company_name: nextProfile.companyName || null,
+        phone: nextProfile.phone,
+        address: nextProfile.address,
+        city: nextProfile.city,
+        state: nextProfile.state,
+        zip_code: nextProfile.zipCode,
+        partner_monitoring_link: nextProfile.partnerLink || null,
+        credit_repair_link: nextProfile.creditRepairLink || null
       });
+      setProfile(nextProfile);
       toast({
         title: "Success",
         description: "Profile updated successfully"
@@ -519,7 +529,7 @@ export default function AffiliateSettings() {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               Profile
@@ -535,6 +545,10 @@ export default function AffiliateSettings() {
             <TabsTrigger value="security" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
               Security
+            </TabsTrigger>
+            <TabsTrigger value="partner-link" className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4" />
+              Partner Link
             </TabsTrigger>
             <TabsTrigger value="referral" className="flex items-center gap-2">
               <LinkIcon className="h-4 w-4" />
@@ -680,6 +694,14 @@ export default function AffiliateSettings() {
                       onChange={(e) => setProfile({...profile, lastName: e.target.value})}
                     />
                   </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="companyName">Company Name</Label>
+                    <Input
+                      id="companyName"
+                      value={profile.companyName}
+                      onChange={(e) => setProfile({ ...profile, companyName: e.target.value })}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -762,7 +784,7 @@ export default function AffiliateSettings() {
                 </div>
 
                 <div className="flex justify-end">
-                  <Button onClick={handleProfileUpdate} disabled={loading}>
+                  <Button onClick={() => handleProfileUpdate()} disabled={loading}>
                     <Save className="h-4 w-4 mr-2" />
                     Save Changes
                   </Button>
@@ -1036,6 +1058,108 @@ export default function AffiliateSettings() {
                     <Save className="h-4 w-4 mr-2" />
                     Update Password
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="partner-link" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Partner Monitoring Link</CardTitle>
+                <CardDescription>
+                  Save a single credit monitoring link that will replace the default link shown to your referrals.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="partnerLinkSetting">Partner link URL</Label>
+                  <Input
+                    id="partnerLinkSetting"
+                    type="url"
+                    placeholder="https://your-monitoring-link.com"
+                    value={profile.partnerLink}
+                    onChange={(e) => setProfile({ ...profile, partnerLink: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Provide your MyScoreIQ, IdentityIQ, or MyFreeScoreNow affiliate link. Leave blank to use the default monitoring link.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button onClick={() => handleProfileUpdate()} disabled={loading}>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Partner Link
+                  </Button>
+                  {profile.partnerLink ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={loading}
+                      onClick={() => handleProfileUpdate({ partnerLink: "" })}
+                    >
+                      Clear Link
+                    </Button>
+                  ) : null}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label>Preview</Label>
+                  <div className="text-sm break-all">
+                    {profile.partnerLink || 'Using default monitoring link'}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Credit Repair Link</CardTitle>
+                <CardDescription>
+                  Share the credit repair service you recommend. This will appear for referrals reviewing their reports.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label htmlFor="creditRepairLinkSetting">Credit repair URL</Label>
+                  <Input
+                    id="creditRepairLinkSetting"
+                    type="url"
+                    placeholder="https://your-credit-repair-site.com"
+                    value={profile.creditRepairLink}
+                    onChange={(e) => setProfile({ ...profile, creditRepairLink: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Leave blank to fall back to the admin credit repair link or the global default.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button onClick={() => handleProfileUpdate()} disabled={loading}>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Credit Repair Link
+                  </Button>
+                  {profile.creditRepairLink ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={loading}
+                      onClick={() => handleProfileUpdate({ creditRepairLink: "" })}
+                    >
+                      Clear Link
+                    </Button>
+                  ) : null}
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label>Preview</Label>
+                  <div className="text-sm break-all">
+                    {profile.creditRepairLink || 'Using admin or default credit repair link'}
+                  </div>
                 </div>
               </CardContent>
             </Card>

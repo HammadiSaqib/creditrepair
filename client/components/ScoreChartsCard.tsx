@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import CircularScoreChart from './CircularScoreChart';
-import { calculateCreditFactors, Account } from '../utils/creditFactorsCalculator';
+import { calculateCreditFactors } from '../utils/creditFactorsCalculator';
+
+type CreditFactorAccounts = Parameters<typeof calculateCreditFactors>[0];
 
 interface BureauScore {
   bureau: string;
@@ -13,10 +15,11 @@ interface BureauScore {
 
 interface ScoreChartsCardProps {
   currentScores: BureauScore[];
-  accounts?: Account[];
+  accounts?: CreditFactorAccounts;
+  preferredScoreType?: 'FICO' | 'VantageScore';
 }
 
-const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accounts }) => {
+const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accounts, preferredScoreType }) => {
   // Get unique score types from current scores for circular charts
   const getUniqueScoreTypes = (): Array<{scoreType: 'FICO' | 'VantageScore', score: number}> => {
     const scoreTypes = new Set<string>();
@@ -43,6 +46,10 @@ const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accoun
   };
 
   const uniqueScoreTypes = getUniqueScoreTypes();
+  const filteredScoreTypes = preferredScoreType
+    ? uniqueScoreTypes.filter((entry) => entry.scoreType === preferredScoreType)
+    : uniqueScoreTypes;
+  const displayScoreTypes = filteredScoreTypes.length > 0 ? filteredScoreTypes : uniqueScoreTypes;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [chartSize, setChartSize] = useState(280);
 
@@ -74,7 +81,7 @@ const ScoreChartsCard: React.FC<ScoreChartsCardProps> = ({ currentScores, accoun
       </CardHeader>
       <CardContent className="flex-1 flex flex-col">
         <div ref={containerRef} className="flex flex-col gap-6 flex-1 justify-center w-full">
-          {uniqueScoreTypes.map((scoreData, index) => {
+          {displayScoreTypes.map((scoreData, index) => {
             const factors = accounts ? calculateCreditFactors(accounts, scoreData.scoreType) : undefined;
             return (
               <CircularScoreChart

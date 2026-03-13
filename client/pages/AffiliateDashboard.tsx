@@ -26,6 +26,7 @@ import {
 interface EarningsStats {
   totalEarnings: number;
   monthlyEarnings: number;
+  yearlyEarnings?: number;
   pendingCommissions: number;
   paidCommissions: number;
   conversionRate: string;
@@ -46,6 +47,9 @@ interface EarningsStats {
   lostCommissionAmount?: number;
   estimatedLostCommission?: number;
   atRiskReferrals?: number;
+  pendingSignupCount?: number;
+  churnedReferrals?: number;
+  churnedCommission?: number;
   // Payment information
   lastPayment?: {
     amount: number;
@@ -71,11 +75,13 @@ interface RecentReferral {
   id: string;
   customerName: string;
   email: string;
-  status: "pending" | "converted" | "active" | "cancelled";
+  status: "pending" | "paid" | "cancelled" | "churned" | "unpaid";
   commission: number;
   dateReferred: string;
   conversionDate?: string;
   transactionId?: string;
+  planName?: string;
+  planValue?: number;
 }
 
 interface AffiliatePerformance {
@@ -86,9 +92,29 @@ interface AffiliatePerformance {
 }
 
 export default function AffiliateDashboard() {
+  const formatCurrency = (value: number | null | undefined) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value ?? 0);
+
+  const formatCount = (value: number | null | undefined) =>
+    new Intl.NumberFormat("en-US").format(value ?? 0);
+
+  const formatPercentage = (value: number | string | null | undefined) => {
+    if (value === null || value === undefined) return "0%";
+    if (typeof value === "number") {
+      return `${value}%`;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) return "0%";
+    if (trimmed.endsWith("%")) return trimmed;
+    const parsed = Number(trimmed);
+    if (!Number.isNaN(parsed)) return `${parsed}%`;
+    return "0%";
+  };
+
   const [earningsStats, setEarningsStats] = useState<EarningsStats>({
     totalEarnings: 0,
     monthlyEarnings: 0,
+    yearlyEarnings: 0,
     pendingCommissions: 0,
     paidCommissions: 0,
     conversionRate: "0%",
@@ -97,6 +123,9 @@ export default function AffiliateDashboard() {
     lostCommissionAmount: 0,
     estimatedLostCommission: 0,
     atRiskReferrals: 0,
+    pendingSignupCount: 0,
+    churnedReferrals: 0,
+    churnedCommission: 0,
   });
 
   const [recentReferrals, setRecentReferrals] = useState<RecentReferral[]>([]);
@@ -139,29 +168,36 @@ export default function AffiliateDashboard() {
         
         if (statsResponse.data && statsResponse.data.success) {
           console.log('✅ Stats data received:', statsResponse.data.data);
+          const statsData = statsResponse.data.data;
+          const totalReferrals = statsData.totalReferrals || 0;
+
           setEarningsStats({
-            totalEarnings: statsResponse.data.data.totalEarnings || 0,
-            monthlyEarnings: statsResponse.data.data.monthlyEarnings || 0,
-            pendingCommissions: statsResponse.data.data.pendingCommissions || 0,
-            paidCommissions: statsResponse.data.data.paidCommissions || 0,
-            conversionRate: statsResponse.data.data.conversionRate || "0%",
-            avgCommission: statsResponse.data.data.totalReferrals > 0 ? (statsResponse.data.data.totalEarnings / statsResponse.data.data.totalReferrals) : 0,
-            planType: statsResponse.data.data.planType,
-            paidReferralsCount: statsResponse.data.data.paidReferralsCount,
-            currentTierRate: statsResponse.data.data.currentTierRate,
-            tierInfo: statsResponse.data.data.tierInfo,
-            // New non-renewals and lost commission fields
-            nonRenewalsCount: statsResponse.data.data.nonRenewalsCount || 0,
-            lostCommissionAmount: statsResponse.data.data.lostCommissionAmount || 0,
-            estimatedLostCommission: statsResponse.data.data.estimatedLostCommission || 0,
-            atRiskReferrals: statsResponse.data.data.atRiskReferrals || 0,
+            totalEarnings: statsData.totalEarnings || 0,
+            monthlyEarnings: statsData.monthlyEarnings || 0,
+            yearlyEarnings: statsData.yearlyEarnings || 0,
+            pendingCommissions: statsData.pendingCommissions || 0,
+            paidCommissions: statsData.totalEarnings || 0,
+            conversionRate: typeof statsData.conversionRate === "number" ? `${statsData.conversionRate}%` : (statsData.conversionRate || "0%"),
+            avgCommission: totalReferrals > 0 ? (statsData.totalEarnings || 0) / totalReferrals : 0,
+            planType: statsData.planType,
+            paidReferralsCount: statsData.paidReferralsCount,
+            currentTierRate: statsData.currentTierRate,
+            tierInfo: statsData.tierInfo,
+            pendingSignupCount: statsData.pendingSignupCount || 0,
+            churnedReferrals: statsData.churnedReferrals || 0,
+            churnedCommission: statsData.churnedCommission || 0,
+            // Non-renewals and lost commission fields
+            nonRenewalsCount: statsData.nonRenewalsCount || 0,
+            lostCommissionAmount: statsData.lostCommissionAmount || 0,
+            estimatedLostCommission: statsData.estimatedLostCommission || 0,
+            atRiskReferrals: statsData.atRiskReferrals || 0,
             // Payment information
-            lastPayment: statsResponse.data.data.lastPayment,
-            nextPayment: statsResponse.data.data.nextPayment,
-            paymentMethod: statsResponse.data.data.paymentMethod,
+            lastPayment: statsData.lastPayment,
+            nextPayment: statsData.nextPayment,
+            paymentMethod: statsData.paymentMethod,
             // Percentage changes
-            totalEarningsChange: statsResponse.data.data.totalEarningsChange,
-            conversionRateChange: statsResponse.data.data.conversionRateChange
+            totalEarningsChange: statsData.totalEarningsChange,
+            conversionRateChange: statsData.conversionRateChange
           });
         } else {
           console.warn('⚠️ No stats data received');
@@ -204,12 +240,12 @@ export default function AffiliateDashboard() {
     switch (status) {
       case "pending":
         return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-      case "converted":
+      case "paid":
         return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-      case "active":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
       case "cancelled":
         return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+      case "churned":
+        return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
     }
@@ -301,11 +337,11 @@ export default function AffiliateDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Earnings</CardTitle>
+              <CardTitle className="text-sm font-medium">All Time Earnings</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{loading ? '...' : `$${((earningsStats?.totalEarnings ?? 0)).toLocaleString()}`}</div>
+              <div className="text-2xl font-bold text-green-600">{loading ? '...' : formatCurrency(earningsStats?.totalEarnings)}</div>
               <p className="text-xs text-muted-foreground">
                 {earningsStats?.totalEarningsChange ? 
                   `${earningsStats.totalEarningsChange.percentage >= 0 ? '+' : ''}${earningsStats.totalEarningsChange.percentage}% from ${earningsStats.totalEarningsChange.period}` :
@@ -321,7 +357,7 @@ export default function AffiliateDashboard() {
               <TrendingUp className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">{loading ? '...' : `$${((earningsStats?.monthlyEarnings ?? 0)).toLocaleString()}`}</div>
+              <div className="text-2xl font-bold text-green-600">{loading ? '...' : formatCurrency(earningsStats?.monthlyEarnings)}</div>
               <p className="text-xs text-muted-foreground">
                 Current month progress
               </p>
@@ -350,7 +386,7 @@ export default function AffiliateDashboard() {
               <Target className="h-4 w-4 text-teal-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-teal-600">{loading ? '...' : earningsStats?.conversionRate || '0%'}</div>
+              <div className="text-2xl font-bold text-teal-600">{loading ? '...' : formatPercentage(earningsStats?.conversionRate)}</div>
               <p className="text-xs text-muted-foreground">
                 {earningsStats?.conversionRateChange ? 
                   `${earningsStats.conversionRateChange.percentage >= 0 ? '+' : ''}${earningsStats.conversionRateChange.percentage}% from ${earningsStats.conversionRateChange.period}` :
@@ -366,7 +402,7 @@ export default function AffiliateDashboard() {
               <Activity className="h-4 w-4 text-red-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{loading ? '...' : earningsStats?.nonRenewalsCount || 0}</div>
+              <div className="text-2xl font-bold text-red-600">{loading ? '...' : formatCount(earningsStats?.nonRenewalsCount)}</div>
               <p className="text-xs text-muted-foreground">
                 Last 30 days
               </p>
@@ -379,7 +415,7 @@ export default function AffiliateDashboard() {
               <TrendingUp className="h-4 w-4 text-red-500 rotate-180" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{loading ? '...' : `$${((earningsStats?.lostCommissionAmount ?? 0)).toLocaleString()}`}</div>
+              <div className="text-2xl font-bold text-red-600">{loading ? '...' : formatCurrency(earningsStats?.lostCommissionAmount)}</div>
               <p className="text-xs text-muted-foreground">
                 From non-renewals
               </p>
@@ -387,12 +423,12 @@ export default function AffiliateDashboard() {
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify_between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">At Risk</CardTitle>
               <Clock className="h-4 w-4 text-orange-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">{loading ? '...' : earningsStats?.atRiskReferrals || 0}</div>
+              <div className="text-2xl font-bold text-orange-600">{loading ? '...' : formatCount(earningsStats?.atRiskReferrals)}</div>
               <p className="text-xs text-muted-foreground">
                 Potential churn next month
               </p>
@@ -482,21 +518,13 @@ export default function AffiliateDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Button
                 onClick={() => navigate("/affiliate/links")}
                 className="h-20 flex flex-col items-center justify-center space-y-2 bg-green-600 hover:bg-green-700 text-white"
               >
                 <Link className="h-6 w-6" />
                 <span>Generate Referral Link</span>
-              </Button>
-              <Button
-                onClick={() => navigate("/affiliate/analytics")}
-                variant="outline"
-                className="h-20 flex flex-col items-center justify-center space-y-2 border-green-200 text-green-700 hover:bg-green-50 hover:text-green-700 dark:hover:text-green-300"
-              >
-                <BarChart3 className="h-6 w-6" />
-                <span>View Analytics</span>
               </Button>
               <Button
                 onClick={() => navigate("/affiliate/referrals")}
@@ -548,7 +576,7 @@ export default function AffiliateDashboard() {
                             {referral.status}
                           </Badge>
                           <span className="text-sm font-medium text-green-600">
-                            ${referral.commission}
+                            {formatCurrency(referral.commission)} commission
                           </span>
                         </div>
                         <h4 className="font-medium mt-1">{referral.customerName}</h4>
@@ -556,6 +584,11 @@ export default function AffiliateDashboard() {
                           <span className="break-words">Email: {referral.email}</span>
                           <span>Referred: {referral.dateReferred}</span>
                           {referral.conversionDate && <span>Converted: {referral.conversionDate}</span>}
+                          <span>Plan: {referral.planName || 'Unknown'}</span>
+                          <span>Price: {formatCurrency(referral.planValue)}</span>
+                          <span>
+                            Payment: {referral.status === 'paid' ? 'Paid' : referral.status === 'pending' ? 'Pending' : referral.status === 'cancelled' ? 'Cancelled' : referral.status === 'churned' ? 'Churned' : 'Unpaid'}
+                          </span>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">

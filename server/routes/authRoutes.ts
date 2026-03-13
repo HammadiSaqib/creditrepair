@@ -53,7 +53,7 @@ router.get('/affiliate/status', authenticateToken, async (req, res) => {
     const adminEmail = userRows && userRows[0]?.email;
     
     const rows: any[] = await executeQuery(
-      'SELECT id, email, status, email_verified, plan_type, created_at, updated_at FROM affiliates WHERE admin_id = ?',
+      'SELECT id, email, status, email_verified, plan_type, partner_monitoring_link, created_at, updated_at FROM affiliates WHERE admin_id = ?',
       [userId]
     );
     if (!rows || rows.length === 0) {
@@ -90,6 +90,7 @@ router.get('/affiliate/status', authenticateToken, async (req, res) => {
       email_verified: selected.email_verified,
       plan_type: selected.plan_type,
       affiliate_id: selected.id,
+      partner_monitoring_link: selected.partner_monitoring_link,
       referral_slug: referralSlug,
       created_at: selected.created_at
     });

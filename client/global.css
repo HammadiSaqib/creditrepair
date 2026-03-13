@@ -250,6 +250,39 @@
     page-break-inside: avoid;
   }
 
+  .pdf-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 2rem;
+  }
+
+  .pdf-break-before {
+    page-break-before: always;
+  }
+
+  .pdf-exporting {
+    background: #f8fafc;
+  }
+
+  .analysis-pdf-root.pdf-export-active {
+    max-width: 740px;
+    margin: 0 auto;
+    background: #ffffff;
+    padding: 20px;
+    border-radius: 20px;
+    box-shadow: none;
+  }
+
+  .analysis-pdf-root.pdf-export-active .pdf-section {
+    margin-bottom: 24px;
+    box-shadow: none;
+  }
+
+  .pdf-table-wrapper {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   /* Hide scrollbars for horizontal scroll containers */
   .no-scrollbar::-webkit-scrollbar {
     display: none;

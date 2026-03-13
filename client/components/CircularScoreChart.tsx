@@ -49,19 +49,18 @@ const CircularScoreChart: React.FC<CircularScoreChartProps> = ({
     if (scoreType === 'FICO') {
       return [
         { label: 'Payment History', value: 35, color: '#1E40AF' },
-        { label: 'Amounts Owed', value: 30, color: '#10B981' },
+        { label: 'Amounts Owed', value: 30, color: '#0EA5E9' },
         { label: 'Length of Credit History', value: 15, color: '#84CC16' },
-        { label: 'New Credit', value: 10, color: '#6B7280' },
-        { label: 'Credit Mix', value: 10, color: '#84CC16' }
+        { label: 'Credit Mix', value: 10, color: '#F97316' },
+        { label: 'New Credit', value: 10, color: '#6B7280' }
       ];
     } else {
       return [
-        { label: 'Payment History', value: 41, color: '#85BB65' },
-        { label: 'Depth of Credit', value: 20, color: '#333333' },
-        { label: 'Credit Utilization', value: 20, color: '#32CD32' },
-        { label: 'Recent Credit', value: 11, color: '#64748B' },
-        { label: 'Balance', value: 6, color: '#006400' },
-        { label: 'Available Credit', value: 2, color: '#D1D5DB' }
+        { label: 'Payment History', value: 40, color: '#047857' },
+        { label: 'Age and Type of Credit', value: 21, color: '#0EA5E9' },
+        { label: 'Credit Utilization', value: 20, color: '#CA8A04' },
+        { label: 'Balances', value: 11, color: '#7C3AED' },
+        { label: 'Recent Credit', value: 5, color: '#DC2626' }
       ];
     }
   };
