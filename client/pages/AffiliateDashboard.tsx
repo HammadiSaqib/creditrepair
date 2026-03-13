@@ -29,7 +29,7 @@ interface EarningsStats {
   yearlyEarnings?: number;
   pendingCommissions: number;
   paidCommissions: number;
-  conversionRate: string;
+  conversionRate: string | number;
   avgCommission: number;
   planType?: string;
   actualPlanName?: string;
@@ -69,6 +69,11 @@ interface EarningsStats {
     percentage: number;
     period: string;
   };
+  currentMonthReferralLeads?: number;
+  currentMonthConversionCount?: number;
+  currentMonthConversionRate?: number;
+  currentMonthAverageCommission?: number;
+  currentMonthPaidCommissionCount?: number;
 }
 
 interface RecentReferral {
@@ -82,13 +87,6 @@ interface RecentReferral {
   transactionId?: string;
   planName?: string;
   planValue?: number;
-}
-
-interface AffiliatePerformance {
-  totalReferrals: number;
-  conversionRate: string;
-  avgCommissionPerSale: string;
-  topPerformingLink: string;
 }
 
 export default function AffiliateDashboard() {
@@ -126,15 +124,14 @@ export default function AffiliateDashboard() {
     pendingSignupCount: 0,
     churnedReferrals: 0,
     churnedCommission: 0,
+    currentMonthReferralLeads: 0,
+    currentMonthConversionCount: 0,
+    currentMonthConversionRate: 0,
+    currentMonthAverageCommission: 0,
+    currentMonthPaidCommissionCount: 0,
   });
 
   const [recentReferrals, setRecentReferrals] = useState<RecentReferral[]>([]);
-  const [affiliatePerformance, setAffiliatePerformance] = useState<AffiliatePerformance>({
-    totalReferrals: 0,
-    conversionRate: "0%",
-    avgCommissionPerSale: "$0",
-    topPerformingLink: "N/A",
-  });
   const [loading, setLoading] = useState(true);
   const [hideUpgradeSection, setHideUpgradeSection] = useState(false);
 
@@ -222,17 +219,7 @@ export default function AffiliateDashboard() {
           console.warn('⚠️ No referrals data received');
         }
 
-        // Fetch affiliate performance
-        console.log('📈 Fetching affiliate performance...');
-        const performanceResponse = await affiliateApi.getPerformance();
-        console.log('📈 Performance response:', performanceResponse);
-        
-        if (performanceResponse.data && performanceResponse.data.success) {
-          console.log('✅ Performance data received:', performanceResponse.data.data);
-          setAffiliatePerformance(performanceResponse.data.data || []);
-        } else {
-          console.warn('⚠️ No performance data received');
-        }
+        // Performance metrics now derived from stats payload
       } catch (error) {
         console.error('💥 Error fetching dashboard data:', error);
       } finally {
@@ -641,15 +628,21 @@ export default function AffiliateDashboard() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Total Referrals</span>
-                  <span className="text-2xl font-bold text-green-600">{loading ? '...' : affiliatePerformance?.totalReferrals || 0}</span>
+                  <span className="text-2xl font-bold text-green-600">
+                    {loading ? '...' : formatCount(earningsStats?.currentMonthReferralLeads ?? earningsStats?.totalReferrals ?? 0)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Conversion Rate</span>
-                  <span className="text-2xl font-bold text-teal-600">{loading ? '...' : affiliatePerformance?.conversionRate || '0%'}</span>
+                  <span className="text-2xl font-bold text-teal-600">
+                    {loading ? '...' : formatPercentage(earningsStats?.currentMonthConversionRate ?? earningsStats?.conversionRate)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Avg Commission/Sale</span>
-                  <span className="text-2xl font-bold text-green-600">{loading ? '...' : affiliatePerformance?.avgCommissionPerSale || '$0'}</span>
+                  <span className="text-2xl font-bold text-green-600">
+                    {loading ? '...' : formatCurrency(earningsStats?.currentMonthAverageCommission ?? earningsStats?.avgCommission ?? 0)}
+                  </span>
                 </div>
               </div>
             </CardContent>

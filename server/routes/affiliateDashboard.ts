@@ -122,12 +122,39 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
         COALESCE(SUM(CASE WHEN status = 'paid' THEN commission_amount ELSE 0 END), 0) AS paid_amount,
         COALESCE(SUM(CASE WHEN status IN ('cancelled', 'refunded', 'chargeback') THEN commission_amount ELSE 0 END), 0) AS cancelled_amount,
         COALESCE(SUM(CASE WHEN status = 'pending' THEN commission_amount ELSE 0 END), 0) AS pending_amount,
-        COALESCE(SUM(CASE WHEN status = 'paid' AND created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END), 0) AS month_paid_amount,
-        COALESCE(SUM(CASE WHEN status IN ('cancelled', 'refunded', 'chargeback') AND created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END), 0) AS month_cancelled_amount,
-        COALESCE(SUM(CASE WHEN status = 'paid' AND created_at >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01') AND created_at < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END), 0) AS prior_month_paid_amount,
-        COALESCE(SUM(CASE WHEN status IN ('cancelled', 'refunded', 'chargeback') AND created_at >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01') AND created_at < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END), 0) AS prior_month_cancelled_amount,
+        COALESCE(SUM(CASE 
+          WHEN status = 'paid' 
+            AND COALESCE(payment_date, approval_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+          THEN commission_amount 
+          ELSE 0 
+        END), 0) AS month_paid_amount,
+        COALESCE(SUM(CASE 
+          WHEN status IN ('cancelled', 'refunded', 'chargeback') 
+            AND COALESCE(updated_at, payment_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+          THEN commission_amount 
+          ELSE 0 
+        END), 0) AS month_cancelled_amount,
+        COALESCE(SUM(CASE 
+          WHEN status = 'paid' 
+            AND COALESCE(payment_date, approval_date, created_at) >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01') 
+            AND COALESCE(payment_date, approval_date, created_at) < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+          THEN commission_amount 
+          ELSE 0 
+        END), 0) AS prior_month_paid_amount,
+        COALESCE(SUM(CASE 
+          WHEN status IN ('cancelled', 'refunded', 'chargeback') 
+            AND COALESCE(updated_at, payment_date, created_at) >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01') 
+            AND COALESCE(updated_at, payment_date, created_at) < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+          THEN commission_amount 
+          ELSE 0 
+        END), 0) AS prior_month_cancelled_amount,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid_count
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid_count,
+        SUM(CASE 
+          WHEN status = 'paid' 
+            AND COALESCE(payment_date, approval_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+          THEN 1 ELSE 0
+        END) AS month_paid_count
       FROM affiliate_commissions
       WHERE affiliate_id = ?
     `;
@@ -143,6 +170,7 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       prior_month_cancelled_amount: priorMonthCancelledAmountRaw = 0,
       pending_count: pendingCountRaw = 0,
       paid_count: paidCountRaw = 0,
+      month_paid_count: monthPaidCountRaw = 0,
     } = earningsAggregate[0] || {};
 
     const totalPaidAmount = parseFloat(totalPaidAmountRaw) || 0;
@@ -154,6 +182,7 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
     const priorMonthCancelled = parseFloat(priorMonthCancelledAmountRaw) || 0;
     const pendingSignups = parseInt(pendingCountRaw) || 0;
     const paidCommissionCount = parseInt(paidCountRaw) || 0;
+    const currentMonthPaidCount = parseInt(monthPaidCountRaw) || 0;
 
     const totalPaidEarnings = totalPaidAmount - totalCancelledAmount;
     const currentMonthNet = currentMonthPaidGross - currentMonthCancelled;
@@ -346,28 +375,41 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       SELECT COUNT(*) as conversions
       FROM affiliate_referrals 
       WHERE affiliate_id = ? 
-        AND status = 'converted'
-        AND MONTH(conversion_date) = MONTH(CURRENT_DATE())
-        AND YEAR(conversion_date) = YEAR(CURRENT_DATE())
+        AND status IN ('approved', 'converted', 'paid')
+        AND COALESCE(conversion_date, referral_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+        AND COALESCE(conversion_date, referral_date, created_at) < DATE_FORMAT(DATE_ADD(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 1 MONTH), '%Y-%m-01')
     `;
-    
+
     const lastMonthConversionsQuery = `
       SELECT COUNT(*) as conversions
       FROM affiliate_referrals 
       WHERE affiliate_id = ? 
-        AND status = 'converted'
-        AND MONTH(conversion_date) = MONTH(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))
-        AND YEAR(conversion_date) = YEAR(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH))
+        AND status IN ('approved', 'converted', 'paid')
+        AND COALESCE(conversion_date, referral_date, created_at) >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+        AND COALESCE(conversion_date, referral_date, created_at) < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+    `;
+
+    const currentMonthReferralLeadsQuery = `
+      SELECT COUNT(*) as leads
+      FROM affiliate_referrals
+      WHERE affiliate_id = ?
+        AND COALESCE(referral_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+        AND COALESCE(referral_date, created_at) < DATE_FORMAT(DATE_ADD(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 1 MONTH), '%Y-%m-01')
     `;
     
     const currentMonthConversions = await executeQuery(currentMonthConversionsQuery, [affiliateId]);
     const lastMonthConversions = await executeQuery(lastMonthConversionsQuery, [affiliateId]);
+    const currentMonthReferralLeads = await executeQuery(currentMonthReferralLeadsQuery, [affiliateId]);
     
     const currentConversions = parseInt(currentMonthConversions[0]?.conversions) || 0;
     const lastConversions = parseInt(lastMonthConversions[0]?.conversions) || 0;
-    
+    const currentReferralLeads = parseInt(currentMonthReferralLeads[0]?.leads) || 0;
+
     const conversionChangePercentage = lastConversions > 0 ? 
       ((currentConversions - lastConversions) / lastConversions * 100) : 0;
+
+    const currentMonthConversionRate = currentReferralLeads > 0 ? (currentConversions / currentReferralLeads * 100) : 0;
+    const currentMonthAverageCommission = currentMonthPaidCount > 0 ? (currentMonthNet / currentMonthPaidCount) : 0;
 
     const stats = {
       totalEarnings: totalPaidEarnings,
@@ -411,7 +453,12 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       conversionRateChange: {
         percentage: parseFloat(conversionChangePercentage.toFixed(1)),
         period: 'last month'
-      }
+      },
+      currentMonthReferralLeads: currentReferralLeads,
+      currentMonthConversionCount: currentConversions,
+      currentMonthConversionRate: parseFloat(currentMonthConversionRate.toFixed(1)),
+      currentMonthAverageCommission: parseFloat(currentMonthAverageCommission.toFixed(2)),
+      currentMonthPaidCommissionCount: currentMonthPaidCount
     };
     
     console.log('📈 [AFFILIATE STATS] Final stats object:', stats);
