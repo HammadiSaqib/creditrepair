@@ -1472,7 +1472,7 @@ export default function FundingDIY() {
                                   </div>
                                   <div className="flex items-center gap-2 text-xs">
                                     <span className={cn('group-hover:text-white', elig.stateEligible ? '' : 'text-red-500')}>{elig.stateEligible ? (elig.isNationwide ? '✅' : '✔') : '❌'} State</span>
-                                    <span className={cn('group-hover:text-white', primaryEligible ? 'text-green-600' : 'text-red-500')}>
+                                    <span className={cn('group-hover:text-white', primaryEligible ? '' : 'text-red-500')}>
                                       {bureauShortLabel(primary)} {primaryEligible ? '✔' : '❌'} ({primaryCount})
                                     </span>
                                   </div>
