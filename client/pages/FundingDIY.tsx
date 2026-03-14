@@ -899,7 +899,18 @@ export default function FundingDIY() {
         pool = pool.filter((c) => cardHasBureau(c, t.bureau as any));
       }
       if (pool.length === 0) return null;
+      const bankUsage = new Map<number, number>();
+      // count already-picked cards per bank to encourage diversity
+      pickedCardIds.forEach((id) => {
+        const found = sourceCards.find((c) => c.id === id);
+        if (found) {
+          bankUsage.set(found.bank_id, (bankUsage.get(found.bank_id) || 0) + 1);
+        }
+      });
       const sortedPool = [...pool].sort((a, b) => {
+        const usageA = bankUsage.get(a.bank_id) || 0;
+        const usageB = bankUsage.get(b.bank_id) || 0;
+        if (usageA !== usageB) return usageA - usageB;
         const ai = bankOrder.get(a.bank_id) ?? 1_000_000;
         const bi = bankOrder.get(b.bank_id) ?? 1_000_000;
         if (ai !== bi) return ai - bi;
