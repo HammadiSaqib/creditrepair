@@ -8049,7 +8049,7 @@ export default function CreditReport() {
                           className={nextStepsSecondaryButtonClass}
                           onClick={() => window.open(creditRepairUrl, '_blank')}
                         >
-                          Schedule Credit Repair Session
+                          Go to Credit Repair
                           <ExternalLink className="ml-2 h-4 w-4" />
                         </Button>
                       </div>

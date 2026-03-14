@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { executeQuery } from '../database/mysqlConfig.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { SecurityLogger } from '../utils/securityLogger.js';
+import { emailService } from '../services/emailService';
 
 const router = express.Router();
 const securityLogger = new SecurityLogger();
@@ -194,6 +195,23 @@ router.post('/', authenticateToken, requireAdminRole, async (req: any, res) => {
       ip: req.ip
     });
 
+    // Send welcome email with credentials
+    const adminRows = await executeQuery('SELECT first_name, last_name FROM users WHERE id = ?', [adminId]);
+    const adminName = adminRows.length > 0 ? `${adminRows[0].first_name} ${adminRows[0].last_name}`.trim() : 'An Administrator';
+
+    try {
+      await emailService.sendEmployeeWelcomeEmail({
+        email,
+        firstName,
+        lastName,
+        adminName,
+        tempPassword
+      });
+    } catch (emailError) {
+      console.error('Failed to send employee welcome email:', emailError);
+      // We don't fail the request if email fails, but we should log it
+    }
+
     res.status(201).json({
       success: true,
       data: {
@@ -226,7 +244,7 @@ router.put('/:id', authenticateToken, requireAdminRole, async (req: any, res) =>
   try {
     const adminId = req.user.id;
     const employeeId = Number(req.params.id);
-    const { firstName, lastName, role, status } = req.body;
+    const { firstName, lastName, role, status, password } = req.body;
 
     // Verify employee belongs to admin
     const employeeRows = await executeQuery(
@@ -240,7 +258,7 @@ router.put('/:id', authenticateToken, requireAdminRole, async (req: any, res) =>
     const userId = employeeRows[0].user_id;
 
     // Update user
-    if (firstName || lastName || role || status) {
+    if (firstName || lastName || role || status || password) {
       const updates: string[] = [];
       const params: any[] = [];
       if (firstName !== undefined) { updates.push('first_name = ?'); params.push(firstName); }
@@ -250,6 +268,11 @@ router.put('/:id', authenticateToken, requireAdminRole, async (req: any, res) =>
         updates.push('role = ?'); params.push(userRole);
       }
       if (status !== undefined) { updates.push('status = ?'); params.push(status); }
+      if (password !== undefined && password !== '') {
+        const passwordHash = await bcrypt.hash(password, 12);
+        updates.push('password_hash = ?');
+        params.push(passwordHash);
+      }
       if (updates.length > 0) {
         const sql = `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`;
         params.push(userId);
@@ -286,7 +309,7 @@ router.put('/:id', authenticateToken, requireAdminRole, async (req: any, res) =>
   }
 });
 
-// DELETE /api/employees/:id - Deactivate employee user (soft delete)
+// DELETE /api/employees/:id - Hard delete employee and associated user
 router.delete('/:id', authenticateToken, requireAdminRole, async (req: any, res) => {
   try {
     const adminId = req.user.id;
@@ -302,27 +325,27 @@ router.delete('/:id', authenticateToken, requireAdminRole, async (req: any, res)
 
     const userId = employeeRows[0].user_id;
 
-    // Soft delete: set user inactive and employee inactive
-    await executeQuery('UPDATE users SET status = "inactive", updated_at = NOW() WHERE id = ?', [userId]);
-    await executeQuery('UPDATE employees SET status = "inactive", updated_at = NOW() WHERE id = ? AND admin_id = ?', [employeeId, adminId]);
+    // Hard delete: remove employee record, then remove user record
+    await executeQuery('DELETE FROM employees WHERE id = ? AND admin_id = ?', [employeeId, adminId]);
+    await executeQuery('DELETE FROM users WHERE id = ?', [userId]);
 
-    securityLogger.logSecurityEvent('employee_deactivated', {
+    securityLogger.logSecurityEvent('employee_deleted', {
       adminId,
       employeeId,
       userId,
       ip: req.ip
     });
 
-    res.json({ success: true, message: 'Employee deactivated successfully' });
+    res.json({ success: true, message: 'Employee deleted successfully' });
   } catch (error: any) {
-    console.error('Error deactivating employee:', error);
-    securityLogger.logSecurityEvent('employee_deactivation_error', {
+    console.error('Error deleting employee:', error);
+    securityLogger.logSecurityEvent('employee_deletion_error', {
       userId: req.user?.id,
       employeeId: req.params.id,
       error: error.message,
       ip: req.ip
     });
-    res.status(500).json({ error: 'Failed to deactivate employee' });
+    res.status(500).json({ error: 'Failed to delete employee' });
   }
 });
 

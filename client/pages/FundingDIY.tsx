@@ -15,6 +15,7 @@ import { useNavigate, useParams, useSearchParams, useLocation } from "react-rout
 import { useAuthContext } from "@/contexts/AuthContext";
 import { creditReportScraperApi } from "@/lib/api";
 import { FileText, Building2, User, ArrowLeft, CreditCard, Shield, DollarSign, CheckCircle, AlertCircle, Clock, Info } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type CardType = "personal" | "business";
 
@@ -1470,8 +1471,8 @@ export default function FundingDIY() {
                                     <span>{b.name}</span>
                                   </div>
                                   <div className="flex items-center gap-2 text-xs">
-                                    <span className={elig.stateEligible ? 'text-green-600 group-hover:text-white' : 'text-red-500 group-hover:text-white'}>{elig.stateEligible ? (elig.isNationwide ? '✅' : '✔') : '❌'} State</span>
-                                    <span className={primaryEligible ? 'text-green-600 group-hover:text-white' : 'text-red-500 group-hover:text-white'}>
+                                    <span className={cn('group-hover:text-white', elig.stateEligible ? 'text-green-600' : 'text-red-500')}>{elig.stateEligible ? (elig.isNationwide ? '✅' : '✔') : '❌'} State</span>
+                                    <span className={cn('group-hover:text-white', primaryEligible ? 'text-green-600' : 'text-red-500')}>
                                       {bureauShortLabel(primary)} {primaryEligible ? '✔' : '❌'} ({primaryCount})
                                     </span>
                                   </div>

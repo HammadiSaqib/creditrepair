@@ -86,7 +86,7 @@ class EmailService {
   // Enhanced email template with admin dashboard color scheme
   private getEmailTemplate(content: string, title: string = 'Score Machine'): string {
     const baseUrl = this.getFrontendBaseUrl();
-    const logoUrl = process.env.EMAIL_LOGO_URL || `${baseUrl}/image.png`;
+    const logoUrl = process.env.EMAIL_LOGO_URL || 'https://thescoremachine.com/image.png';
     return `
       <!DOCTYPE html>
       <html lang="en">
@@ -102,6 +102,24 @@ class EmailService {
             padding: 0;
             box-sizing: border-box;
           }
+
+        .logo {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          text-align: left;
+          justify-content: flex-start;
+        }
+
+        .logo h1 {
+          line-height: 1.1;
+        }
+
+        .logo p {
+          margin: 0;
+          color: #e0f2fe;
+          font-size: 14px;
+        }
           
           body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -113,8 +131,8 @@ class EmailService {
           }
           
           .email-container {
-            max-width: 600px;
-            margin: 0 auto;
+            max-width: 640px;
+            margin: 20px auto;
             background: #ffffff;
             border-radius: 16px;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
@@ -412,14 +430,16 @@ class EmailService {
         <div class="email-container">
           <div class="header">
             <div class="logo">
-              <img src="${logoUrl}" alt="Score Machine" style="height: 40px; margin-bottom: 10px;" />
-              <h1>Score Machine</h1>
-              <p>Professional Credit Management Platform</p>
+              <img src="${logoUrl}" alt="" style="height: 80px; width: auto; display: block;" onerror="this.style.display='none'" />
+              <div>
+                <h1>The Score Machine</h1>
+                <p>Professional Credit Management Platform</p>
+              </div>
             </div>
           </div>
           ${content}
           <div class="footer">
-            <p>&copy; 2025 Score Machine. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Score Machine. All rights reserved.</p>
             <p>
               <a href="#">Privacy Policy</a> | 
               <a href="#">Terms of Service</a> | 
@@ -1399,6 +1419,54 @@ Score Machine Team
       console.error('Failed to send admin account creation email:', error);
       return false;
     }
+  }
+
+  async sendEmployeeWelcomeEmail(data: {
+    email: string;
+    firstName: string;
+    lastName: string;
+    adminName: string;
+    tempPassword?: string;
+  }): Promise<boolean> {
+    const loginUrl = 'https://thescoremachine.com/login';
+    const passwordSection = data.tempPassword 
+      ? `
+        <div style="margin: 20px 0; padding: 15px; background: #f8fafc; border-radius: 8px; border-left: 4px solid #0f172a;">
+          <p style="margin: 0 0 10px 0; color: #64748b; font-size: 14px;">Your temporary credentials:</p>
+          <p style="margin: 0 0 5px 0;"><strong>Email:</strong> ${data.email}</p>
+          <p style="margin: 0;"><strong>Password:</strong> ${data.tempPassword}</p>
+        </div>
+        <p style="color: #ef4444; font-size: 13px;"><em>Please change your password immediately after logging in.</em></p>
+      `
+      : '';
+
+    const content = `
+      <div style="text-align: center; margin-bottom: 30px;">
+        <h2 style="color: #0f172a; margin-top: 30px">Welcome to the Team! 🎉</h2>
+      </div>
+      
+      <p>Hi ${data.firstName},</p>
+      
+      <p><strong>${data.adminName}</strong> has invited you to join their team on The Score Machine.</p>
+      
+      ${passwordSection}
+      
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${loginUrl}" style="background: #0ea5e9; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+          Log In to Your Account
+        </a>
+      </div>
+      
+      <p>If you have any questions, please reach out to your administrator.</p>
+      
+      <p style="margin-bottom: 30px;">Best regards,<br>The Score Machine Team</p>
+    `;
+
+    return await this.sendEmail({
+      to: data.email,
+      subject: `You've been invited to join The Score Machine`,
+      html: this.getEmailTemplate(content, 'Welcome to the Team')
+    });
   }
 
   async sendPurchaseNotification(data: PurchaseNotificationData): Promise<boolean> {

@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { employeesApi } from '@/lib/api';
 import DashboardLayout from '@/components/DashboardLayout';
 import AddClientDialog from '@/components/AddClientDialog';
-import { Plus, Pencil, Trash2, RefreshCw, Users, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, RefreshCw, Users, ToggleLeft, ToggleRight, Eye, EyeOff } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 type EmployeeUser = {
   id: number;
@@ -38,6 +39,7 @@ type UpdateEmployeeInput = {
   firstName?: string;
   lastName?: string;
   status?: 'active' | 'inactive';
+  password?: string;
 };
 
 function PageHeader() {
@@ -87,11 +89,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function EmployeesTable({ employees, onEdit, onToggle, onDeactivate }: {
+function EmployeesTable({ employees, onEdit, onToggle, onDeactivate, deactivatePending }: {
   employees: Employee[];
   onEdit: (employee: Employee) => void;
   onToggle: (employee: Employee) => void;
   onDeactivate: (employee: Employee) => void;
+  deactivatePending: boolean;
 }) {
   return (
     <div className="overflow-x-auto rounded-md border border-border">
@@ -124,7 +127,9 @@ function EmployeesTable({ employees, onEdit, onToggle, onDeactivate }: {
                   <ActionButton variant="outline" icon={e.user.status === 'active' ? ToggleLeft : ToggleRight} onClick={() => onToggle(e)}>
                     {e.user.status === 'active' ? 'Deactivate' : 'Activate'}
                   </ActionButton>
-                  <ActionButton variant="outline" icon={Trash2} onClick={() => onDeactivate(e)}>Remove</ActionButton>
+                  <ActionButton variant="outline" icon={Trash2} onClick={() => onDeactivate(e)} disabled={deactivatePending}>
+                    {deactivatePending ? 'Removing...' : 'Remove'}
+                  </ActionButton>
                 </div>
               </td>
             </tr>
@@ -142,6 +147,9 @@ function EmployeesTable({ employees, onEdit, onToggle, onDeactivate }: {
 
 export default function Employees() {
   const qc = useQueryClient();
+  const { toast } = useToast();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
 
   const { data: employees = [], isLoading, refetch, isFetching } = useQuery<Employee[]>({
     queryKey: ['employees:list'],
@@ -155,7 +163,21 @@ export default function Employees() {
     mutationFn: (payload: CreateEmployeeInput) => employeesApi.createEmployee(payload),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['employees:list'] });
+      setCreateOpen(false);
+      setFormCreate({ email: '', firstName: '', lastName: '', role: 'employee', status: 'active', password: '' });
+      toast({
+        title: 'Success',
+        description: 'Employee created successfully.',
+      });
     },
+    onError: (error: any) => {
+      const errorMessage = error?.response?.data?.error || error.message || 'Failed to create employee';
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    }
   });
 
   const updateMutation = useMutation({
@@ -176,7 +198,19 @@ export default function Employees() {
     mutationFn: (id: number) => employeesApi.deactivateEmployee(id),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['employees:list'] });
+      toast({
+        title: 'Employee removed',
+        description: 'The employee has been deactivated.',
+      });
     },
+    onError: (error: any) => {
+      const message = error?.response?.data?.error || error?.message || 'Failed to remove employee';
+      toast({
+        title: 'Error',
+        description: message,
+        variant: 'destructive',
+      });
+    }
   });
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -194,6 +228,8 @@ export default function Employees() {
   });
 
   const [formEdit, setFormEdit] = useState<UpdateEmployeeInput>({});
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
   const canSubmitCreate = useMemo(() => {
     return (
@@ -209,6 +245,7 @@ export default function Employees() {
       firstName: employee.user.firstName,
       lastName: employee.user.lastName,
       status: (employee.user.status as 'active' | 'inactive') || 'active',
+      password: '',
     });
     setEditOpen(true);
   };
@@ -229,12 +266,15 @@ export default function Employees() {
       {isLoading ? (
         <div className="p-10 text-center text-muted-foreground">Loading employees...</div>
       ) : (
-        <EmployeesTable
-          employees={employees}
-          onEdit={onOpenEdit}
-          onToggle={(e) => toggleMutation.mutate(e.id)}
-          onDeactivate={(e) => deactivateMutation.mutate(e.id)}
-        />
+        employees?.length > 0 && (
+          <EmployeesTable 
+            employees={employees}
+            onEdit={onOpenEdit}
+            onToggle={(e) => toggleMutation.mutate(e.id)}
+            onDeactivate={(e) => deactivateMutation.mutate(e.id)}
+            deactivatePending={deactivateMutation.isPending}
+          />
+        )
       )}
 
       {/* Create Dialog */}
@@ -281,13 +321,23 @@ export default function Employees() {
                   <option value="inactive">Inactive</option>
                 </select>
               </Field>
-              <Field label="Password (optional)">
-                <input
-                  type="password"
-                  className="w-full rounded-md border px-3 py-2"
-                  value={formCreate.password || ''}
-                  onChange={(e) => setFormCreate({ ...formCreate, password: e.target.value })}
-                />
+              <Field label="Password">
+                <div className="relative">
+                  <input
+                    type={showCreatePassword ? 'text' : 'password'}
+                    className="w-full rounded-md border px-3 py-2 pr-10"
+                    value={formCreate.password || ''}
+                    onChange={(e) => setFormCreate({ ...formCreate, password: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-3 flex items-center text-muted-foreground"
+                    onClick={() => setShowCreatePassword((v) => !v)}
+                    aria-label={showCreatePassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showCreatePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </Field>
             </div>
             <div className="mt-6 flex justify-end gap-2">
@@ -302,8 +352,6 @@ export default function Employees() {
                     status: formCreate.status || 'active',
                     password: formCreate.password || undefined,
                   });
-                  setCreateOpen(false);
-                  setFormCreate({ email: '', firstName: '', lastName: '', role: 'employee', status: 'active', password: '' });
                 }}
                 disabled={!canSubmitCreate || createMutation.isPending}
               >
@@ -350,13 +398,36 @@ export default function Employees() {
                   <option value="inactive">Inactive</option>
                 </select>
               </Field>
+              <Field label="Password">
+                <div className="relative">
+                  <input
+                    type={showEditPassword ? 'text' : 'password'}
+                    className="w-full rounded-md border px-3 py-2 pr-10"
+                    value={formEdit.password || ''}
+                    placeholder="Password"
+                    onChange={(e) => setFormEdit({ ...formEdit, password: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-3 flex items-center text-muted-foreground"
+                    onClick={() => setShowEditPassword((v) => !v)}
+                    aria-label={showEditPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </Field>
             </div>
             <div className="mt-6 flex justify-end gap-2">
               <ActionButton variant="outline" onClick={() => setEditOpen(false)}>Cancel</ActionButton>
               <ActionButton
                 onClick={async () => {
                   if (!editTarget) return;
-                  await updateMutation.mutateAsync({ id: editTarget.id, payload: formEdit });
+                  const payload = { ...formEdit };
+                  if (!payload.password) {
+                    delete (payload as any).password;
+                  }
+                  await updateMutation.mutateAsync({ id: editTarget.id, payload });
                   setEditOpen(false);
                   setEditTarget(null);
                   setFormEdit({});

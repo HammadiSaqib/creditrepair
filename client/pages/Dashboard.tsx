@@ -229,9 +229,11 @@ export default function Dashboard() {
     return trimmed && trimmed.length > 0 ? trimmed : defaultMonitoringLink;
   }, [partnerMonitoringLink]);
 
-  const qrEncodedLink = encodeURIComponent(creditReportLink);
-  const smallQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${qrEncodedLink}`;
-  const largeQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${qrEncodedLink}`;
+  const qrEncodedLink = creditReportLink ? encodeURIComponent(creditReportLink) : '';
+  const baseQrUrl = qrEncodedLink
+    ? `https://api.qrserver.com/v1/create-qr-code/?data=${qrEncodedLink}&margin=2`
+    : '';
+  const qrCodeUrl = baseQrUrl ? `${baseQrUrl}&size=400x400` : '';
   const qrLogoPath = "/image.png";
 
   useEffect(() => {
@@ -1451,17 +1453,17 @@ export default function Dashboard() {
                   aria-label="Open large QR code"
                 >
                   <img
-                    src={smallQrUrl}
+                    src={qrCodeUrl}
                     alt="Credit report registration QR code"
                     className="h-full w-full object-cover"
                     loading="lazy"
                   />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="h-10 w-10 rounded-full bg-white/90 backdrop-blur border border-slate-200 shadow-sm flex items-center justify-center">
+                    <div className="h-8 w-8 rounded-full bg-white/90 backdrop-blur border border-slate-200 shadow-sm flex items-center justify-center">
                       <img
                         src={qrLogoPath}
                         alt="Score Machine logo"
-                        className="h-7 w-7 object-contain"
+                        className="h-5 w-5 object-contain"
                       />
                     </div>
                   </div>
@@ -1485,7 +1487,7 @@ export default function Dashboard() {
             <div className="flex flex-col items-center gap-4 py-4">
               <div className="relative h-80 w-80 max-w-full rounded-2xl overflow-hidden shadow-lg border border-slate-200 dark:border-slate-700 bg-white/95">
                 <img
-                  src={largeQrUrl}
+                  src={qrCodeUrl}
                   alt="Credit report registration QR code"
                   className="h-full w-full object-cover"
                   loading="lazy"
