@@ -1544,7 +1544,7 @@ export default function Settings() {
           {canUseFundingOverride ? (
             <Card className="border-0 shadow-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm">
               <CardHeader>
-                <CardTitle className="gradient-text-primary flex items-center">
+                <CardTitle className="gradient-text-primary flex items-center pb-3">
                   <Shield className="h-5 w-5 mr-2" />
                   Funding Module Override Agreement
                 </CardTitle>
