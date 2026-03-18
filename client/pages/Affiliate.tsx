@@ -210,7 +210,7 @@ export default function Affiliate() {
     level3: { count: 0, earnings: 0 }
   });
   
-  // Calculator states
+  // Calculator state
   const [calculatorReferrals, setCalculatorReferrals] = useState(0);
   const [calculatorConversion, setCalculatorConversion] = useState(12.8);
   const [calculatedEarnings, setCalculatedEarnings] = useState(0);
