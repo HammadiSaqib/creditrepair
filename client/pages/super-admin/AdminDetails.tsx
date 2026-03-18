@@ -116,7 +116,7 @@ export default function AdminDetails() {
                 <div>
                   <div className="text-lg font-semibold">{admin.first_name} {admin.last_name}</div>
                   <div className="text-sm text-gray-600">{admin.email}</div>
-                </div>s
+                </div>
                 <div className="flex gap-3">
                   <Button variant="outline" onClick={downloadAgreementPdf} disabled={downloadingAgreement || !adminId}>
                     <Download className="h-4 w-4 mr-1" />
