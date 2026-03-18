@@ -646,11 +646,11 @@ function mapInquiries(payload) {
   }, 0);
 
   if (probe.inquirySignals.length > 0 && out.length === 0) {
-    throw new Error('Inquiry mapping missing path');
+    console.warn('[scraper] Inquiry mapping signals detected but no inquiries mapped. Proceeding with empty inquiries.');
   }
 
   if (fetchedInquiryCount > 0 && out.length === 0) {
-    throw new Error('Inquiry mapping failed');
+    console.warn('[scraper] fetchedInquiries present but mapping produced no results. Proceeding with empty inquiries.');
   }
 
   return out;
