@@ -615,9 +615,16 @@ export async function getClientIntakeConfig(req: Request, res: Response) {
     }
 
     const defaultMonitoringLink = "https://www.myscoreiq.com/get-fico-preferred.aspx?offercode=432142UK";
+    
+    // FREEZED: Logic to determine monitoring link based on referral partner
+    /*
     const monitoringLink = admin.partner_monitoring_link && admin.partner_monitoring_link.trim() 
       ? admin.partner_monitoring_link.trim() 
       : defaultMonitoringLink;
+    */
+
+    // HARDCODED: Always redirect to default link for now per request
+    const monitoringLink = defaultMonitoringLink;
 
     return res.json({
       success: true,
