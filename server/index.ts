@@ -59,6 +59,7 @@ import proxyRoutes from "./routes/proxy.js";
 import warMachineRoutes from "./routes/warMachine.js";
 import contractsRoutes from "./routes/contracts.js";
 import contractsAdminRoutes from "./routes/contractsAdmin.js";
+import contractAgreementsRoutes from "./routes/contractAgreements.js";
 import employeesRoutes from "./routes/employees.js";
 import debtPayoffRoutes from "./routes/debtPayoff.js";
 import shopRoutes from "./routes/shop.js";
@@ -570,6 +571,7 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // =============================================================================
   app.use("/api/contracts", contractsRoutes);
   app.use("/api/contracts-admin", contractsAdminRoutes);
+  app.use("/api/contract-agreements", contractAgreementsRoutes);
 
   app.post("/api/clients/intake", submitClientIntake);
   app.get("/api/clients/intake-config", getClientIntakeConfig);

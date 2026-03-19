@@ -1906,19 +1906,41 @@ router.get('/admins/:id/agreement.pdf', authenticateToken, requireSuperAdmin, as
       return res.status(404).json({ success: false, error: 'No contract found for admin' });
     }
 
-    const contentRaw =
-      dbType === 'mysql'
-        ? (contract.template_content ?? contract.body ?? '')
-        : (contract.template_content_html ?? contract.template_content_text ?? contract.body ?? '');
-    const contentText = String(contentRaw || '')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/p>/gi, '\n\n')
-      .replace(/<\/div>/gi, '\n')
-      .replace(/<\/li>/gi, '\n')
-      .replace(/<li>/gi, '• ')
-      .replace(/<[^>]*>/g, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    // If agreementId is provided, fetch that agreement's content
+    let contentText = '';
+    const agreementId = req.query.agreementId ? parseInt(String(req.query.agreementId)) : null;
+    if (agreementId) {
+      const agreement = await db.getQuery(
+        `SELECT content FROM contract_agreements WHERE id = ?`,
+        [agreementId]
+      );
+      if (agreement && agreement.content) {
+        contentText = String(agreement.content)
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n\n')
+          .replace(/<\/div>/gi, '\n')
+          .replace(/<\/li>/gi, '\n')
+          .replace(/<li>/gi, '• ')
+          .replace(/<[^>]*>/g, '')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      }
+    }
+    if (!contentText) {
+      const contentRaw =
+        dbType === 'mysql'
+          ? (contract.template_content ?? contract.body ?? '')
+          : (contract.template_content_html ?? contract.template_content_text ?? contract.body ?? '');
+      contentText = String(contentRaw || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<li>/gi, '• ')
+        .replace(/<[^>]*>/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
 
     const signatureRow = await db.getQuery(
       `SELECT * FROM contract_signatures WHERE contract_id = ? ORDER BY signed_at DESC LIMIT 1`,

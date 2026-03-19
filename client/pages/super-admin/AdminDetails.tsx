@@ -22,6 +22,65 @@ function toCsv(filename: string, headers: string[], rows: Array<Record<string, a
 }
 
 export default function AdminDetails() {
+  const [agreements, setAgreements] = useState<any[]>([]);
+  const [showAgreementModal, setShowAgreementModal] = useState(false);
+  const [editingAgreement, setEditingAgreement] = useState<any | null>(null);
+  const [agreementForm, setAgreementForm] = useState({ title: '', content: '' });
+  const [agreementLoading, setAgreementLoading] = useState(false);
+  const [showAgreementsDropdown, setShowAgreementsDropdown] = useState(false);
+  const [selectedAgreement, setSelectedAgreement] = useState<any | null>(null);
+
+  useEffect(() => {
+    fetchAgreements();
+  }, []);
+
+  async function fetchAgreements() {
+    try {
+      const res = await fetch('/api/contract-agreements');
+      const data = await res.json();
+      setAgreements(Array.isArray(data) ? data : []);
+    } catch {
+      setAgreements([]);
+    }
+  }
+
+  function onEditAgreement(agreement: any) {
+    setEditingAgreement(agreement);
+    setAgreementForm({ title: agreement.title, content: agreement.content });
+    setShowAgreementModal(true);
+  }
+
+  async function handleAgreementSave(e: React.FormEvent) {
+    e.preventDefault();
+    setAgreementLoading(true);
+    try {
+      const method = editingAgreement ? 'PUT' : 'POST';
+      const url = editingAgreement ? `/api/contract-agreements/${editingAgreement.id}` : '/api/contract-agreements';
+      await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(agreementForm),
+      });
+      setShowAgreementModal(false);
+      setEditingAgreement(null);
+      setAgreementForm({ title: '', content: '' });
+      fetchAgreements();
+    } finally {
+      setAgreementLoading(false);
+    }
+  }
+
+  async function onDeleteAgreement(id: number) {
+    if (!window.confirm('Delete this agreement?')) return;
+    setAgreementLoading(true);
+    try {
+      await fetch(`/api/contract-agreements/${id}`, { method: 'DELETE' });
+      fetchAgreements();
+    } finally {
+      setAgreementLoading(false);
+    }
+  }
+
   const { id } = useParams();
   const adminId = Number(id);
   const [admin, setAdmin] = useState<any>(null);
@@ -68,14 +127,18 @@ export default function AdminDetails() {
   const downloadAgreementPdf = async () => {
     try {
       setDownloadingAgreement(true);
-      const resp = await api.get(`/api/super-admin/admins/${adminId}/agreement.pdf`, { responseType: 'blob' });
+      let url = `/api/super-admin/admins/${adminId}/agreement.pdf`;
+      if (selectedAgreement?.id) {
+        url += `?agreementId=${selectedAgreement.id}`;
+      }
+      const resp = await api.get(url, { responseType: 'blob' });
       const blob = new Blob([resp.data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
+      const urlObj = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = urlObj;
       a.download = `admin_${adminId}_agreement.pdf`;
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(urlObj);
     } finally {
       setDownloadingAgreement(false);
     }
@@ -118,10 +181,47 @@ export default function AdminDetails() {
                   <div className="text-sm text-gray-600">{admin.email}</div>
                 </div>
                 <div className="flex gap-3">
-                  <Button variant="outline" onClick={downloadAgreementPdf} disabled={downloadingAgreement || !adminId}>
-                    <Download className="h-4 w-4 mr-1" />
-                    {downloadingAgreement ? 'Downloading…' : 'Agreement PDF'}
-                  </Button>
+                  <div className="relative">
+                    <div className="flex">
+                      <Button
+                        variant="outline"
+                        onClick={downloadAgreementPdf}
+                        disabled={downloadingAgreement || !adminId}
+                        className="rounded-r-none"
+                      >
+                        <Download className="h-4 w-4 mr-1" />
+                        {downloadingAgreement ? 'Downloading…' : 'Agreement PDF'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-l-none px-2"
+                        disabled={agreements.length === 0}
+                        onClick={() => setShowAgreementsDropdown((v: boolean) => !v)}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" /></svg>
+                      </Button>
+                    </div>
+                    {showAgreementsDropdown && agreements.length > 0 && (
+                      <div
+                        className="absolute right-0 mt-2 w-56 max-h-64 overflow-auto bg-white border rounded shadow-lg z-50"
+                        style={{ top: '100%', minWidth: 200 }}
+                      >
+                        {agreements.map((agreement) => (
+                          <div
+                            key={agreement.id}
+                            className={`px-4 py-2 hover:bg-gray-100 cursor-pointer ${selectedAgreement?.id === agreement.id ? 'bg-gray-100 font-semibold' : ''}`}
+                            onClick={() => {
+                              setSelectedAgreement(agreement);
+                              setShowAgreementsDropdown(false);
+                            }}
+                          >
+                            {agreement.title}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <Badge variant="outline">{admin.role}</Badge>
                   {admin.plan_name && <Badge variant="secondary">{admin.plan_name} {admin.plan_type ? `(${admin.plan_type})` : ''}</Badge>}
                 </div>
@@ -133,6 +233,69 @@ export default function AdminDetails() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  {/* Agreements Management Card */}
+  <Card className="lg:col-span-2">
+    <CardHeader className="flex flex-row items-center justify-between gap-3">
+      <CardTitle>Agreements Management</CardTitle>
+      <Button variant="outline" onClick={() => setShowAgreementModal(true)}>
+        Add Agreement
+      </Button>
+    </CardHeader>
+    <CardContent>
+      <div className="space-y-3">
+        {agreements.length === 0 && (
+          <div className="text-gray-500">No agreements yet.</div>
+        )}
+        {agreements.map((agreement) => (
+          <div key={agreement.id} className="flex items-center justify-between border rounded p-3">
+            <div>
+              <div className="font-semibold">{agreement.title}</div>
+              <div className="text-gray-600 text-sm line-clamp-2 max-w-xl">{agreement.content}</div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="icon" variant="ghost" onClick={() => onEditAgreement(agreement)}><span className="sr-only">Edit</span><svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-2.828 0L9 13z"></path></svg></Button>
+              <Button size="icon" variant="ghost" onClick={() => onDeleteAgreement(agreement.id)}><span className="sr-only">Delete</span><svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"></path></svg></Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </CardContent>
+  </Card>
+
+  {/* Agreement Modal */}
+  {showAgreementModal && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
+      <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl relative">
+        <h2 className="text-xl font-semibold mb-4">{editingAgreement ? 'Edit Agreement' : 'Add Agreement'}</h2>
+        <form onSubmit={handleAgreementSave} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Title</label>
+            <input
+              type="text"
+              className="w-full border rounded px-3 py-2"
+              value={agreementForm.title}
+              onChange={e => setAgreementForm(f => ({ ...f, title: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Content</label>
+            <textarea
+              className="w-full border rounded px-3 py-2 resize-y min-h-[80px] max-h-[400px]"
+              value={agreementForm.content}
+              onChange={e => setAgreementForm(f => ({ ...f, content: e.target.value }))}
+              required
+              style={{ minHeight: 80, maxHeight: 400 }}
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button type="button" variant="outline" onClick={() => { setShowAgreementModal(false); setEditingAgreement(null); setAgreementForm({ title: '', content: '' }); }}>Cancel</Button>
+            <Button type="submit" disabled={agreementLoading}>{agreementLoading ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle>Transactions</CardTitle>

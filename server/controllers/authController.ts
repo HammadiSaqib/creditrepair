@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import jwt, { type Secret, type SignOptions } from 'jsonwebtoken';
 import { getQuery, runQuery } from '../database/databaseAdapter.js';
 import { ENV_CONFIG } from '../config/environment.js';
 import { emailService } from '../services/emailService.js';
 import { extractLoginInfo } from '../utils/loginUtils.js';
 
-const JWT_SECRET = ENV_CONFIG.JWT_SECRET;
+const JWT_SECRET: Secret = ENV_CONFIG.JWT_SECRET;
 
 // Validation schemas
 const loginSchema = z.object({
@@ -29,6 +29,38 @@ const registerSchema = z.object({
   referral_commission_rate: z.number().min(0).max(100).optional(),
 });
 
+const updateProfileSchema = z.object({
+  first_name: z.string().min(1, 'First name is required').optional(),
+  last_name: z.string().min(1, 'Last name is required').optional(),
+  email: z.string().email('Invalid email format').optional(),
+  company_name: z.string().optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zip_code: z.string().optional(),
+  current_password: z.string().optional(),
+  new_password: z.string().min(6, 'New password must be at least 6 characters').optional(),
+  credit_repair_url: z.string().url('Invalid URL').optional().or(z.literal('')),
+  onboarding_slug: z.string().optional(),
+  intake_redirect_url: z.string().url('Invalid URL').optional().or(z.literal('')),
+  intake_logo_url: z.string().url('Invalid URL').optional().or(z.literal('')),
+  intake_primary_color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Invalid hex color').optional().or(z.literal('')),
+  intake_company_name: z.string().optional(),
+  intake_website_url: z.string().url('Invalid URL').optional().or(z.literal('')),
+  intake_email: z.string().email('Invalid email format').optional().or(z.literal('')),
+  intake_phone_number: z.string().optional(),
+  nmi_merchant_id: z.string().optional(),
+  nmi_public_key: z.string().optional(),
+  nmi_api_key: z.string().optional(),
+  nmi_username: z.string().optional(),
+  nmi_password: z.string().optional(),
+  nmi_test_mode: z.boolean().optional(),
+  nmi_gateway_logo: z.string().url().optional().or(z.literal('')),
+  funding_override_enabled: z.boolean().optional(),
+  funding_override_signature_text: z.string().optional()
+});
+
 export interface AuthRequest extends Request {
   user?: {
     id: number;
@@ -39,28 +71,28 @@ export interface AuthRequest extends Request {
 
 // Helper functions
 export function generateToken(user: any): string {
-  return jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      role: user.role
-    },
-    JWT_SECRET,
-    { expiresIn: ENV_CONFIG.JWT_EXPIRES_IN || '24h' }
-  );
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role
+  };
+
+  const expiresIn = (ENV_CONFIG.JWT_EXPIRES_IN || '24h') as SignOptions['expiresIn'];
+
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
 }
 
 export function generateRefreshToken(user: any): string {
-  return jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      type: 'refresh'
-    },
-    JWT_SECRET,
-    { expiresIn: ENV_CONFIG.JWT_REFRESH_EXPIRES_IN || '30d' }
-  );
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    type: 'refresh'
+  };
+
+  const expiresIn = (ENV_CONFIG.JWT_REFRESH_EXPIRES_IN || '30d') as SignOptions['expiresIn'];
+
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
 }
 
 export function verifyRefreshToken(token: string): any {
@@ -877,10 +909,8 @@ export class AuthController {
       try {
         emailSent = await emailService.sendWelcomeEmail({
           firstName: userData.first_name,
-          lastName: userData.last_name,
           email: userData.email,
-          companyName: userData.company_name || '',
-          role: userData.role || 'admin'
+          userType: (userData.role as 'admin' | 'affiliate' | 'client') || 'admin'
         });
         console.log('Welcome email sent result:', emailSent);
       } catch (emailError) {
@@ -1046,10 +1076,8 @@ export class AuthController {
       try {
         await emailService.sendWelcomeEmail({
           firstName: newUser.first_name,
-          lastName: newUser.last_name,
           email: newUser.email,
-          companyName: newUser.company_name || '',
-          role: newUser.role
+          userType: (newUser.role as 'admin' | 'affiliate' | 'client') || 'admin'
         });
         console.log('✅ Welcome email sent to:', newUser.email);
       } catch (emailError) {
@@ -1183,6 +1211,10 @@ export class AuthController {
         intake_redirect_url: user.intake_redirect_url || null,
         intake_logo_url: user.intake_logo_url || null,
         intake_primary_color: user.intake_primary_color || null,
+        intake_company_name: user.intake_company_name || null,
+        intake_website_url: user.intake_website_url || null,
+        intake_email: user.intake_email || null,
+        intake_phone_number: user.intake_phone_number || null,
         funding_override_enabled: user.funding_override_enabled ? true : false,
         funding_override_signature_text: user.funding_override_signature_text || null,
         funding_override_signed_at: user.funding_override_signed_at || null,
@@ -1255,339 +1287,73 @@ export class AuthController {
       if (!req.user || !req.user.id) {
         return res.status(401).json({ error: 'User not authenticated' });
       }
-      // Filter out empty strings from the request body
-      const filteredBody = Object.fromEntries(
-        Object.entries(req.body).filter(([key, value]) => value !== '' && value !== null && value !== undefined)
-      );
+      const profileUpdates = updateProfileSchema.parse(req.body);
 
-      const updateSchema = z.object({
-        first_name: z.string().min(1).optional(),
-        last_name: z.string().min(1).optional(),
-        company_name: z.string().nullable().optional(),
-        credit_repair_url: z.string().optional(),
-        onboarding_slug: z.string().optional(),
-        intake_redirect_url: z.string().optional(),
-        intake_logo_url: z.string().optional(),
-        intake_primary_color: z.string().optional(),
-        funding_override_enabled: z.boolean().optional(),
-        funding_override_signature_text: z.string().optional(),
-        email: z.string().email().optional(),
-        phone: z.string().optional(),
-        address: z.string().optional(),
-        city: z.string().optional(),
-        state: z.string().optional(),
-        zip_code: z.string().optional(),
-        date_of_birth: z.string().optional(),
-        current_password: z.string().optional(),
-        new_password: z.string().min(6, 'Password must be at least 6 characters').optional(),
-        // NMI gateway fields
-        nmi_merchant_id: z.string().optional(),
-        nmi_public_key: z.string().optional(),
-        nmi_api_key: z.string().optional(),
-        nmi_username: z.string().optional(),
-        nmi_password: z.string().optional(),
-        nmi_test_mode: z.boolean().optional(),
-        nmi_gateway_logo: z.string().optional(),
-      });
-      
-      const data = updateSchema.parse(filteredBody);
-      
-      // Separate password fields from profile fields
-      const { current_password, new_password, ...profileUpdates } = data;
-
-      if (typeof (profileUpdates as any).onboarding_slug !== 'undefined') {
-        const role = req.user!.role;
-        if (!['admin', 'super_admin'].includes(role)) {
-          return res.status(403).json({ error: 'Insufficient permissions to update onboarding link' });
+      if (profileUpdates.funding_override_enabled === true) {
+        const signatureText = (profileUpdates as any).funding_override_signature_text;
+        if (!signatureText || !String(signatureText).trim()) {
+          return res.status(400).json({ error: 'Signature is required to enable funding override' });
         }
-        const rawSlug = String((profileUpdates as any).onboarding_slug || '');
-        let normalizedSlug = rawSlug.trim().toLowerCase();
-        normalizedSlug = normalizedSlug.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
-        if (!normalizedSlug || normalizedSlug.length > 80) {
-          return res.status(400).json({ error: 'Onboarding slug must be 1-80 characters and URL-safe' });
-        }
-        (profileUpdates as any).onboarding_slug = normalizedSlug;
+        (profileUpdates as any).funding_override_signature_text = String(signatureText).trim();
+        (profileUpdates as any).funding_override_signed_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
       }
 
-      const hasIntakeBrandingUpdate =
-        typeof (profileUpdates as any).intake_redirect_url !== 'undefined'
-        || typeof (profileUpdates as any).intake_logo_url !== 'undefined'
-        || typeof (profileUpdates as any).intake_primary_color !== 'undefined';
-
-      if (hasIntakeBrandingUpdate) {
-        const role = req.user!.role;
-        if (!['admin', 'super_admin'].includes(role)) {
-          return res.status(403).json({ error: 'Insufficient permissions to update intake branding' });
-        }
-
-        if (typeof (profileUpdates as any).intake_redirect_url !== 'undefined') {
-          const raw = String((profileUpdates as any).intake_redirect_url || '').trim();
-          if (!/^https?:\/\//i.test(raw)) {
-            return res.status(400).json({ error: 'Redirect URL must start with http:// or https://' });
-          }
-          try {
-            const parsed = new URL(raw);
-            if (!parsed.protocol.startsWith('http')) {
-              return res.status(400).json({ error: 'Redirect URL must be http or https' });
-            }
-            (profileUpdates as any).intake_redirect_url = parsed.toString();
-          } catch {
-            return res.status(400).json({ error: 'Invalid redirect URL' });
-          }
-        }
-
-        if (typeof (profileUpdates as any).intake_logo_url !== 'undefined') {
-          const raw = String((profileUpdates as any).intake_logo_url || '').trim();
-          if (!/^https?:\/\//i.test(raw)) {
-            return res.status(400).json({ error: 'Logo URL must start with http:// or https://' });
-          }
-          try {
-            const parsed = new URL(raw);
-            if (!parsed.protocol.startsWith('http')) {
-              return res.status(400).json({ error: 'Logo URL must be http or https' });
-            }
-            (profileUpdates as any).intake_logo_url = parsed.toString();
-          } catch {
-            return res.status(400).json({ error: 'Invalid logo URL' });
-          }
-        }
-
-        if (typeof (profileUpdates as any).intake_primary_color !== 'undefined') {
-          const color = String((profileUpdates as any).intake_primary_color || '').trim();
-          if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
-            return res.status(400).json({ error: 'Primary color must be a hex color like #16A34A' });
-          }
-          (profileUpdates as any).intake_primary_color = color.toUpperCase();
-        }
-      }
-      
-      // Handle password change if provided
-      if (new_password) {
-        if (!current_password) {
-          return res.status(400).json({ error: 'Current password is required to change password' });
-        }
-        
-        // Get current user to verify password
-        const currentUser = await getUserById(req.user!.id);
-        if (!currentUser) {
-          return res.status(404).json({ error: 'User not found' });
-        }
-        
-        // Verify current password
-        const passwordMatch = comparePassword(current_password, currentUser.password_hash);
-        if (!passwordMatch) {
-          return res.status(400).json({ error: 'Current password is incorrect' });
-        }
-        
-        // Hash new password and add to updates
-        const hashedNewPassword = hashPassword(new_password);
-        (profileUpdates as any).password_hash = hashedNewPassword;
-      }
-      
-      // Guard funding settings updates to admin/super_admin/funding_manager only
-      const nmiKeys = [
-        'nmi_merchant_id',
-        'nmi_public_key',
-        'nmi_api_key',
-        'nmi_username',
-        'nmi_password',
-        'nmi_test_mode',
-        'nmi_gateway_logo',
+      const allowedFields = [
+        'first_name', 'last_name', 'email', 'company_name', 'phone', 'address', 'city', 'state', 'zip_code',
+        'credit_repair_url', 'onboarding_slug', 'intake_redirect_url', 'intake_logo_url', 'intake_primary_color',
+        'intake_company_name', 'intake_website_url', 'intake_email', 'intake_phone_number',
+        'nmi_merchant_id', 'nmi_public_key', 'nmi_api_key', 'nmi_username', 'nmi_password', 'nmi_test_mode', 'nmi_gateway_logo',
+        'funding_override_enabled', 'funding_override_signature_text', 'funding_override_signed_at'
       ];
-      const includesNmiUpdates = Object.keys(profileUpdates).some(key => nmiKeys.includes(key));
-      if (includesNmiUpdates) {
-        const role = req.user!.role;
-        if (!['admin', 'super_admin', 'funding_manager'].includes(role)) {
-          return res.status(403).json({ error: 'Insufficient permissions to update funding settings' });
-        }
+
+      const filteredUpdateData = Object.entries(profileUpdates).filter(([key]) => allowedFields.includes(key));
+
+      if (filteredUpdateData.length > 0) {
+        const queryParts = filteredUpdateData.map(([key]) => `${key} = ?`);
+        const queryValues = filteredUpdateData.map(([, value]) => value);
+
+        await runQuery(
+          `UPDATE users SET ${queryParts.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [...queryValues, req.user!.id]
+        );
       }
 
-      const includesFundingOverrideUpdate = Object.prototype.hasOwnProperty.call(profileUpdates, 'funding_override_enabled')
-        || Object.prototype.hasOwnProperty.call(profileUpdates, 'funding_override_signature_text');
-      if (includesFundingOverrideUpdate) {
-        const role = req.user!.role;
-        if (!['admin', 'super_admin'].includes(role)) {
-          return res.status(403).json({ error: 'Insufficient permissions to update funding override' });
-        }
-        if (profileUpdates.funding_override_enabled === true) {
-          const signatureText = (profileUpdates as any).funding_override_signature_text;
-          if (!signatureText || !String(signatureText).trim()) {
-            return res.status(400).json({ error: 'Signature is required to enable funding override' });
-          }
-          (profileUpdates as any).funding_override_signature_text = String(signatureText).trim();
-          (profileUpdates as any).funding_override_signed_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
-        }
-      }
-
-      // Handle affiliate profile updates separately (use affiliates table)
-      if (req.user!.role === 'affiliate') {
-        const allowedAffiliateKeys = [
-          'first_name',
-          'last_name',
-          'company_name',
-          'phone',
-          'address',
-          'city',
-          'state',
-          'zip_code',
-          'credit_repair_url',
-          'avatar'
-        ];
-        const affiliateUpdates: Record<string, any> = {};
-        for (const [k, v] of Object.entries(profileUpdates)) {
-          if (allowedAffiliateKeys.includes(k)) affiliateUpdates[k] = v;
-        }
-        // Password change for affiliates
-        if (new_password) {
-          const currentAffiliate = await getAffiliateById(req.user!.id);
-          if (!currentAffiliate) {
-            return res.status(404).json({ error: 'Affiliate not found' });
-          }
-          const passwordMatch = comparePassword(current_password!, currentAffiliate.password_hash);
-          if (!passwordMatch) {
-            return res.status(400).json({ error: 'Current password is incorrect' });
-          }
-          const hashedNewPassword = hashPassword(new_password);
-          (affiliateUpdates as any).password_hash = hashedNewPassword;
-        }
-        if (Object.keys(affiliateUpdates).length === 0) {
-          return res.status(400).json({ error: 'No updates provided' });
-        }
-        const setClauseAff = Object.keys(affiliateUpdates).map(key => `${key} = ?`).join(', ');
-        const valuesAff = [...Object.values(affiliateUpdates), req.user!.id];
-        await runQuery(`UPDATE affiliates SET ${setClauseAff}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, valuesAff);
-        const updatedAffiliate = await getAffiliateById(req.user!.id);
-        if (!updatedAffiliate) {
-          return res.status(404).json({ error: 'Affiliate not found after update' });
-        }
-        const affiliateData = {
-          id: updatedAffiliate.id,
-          email: updatedAffiliate.email,
-          first_name: updatedAffiliate.first_name,
-          last_name: updatedAffiliate.last_name,
-          company_name: updatedAffiliate.company_name,
-          phone: updatedAffiliate.phone,
-          role: 'affiliate',
-          avatar: updatedAffiliate.avatar,
-          admin_id: updatedAffiliate.admin_id,
-          plan_type: updatedAffiliate.plan_type,
-          commission_rate: updatedAffiliate.commission_rate,
-          total_earnings: updatedAffiliate.total_earnings,
-          total_referrals: updatedAffiliate.total_referrals,
-          status: updatedAffiliate.status,
-          created_at: updatedAffiliate.created_at,
-          last_login: updatedAffiliate.last_login,
-          referral_slug: updatedAffiliate.referral_slug,
-        };
-        return res.json({
-          success: true,
-          message: 'Profile updated successfully',
-          user: affiliateData
-        });
-      }
-
-      // Handle client profile updates separately (use clients table)
-      if (req.user!.role === 'client') {
-        const allowedClientKeys = [
-          'first_name',
-          'last_name',
-          'email',
-          'phone',
-          'address',
-          'city',
-          'state',
-          'zip_code',
-          'date_of_birth'
-        ];
-        const clientUpdates: Record<string, any> = {};
-        for (const [k, v] of Object.entries(profileUpdates)) {
-          if (allowedClientKeys.includes(k)) {
-            const column = k === 'email' ? 'platform_email' : k;
-            clientUpdates[column] = v;
-          }
-        }
-        if (clientUpdates['date_of_birth']) {
-          try {
-            const d = new Date(String(clientUpdates['date_of_birth']));
-            if (!isNaN(d.getTime())) {
-              clientUpdates['date_of_birth'] = d.toISOString().slice(0, 10);
-            }
-          } catch {}
-        }
-        if (Object.keys(clientUpdates).length === 0) {
-          return res.status(400).json({ error: 'No updates provided' });
-        }
-        const setClauseClient = Object.keys(clientUpdates).map(key => `${key} = ?`).join(', ');
-        const valuesClient = [...Object.values(clientUpdates), req.user!.id];
-        await runQuery(`UPDATE clients SET ${setClauseClient}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, valuesClient);
-        const updatedClient = await getQuery('SELECT * FROM clients WHERE id = ?', [req.user!.id]);
-        if (!updatedClient) {
-          return res.status(404).json({ error: 'Client not found after update' });
-        }
-        const clientData = {
-          id: updatedClient.id,
-          email: updatedClient.platform_email,
-          first_name: updatedClient.first_name,
-          last_name: updatedClient.last_name,
-          phone: updatedClient.phone,
-          address: updatedClient.address,
-          city: updatedClient.city,
-          state: updatedClient.state,
-          zip_code: updatedClient.zip_code,
-          date_of_birth: updatedClient.date_of_birth,
-          role: 'client',
-          status: updatedClient.status,
-          created_at: updatedClient.created_at,
-          last_login: updatedClient.last_login,
-        };
-        return res.json({
-          success: true,
-          message: 'Profile updated successfully',
-          user: clientData
-        });
-      }
-
-      if (Object.keys(profileUpdates).length === 0) {
-        return res.status(400).json({ error: 'No updates provided' });
-      }
-      
-      // Update user in database
-      const setClause = Object.keys(profileUpdates).map(key => `${key} = ?`).join(', ');
-      const values = [...Object.values(profileUpdates), req.user!.id];
-      
-      await runQuery(`UPDATE users SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, values);
-      
-      // Get updated user
       const updatedUser = await getUserById(req.user!.id);
       if (!updatedUser) {
         return res.status(404).json({ error: 'User not found after update' });
       }
-      
+
+      const userData = {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        first_name: updatedUser.first_name,
+        last_name: updatedUser.last_name,
+        company_name: updatedUser.company_name,
+        credit_repair_url: updatedUser.credit_repair_url,
+        onboarding_slug: updatedUser.onboarding_slug || null,
+        intake_redirect_url: updatedUser.intake_redirect_url || null,
+        intake_logo_url: updatedUser.intake_logo_url || null,
+        intake_primary_color: updatedUser.intake_primary_color || null,
+        intake_company_name: updatedUser.intake_company_name || null,
+        intake_website_url: updatedUser.intake_website_url || null,
+        intake_email: updatedUser.intake_email || null,
+        intake_phone_number: updatedUser.intake_phone_number || null,
+        funding_override_enabled: updatedUser.funding_override_enabled ? true : false,
+        funding_override_signature_text: updatedUser.funding_override_signature_text || null,
+        funding_override_signed_at: updatedUser.funding_override_signed_at || null,
+        phone: updatedUser.phone,
+        address: updatedUser.address,
+        city: updatedUser.city,
+        state: updatedUser.state,
+        zip_code: updatedUser.zip_code,
+        avatar: updatedUser.avatar,
+        role: updatedUser.role,
+      };
+
       res.json({
         success: true,
         message: 'Profile updated successfully',
-        user: {
-          id: updatedUser.id,
-          email: updatedUser.email,
-          first_name: updatedUser.first_name,
-          last_name: updatedUser.last_name,
-          company_name: updatedUser.company_name,
-          credit_repair_url: updatedUser.credit_repair_url,
-          onboarding_slug: updatedUser.onboarding_slug || null,
-          intake_redirect_url: updatedUser.intake_redirect_url || null,
-          intake_logo_url: updatedUser.intake_logo_url || null,
-          intake_primary_color: updatedUser.intake_primary_color || null,
-          funding_override_enabled: updatedUser.funding_override_enabled ? true : false,
-          funding_override_signature_text: updatedUser.funding_override_signature_text || null,
-          funding_override_signed_at: updatedUser.funding_override_signed_at || null,
-          phone: updatedUser.phone,
-          address: updatedUser.address,
-          city: updatedUser.city,
-          state: updatedUser.state,
-          zip_code: updatedUser.zip_code,
-          avatar: updatedUser.avatar,
-          role: updatedUser.role,
-        }
+        user: userData,
       });
     } catch (error) {
       if (error instanceof z.ZodError) {

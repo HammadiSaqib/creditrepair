@@ -238,6 +238,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboardData();
+    fetchReferralPartnerLink();
     checkAffiliateAccess();
   }, []);
 
@@ -278,7 +279,7 @@ export default function Dashboard() {
     if (userProfile?.role === 'admin' || userProfile?.role === 'super_admin') {
       try {
         const affiliateResponse = await api.get('/api/auth/affiliate/status');
-        const { status, affiliate_id, referral_slug, partner_monitoring_link } = affiliateResponse.data || {};
+        const { status, affiliate_id, referral_slug } = affiliateResponse.data || {};
         setHasAffiliateAccess(true);
         setAffiliateVerificationStatus(status || null);
         if (affiliate_id) {
@@ -287,19 +288,33 @@ export default function Dashboard() {
             ? referral_slug 
             : String(affiliate_id);
           setAffiliateLink(`${window.location.origin}/ref/${refPart}`);
-          setPartnerMonitoringLink(typeof partner_monitoring_link === 'string' ? partner_monitoring_link : null);
+          // Do not override partnerMonitoringLink; referral fetch controls it
         } else {
           setAffiliateId(null);
           setAffiliateLink("");
-          setPartnerMonitoringLink(null);
         }
       } catch (error) {
         setHasAffiliateAccess(false);
         setAffiliateVerificationStatus(null);
         setAffiliateId(null);
         setAffiliateLink("");
+      }
+    }
+  };
+
+  // For referred users: fetch affiliate partner link and set it
+  const fetchReferralPartnerLink = async () => {
+    try {
+      const resp = await authApi.getReferralPartnerLink();
+      const link = resp?.data?.partnerMonitoringLink;
+      if (typeof link === 'string' && link.trim().length > 0) {
+        setPartnerMonitoringLink(link);
+      } else {
         setPartnerMonitoringLink(null);
       }
+    } catch (error) {
+      // Swallow errors silently; fallback to default
+      setPartnerMonitoringLink(null);
     }
   };
 

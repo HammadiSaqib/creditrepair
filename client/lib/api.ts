@@ -177,6 +177,8 @@ export const authApi = {
   
   getProfile: () => api.get('/api/auth/profile'),
   getAffiliateStatus: () => api.get('/api/auth/affiliate/status'),
+  getReferralPartnerLink: () => api.get('/api/auth/referral/partner-link'),
+  getReferralCreditRepairLink: () => api.get('/api/auth/referral/credit-repair-link'),
   
   updateProfile: (profileData: {
     first_name?: string;
@@ -194,6 +196,10 @@ export const authApi = {
     intake_redirect_url?: string;
     intake_logo_url?: string;
     intake_primary_color?: string;
+    intake_company_name?: string;
+    intake_website_url?: string;
+    intake_email?: string;
+    intake_phone_number?: string;
     // NMI gateway fields
     nmi_merchant_id?: string;
     nmi_public_key?: string;

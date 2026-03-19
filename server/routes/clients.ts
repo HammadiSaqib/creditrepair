@@ -592,12 +592,20 @@ export async function getClientIntakeConfig(req: Request, res: Response) {
     const adminId = await resolveAdminIdFromIntake((req.query as any)?.token, (req.query as any)?.slug);
     const admin = await getQuery(
       `SELECT
-         intake_redirect_url,
-         intake_logo_url,
-         intake_primary_color,
-         onboarding_slug
-       FROM users
-       WHERE id = ? AND role IN ('admin','super_admin')
+         u.intake_redirect_url,
+         u.intake_logo_url,
+         u.intake_primary_color,
+         u.intake_company_name,
+         u.intake_website_url,
+         u.intake_email,
+         u.intake_phone_number,
+         u.onboarding_slug,
+         a.partner_monitoring_link
+       FROM users u
+       LEFT JOIN affiliate_referrals ar ON ar.referred_user_id = u.id
+       LEFT JOIN affiliates a ON a.id = ar.affiliate_id
+       WHERE u.id = ? AND u.role IN ('admin','super_admin')
+       ORDER BY ar.referral_date ASC
        LIMIT 1`,
       [adminId]
     );
@@ -606,6 +614,11 @@ export async function getClientIntakeConfig(req: Request, res: Response) {
       return res.status(404).json({ error: 'Onboarding link not found' });
     }
 
+    const defaultMonitoringLink = "https://www.myscoreiq.com/get-fico-preferred.aspx?offercode=432142UK";
+    const monitoringLink = admin.partner_monitoring_link && admin.partner_monitoring_link.trim() 
+      ? admin.partner_monitoring_link.trim() 
+      : defaultMonitoringLink;
+
     return res.json({
       success: true,
       data: {
@@ -613,6 +626,11 @@ export async function getClientIntakeConfig(req: Request, res: Response) {
         redirectUrl: admin.intake_redirect_url || null,
         logoUrl: admin.intake_logo_url || null,
         primaryColor: admin.intake_primary_color || null,
+        companyName: admin.intake_company_name || null,
+        websiteUrl: admin.intake_website_url || null,
+        contactEmail: admin.intake_email || null,
+        contactPhone: admin.intake_phone_number || null,
+        monitoringLink
       }
     });
   } catch (error: any) {

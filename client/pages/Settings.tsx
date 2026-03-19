@@ -161,6 +161,10 @@ export default function Settings() {
   const [savingOnboardingSlug, setSavingOnboardingSlug] = useState(false);
   const [intakeRedirectUrl, setIntakeRedirectUrl] = useState("");
   const [intakeLogoUrl, setIntakeLogoUrl] = useState("");
+  const [intakeCompanyName, setIntakeCompanyName] = useState("");
+  const [intakeWebsiteUrl, setIntakeWebsiteUrl] = useState("");
+  const [intakeEmail, setIntakeEmail] = useState("");
+  const [intakePhoneNumber, setIntakePhoneNumber] = useState("");
   const [intakeLogoFile, setIntakeLogoFile] = useState<File | null>(null);
   const [intakePrimaryColor, setIntakePrimaryColor] = useState("#16A34A");
   const [savingIntakeBranding, setSavingIntakeBranding] = useState(false);
@@ -224,7 +228,19 @@ export default function Settings() {
     setIntakeRedirectUrl((userProfile as any)?.intake_redirect_url || "");
     setIntakeLogoUrl((userProfile as any)?.intake_logo_url || "");
     setIntakePrimaryColor((userProfile as any)?.intake_primary_color || "#16A34A");
-  }, [(userProfile as any)?.intake_redirect_url, (userProfile as any)?.intake_logo_url, (userProfile as any)?.intake_primary_color]);
+    setIntakeCompanyName((userProfile as any)?.intake_company_name || "");
+    setIntakeWebsiteUrl((userProfile as any)?.intake_website_url || "");
+    setIntakeEmail((userProfile as any)?.intake_email || "");
+    setIntakePhoneNumber((userProfile as any)?.intake_phone_number || "");
+  }, [
+    (userProfile as any)?.intake_redirect_url, 
+    (userProfile as any)?.intake_logo_url, 
+    (userProfile as any)?.intake_primary_color,
+    (userProfile as any)?.intake_company_name,
+    (userProfile as any)?.intake_website_url,
+    (userProfile as any)?.intake_email,
+    (userProfile as any)?.intake_phone_number
+  ]);
 
   const effectiveCreditRepairUrl = useMemo(() => {
     const envUrl = import.meta.env.VITE_CREDIT_REPAIR_URL as string | undefined;
@@ -422,10 +438,34 @@ export default function Settings() {
         logo = uploadedLogoUrl;
       }
 
+      // Validate website URL (must be empty or start with http:// or https://)
+      const trimmedWebsiteUrl = intakeWebsiteUrl.trim();
+      if (trimmedWebsiteUrl && !/^https?:\/\//i.test(trimmedWebsiteUrl)) {
+        toast({
+          title: "Invalid Website URL",
+          description: "Website URL must start with http:// or https://",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Validate email (must be empty or valid email)
+      const trimmedEmail = intakeEmail.trim();
+      if (trimmedEmail && !/^\S+@\S+\.\S+$/.test(trimmedEmail)) {
+        toast({
+          title: "Invalid Email",
+          description: "Contact Email must be a valid email address.",
+          variant: "destructive",
+        });
+        return;
+      }
       await authApi.updateProfile({
         intake_redirect_url: redirect,
         intake_logo_url: logo,
         intake_primary_color: color.toUpperCase(),
+        intake_company_name: intakeCompanyName.trim(),
+        intake_website_url: trimmedWebsiteUrl,
+        intake_email: trimmedEmail,
+        intake_phone_number: intakePhoneNumber.trim(),
       });
       await refreshProfile();
       setIntakeLogoFile(null);
@@ -2154,14 +2194,37 @@ export default function Settings() {
                     <Label htmlFor="intakeRedirectUrl">Success Redirect URL</Label>
                     <Input
                       id="intakeRedirectUrl"
-                      placeholder="https://yourdomain.com/client-intake/isellmoney/success"
+                      placeholder="https://yourdomain.com/success"
                       value={intakeRedirectUrl}
                       onChange={(e) => setIntakeRedirectUrl(e.target.value)}
                       className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Client is redirected here after successful intake submission.
-                    </p>
+                    <p className="text-xs text-muted-foreground">Client is sent here after submission.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="intakeCompanyName">Company Name</Label>
+                    <Input
+                      id="intakeCompanyName"
+                      placeholder="Your Company LLC"
+                      value={intakeCompanyName}
+                      onChange={(e) => setIntakeCompanyName(e.target.value)}
+                      className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                    />
+                    <p className="text-xs text-muted-foreground">Optional. Your company's legal name.</p>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="intakeWebsiteUrl">Website URL</Label>
+                    <Input
+                      id="intakeWebsiteUrl"
+                      placeholder="https://yourdomain.com"
+                      value={intakeWebsiteUrl}
+                      onChange={(e) => setIntakeWebsiteUrl(e.target.value)}
+                      className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                    />
+                    <p className="text-xs text-muted-foreground">Optional. Your company's website.</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="intakeLogoUrl">Logo URL</Label>
@@ -2172,9 +2235,33 @@ export default function Settings() {
                       onChange={(e) => setIntakeLogoUrl(e.target.value)}
                       className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Optional. Displayed at the top of your client intake page.
-                    </p>
+                    <p className="text-xs text-muted-foreground">Optional. Displayed on the intake page.</p>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="intakeEmail">Contact Email</Label>
+                    <Input
+                      id="intakeEmail"
+                      type="email"
+                      placeholder="support@yourcompany.com"
+                      value={intakeEmail}
+                      onChange={(e) => setIntakeEmail(e.target.value)}
+                      className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                    />
+                    <p className="text-xs text-muted-foreground">Optional. For client support.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="intakePhoneNumber">Contact Phone Number</Label>
+                    <Input
+                      id="intakePhoneNumber"
+                      placeholder="+1 (555) 123-4567"
+                      value={intakePhoneNumber}
+                      onChange={(e) => setIntakePhoneNumber(e.target.value)}
+                      className="bg-white/50 dark:bg-slate-700/50 border-slate-200 dark:border-slate-600"
+                    />
+                    <p className="text-xs text-muted-foreground">Optional. For client support.</p>
                   </div>
                 </div>
 

@@ -613,11 +613,11 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
             </div>
             <Button
               size="sm"
-              className="w-full gradient-primary hover:opacity-90 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all duration-200"
+              className="w-full gradient-primary hover:opacity-90 text-white text-[10px] sm:text-xs font-semibold shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center whitespace-nowrap px-2"
               onClick={() => navigate('/affiliate/dashboard')}
             >
-              <Share2 className="h-3 w-3 mr-1" />
-              Go to Affiliate Dashboard
+              <Share2 className="h-3 w-3 mr-1 shrink-0" />
+              <span className="truncate">Go to Affiliate Pro Dashboard</span>
             </Button>
           </div>
         )}

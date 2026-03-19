@@ -1893,10 +1893,10 @@ export default function CreditReport() {
   }, [reportData, apiData, isFundingEligible, userProfile]);
 
   const creditRepairUrl = useMemo(() => {
+    const referralLink = affiliateCreditRepairLink?.trim();
+    if (referralLink) return referralLink;
     const adminLink = userProfile?.credit_repair_url?.trim();
     if (adminLink) return adminLink;
-    const affiliateLink = affiliateCreditRepairLink?.trim();
-    if (affiliateLink) return affiliateLink;
     const envUrl = (import.meta as any)?.env?.VITE_CREDIT_REPAIR_URL;
     if (typeof envUrl === 'string' && envUrl.trim()) return envUrl.trim();
     return 'https://www.m2ficoforge.com/';
@@ -1907,11 +1907,12 @@ export default function CreditReport() {
 
     async function fetchAffiliateCreditRepairLink() {
       try {
-        const response = await api.get('/api/auth/affiliate/status');
+        const response = await api.get('/api/auth/referral/credit-repair-link');
         const data = response.data || response;
         if (!isMounted) return;
-        if (data?.partner_credit_repair_link || data?.credit_repair_link) {
-          setAffiliateCreditRepairLink(String(data.partner_credit_repair_link || data.credit_repair_link));
+        const link = data?.creditRepairLink;
+        if (typeof link === 'string' && link.trim()) {
+          setAffiliateCreditRepairLink(link.trim());
         } else {
           setAffiliateCreditRepairLink(null);
         }
@@ -1921,11 +1922,7 @@ export default function CreditReport() {
       }
     }
 
-    if (userProfile?.role === 'affiliate' || userProfile?.role === 'admin' || userProfile?.role === 'super_admin') {
-      fetchAffiliateCreditRepairLink();
-    } else {
-      setAffiliateCreditRepairLink(null);
-    }
+    fetchAffiliateCreditRepairLink();
 
     return () => {
       isMounted = false;

@@ -100,4 +100,58 @@ router.get('/affiliate/status', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/auth/referral/partner-link - Get partner monitoring link for referred users
+router.get('/referral/partner-link', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const rows: any[] = await executeQuery(
+      `SELECT a.partner_monitoring_link
+       FROM affiliate_referrals ar
+       JOIN affiliates a ON ar.affiliate_id = a.id
+       WHERE ar.referred_user_id = ?
+       ORDER BY ar.referral_date ASC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.json({ success: true, partnerMonitoringLink: null });
+    }
+
+    const partnerMonitoringLink = rows[0]?.partner_monitoring_link || null;
+    return res.json({ success: true, partnerMonitoringLink });
+  } catch (error) {
+    console.error('Error fetching referral partner link:', error);
+    return res.status(500).json({ error: 'Failed to fetch referral partner link' });
+  }
+});
+
+// GET /api/auth/referral/credit-repair-link - Get credit repair link for referred users
+router.get('/referral/credit-repair-link', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const rows: any[] = await executeQuery(
+      `SELECT a.credit_repair_link
+       FROM affiliate_referrals ar
+       JOIN affiliates a ON ar.affiliate_id = a.id
+       WHERE ar.referred_user_id = ?
+       ORDER BY ar.referral_date ASC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.json({ success: true, creditRepairLink: null });
+    }
+
+    const creditRepairLink = rows[0]?.credit_repair_link || null;
+    return res.json({ success: true, creditRepairLink });
+  } catch (error) {
+    console.error('Error fetching referral credit repair link:', error);
+    return res.status(500).json({ error: 'Failed to fetch referral credit repair link' });
+  }
+});
+
 export default router;
