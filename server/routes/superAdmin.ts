@@ -1991,8 +1991,7 @@ router.get('/admins/:id/agreement.pdf', authenticateToken, requireSuperAdmin, as
     if (signatureIp) doc.text(`IP: ${signatureIp}`);
     doc.moveDown(1);
 
-    doc.fontSize(14).text('Agreement');
-    doc.moveDown(0.5);
+    // Render agreement body from DB content (contract_templates/contract_agreements)
     doc.fontSize(11).text(contentText || '(No agreement content found)', { align: 'left' });
     doc.moveDown(1);
 
@@ -2019,6 +2018,113 @@ router.get('/admins/:id/agreement.pdf', authenticateToken, requireSuperAdmin, as
   } catch (error: any) {
     console.error('Error generating admin agreement PDF:', error);
     res.status(500).json({ success: false, error: 'Failed to generate agreement PDF' });
+  }
+});
+
+const DEFAULT_TEMPLATE_NAME = 'SCORE MACHINE MASTER SOFTWARE & SERVICES AGREEMENT';
+const DEFAULT_TEMPLATE_DESCRIPTION = 'Default master agreement template';
+const DEFAULT_TEMPLATE_CONTENT = `<h1>SCORE MACHINE MASTER SOFTWARE & SERVICES AGREEMENT</h1>
+<p>This Master Software &amp; Services Agreement (this “Agreement”) is a binding legal contract entered into by and between ADR Wealth Advisors LLC, doing business as The Score Machine (hereinafter referred to as the “Company”), and the individual or legal entity that (a) creates a user account on the Platform, (b) executes or accepts this Agreement in connection with the use of the Platform or Services, or (c) otherwise accesses, interacts with, or utilizes any functionality, component, or feature of the Score Machine software platform.</p>
+<p>This Agreement shall be effective as of the date on which User signifies assent by clicking an acceptance button, checking an acknowledgment box, executing an electronic or handwritten signature, or otherwise performing any affirmative act evidencing acceptance of this Agreement, including by accessing or using the Platform or any portion thereof (the “Effective Date”).</p>
+<h2>RECITALS</h2>
+<p>A. The Company has conceived, designed, engineered, developed, authored, and currently owns and operates a proprietary and confidential suite of integrated software systems, databases, source and object code, proprietary algorithms, models, user interfaces, dashboards, application-programming interfaces (“APIs”), analytic engines, data integrations, documentation, and related technological and functional assets (collectively referred to as the “Platform,” and marketed as “The Score Machine”).</p>
+<p>B. The Platform presently integrates, and is expressly designed to integrate and interoperate in the future, with a variety of third-party credit-data providers, financial-information repositories, and ancillary data-aggregation services (including, without limitation, MyFreeScoreNow®, MyScoreIQ®, IdentityIQ®, and any successor, replacement, licensed, or proprietary data providers collectively referred to herein as the “Third-Party Data Providers”).</p>
+<p>C. The User desires to obtain access to and utilize the Platform and the Services for the User’s own legitimate internal purposes and, in consideration of such access, expressly agrees to be bound by all terms, conditions, restrictions, and limitations set forth in this Agreement.</p>
+<h2>ARTICLE I — GRANT OF LICENSE; SCOPE OF SERVICES; ACCESS; THIRD-PARTY SOURCES</h2>`;
+
+router.get('/contract-templates/default', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const userId = (req as any).user.id;
+
+    let template = await db.getQuery(
+      `SELECT id, name, description, content FROM contract_templates WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+      [userId]
+    );
+
+    if (!template) {
+      const insertResult = await db.executeQuery(
+        `INSERT INTO contract_templates (user_id, name, description, content, is_active, created_by, updated_by)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        [userId, DEFAULT_TEMPLATE_NAME, DEFAULT_TEMPLATE_DESCRIPTION, DEFAULT_TEMPLATE_CONTENT, userId, userId]
+      );
+      const insertedId = (insertResult as any)?.insertId ?? (insertResult as any)?.lastID ?? null;
+      template = await db.getQuery(
+        `SELECT id, name, description, content FROM contract_templates WHERE id = ?`,
+        [insertedId]
+      );
+      if (!template) {
+        template = {
+          id: insertedId,
+          name: DEFAULT_TEMPLATE_NAME,
+          description: DEFAULT_TEMPLATE_DESCRIPTION,
+          content: DEFAULT_TEMPLATE_CONTENT
+        } as any;
+      }
+    }
+
+    return res.json({ success: true, data: template });
+  } catch (error: any) {
+    console.error('Error fetching default contract template:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch default template' });
+  }
+});
+
+router.put('/contract-templates/default', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const db = getDatabaseAdapter();
+    const userId = (req as any).user.id;
+    const { name, content, description } = req.body as { name?: string; content?: string; description?: string };
+
+    let template = await db.getQuery(
+      `SELECT id FROM contract_templates WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+      [userId]
+    );
+
+    if (!template) {
+      const insertResult = await db.executeQuery(
+        `INSERT INTO contract_templates (user_id, name, description, content, is_active, created_by, updated_by)
+         VALUES (?, ?, ?, ?, 1, ?, ?)`,
+        [userId, name || DEFAULT_TEMPLATE_NAME, description || DEFAULT_TEMPLATE_DESCRIPTION, content || DEFAULT_TEMPLATE_CONTENT, userId, userId]
+      );
+      const insertedId = (insertResult as any)?.insertId ?? (insertResult as any)?.lastID ?? null;
+      template = { id: insertedId } as any;
+    }
+
+    const fields: string[] = [];
+    const params: any[] = [];
+    if (typeof name !== 'undefined') {
+      fields.push('name = ?');
+      params.push(name);
+    }
+    if (typeof description !== 'undefined') {
+      fields.push('description = ?');
+      params.push(description);
+    }
+    if (typeof content !== 'undefined') {
+      fields.push('content = ?');
+      params.push(content);
+    }
+    if (fields.length > 0) {
+      fields.push('updated_by = ?');
+      fields.push('updated_at = CURRENT_TIMESTAMP');
+      params.push(userId);
+      params.push(template.id);
+      await db.executeQuery(
+        `UPDATE contract_templates SET ${fields.join(', ')} WHERE id = ?`,
+        params
+      );
+    }
+
+    const updated = await db.getQuery(
+      `SELECT id, name, description, content FROM contract_templates WHERE id = ?`,
+      [template.id]
+    );
+
+    return res.json({ success: true, data: updated });
+  } catch (error: any) {
+    console.error('Error updating default contract template:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update default template' });
   }
 });
 

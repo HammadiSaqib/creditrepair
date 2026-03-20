@@ -29,6 +29,10 @@ export default function AdminDetails() {
   const [agreementLoading, setAgreementLoading] = useState(false);
   const [showAgreementsDropdown, setShowAgreementsDropdown] = useState(false);
   const [selectedAgreement, setSelectedAgreement] = useState<any | null>(null);
+  const [showDefaultTemplateModal, setShowDefaultTemplateModal] = useState(false);
+  const [defaultTemplateLoading, setDefaultTemplateLoading] = useState(false);
+  const [defaultTemplateSaving, setDefaultTemplateSaving] = useState(false);
+  const [defaultTemplateForm, setDefaultTemplateForm] = useState({ name: '', description: '', content: '' });
 
   useEffect(() => {
     fetchAgreements();
@@ -78,6 +82,36 @@ export default function AdminDetails() {
       fetchAgreements();
     } finally {
       setAgreementLoading(false);
+    }
+  }
+
+  async function openDefaultTemplateModal() {
+    setShowDefaultTemplateModal(true);
+    setDefaultTemplateLoading(true);
+    try {
+      const resp = await superAdminApi.getDefaultContractTemplate();
+      const tpl = resp.data?.data || resp.data;
+      setDefaultTemplateForm({
+        name: tpl?.name || 'Default Agreement',
+        description: tpl?.description || 'Default master agreement',
+        content: tpl?.content || '',
+      });
+    } catch (error) {
+      console.error('Failed to load default template', error);
+      setDefaultTemplateForm({ name: 'Default Agreement', description: 'Default master agreement', content: '' });
+    } finally {
+      setDefaultTemplateLoading(false);
+    }
+  }
+
+  async function saveDefaultTemplate(e: React.FormEvent) {
+    e.preventDefault();
+    setDefaultTemplateSaving(true);
+    try {
+      await superAdminApi.updateDefaultContractTemplate(defaultTemplateForm);
+      setShowDefaultTemplateModal(false);
+    } finally {
+      setDefaultTemplateSaving(false);
     }
   }
 
@@ -237,9 +271,14 @@ export default function AdminDetails() {
   <Card className="lg:col-span-2">
     <CardHeader className="flex flex-row items-center justify-between gap-3">
       <CardTitle>Agreements Management</CardTitle>
-      <Button variant="outline" onClick={() => setShowAgreementModal(true)}>
-        Add Agreement
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="destructive" onClick={openDefaultTemplateModal}>
+          Set Default Agreement
+        </Button>
+        <Button variant="outline" onClick={() => setShowAgreementModal(true)}>
+          Add Agreement
+        </Button>
+      </div>
     </CardHeader>
     <CardContent>
       <div className="space-y-3">
@@ -291,6 +330,62 @@ export default function AdminDetails() {
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => { setShowAgreementModal(false); setEditingAgreement(null); setAgreementForm({ title: '', content: '' }); }}>Cancel</Button>
             <Button type="submit" disabled={agreementLoading}>{agreementLoading ? 'Saving…' : 'Save'}</Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )}
+  {/* Default Template Modal */}
+  {showDefaultTemplateModal && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
+      <div className="bg-white rounded-lg p-6 w-full max-w-3xl shadow-xl relative">
+        <h2 className="text-xl font-semibold mb-4">Edit Default Agreement</h2>
+        <form onSubmit={saveDefaultTemplate} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Name</label>
+              <input
+                type="text"
+                className="w-full border rounded px-3 py-2"
+                value={defaultTemplateForm.name}
+                onChange={e => setDefaultTemplateForm(f => ({ ...f, name: e.target.value }))}
+                required
+                disabled={defaultTemplateLoading}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Description</label>
+              <input
+                type="text"
+                className="w-full border rounded px-3 py-2"
+                value={defaultTemplateForm.description}
+                onChange={e => setDefaultTemplateForm(f => ({ ...f, description: e.target.value }))}
+                disabled={defaultTemplateLoading}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Content (HTML)</label>
+            <textarea
+              className="w-full border rounded px-3 py-2 resize-y min-h-[200px]"
+              value={defaultTemplateForm.content}
+              onChange={e => setDefaultTemplateForm(f => ({ ...f, content: e.target.value }))}
+              required
+              disabled={defaultTemplateLoading}
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setShowDefaultTemplateModal(false); setDefaultTemplateLoading(false); }}
+              disabled={defaultTemplateSaving}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={defaultTemplateSaving || defaultTemplateLoading}>
+              {defaultTemplateSaving ? 'Saving…' : 'Save Default'}
+            </Button>
           </div>
         </form>
       </div>

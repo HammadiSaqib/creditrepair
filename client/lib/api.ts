@@ -608,6 +608,8 @@ export const superAdminApi = {
   getUsers: (params?: { page?: number; limit?: number; search?: string; role?: string; status?: string; account_type?: string; referral_source?: string; created_from?: string; created_to?: string }) =>
     api.get('/api/super-admin/users', { params }),
   getUser: (id: string) => api.get(`/api/super-admin/users/${id}`),
+  getDefaultContractTemplate: () => api.get('/api/super-admin/contract-templates/default'),
+  updateDefaultContractTemplate: (payload: { name?: string; description?: string; content?: string }) => api.put('/api/super-admin/contract-templates/default', payload),
   updateUser: (id: string, data: any) => api.put(`/api/super-admin/users/${id}`, data),
   deleteUser: (id: string) => api.delete(`/api/super-admin/users/${id}`),
   getPlans: (params?: { page?: number; limit?: number; search?: string; is_active?: boolean | string }) =>
