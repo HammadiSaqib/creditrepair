@@ -855,7 +855,7 @@ export default function Support() {
                     <Mail className="h-5 w-5 text-green-500" />
                     <div>
                       <p className="font-medium">Email Support</p>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">thesupport@scoremachine.com</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">support@thescoremachine.com</p>
                       <p className="text-xs text-slate-500">Response within 24 hours</p>
                     </div>
                   </div>
