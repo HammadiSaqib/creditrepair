@@ -166,6 +166,7 @@ import multer from 'multer';
 
 import cardManagementRoutes from "./routes/cardManagement.js";
 import fundingDIYSubmissionsRoutes from "./routes/fundingDIYSubmissions.js";
+import affiliateTrialPlansRoutes from "./routes/affiliateTrialPlans.js";
 
 export async function createServer(vite?: ViteDevServer) {
   const app = express();
@@ -472,6 +473,7 @@ export async function createServer(vite?: ViteDevServer) {
   // =============================================================================
   console.log('🔍 Registering super admin routes at /api/super-admin');
   app.use("/api/super-admin", superAdminRoutes);
+  app.use("/api/super-admin/affiliate-trial-plans", affiliateTrialPlansRoutes);
   app.use("/api/support/blog", supportBlogRoutes);
 
   // =============================================================================

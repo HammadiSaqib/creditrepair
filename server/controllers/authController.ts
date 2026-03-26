@@ -891,6 +891,38 @@ export class AuthController {
         // Do not fail registration on referral errors
       }
 
+      // Check if there is an active trial plan for the referred affiliate and apply it
+      try {
+        const providedAffiliateIdForTrial = (req.body?.affiliate_id || userData.referral_affiliate_id || '').toString().trim();
+        if (providedAffiliateIdForTrial) {
+          const affiliateIdForTrial = parseInt(providedAffiliateIdForTrial, 10);
+          if (!Number.isNaN(affiliateIdForTrial)) {
+            const trialPlanRows = await executeQuery<any[]>(
+              `SELECT duration_months, max_clients, max_users FROM affiliates_trial_plans
+               WHERE affiliate_id = ?
+               AND (
+                 (status = 'active' AND start_date IS NULL AND end_date IS NULL)
+                 OR (status IN ('active', 'scheduled') AND start_date IS NOT NULL AND start_date <= NOW() AND (end_date IS NULL OR end_date >= NOW()))
+               )
+               ORDER BY created_at DESC
+               LIMIT 1`,
+              [affiliateIdForTrial]
+            );
+            if (trialPlanRows && trialPlanRows.length > 0) {
+              const { duration_months: durationMonths, max_clients: trialMaxClients, max_users: trialMaxUsers } = trialPlanRows[0];
+              await executeQuery(
+                `UPDATE users SET trial_expires_at = DATE_ADD(NOW(), INTERVAL ? MONTH), trial_max_clients = ?, trial_max_users = ? WHERE id = ?`,
+                [durationMonths, trialMaxClients ?? null, trialMaxUsers ?? null, userId]
+              );
+              console.log(`Trial plan applied: user ${userId} gets ${durationMonths} month(s) trial (max_clients=${trialMaxClients}, max_users=${trialMaxUsers}) via affiliate ${affiliateIdForTrial}`);
+            }
+          }
+        }
+      } catch (trialError) {
+        console.error('Failed to apply affiliate trial plan during registration:', trialError);
+        // Do not fail registration on trial errors
+      }
+
       // Generate JWT token for immediate login
       const token = generateToken({ 
         id: userId, 

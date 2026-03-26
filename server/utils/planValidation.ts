@@ -97,7 +97,24 @@ export async function checkUserPlanLimits(userId: number): Promise<PlanLimits> {
     const subscription = activeSubscription || adminSubscription;
 
     if (!subscription) {
-      // No active subscription - allow only 1 client
+      // Check if user has an active affiliate trial
+      const trialRow = await getQuery(
+        `SELECT trial_max_clients FROM users WHERE id = ? AND trial_expires_at IS NOT NULL AND trial_expires_at > NOW() LIMIT 1`,
+        [effectiveUserId]
+      );
+      if (trialRow) {
+        const trialMaxClients = trialRow.trial_max_clients != null ? Number(trialRow.trial_max_clients) : Number.MAX_SAFE_INTEGER;
+        return {
+          hasActivePlan: true,
+          maxClients: trialMaxClients,
+          currentClientCount,
+          canAddClient: currentClientCount < trialMaxClients,
+          planName: 'Affiliate Trial',
+          planStatus: 'active'
+        };
+      }
+
+      // No active subscription and no trial - allow only 1 client
       return {
         hasActivePlan: false,
         maxClients: 1,

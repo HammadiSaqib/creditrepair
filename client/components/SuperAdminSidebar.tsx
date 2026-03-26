@@ -24,6 +24,7 @@ import {
   GraduationCap,
   ClipboardList,
   Mail,
+  CalendarClock,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -120,6 +121,12 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       name: "Affiliates",
       href: "/super-admin/affiliates",
       icon: HandHeart,
+      badge: null,
+    },
+    {
+      name: "Affiliate Trial Plans",
+      href: "/super-admin/affiliate-trial-plans",
+      icon: CalendarClock,
       badge: null,
     },
     {

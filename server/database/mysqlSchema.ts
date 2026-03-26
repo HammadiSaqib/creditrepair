@@ -1954,6 +1954,27 @@ async function createMySQLTables(): Promise<void> {
       status ENUM('active', 'unsubscribed') NOT NULL DEFAULT 'active',
       INDEX idx_email (email),
       INDEX idx_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Affiliate Trial Plans table
+    `CREATE TABLE IF NOT EXISTS affiliates_trial_plans (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      affiliate_id INT NOT NULL,
+      duration_months INT NOT NULL DEFAULT 1,
+      max_clients INT NULL,
+      max_users INT NULL,
+      status ENUM('active', 'scheduled', 'draft', 'expired') NOT NULL DEFAULT 'active',
+      start_date DATETIME NULL,
+      end_date DATETIME NULL,
+      created_by INT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_affiliate_id (affiliate_id),
+      INDEX idx_status (status),
+      INDEX idx_start_date (start_date),
+      INDEX idx_end_date (end_date),
+      FOREIGN KEY (affiliate_id) REFERENCES affiliates(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
   ];
   
@@ -2410,9 +2431,24 @@ async function createMySQLTables(): Promise<void> {
       console.log('⚠️  Error adding funding_override_enabled column:', error.message);
     }
   }
+  // Add trial_expires_at column to users if it doesn't exist
   try {
     await executeQuery(`
-      ALTER TABLE users 
+      ALTER TABLE users
+      ADD COLUMN trial_expires_at DATETIME NULL
+    `);
+    console.log('✅ Added trial_expires_at column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  trial_expires_at column already exists');
+    } else {
+      console.log('⚠️  Error adding trial_expires_at column:', error.message);
+    }
+  }
+
+  try {
+    await executeQuery(`
+      ALTER TABLE users
       ADD COLUMN funding_override_signature_text TEXT NULL
     `);
     console.log('✅ Added funding_override_signature_text column to users table');
@@ -2525,7 +2561,7 @@ async function createMySQLTables(): Promise<void> {
   // Add is_recommended column to banks if it doesn't exist
   try {
     await executeQuery(`
-      ALTER TABLE banks 
+      ALTER TABLE banks
       ADD COLUMN is_recommended BOOLEAN NOT NULL DEFAULT FALSE AFTER is_active
     `);
     console.log('✅ Added is_recommended column to banks table');
@@ -2534,6 +2570,54 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  is_recommended column already exists on banks');
     } else {
       console.log('⚠️  Error adding is_recommended column to banks:', error.message);
+    }
+  }
+
+  // Add max_clients column to affiliates_trial_plans if it doesn't exist
+  try {
+    await executeQuery(`ALTER TABLE affiliates_trial_plans ADD COLUMN max_clients INT NULL`);
+    console.log('✅ Added max_clients column to affiliates_trial_plans table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  max_clients column already exists on affiliates_trial_plans');
+    } else {
+      console.log('⚠️  Error adding max_clients column to affiliates_trial_plans:', error.message);
+    }
+  }
+
+  // Add max_users column to affiliates_trial_plans if it doesn't exist
+  try {
+    await executeQuery(`ALTER TABLE affiliates_trial_plans ADD COLUMN max_users INT NULL`);
+    console.log('✅ Added max_users column to affiliates_trial_plans table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  max_users column already exists on affiliates_trial_plans');
+    } else {
+      console.log('⚠️  Error adding max_users column to affiliates_trial_plans:', error.message);
+    }
+  }
+
+  // Add trial_max_clients column to users if it doesn't exist
+  try {
+    await executeQuery(`ALTER TABLE users ADD COLUMN trial_max_clients INT NULL`);
+    console.log('✅ Added trial_max_clients column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  trial_max_clients column already exists on users');
+    } else {
+      console.log('⚠️  Error adding trial_max_clients column to users:', error.message);
+    }
+  }
+
+  // Add trial_max_users column to users if it doesn't exist
+  try {
+    await executeQuery(`ALTER TABLE users ADD COLUMN trial_max_users INT NULL`);
+    console.log('✅ Added trial_max_users column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  trial_max_users column already exists on users');
+    } else {
+      console.log('⚠️  Error adding trial_max_users column to users:', error.message);
     }
   }
 }

@@ -174,8 +174,11 @@ export const usePagePermissions = (): PagePermissions => {
             setAllowedPages(AVAILABLE_PAGES.map(p => p.id));
           }
         } else {
-          console.log('⚠️ Could not find plan in plans list, granting basic permissions only');
-          setAllowedPages(['dashboard', 'settings', 'subscription', 'feature-requests']);
+          // Plan not found in the plan catalogue — this includes affiliate trial plans
+          // and any other active subscription whose plan was renamed or removed.
+          // Grant full access so the dashboard is not crippled for trial users.
+          console.log('⚠️ Could not find plan in plans list but subscription is active — granting all pages (trial / unknown plan)');
+          setAllowedPages(AVAILABLE_PAGES.map(p => p.id));
         }
       }
 

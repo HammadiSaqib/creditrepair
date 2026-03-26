@@ -370,13 +370,36 @@ router.get('/subscription', authenticateToken, async (req, res) => {
         'SELECT * FROM subscriptions WHERE user_id = ?',
         [userId]
       );
-      
+
       if (subscriptionResult && subscriptionResult.length > 0) {
         subscription = subscriptionResult[0];
         console.log('✅ [BILLING] Found subscription for admin user:', subscription.plan_name);
       }
+
+      // If no active subscription, check if the user has an active affiliate trial
+      if (!subscription || String(subscription.status || '').toLowerCase() !== 'active') {
+        try {
+          const trialRows = await executeQuery<any[]>(
+            `SELECT trial_expires_at FROM users WHERE id = ? AND trial_expires_at IS NOT NULL AND trial_expires_at > NOW() LIMIT 1`,
+            [userId]
+          );
+          if (trialRows && trialRows.length > 0) {
+            console.log('✅ [BILLING] User is on affiliate trial until:', trialRows[0].trial_expires_at);
+            subscription = {
+              ...(subscription || {}),
+              plan_name: 'Affiliate Trial',
+              plan_type: 'monthly',
+              status: 'active',
+              current_period_start: new Date().toISOString(),
+              current_period_end: trialRows[0].trial_expires_at,
+            } as any;
+          }
+        } catch (trialCheckErr) {
+          console.warn('⚠️ [BILLING] Could not check trial_expires_at:', trialCheckErr);
+        }
+      }
     }
-    
+
     res.json({
       success: true,
       subscription: subscription

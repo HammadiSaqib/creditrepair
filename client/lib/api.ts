@@ -743,6 +743,14 @@ export const superAdminApi = {
   updateTask: (id: number, data: { title?: string; description?: string; status?: string }) =>
     api.put(`/api/super-admin/tasks/${id}`, data),
   deleteTask: (id: number) => api.delete(`/api/super-admin/tasks/${id}`),
+  // Affiliate Trial Plans
+  getAffiliateTrialPlans: () => api.get('/api/super-admin/affiliate-trial-plans'),
+  getAffiliatesForTrialPlans: () => api.get('/api/super-admin/affiliate-trial-plans/affiliates'),
+  createAffiliateTrialPlan: (data: { affiliate_id: number; duration_months: number; status: string; start_date?: string | null; end_date?: string | null }) =>
+    api.post('/api/super-admin/affiliate-trial-plans', data),
+  updateAffiliateTrialPlan: (id: number, data: { affiliate_id: number; duration_months: number; status: string; start_date?: string | null; end_date?: string | null }) =>
+    api.put(`/api/super-admin/affiliate-trial-plans/${id}`, data),
+  deleteAffiliateTrialPlan: (id: number) => api.delete(`/api/super-admin/affiliate-trial-plans/${id}`),
 };
 
 // Affiliate API module

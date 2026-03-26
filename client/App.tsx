@@ -73,6 +73,7 @@ const SuperAdminClientImport = React.lazy(() => import("./pages/super-admin/Supe
 const SuperAdminCreditReportUpload = React.lazy(() => import("./pages/super-admin/SuperAdminCreditReportUpload"));
 const SuperAdminTasks = React.lazy(() => import("./pages/super-admin/SuperAdminTasks"));
 const ShopManagement = React.lazy(() => import("./pages/super-admin/ShopManagement"));
+const SuperAdminAffiliateTrialPlans = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliateTrialPlans"));
 const Login = React.lazy(() => import("./pages/Login"));
 const Register = React.lazy(() => import("./pages/Register"));
 const SuperAdminLogin = React.lazy(() => import("./pages/SuperAdminLogin"));
@@ -843,6 +844,14 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
             element={
               <SuperAdminProtectedRoute>
                 <EmailCampaign />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/affiliate-trial-plans"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminAffiliateTrialPlans />
               </SuperAdminProtectedRoute>
             }
           />
