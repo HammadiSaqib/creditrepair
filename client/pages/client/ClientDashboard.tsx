@@ -3741,15 +3741,15 @@ export default function CreditReport() {
               });
               criteria[bureauId].minFiveOpenRevolving = withGoodHistory.length >= 5;
 
-              // Check for 3+ year old credit card with $5K+ limit
+              // Check for 2+ year old credit card with $5K+ limit
               const qualifyingCards = openPrimaryRevolving.filter((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
                 const yearsOld = (Date.now() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
                 const creditLimit = parseFloat(acc.CreditLimit) || 0;
-                return yearsOld >= 3 && creditLimit >= 5000;
+                return yearsOld >= 2 && creditLimit >= 5000;
               });
-              criteria[bureauId].creditCard3YearsOld5KLimit = qualifyingCards.length >= 3;
+              criteria[bureauId].creditCard3YearsOld5KLimit = qualifyingCards.length >= 2;
 
               // Check unsecured accounts opened in past 12 months
               const recentUnsecuredAccounts = bureauAccounts.filter((acc: any) => {

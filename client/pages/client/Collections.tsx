@@ -2437,13 +2437,13 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
               
               criteria[bureauId].minFiveOpenRevolving = openRevolvingAccounts.length >= 5;
 
-              // Check for 3+ year old credit card with $5K+ limit
+              // Check for 2+ year old credit card with $5K+ limit
               const qualifyingCard = openRevolvingAccounts.find((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
                 const yearsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
                 const creditLimit = parseFloat(acc.CreditLimit) || 0;
-                return yearsOld >= 3 && creditLimit >= 5000;
+                return yearsOld >= 2 && creditLimit >= 5000;
               });
               criteria[bureauId].creditCard3YearsOld5KLimit = !!qualifyingCard;
 
@@ -5354,7 +5354,7 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
                           <XCircle className="h-5 w-5 text-red-600 mx-auto" />
                         }
                       </td>
-                      <td className="py-2 px-4">Three primary credit cards with at least three years of age and $5,000+ limits.</td>
+                      <td className="py-2 px-4">Two primary credit cards with at least two years of age and $5,000+ limits.</td>
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.maxFourUnsecuredIn12Months || false,

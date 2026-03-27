@@ -1139,13 +1139,13 @@ export default function SuperAdminReports() {
               
               criteria[bureauId].minFiveOpenRevolving = openRevolvingAccounts.length >= 5;
 
-              // Check for 3+ year old credit card with $5K+ limit
+              // Check for 2+ year old credit card with $5K+ limit
               const qualifyingCard = openRevolvingAccounts.find((acc: any) => {
                 if (!acc.DateOpened) return false;
                 const openDate = new Date(acc.DateOpened);
                 const yearsOld = (new Date().getTime() - openDate.getTime()) / (1000 * 60 * 60 * 24 * 365);
                 const creditLimit = parseFloat(acc.CreditLimit) || 0;
-                return yearsOld >= 3 && creditLimit >= 5000;
+                return yearsOld >= 2 && creditLimit >= 5000;
               });
               criteria[bureauId].creditCard3YearsOld5KLimit = !!qualifyingCard;
 
