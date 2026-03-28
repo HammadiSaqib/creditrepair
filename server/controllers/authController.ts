@@ -620,6 +620,69 @@ export class AuthController {
     }
   }
 
+  // Login as Affiliate endpoint (for super admin)
+  static async loginAsAffiliate(req: AuthRequest, res: Response) {
+    try {
+      const { affiliateId } = req.body;
+
+      if (!affiliateId) {
+        return res.status(400).json({ error: 'Affiliate ID is required' });
+      }
+
+      // Verify the requesting user is a super admin
+      const requestingUser = req.user;
+      if (!requestingUser || requestingUser.role !== 'super_admin') {
+        return res.status(403).json({ error: 'Access denied: Super admin privileges required' });
+      }
+
+      // Get the target affiliate
+      const affiliate = await getAffiliateById(affiliateId);
+
+      if (!affiliate) {
+        return res.status(404).json({ error: 'Affiliate not found' });
+      }
+
+      // Check if affiliate is active
+      if (affiliate.status !== 'active') {
+        return res.status(400).json({ error: 'Target affiliate account is not active' });
+      }
+
+      // Generate token for the affiliate
+      const tokenUser = {
+        id: affiliate.id,
+        email: affiliate.email,
+        role: 'affiliate',
+        admin_id: affiliate.admin_id
+      };
+      const token = generateToken(tokenUser);
+
+      // Return affiliate data (without password)
+      const affiliateData = {
+        id: affiliate.id,
+        email: affiliate.email,
+        first_name: affiliate.first_name,
+        last_name: affiliate.last_name,
+        company_name: affiliate.company_name,
+        phone: affiliate.phone,
+        admin_id: affiliate.admin_id,
+        commission_rate: affiliate.commission_rate,
+        total_earnings: affiliate.total_earnings,
+        total_referrals: affiliate.total_referrals,
+        status: affiliate.status,
+        role: 'affiliate',
+      };
+
+      res.json({
+        message: 'Login as affiliate successful',
+        token,
+        user: affiliateData,
+      });
+    } catch (error) {
+      console.error('Login as affiliate error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
   // Login as Support endpoint (for super admin)
   static async loginAsSupport(req: AuthRequest, res: Response) {
     try {

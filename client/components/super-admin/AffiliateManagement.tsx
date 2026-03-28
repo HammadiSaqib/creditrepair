@@ -57,7 +57,8 @@ import {
   Calendar,
   Building,
   Percent,
-  Target
+  Target,
+  LogIn
 } from 'lucide-react';
 import { Copy } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
@@ -391,6 +392,27 @@ const AffiliateManagement: React.FC = () => {
         title: 'Error',
         description: 'Failed to update affiliate',
         variant: 'destructive'
+      });
+    }
+  };
+
+  const handleLoginAsAffiliate = async (affiliate: Affiliate) => {
+    try {
+      const response = await superAdminApi.loginAsAffiliate(affiliate.id);
+      if (response.data?.token) {
+        localStorage.setItem('auth_token', response.data.token);
+        window.location.href = '/affiliate/dashboard';
+        toast({
+          title: "Success",
+          description: `Logged in as ${affiliate.first_name} ${affiliate.last_name}`
+        });
+      }
+    } catch (error: any) {
+      console.error('Error logging in as affiliate:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.error || "Failed to login as affiliate",
+        variant: "destructive"
       });
     }
   };
@@ -958,6 +980,15 @@ const AffiliateManagement: React.FC = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleLoginAsAffiliate(affiliate)}
+                              className="hover:bg-green-50 text-green-600 hover:text-green-700"
+                              title="Login as this affiliate"
+                            >
+                              <LogIn className="h-4 w-4" />
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"

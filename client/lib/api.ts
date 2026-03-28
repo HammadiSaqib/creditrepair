@@ -661,6 +661,7 @@ export const superAdminApi = {
   getStripePayments: (params?: { from?: string; to?: string }) =>
     api.get('/api/super-admin/analytics/stripe-payments', { params }),
   loginAsAdmin: (adminId: string) => api.post('/api/auth/login-as-admin', { adminId }),
+  loginAsAffiliate: (affiliateId: number) => api.post('/api/auth/login-as-affiliate', { affiliateId }),
   // Support Users Management
   getSupportUsers: (params?: { page?: number; limit?: number; search?: string; is_active?: string }) =>
     api.get('/api/super-admin/support-users', { params }),

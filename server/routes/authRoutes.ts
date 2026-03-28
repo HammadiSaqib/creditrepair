@@ -37,6 +37,7 @@ router.get('/verify', authenticateToken, AuthController.verifyToken);
 router.get('/profile', authenticateToken, AuthController.getProfile);
 router.put('/profile', authenticateToken, AuthController.updateProfile);
 router.post('/login-as-admin', authenticateToken, AuthController.loginAsAdmin);
+router.post('/login-as-affiliate', authenticateToken, AuthController.loginAsAffiliate);
 router.post('/login-as-support', authenticateToken, AuthController.loginAsSupport);
 
 // GET /api/auth/affiliate/status - Check affiliate status for admin users
