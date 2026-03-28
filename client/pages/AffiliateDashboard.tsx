@@ -256,52 +256,215 @@ export default function AffiliateDashboard() {
     <AffiliateLayout title="Dashboard" description="Your affiliate command center">
       <div className="space-y-8 pb-8">
 
-        {/* ── HERO BANNER ── */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-blue-950 to-indigo-900 px-8 py-10 text-white shadow-2xl">
-          {/* decorative circles */}
-          <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-10 left-1/3 h-48 w-48 rounded-full bg-indigo-500/20 blur-2xl" />
-          <div className="pointer-events-none absolute right-1/4 bottom-0 h-32 w-32 rounded-full bg-purple-500/15 blur-2xl" />
+        {/* ── GAMIFIED HERO + TIER PROGRESS ── */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-[#0b1120] to-indigo-950 text-white shadow-2xl">
+          {/* Decorative blobs */}
+          <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-blue-500/10 blur-[80px]" />
+          <div className="pointer-events-none absolute -bottom-16 -left-16 h-72 w-72 rounded-full bg-emerald-500/10 blur-[80px]" />
+          <div className="pointer-events-none absolute right-1/3 bottom-0 h-48 w-48 rounded-full bg-purple-500/10 blur-[60px]" />
 
-          <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
-            {/* left: greeting */}
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold tracking-wide uppercase backdrop-blur-sm border border-white/20">
-                  <Sparkles className="h-3 w-3 text-yellow-300" />
-                  Affiliate Dashboard
-                </span>
-              </div>
-              <h1 className="text-3xl lg:text-4xl font-bold tracking-tight mb-1">
-                {userProfile?.first_name
-                  ? `Welcome back, ${userProfile.first_name} 👋`
-                  : "Welcome back 👋"}
-              </h1>
-              <p className="text-blue-200 text-sm">
-                {earningsStats?.tierInfo?.currentTier || "Free – Starter"} &nbsp;·&nbsp; {earningsStats?.currentTierRate || 10}% commission rate
-              </p>
-            </div>
-
-            {/* right: hero stats strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-6">
-              {[
-                { label: "All-Time Earnings", value: earningsStats.totalEarnings, prefix: "$", decimals: 2, color: "text-emerald-300" },
-                { label: "This Month", value: earningsStats.monthlyEarnings, prefix: "$", decimals: 2, color: "text-sky-300" },
-                { label: "Total Referrals", value: earningsStats.totalReferrals ?? 0, prefix: "", decimals: 0, color: "text-violet-300" },
-                { label: "MRR", value: earningsStats.currentMRR ?? 0, prefix: "$", decimals: 2, color: "text-amber-300" },
-              ].map((s) => (
-                <div key={s.label} className="text-center">
-                  <div className={`text-2xl font-extrabold ${s.color}`}>
-                    {loading ? <SkeletonPill /> : <AnimatedNumber value={s.value} prefix={s.prefix} decimals={s.decimals} />}
-                  </div>
-                  <div className="text-xs text-blue-300 mt-1">{s.label}</div>
+          <div className="relative px-6 sm:px-8 pt-8 pb-0">
+            {/* Greeting row */}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider mb-3">
+                  <Sparkles className="h-3.5 w-3.5 text-yellow-400" />
+                  <span className="text-yellow-300">Partner Dashboard</span>
                 </div>
-              ))}
+                <h1 className="text-3xl lg:text-4xl font-black tracking-tight mb-1">
+                  {userProfile?.first_name
+                    ? `Let's go, ${userProfile.first_name} 🚀`
+                    : "Let's go 🚀"}
+                </h1>
+                <p className="text-blue-300 text-sm mt-1">
+                  {earningsStats?.tierInfo?.currentTier || "Free – Starter"} &nbsp;·&nbsp; <span className="text-white font-semibold">{earningsStats?.currentTierRate || 10}% commission</span>
+                </p>
+              </div>
+              {earningsStats?.tierInfo && (
+                <div className="flex-shrink-0 flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                  <Crown className="h-7 w-7 text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)]" />
+                  <div>
+                    <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Current Rank</div>
+                    <div className="text-lg font-black text-white">{earningsStats.tierInfo.currentTier}</div>
+                  </div>
+                  {earningsStats.tierInfo.referralsToNext > 0 && (
+                    <div className="ml-2 border-l border-white/10 pl-3">
+                      <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Next Rank</div>
+                      <div className="text-sm font-bold text-amber-400">{earningsStats.tierInfo.nextTier}</div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Big Earnings Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              {/* All-Time — biggest, spans 2 on lg */}
+              <div className="lg:col-span-2 relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-500/20 to-green-600/10 border border-emerald-500/25 p-6 hover:border-emerald-400/40 transition-all group">
+                <div className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 rounded-full bg-emerald-400/10 blur-2xl" />
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 shadow-[0_0_16px_rgba(16,185,129,0.35)]">
+                    <DollarSign className="h-6 w-6 text-white" />
+                  </div>
+                  <span className="text-xs font-bold text-emerald-300 uppercase tracking-widest">All-Time Revenue</span>
+                  {earningsStats?.totalEarningsChange && (
+                    <span className={`ml-auto flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
+                      earningsStats.totalEarningsChange.percentage >= 0
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-red-500/20 text-red-300"
+                    }`}>
+                      {earningsStats.totalEarningsChange.percentage >= 0
+                        ? <ArrowUpRight className="h-3.5 w-3.5" />
+                        : <ArrowDownRight className="h-3.5 w-3.5" />}
+                      {Math.abs(earningsStats.totalEarningsChange.percentage)}%
+                    </span>
+                  )}
+                </div>
+                <div className="text-5xl sm:text-6xl font-black text-white tracking-tight drop-shadow-lg">
+                  {loading ? <SkeletonPill /> : <AnimatedNumber value={earningsStats.totalEarnings} prefix="$" decimals={2} />}
+                </div>
+                <p className="text-emerald-400 text-sm font-semibold mt-2">Total earned since joining</p>
+              </div>
+
+              {/* This Month */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-sky-500/20 to-blue-600/10 border border-sky-500/25 p-6 hover:border-sky-400/40 transition-all">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 shadow-[0_0_16px_rgba(56,189,248,0.35)]">
+                    <TrendingUp className="h-6 w-6 text-white" />
+                  </div>
+                  <span className="text-xs font-bold text-sky-300 uppercase tracking-widest">This Month</span>
+                </div>
+                <div className="text-4xl font-black text-white tracking-tight">
+                  {loading ? <SkeletonPill /> : <AnimatedNumber value={earningsStats.monthlyEarnings} prefix="$" decimals={2} />}
+                </div>
+                <p className="text-sky-400 text-sm font-semibold mt-2">Monthly earnings</p>
+              </div>
+
+              {/* MRR */}
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-600/10 border border-violet-500/25 p-6 hover:border-violet-400/40 transition-all">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-purple-700 shadow-[0_0_16px_rgba(139,92,246,0.35)]">
+                    <Activity className="h-6 w-6 text-white" />
+                  </div>
+                  <span className="text-xs font-bold text-violet-300 uppercase tracking-widest">Active MRR</span>
+                </div>
+                <div className="text-4xl font-black text-white tracking-tight">
+                  {loading ? <SkeletonPill /> : <AnimatedNumber value={earningsStats.currentMRR ?? 0} prefix="$" decimals={2} />}
+                </div>
+                <p className="text-violet-400 text-sm font-semibold mt-2">Recurring revenue</p>
+              </div>
+            </div>
+
+            {/* Milestone Progress Bar — only when tierInfo exists */}
+            {earningsStats?.tierInfo && (
+              <div className="mb-0 pb-8">
+                {/* Header row */}
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Award className="h-5 w-5 text-amber-400" />
+                      <h2 className="text-lg font-black text-white">Tier Progress</h2>
+                    </div>
+                    {earningsStats.tierInfo.referralsToNext > 0 ? (
+                      <p className="text-gray-300 text-sm">
+                        You're{" "}
+                        <span className="text-yellow-400 font-black text-base">
+                          {Math.round(earningsStats.tierInfo.progressToNext)}% there!
+                        </span>
+                        {" "}Only{" "}
+                        <span className="text-white font-bold">{earningsStats.tierInfo.referralsToNext} more paid referrals</span>
+                        {" "}to reach{" "}
+                        <span className="text-amber-400 font-bold">{earningsStats.tierInfo.nextTier}</span>.
+                      </p>
+                    ) : (
+                      <p className="text-emerald-400 font-black text-base">🏆 Max Tier Achieved — you're at the top!</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-6 text-center">
+                    <div>
+                      <div className="text-3xl font-black text-white">{earningsStats.paidReferralsCount || 0}</div>
+                      <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Paid Referrals</div>
+                    </div>
+                    <div>
+                      <div className="text-3xl font-black text-emerald-400">{earningsStats.currentTierRate || 10}%</div>
+                      <div className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Commission Rate</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* The giant bar with milestone markers */}
+                <div className="relative">
+                  {/* Milestone number labels — above bar */}
+                  <div className="relative h-8 mb-1">
+                    {[25, 50, 75, 100].map((m) => {
+                      const reached = (earningsStats.paidReferralsCount || 0) >= m;
+                      return (
+                        <div
+                          key={m}
+                          className="absolute flex flex-col items-center"
+                          style={{ left: `${m}%`, transform: "translateX(-50%)" }}
+                        >
+                          <span className={`text-sm font-black transition-all ${
+                            reached
+                              ? "text-yellow-400 drop-shadow-[0_0_6px_rgba(250,204,21,0.9)] scale-110"
+                              : "text-gray-600"
+                          }`}>{m}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Bar track */}
+                  <div className="relative h-8 bg-white/5 rounded-full border border-white/10 overflow-hidden shadow-inner">
+                    {/* Milestone tick lines inside bar */}
+                    {[25, 50, 75].map((m) => (
+                      <div
+                        key={m}
+                        className="absolute top-0 bottom-0 w-px bg-white/20 z-10"
+                        style={{ left: `${m}%` }}
+                      />
+                    ))}
+
+                    {/* Fill */}
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 transition-all duration-[1200ms] ease-out relative"
+                      style={{ width: `${Math.min(Math.max(((earningsStats.paidReferralsCount || 0) / 100) * 100, earningsStats.tierInfo.referralsToNext > 0 ? Math.max(earningsStats.tierInfo.progressToNext, 2) : 100), 100)}%` }}
+                    >
+                      {/* Glow pulse */}
+                      <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-r from-transparent to-white/30 rounded-full" />
+                      {/* Shimmer */}
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent rounded-full animate-[shimmer_2s_ease-in-out_infinite]" style={{ backgroundSize: "200% 100%" }} />
+                    </div>
+                  </div>
+
+                  {/* Milestone dot markers below bar */}
+                  <div className="relative h-6 mt-1">
+                    {[25, 50, 75, 100].map((m) => {
+                      const reached = (earningsStats.paidReferralsCount || 0) >= m;
+                      return (
+                        <div
+                          key={m}
+                          className="absolute flex flex-col items-center"
+                          style={{ left: `${m}%`, transform: "translateX(-50%)" }}
+                        >
+                          <div className={`h-3 w-3 rounded-full border-2 transition-all duration-500 ${
+                            reached
+                              ? "bg-yellow-400 border-yellow-300 shadow-[0_0_8px_rgba(250,204,21,1)]"
+                              : "bg-gray-800 border-gray-600"
+                          }`} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ── UPGRADE CTA (if applicable) ── */}
+
+
+        {/* ── UPGRADE CTA (if applicable) ── moved here ── */}
         {showUpgradeCTA && canUpgrade && (
           <div className="relative overflow-hidden rounded-2xl border border-purple-200 bg-gradient-to-r from-purple-50 via-fuchsia-50 to-pink-50 px-6 py-5 shadow-sm">
             <div className="pointer-events-none absolute right-0 top-0 h-40 w-40 rounded-full bg-purple-200/40 blur-2xl" />
@@ -312,7 +475,7 @@ export default function AffiliateDashboard() {
                 </div>
                 <div>
                   <p className="font-semibold text-purple-900">Unlock the Partner Program</p>
-                  <p className="text-sm text-purple-600">Earn up to {nextTierRate} commission with co-marketing & advanced support</p>
+                  <p className="text-sm text-purple-600">Earn up to {nextTierRate} commission with co-marketing &amp; advanced support</p>
                   {earningsStats?.tierInfo?.referralsToNext ? (
                     <p className="text-xs text-fuchsia-600 font-medium mt-0.5">
                       Only {earningsStats.tierInfo.referralsToNext} more referrals to unlock {earningsStats.tierInfo.nextTier}!
@@ -331,61 +494,6 @@ export default function AffiliateDashboard() {
             </div>
           </div>
         )}
-
-        {/* ── MAIN KPI ROW ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          {/* All-Time Earnings */}
-          <div className={`group relative overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-lg transition-all duration-300 p-6 ${dataLoaded ? "animate-[fadeInUp_0.4s_ease_both]" : "opacity-0"}`}>
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/60 to-transparent pointer-events-none" />
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 shadow-md">
-                <DollarSign className="h-6 w-6 text-white" />
-              </div>
-              {earningsStats?.totalEarningsChange && (
-                <span className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${earningsStats.totalEarningsChange.percentage >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                  {earningsStats.totalEarningsChange.percentage >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                  {Math.abs(earningsStats.totalEarningsChange.percentage)}%
-                </span>
-              )}
-            </div>
-            <div className="text-3xl font-extrabold text-gray-900">
-              {loading ? <SkeletonPill /> : <AnimatedNumber value={earningsStats.totalEarnings} prefix="$" decimals={2} />}
-            </div>
-            <p className="text-sm text-gray-500 mt-1 font-medium">All-Time Earnings</p>
-          </div>
-
-          {/* Monthly Earnings */}
-          <div className={`group relative overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-lg transition-all duration-300 p-6 ${dataLoaded ? "animate-[fadeInUp_0.4s_0.1s_ease_both]" : "opacity-0"}`}>
-            <div className="absolute inset-0 bg-gradient-to-br from-sky-50/60 to-transparent pointer-events-none" />
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 shadow-md">
-                <TrendingUp className="h-6 w-6 text-white" />
-              </div>
-              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-sky-100 text-sky-700">This Month</span>
-            </div>
-            <div className="text-3xl font-extrabold text-gray-900">
-              {loading ? <SkeletonPill /> : <AnimatedNumber value={earningsStats.monthlyEarnings} prefix="$" decimals={2} />}
-            </div>
-            <p className="text-sm text-gray-500 mt-1 font-medium">Monthly Earnings</p>
-          </div>
-
-          {/* Tier & Rate */}
-          <div className={`group relative overflow-hidden rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-lg transition-all duration-300 p-6 ${dataLoaded ? "animate-[fadeInUp_0.4s_0.2s_ease_both]" : "opacity-0"}`}>
-            <div className="absolute inset-0 bg-gradient-to-br from-violet-50/60 to-transparent pointer-events-none" />
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-purple-700 shadow-md">
-                <Crown className="h-6 w-6 text-white" />
-              </div>
-              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-violet-100 text-violet-700">
-                {earningsStats?.currentTierRate || 10}% rate
-              </span>
-            </div>
-            <div className="text-2xl font-extrabold text-gray-900">
-              {loading ? <SkeletonPill /> : (earningsStats?.tierInfo?.currentTier || "Free – Starter")}
-            </div>
-            <p className="text-sm text-gray-500 mt-1 font-medium">Current Tier</p>
-          </div>
-        </div>
 
         {/* ── CLIENT PIPELINE + FINANCIAL CARDS ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -510,60 +618,7 @@ export default function AffiliateDashboard() {
           ))}
         </div>
 
-        {/* ── TIER PROGRESS ── */}
-        {earningsStats?.tierInfo && (
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 to-purple-50 border border-purple-100 shadow-sm p-6">
-            <div className="pointer-events-none absolute right-0 top-0 h-32 w-32 rounded-full bg-purple-200/30 blur-2xl" />
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-yellow-400 to-amber-600 shadow-md">
-                  <Award className="h-6 w-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-gray-900">Tier Progress</h3>
-                  <p className="text-sm text-gray-500">Track your way to higher commissions</p>
-                </div>
-              </div>
-              <div className="flex gap-4 text-sm">
-                <div className="text-center">
-                  <div className="text-2xl font-extrabold text-purple-700">{earningsStats.paidReferralsCount || 0}</div>
-                  <div className="text-xs text-gray-500">Paid referrals</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-extrabold text-emerald-600">{earningsStats.currentTierRate || 10}%</div>
-                  <div className="text-xs text-gray-500">Current rate</div>
-                </div>
-              </div>
-            </div>
 
-            {earningsStats.tierInfo.referralsToNext > 0 ? (
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm font-medium">
-                  <span className="text-purple-700 font-semibold">{earningsStats.tierInfo.currentTier}</span>
-                  <span className="text-gray-500">{earningsStats.tierInfo.referralsToNext} more → <span className="text-purple-700 font-semibold">{earningsStats.tierInfo.nextTier}</span></span>
-                </div>
-                <div className="relative h-5 w-full bg-gray-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-purple-500 via-fuchsia-500 to-pink-500 transition-all duration-700 flex items-center justify-end pr-3"
-                    style={{ width: `${Math.max(earningsStats.tierInfo.progressToNext, 4)}%` }}
-                  >
-                    {earningsStats.tierInfo.progressToNext >= 20 && (
-                      <span className="text-white text-xs font-bold">{Math.round(earningsStats.tierInfo.progressToNext)}%</span>
-                    )}
-                  </div>
-                </div>
-                <p className="text-sm font-semibold text-center text-purple-700">
-                  You're {Math.round(earningsStats.tierInfo.progressToNext)}% of the way there!
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-center">
-                <p className="text-emerald-800 font-bold text-xl">🎉 Max Tier Achieved!</p>
-                <p className="text-emerald-600 text-sm">{earningsStats.tierInfo.nextTier}</p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* ── QUICK ACTIONS ── */}
         <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
@@ -705,4 +760,4 @@ export default function AffiliateDashboard() {
       </div>
     </AffiliateLayout>
   );
-}
+}
