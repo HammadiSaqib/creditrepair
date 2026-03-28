@@ -196,6 +196,23 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
     const currentMonthNet = currentMonthPaidGross - currentMonthCancelled;
     const priorMonthNet = priorMonthPaidGross - priorMonthCancelled;
 
+    // Calculate REAL monthly earnings from billing transactions of referrals this month
+    // This captures recurring payments, not just initial signup commissions
+    const commissionRate = parseFloat(affiliateData.commission_rate) || 10;
+    const monthlyBillingQuery = `
+      SELECT COALESCE(SUM(bt.amount), 0) AS total_referral_revenue_this_month
+      FROM billing_transactions bt
+      JOIN affiliate_referrals ar ON bt.user_id = ar.referred_user_id
+      WHERE ar.affiliate_id = ?
+        AND bt.status = 'succeeded'
+        AND bt.created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+    `;
+    const monthlyBillingResult = await executeQuery(monthlyBillingQuery, [affiliateId]);
+    const totalReferralRevenueThisMonth = parseFloat(monthlyBillingResult[0]?.total_referral_revenue_this_month) || 0;
+    const realMonthlyEarnings = (totalReferralRevenueThisMonth * commissionRate) / 100;
+    // Use whichever is higher: commission records this month OR calculated from billing
+    const effectiveMonthlyEarnings = Math.max(monthAllEarnedAmount, realMonthlyEarnings);
+
     // Paid totals by status buckets (paid/cancelled/churned)
     const statusBreakdownQuery = `
       SELECT status, COALESCE(SUM(commission_amount), 0) AS amount, COUNT(*) AS count
@@ -561,7 +578,7 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
 
     const stats = {
       totalEarnings: totalPaidEarnings,
-      monthlyEarnings: monthAllEarnedAmount,
+      monthlyEarnings: effectiveMonthlyEarnings,
       yearlyEarnings: parseFloat(yearlyEarnings) || 0,
       totalReferrals: freshTotalReferrals,
       activeReferrals: activeReferrals,

@@ -813,10 +813,28 @@ router.get('/:id/stats', authenticateToken, requireSuperAdminRole, async (req, r
     });
 
     const allTimeEarnings = parseFloat((earningsRaw as any[])[0]?.all_time_earnings || 0);
-    const monthlyEarnings = parseFloat((earningsRaw as any[])[0]?.monthly_earnings || 0);
+    const monthlyEarningsFromCommissions = parseFloat((earningsRaw as any[])[0]?.monthly_earnings || 0);
     const totalPayouts = parseFloat((payoutsRaw as any[])[0]?.total_payouts || 0);
     const rawPayoutDate = (payoutsRaw as any[])[0]?.last_payout_date;
     const lastPayoutDate = (rawPayoutDate && rawPayoutDate !== '1970-01-01' && rawPayoutDate !== '1970-01-01 00:00:00') ? rawPayoutDate : null;
+
+    // Get affiliate commission rate
+    const affiliateRow = await executeQuery('SELECT commission_rate FROM affiliates WHERE id = ?', [affiliateId]);
+    const affCommissionRate = parseFloat((affiliateRow as any[])[0]?.commission_rate) || 10;
+
+    // Calculate real monthly earnings from billing transactions of referrals this month
+    const monthlyBillingQuery = `
+      SELECT COALESCE(SUM(bt.amount), 0) AS total_referral_revenue_this_month
+      FROM billing_transactions bt
+      JOIN affiliate_referrals ar ON bt.user_id = ar.referred_user_id
+      WHERE ar.affiliate_id = ?
+        AND bt.status = 'succeeded'
+        AND bt.created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+    `;
+    const monthlyBillingResult = await executeQuery(monthlyBillingQuery, [affiliateId]);
+    const totalReferralRevenueThisMonth = parseFloat((monthlyBillingResult as any[])[0]?.total_referral_revenue_this_month) || 0;
+    const realMonthlyEarnings = (totalReferralRevenueThisMonth * affCommissionRate) / 100;
+    const monthlyEarnings = Math.max(monthlyEarningsFromCommissions, realMonthlyEarnings);
 
     res.json({
       success: true,
