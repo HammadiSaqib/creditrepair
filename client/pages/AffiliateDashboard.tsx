@@ -27,6 +27,7 @@ interface EarningsStats {
   totalEarnings: number;
   monthlyEarnings: number;
   yearlyEarnings?: number;
+  totalReferrals?: number;
   pendingCommissions: number;
   paidCommissions: number;
   conversionRate: string | number;
@@ -74,6 +75,16 @@ interface EarningsStats {
   currentMonthConversionRate?: number;
   currentMonthAverageCommission?: number;
   currentMonthPaidCommissionCount?: number;
+  // Subscription-aware breakdown
+  activePayingClients?: number;
+  unpaidClients?: number;
+  cancelledClients?: number;
+  // Payout data (separated from earnings)
+  totalPayouts?: number;
+  lastPayoutDate?: string | null;
+  // MRR
+  currentMRR?: number;
+  mrrBase?: number;
 }
 
 interface RecentReferral {
@@ -87,6 +98,10 @@ interface RecentReferral {
   transactionId?: string;
   planName?: string;
   planValue?: number;
+  subscriptionStatus?: string;
+  isStripePaid?: boolean;
+  lastPaymentDate?: string;
+  lastTransactionId?: string;
 }
 
 export default function AffiliateDashboard() {
@@ -194,7 +209,18 @@ export default function AffiliateDashboard() {
             paymentMethod: statsData.paymentMethod,
             // Percentage changes
             totalEarningsChange: statsData.totalEarningsChange,
-            conversionRateChange: statsData.conversionRateChange
+            conversionRateChange: statsData.conversionRateChange,
+            // Subscription-aware breakdown
+            totalReferrals: totalReferrals,
+            activePayingClients: statsData.activePayingClients || 0,
+            unpaidClients: statsData.unpaidClients || 0,
+            cancelledClients: statsData.cancelledClients || 0,
+            // Payout data
+            totalPayouts: statsData.totalPayouts || 0,
+            lastPayoutDate: statsData.lastPayoutDate || null,
+            // MRR
+            currentMRR: statsData.currentMRR || 0,
+            mrrBase: statsData.mrrBase || 0,
           });
         } else {
           console.warn('⚠️ No stats data received');
@@ -372,6 +398,74 @@ export default function AffiliateDashboard() {
           </Card>
         </div>
 
+        {/* Client Breakdown & Financial Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Referrals</CardTitle>
+              <Users className="h-4 w-4 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{loading ? '...' : formatCount(earningsStats?.totalReferrals)}</div>
+              <p className="text-xs text-muted-foreground">All time</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Paying</CardTitle>
+              <Users className="h-4 w-4 text-green-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{loading ? '...' : formatCount(earningsStats?.activePayingClients)}</div>
+              <p className="text-xs text-muted-foreground">Active subscriptions</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Unpaid</CardTitle>
+              <Users className="h-4 w-4 text-yellow-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{loading ? '...' : formatCount(earningsStats?.unpaidClients)}</div>
+              <p className="text-xs text-muted-foreground">Past due / incomplete</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Cancelled / Churned</CardTitle>
+              <X className="h-4 w-4 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">{loading ? '...' : formatCount(earningsStats?.cancelledClients)}</div>
+              <p className="text-xs text-muted-foreground">Lost clients</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Payouts</CardTitle>
+              <DollarSign className="h-4 w-4 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">{loading ? '...' : formatCurrency(earningsStats?.totalPayouts)}</div>
+              <p className="text-xs text-muted-foreground">
+                {earningsStats?.lastPayoutDate
+                  ? `Last: ${new Date(earningsStats.lastPayoutDate).toLocaleDateString()}`
+                  : 'No payouts yet'}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Current MRR</CardTitle>
+              <TrendingUp className="h-4 w-4 text-purple-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">{loading ? '...' : formatCurrency(earningsStats?.currentMRR)}</div>
+              <p className="text-xs text-muted-foreground">Monthly recurring commission</p>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Additional Stats Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card>
@@ -432,51 +526,74 @@ export default function AffiliateDashboard() {
 
         {/* Tier Progress Card */}
         {earningsStats?.tierInfo && (
-          <Card>
+          <Card className="border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-white">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Crown className="h-5 w-5 text-yellow-500" />
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <Crown className="h-6 w-6 text-yellow-500" />
                 Tier Progress
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-base">
                 Track your progress to the next commission tier
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="font-medium">{earningsStats.tierInfo.currentTier}</p>
-                    <p className="text-sm text-muted-foreground">Current: {earningsStats.currentTierRate}% commission</p>
+                    <p className="text-xl font-bold text-purple-700">{earningsStats.tierInfo.currentTier}</p>
+                    <p className="text-base text-muted-foreground">Current: <span className="font-semibold text-green-600">{earningsStats.currentTierRate}%</span> commission</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-medium text-green-600">{earningsStats.paidReferralsCount || 0} referrals</p>
-                    <p className="text-sm text-muted-foreground">Paid conversions</p>
+                    <p className="text-2xl font-bold text-green-600">{earningsStats.paidReferralsCount || 0}</p>
+                    <p className="text-sm text-muted-foreground">Paid referrals</p>
                   </div>
                 </div>
-                
+
                 {earningsStats.tierInfo.referralsToNext > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Progress to {earningsStats.tierInfo.nextTier}</span>
-                      <span>{earningsStats.tierInfo.referralsToNext} more referrals needed</span>
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-sm font-medium">
+                      <span className="text-purple-700">Progress to {earningsStats.tierInfo.nextTier}</span>
+                      <span className="text-orange-600">{earningsStats.tierInfo.referralsToNext} more referrals needed</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-gradient-to-r from-green-500 to-blue-500 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${earningsStats.tierInfo.progressToNext}%` }}
-                      ></div>
+
+                    {/* Large progress bar with milestone markers */}
+                    <div className="relative pt-2 pb-8">
+                      <div className="w-full bg-gray-200 rounded-full h-8 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 h-8 rounded-full transition-all duration-500 flex items-center justify-end pr-3"
+                          style={{ width: `${Math.max(earningsStats.tierInfo.progressToNext, 5)}%` }}
+                        >
+                          {earningsStats.tierInfo.progressToNext >= 15 && (
+                            <span className="text-white text-sm font-bold">{Math.round(earningsStats.tierInfo.progressToNext)}%</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Milestone markers */}
+                      {[25, 50, 75, 100].map((milestone) => (
+                        <div
+                          key={milestone}
+                          className="absolute top-0"
+                          style={{ left: `${milestone}%`, transform: 'translateX(-50%)' }}
+                        >
+                          <div className={`w-1 h-8 mt-2 ${earningsStats.tierInfo!.progressToNext >= milestone ? 'bg-white/50' : 'bg-gray-400'}`} />
+                          <div className={`text-xs font-semibold mt-1 text-center ${earningsStats.tierInfo!.progressToNext >= milestone ? 'text-green-600' : 'text-gray-400'}`}>
+                            {milestone}%
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {Math.round(earningsStats.tierInfo.progressToNext)}% complete
+
+                    <p className="text-center text-lg font-semibold text-purple-700">
+                      You're {Math.round(earningsStats.tierInfo.progressToNext)}% there!
                     </p>
                   </div>
                 )}
-                
+
                 {earningsStats.tierInfo.referralsToNext === 0 && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                    <p className="text-green-800 font-medium">🎉 Congratulations!</p>
-                    <p className="text-green-700 text-sm">{earningsStats.tierInfo.nextTier}</p>
+                  <div className="bg-green-50 border-2 border-green-300 rounded-xl p-6 text-center">
+                    <p className="text-green-800 font-bold text-2xl mb-1">🎉 Congratulations!</p>
+                    <p className="text-green-700 text-lg">{earningsStats.tierInfo.nextTier}</p>
                   </div>
                 )}
               </div>
@@ -569,6 +686,12 @@ export default function AffiliateDashboard() {
                           <Badge className={getStatusColor(referral.status)}>
                             {referral.status}
                           </Badge>
+                          {referral.isStripePaid && (
+                            <Badge className="bg-emerald-100 text-emerald-800">Stripe Active</Badge>
+                          )}
+                          {referral.subscriptionStatus === 'past_due' && (
+                            <Badge className="bg-amber-100 text-amber-800">Past Due</Badge>
+                          )}
                           <span className="text-sm font-medium text-green-600">
                             {formatCurrency(referral.commission)} commission
                           </span>

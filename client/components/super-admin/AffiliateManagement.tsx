@@ -889,7 +889,10 @@ const AffiliateManagement: React.FC = () => {
                               {affiliate.first_name.charAt(0)}{affiliate.last_name.charAt(0)}
                             </div>
                             <div>
-                              <p className="font-medium">
+                              <p
+                                className="font-medium cursor-pointer text-blue-600 hover:text-blue-800 hover:underline"
+                                onClick={() => navigate(`/super-admin/affiliates/${affiliate.id}`)}
+                              >
                                 {affiliate.first_name} {affiliate.last_name}
                               </p>
                               {affiliate.company_name && (

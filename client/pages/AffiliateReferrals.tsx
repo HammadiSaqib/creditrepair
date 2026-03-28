@@ -33,6 +33,8 @@ import {
   Mail,
   Phone,
   ExternalLink,
+  X,
+  CreditCard,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { affiliateApi } from "@/lib/api";
@@ -42,7 +44,7 @@ interface Referral {
   customerName: string;
   email: string;
   phone?: string;
-  status: "unpaid" | "paid" | "cancelled" | "expired";
+  status: "unpaid" | "paid" | "cancelled" | "expired" | "churned" | "pending";
   tier: "basic" | "premium" | "enterprise";
   signupDate: string;
   conversionDate?: string;
@@ -52,6 +54,12 @@ interface Referral {
   trackingCode: string;
   lastActivity: string;
   transactionId?: string;
+  planPrice?: number;
+  planName?: string;
+  subscriptionStatus?: string;
+  isStripePaid?: boolean;
+  lastPaymentDate?: string;
+  stripeTransactionId?: string;
 }
 
 interface ChildReferral {
@@ -77,6 +85,7 @@ interface ReferralStats {
   totalReferrals: number;
   pendingReferrals: number;
   convertedReferrals: number;
+  cancelledReferrals: number;
   activeReferrals: number;
   conversionRate: number;
   avgLifetimeValue: number;
@@ -171,6 +180,10 @@ export default function AffiliateReferrals() {
       case "cancelled":
       case "canceled":
         return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+      case "churned":
+        return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
+      case "pending":
+        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
       case "expired":
         return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
       default:
@@ -181,8 +194,10 @@ export default function AffiliateReferrals() {
   const formatStatusLabel = (status: string) => {
     const normalized = String(status || "").toLowerCase();
     if (normalized === "cancelled" || normalized === "canceled") return "Canceled";
+    if (normalized === "churned") return "Churned";
     if (normalized === "paid") return "Paid";
     if (normalized === "unpaid") return "Unpaid";
+    if (normalized === "pending") return "Pending";
     if (normalized === "expired") return "Expired";
     return status;
   };
@@ -276,7 +291,7 @@ export default function AffiliateReferrals() {
     >
       <div className="space-y-6">
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Referrals</CardTitle>
@@ -336,6 +351,21 @@ export default function AffiliateReferrals() {
               </p>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Cancelled / Churned</CardTitle>
+              <X className="h-4 w-4 text-red-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">
+                {loading ? '...' : (stats.cancelledReferrals || 0).toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Lost clients
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Filters and Actions */}
@@ -379,6 +409,7 @@ export default function AffiliateReferrals() {
                   <SelectItem value="unpaid">Unpaid</SelectItem>
                   <SelectItem value="paid">Paid</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="churned">Churned</SelectItem>
                   <SelectItem value="expired">Expired</SelectItem>
                 </SelectContent>
               </Select>
@@ -407,6 +438,9 @@ export default function AffiliateReferrals() {
                     <TableHead>Tier</TableHead>
                     <TableHead>Signup Date</TableHead>
                     <TableHead>Commission</TableHead>
+                    <TableHead>Plan Price</TableHead>
+                    <TableHead>Stripe Status</TableHead>
+                    <TableHead>Last Payment</TableHead>
                     <TableHead>Lifetime Value</TableHead>
                     <TableHead>Transaction ID</TableHead>
                   </TableRow>
@@ -415,7 +449,7 @@ export default function AffiliateReferrals() {
                   {loading ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <TableRow key={i}>
-                        <TableCell colSpan={9}>
+                        <TableCell colSpan={12}>
                           <div className="flex items-center space-x-3">
                             <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
                             <div className="space-y-2">
@@ -428,7 +462,7 @@ export default function AffiliateReferrals() {
                     ))
                   ) : filteredReferrals.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8">
+                      <TableCell colSpan={12} className="text-center py-8">
                         <div className="flex flex-col items-center space-y-2">
                           <Users className="h-8 w-8 text-gray-400" />
                           <p className="text-gray-500">No referrals found</p>
@@ -491,6 +525,33 @@ export default function AffiliateReferrals() {
                           </span>
                         </TableCell>
                         <TableCell>
+                          {referral.planPrice ? (
+                            <span className="font-medium">${referral.planPrice.toFixed(2)}</span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {referral.isStripePaid ? (
+                            <Badge className="bg-emerald-100 text-emerald-800">Active</Badge>
+                          ) : referral.subscriptionStatus === 'past_due' ? (
+                            <Badge className="bg-amber-100 text-amber-800">Past Due</Badge>
+                          ) : referral.subscriptionStatus === 'canceled' ? (
+                            <Badge className="bg-red-100 text-red-800">Cancelled</Badge>
+                          ) : referral.subscriptionStatus === 'unpaid' ? (
+                            <Badge className="bg-yellow-100 text-yellow-800">Unpaid</Badge>
+                          ) : (
+                            <Badge className="bg-gray-100 text-gray-800">{referral.subscriptionStatus || 'N/A'}</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {referral.lastPaymentDate ? (
+                            <span className="text-xs">{new Date(referral.lastPaymentDate).toLocaleDateString()}</span>
+                          ) : (
+                            <span className="text-xs text-gray-400">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
                           <span className="font-medium">
                             ${(referral.lifetimeValue || 0).toLocaleString()}
                           </span>
@@ -516,9 +577,9 @@ export default function AffiliateReferrals() {
           <CardHeader>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
               <div>
-                <CardTitle>Child Affiliate Referrals</CardTitle>
+                <CardTitle>Affiliate Override Referrals</CardTitle>
                 <CardDescription>
-                  Track referrals and earnings coming from your child affiliates
+                  Track referrals and earnings coming from your affiliates override
                 </CardDescription>
               </div>
               <div className="flex flex-col items-end text-sm">
@@ -536,7 +597,7 @@ export default function AffiliateReferrals() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Child Affiliate</TableHead>
+                    <TableHead>Affiliate Override</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Plan</TableHead>
                     <TableHead>Status</TableHead>
@@ -564,7 +625,7 @@ export default function AffiliateReferrals() {
                       <TableCell colSpan={6} className="text-center py-8">
                         <div className="flex flex-col items-center space-y-2">
                           <Users className="h-8 w-8 text-gray-400" />
-                          <p className="text-gray-500">No child affiliate referrals found</p>
+                          <p className="text-gray-500">No affiliate override referrals found</p>
                           <p className="text-sm text-gray-400">
                             {searchTerm
                               ? "Try adjusting your search"

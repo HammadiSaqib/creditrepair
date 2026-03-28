@@ -23,6 +23,8 @@ interface LeaderboardData {
   free: LeaderboardAffiliate[];
 }
 
+type SortMode = "price" | "referrals";
+
 export default function AffiliateLeaderboard() {
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardData>({
     pro: [],
@@ -30,6 +32,7 @@ export default function AffiliateLeaderboard() {
   });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("pro");
+  const [sortMode, setSortMode] = useState<SortMode>("price");
 
   useEffect(() => {
     fetchLeaderboardData();
@@ -74,6 +77,16 @@ export default function AffiliateLeaderboard() {
       default:
         return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
     }
+  };
+
+  const getSortedList = (affiliates: LeaderboardAffiliate[]) => {
+    const sorted = [...affiliates].sort((a, b) =>
+      sortMode === "referrals"
+        ? b.totalReferrals - a.totalReferrals
+        : b.totalEarnings - a.totalEarnings
+    );
+    // re-rank after sort
+    return sorted.map((a, i) => ({ ...a, rank: i + 1 }));
   };
 
   const renderLeaderboardList = (affiliates: LeaderboardAffiliate[]) => {
@@ -176,25 +189,77 @@ export default function AffiliateLeaderboard() {
           
           <TabsContent value="pro" className="mt-4">
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="text-sm font-medium text-muted-foreground">Pro & Premium Affiliates</h3>
-                <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                  20-25% Commission
-                </Badge>
+                <div className="flex items-center gap-1">
+                  <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                    20-25% Commission
+                  </Badge>
+                </div>
               </div>
-              {renderLeaderboardList(leaderboardData.pro)}
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="pro-sort"
+                    value="price"
+                    checked={sortMode === "price"}
+                    onChange={() => setSortMode("price")}
+                    className="accent-blue-600"
+                  />
+                  By Price
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="pro-sort"
+                    value="referrals"
+                    checked={sortMode === "referrals"}
+                    onChange={() => setSortMode("referrals")}
+                    className="accent-blue-600"
+                  />
+                  By Referrals
+                </label>
+              </div>
+              {renderLeaderboardList(getSortedList(leaderboardData.pro))}
             </div>
           </TabsContent>
           
           <TabsContent value="free" className="mt-4">
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="text-sm font-medium text-muted-foreground">Free & Starter Affiliates</h3>
-                <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
-                  10-15% Commission
-                </Badge>
+                <div className="flex items-center gap-1">
+                  <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+                    10-15% Commission
+                  </Badge>
+                </div>
               </div>
-              {renderLeaderboardList(leaderboardData.free)}
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="free-sort"
+                    value="price"
+                    checked={sortMode === "price"}
+                    onChange={() => setSortMode("price")}
+                    className="accent-blue-600"
+                  />
+                  By Price
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                  <input
+                    type="radio"
+                    name="free-sort"
+                    value="referrals"
+                    checked={sortMode === "referrals"}
+                    onChange={() => setSortMode("referrals")}
+                    className="accent-blue-600"
+                  />
+                  By Referrals
+                </label>
+              </div>
+              {renderLeaderboardList(getSortedList(leaderboardData.free))}
             </div>
           </TabsContent>
         </Tabs>

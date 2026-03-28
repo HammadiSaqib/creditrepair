@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import SuperAdminLayout from '@/components/SuperAdminLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { api, superAdminApi } from '@/lib/api';
 import { format } from 'date-fns';
-import { Download, RefreshCw, Filter, Calendar, DollarSign, Users, Mail, Phone, Building, TrendingUp } from 'lucide-react';
+import { Download, RefreshCw, Calendar, DollarSign, Users, Mail, Phone, Building, TrendingUp, CreditCard, Activity, XCircle, AlertTriangle, BarChart2 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { aggregateMonthlyEarnings, mergeReferralsWithCommissions, filterReferrals } from '@/utils/affiliateProfile';
 
@@ -59,6 +59,37 @@ interface CommissionItem {
   payment_date?: string;
 }
 
+interface ChildReferral {
+  id: string | number;
+  childAffiliateId?: number;
+  childAffiliateName: string;
+  customerName: string;
+  customerEmail: string;
+  product: string;
+  orderValue: number;
+  commissionRate: number;
+  commissionAmount: number;
+  childCommissionRate?: number;
+  childCommissionAmount?: number;
+  childOrderValue?: number;
+  status: string;
+  orderDate: string;
+  paymentDate?: string;
+  level: number;
+}
+
+interface AffiliateStats {
+  totalAllTimeReferrals: number;
+  activeClients: number;
+  unpaidClients: number;
+  cancelledClients: number;
+  monthlyEarnings: number;
+  allTimeEarnings: number;
+  totalPayouts: number;
+  lastPayoutDate: string | null;
+  currentMRR: number;
+}
+
 interface Filters {
   packageType: string;
   dateFrom?: string;
@@ -67,10 +98,9 @@ interface Filters {
 
 type MonthlyPoint = { month: string; amount: number };
 
-type MonthlyPoint = { month: string; amount: number };
-
 function toCsv(filename: string, rows: any[]) {
-  const headers = Object.keys(rows[0] || {});
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
   const lines = [headers.join(',')].concat(
     rows.map((r) => headers.map((h) => JSON.stringify(r[h] ?? '')).join(','))
   );
@@ -83,18 +113,33 @@ function toCsv(filename: string, rows: any[]) {
   URL.revokeObjectURL(url);
 }
 
+function getChildStatusColor(status: string) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'paid') return 'bg-green-100 text-green-800';
+  if (s === 'approved') return 'bg-blue-100 text-blue-800';
+  if (s === 'rejected') return 'bg-red-100 text-red-800';
+  return 'bg-gray-100 text-gray-800';
+}
+
+function formatChildStatusLabel(status: string) {
+  const s = String(status || '');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 const SuperAdminAffiliateProfile: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null);
   const [referrals, setReferrals] = useState<ReferralItem[]>([]);
   const [commissions, setCommissions] = useState<CommissionItem[]>([]);
+  const [affiliateStats, setAffiliateStats] = useState<AffiliateStats | null>(null);
+  const [childReferrals, setChildReferrals] = useState<ChildReferral[]>([]);
+  const [childSummary, setChildSummary] = useState<{ totalReferrals: number; totalCommission: number }>({ totalReferrals: 0, totalCommission: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>({ packageType: 'all' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [currentMonthEarnings, setCurrentMonthEarnings] = useState<number>(0);
   const [lastPayout, setLastPayout] = useState<{ isPaid: boolean; amount: number; commission_month: string; payout_month: string; invoice_url?: string; payslip_url?: string } | null>(null);
   const [paying, setPaying] = useState(false);
 
@@ -104,19 +149,41 @@ const SuperAdminAffiliateProfile: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const affResp = await superAdminApi.getAffiliates();
+
+        const [affResp, refs, earnResp, commResp, statsResp, childResp] = await Promise.all([
+          superAdminApi.getAffiliates(),
+          api.get(`/api/affiliate-management/${id}/referrals`),
+          api.get(`/api/affiliate-management/${id}/earnings/monthly`),
+          superAdminApi.getCommissionHistory({ affiliate_id: String(id) }),
+          api.get(`/api/affiliate-management/${id}/stats`).catch(() => ({ data: null })),
+          api.get(`/api/affiliate-management/${id}/referrals/child`).catch(() => ({ data: null })),
+        ]);
+
         const list: Affiliate[] = affResp.data?.data || affResp.data || [];
         const found = list.find((a) => String(a.id) === String(id));
-        setAffiliate(found || null);
-        const refs = await api.get(`/api/affiliate-management/${id}/referrals`);
+        if (mounted) setAffiliate(found || null);
+
         const refData: ReferralItem[] = refs.data?.data || refs.data || [];
-        setReferrals(refData);
-        const earnResp = await api.get(`/api/affiliate-management/${id}/earnings/monthly`);
-        const cur = earnResp.data?.data?.monthly_earnings ?? earnResp.data?.monthly_earnings ?? 0;
-        setCurrentMonthEarnings(Number(cur) || 0);
-        const commResp = await superAdminApi.getCommissionHistory({ affiliate_id: String(id) });
-        const commData: CommissionItem[] = commResp.data?.data || commResp.data || commResp.data || [];
-        setCommissions(Array.isArray(commData) ? commData : []);
+        if (mounted) setReferrals(refData);
+
+        const commData: CommissionItem[] = Array.isArray(commResp.data?.data)
+          ? commResp.data.data
+          : Array.isArray(commResp.data)
+          ? commResp.data
+          : [];
+        if (mounted) setCommissions(commData);
+
+        // Extended stats from new endpoint
+        const stats: AffiliateStats | null = statsResp.data?.data || null;
+        if (mounted && stats) setAffiliateStats(stats);
+
+        // Child referrals
+        if (mounted && childResp.data) {
+          setChildReferrals(childResp.data?.data || []);
+          setChildSummary(childResp.data?.summary || { totalReferrals: 0, totalCommission: 0 });
+        }
+
+        // Last month payment card ” earnings first from stats, fallback to commission scan
         const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
         const now = new Date();
         const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -129,57 +196,61 @@ const SuperAdminAffiliateProfile: React.FC = () => {
           const t = new Date(d);
           return t >= new Date(`${startPrevMonthStr}T00:00:00`) && t < new Date(`${startThisMonthStr}T00:00:00`);
         };
+        const statusOk = (s: string | undefined | null, list: string[]) =>
+          list.includes(String(s || '').toLowerCase());
 
-        const statusOk = (s: string | undefined | null, list: string[]) => {
-          const v = String(s || '').toLowerCase();
-          return list.includes(v);
-        };
-
-        const grossFromCommissions = (Array.isArray(commData) ? commData : []).reduce((sum, c) => {
+        const grossFromCommissions = commData.reduce((sum, c) => {
           const ok = statusOk(c.status, ['pending', 'approved', 'paid']);
-          const inRange = isInLastMonth(c.order_date) || isInLastMonth((c as any).created_at) || isInLastMonth(c.payment_date || undefined);
+          const inRange =
+            isInLastMonth(c.order_date) ||
+            isInLastMonth((c as any).created_at) ||
+            isInLastMonth(c.payment_date || undefined);
           return ok && inRange ? sum + Number(c.commission_amount || 0) : sum;
         }, 0);
 
-        const grossFromReferrals = (Array.isArray(refData) ? refData : []).reduce((sum, r) => {
+        const grossFromReferrals = refData.reduce((sum, r) => {
           const ok = statusOk(r.commission_status, ['pending', 'approved', 'paid', 'converted']);
-          const inRange = isInLastMonth(r.referral_date || undefined) || isInLastMonth(r.conversion_date || undefined);
+          const inRange =
+            isInLastMonth(r.referral_date || undefined) ||
+            isInLastMonth(r.conversion_date || undefined);
           return ok && inRange ? sum + Number(r.commission_amount || 0) : sum;
         }, 0);
 
         const gross = grossFromCommissions > 0 ? grossFromCommissions : grossFromReferrals;
-        const uiAmount = gross;
 
         try {
           const payoutResp = await api.get(`/api/commissions/payout-status/${id}`, { params: { strict: true } });
           const d = payoutResp.data?.data || payoutResp.data || null;
-          if (d) {
-            setLastPayout({
-              isPaid: !!d.isPaid,
-              amount: uiAmount,
-              commission_month: String(d.commission_month || ''),
-              payout_month: String(d.payout_month || ''),
-              invoice_url: d.invoice_url || undefined,
-              payslip_url: d.payslip_url || undefined
-            });
-          } else {
-            setLastPayout({
-              isPaid: false,
-              amount: uiAmount,
-              commission_month: `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`,
-              payout_month: `${now.getFullYear()}-${pad(now.getMonth() + 1)}`
-            } as any);
+          if (mounted) {
+            if (d) {
+              setLastPayout({
+                isPaid: !!d.isPaid,
+                amount: gross,
+                commission_month: String(d.commission_month || ''),
+                payout_month: String(d.payout_month || ''),
+                invoice_url: d.invoice_url || undefined,
+                payslip_url: d.payslip_url || undefined,
+              });
+            } else {
+              setLastPayout({
+                isPaid: false,
+                amount: gross,
+                commission_month: `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`,
+                payout_month: `${now.getFullYear()}-${pad(now.getMonth() + 1)}`,
+              } as any);
+            }
           }
         } catch {
-          setLastPayout({
-            isPaid: false,
-            amount: uiAmount,
-            commission_month: `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`,
-            payout_month: `${now.getFullYear()}-${pad(now.getMonth() + 1)}`
-          } as any);
+          if (mounted)
+            setLastPayout({
+              isPaid: false,
+              amount: gross,
+              commission_month: `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`,
+              payout_month: `${now.getFullYear()}-${pad(now.getMonth() + 1)}`,
+            } as any);
         }
       } catch (e: any) {
-        setError(e?.message || 'Failed to load affiliate profile');
+        if (mounted) setError(e?.message || 'Failed to load affiliate profile');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -192,25 +263,27 @@ const SuperAdminAffiliateProfile: React.FC = () => {
     };
   }, [id]);
 
-  const mergedReferrals = useMemo(() => mergeReferralsWithCommissions(referrals, commissions), [referrals, commissions]);
-  const filteredReferrals = useMemo(() => filterReferrals(mergedReferrals as any[], filters), [mergedReferrals, filters]);
+  const mergedReferrals = useMemo(
+    () => mergeReferralsWithCommissions(referrals, commissions),
+    [referrals, commissions]
+  );
+  const filteredReferrals = useMemo(
+    () => filterReferrals(mergedReferrals as any[], filters),
+    [mergedReferrals, filters]
+  );
   const pagedReferrals = useMemo(() => {
     const start = (page - 1) * pageSize;
     return filteredReferrals.slice(start, start + pageSize);
   }, [filteredReferrals, page, pageSize]);
 
-  const monthly = useMemo(() => aggregateMonthlyEarnings(commissions, filters.dateFrom, filters.dateTo), [commissions, filters]);
-  const currentMonthTotal = useMemo(() => {
-    if (currentMonthEarnings && currentMonthEarnings > 0) return currentMonthEarnings;
-    const ym = new Date().toISOString().slice(0, 7);
-    return monthly.find((m) => m.month === ym)?.amount || 0;
-  }, [monthly, currentMonthEarnings]);
-
-  
+  const monthly = useMemo(
+    () => aggregateMonthlyEarnings(commissions, filters.dateFrom, filters.dateTo),
+    [commissions, filters]
+  );
 
   const packageOptions = useMemo(() => {
     const set = new Set<string>();
-    mergedReferrals.forEach((r: any) => { 
+    mergedReferrals.forEach((r: any) => {
       const name = r.plan_name || r.package_name;
       if (name) set.add(name);
     });
@@ -218,21 +291,25 @@ const SuperAdminAffiliateProfile: React.FC = () => {
   }, [mergedReferrals]);
 
   const exportEarnings = () => {
-    const rows = monthly.map((m) => ({ month: m.month, amount: m.amount }));
-    toCsv(`affiliate_${id}_earnings.csv`, rows);
+    toCsv(
+      `affiliate_${id}_earnings.csv`,
+      monthly.map((m) => ({ month: m.month, amount: m.amount }))
+    );
   };
 
   const exportReferralBreakdown = () => {
-    const rows = mergedReferrals.map((r: any) => ({
-      email: r.referred_user_email || '',
-      name: `${r.referred_user_first_name || ''} ${r.referred_user_last_name || ''}`.trim(),
-      package: r.package_name || '',
-      price: r.package_price || '',
-      commission: Number(r.commission_earned || 0).toFixed(2),
-      referral_date: r.referral_date || '',
-      conversion_date: r.conversion_date || r.last_purchase_date || ''
-    }));
-    toCsv(`affiliate_${id}_referrals.csv`, rows);
+    toCsv(
+      `affiliate_${id}_referrals.csv`,
+      mergedReferrals.map((r: any) => ({
+        email: r.referred_user_email || '',
+        name: `${r.referred_user_first_name || ''} ${r.referred_user_last_name || ''}`.trim(),
+        package: r.package_name || '',
+        price: r.package_price || '',
+        commission: Number(r.commission_earned || 0).toFixed(2),
+        referral_date: r.referral_date || '',
+        conversion_date: r.conversion_date || r.last_purchase_date || '',
+      }))
+    );
   };
 
   return (
@@ -248,6 +325,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
           <div className="p-4 bg-yellow-50 text-yellow-700 rounded-md">Affiliate not found</div>
         ) : (
           <div className="space-y-6">
+            {/* â”€â”€ Top row: Details + Performance + Last Month Payment â”€â”€ */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <Card>
                 <CardHeader>
@@ -326,30 +404,12 @@ const SuperAdminAffiliateProfile: React.FC = () => {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Earnings This Month</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-3">
-                    <DollarSign className="h-6 w-6 text-green-600" />
-                    <div className="text-2xl font-semibold">${Number(currentMonthTotal).toFixed(2)}</div>
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <Input type="date" value={filters.dateFrom || ''} onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} />
-                    <Input type="date" value={filters.dateTo || ''} onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} />
-                    <Button variant="outline" onClick={() => setFilters({ packageType: 'all' })}><RefreshCw className="h-4 w-4 mr-1" />Reset</Button>
-                    <Button onClick={exportEarnings}><Download className="h-4 w-4 mr-1" />Export Earnings</Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
                   <CardTitle>Last Month Payment</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-xs text-muted-foreground">{lastPayout?.commission_month || ''} → {lastPayout?.payout_month || ''}</div>
+                      <div className="text-xs text-muted-foreground">{lastPayout?.commission_month || ''} â†’ {lastPayout?.payout_month || ''}</div>
                       <div className="text-xl font-semibold">${Number(lastPayout?.amount || 0).toFixed(2)}</div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -384,6 +444,134 @@ const SuperAdminAffiliateProfile: React.FC = () => {
               </Card>
             </div>
 
+            {/* â”€â”€ Stats Cards Row â”€â”€ */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Users className="h-4 w-4 text-blue-500" />
+                    <span className="text-xs text-muted-foreground">Total Referrals</span>
+                  </div>
+                  <div className="text-2xl font-bold">{affiliateStats?.totalAllTimeReferrals ?? affiliate.total_referrals ?? 0}</div>
+                  <div className="text-xs text-muted-foreground mt-1">All-time</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Activity className="h-4 w-4 text-green-500" />
+                    <span className="text-xs text-muted-foreground">Active Paying</span>
+                  </div>
+                  <div className="text-2xl font-bold text-green-600">{affiliateStats?.activeClients ?? 0}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Clients</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    <span className="text-xs text-muted-foreground">Unpaid</span>
+                  </div>
+                  <div className="text-2xl font-bold text-amber-600">{affiliateStats?.unpaidClients ?? 0}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Clients</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <XCircle className="h-4 w-4 text-red-500" />
+                    <span className="text-xs text-muted-foreground">Cancelled / Churned</span>
+                  </div>
+                  <div className="text-2xl font-bold text-red-600">{affiliateStats?.cancelledClients ?? 0}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Clients</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <BarChart2 className="h-4 w-4 text-purple-500" />
+                    <span className="text-xs text-muted-foreground">Current MRR</span>
+                  </div>
+                  <div className="text-2xl font-bold text-purple-600">${Number(affiliateStats?.currentMRR ?? 0).toFixed(2)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Driven by affiliate</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <DollarSign className="h-4 w-4 text-emerald-500" />
+                    <span className="text-xs text-muted-foreground">Monthly Earnings</span>
+                  </div>
+                  <div className="text-2xl font-bold text-emerald-600">${Number(affiliateStats?.monthlyEarnings ?? 0).toFixed(2)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">This month (earned)</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <TrendingUp className="h-4 w-4 text-blue-500" />
+                    <span className="text-xs text-muted-foreground">All-Time Earnings</span>
+                  </div>
+                  <div className="text-2xl font-bold">${Number(affiliateStats?.allTimeEarnings ?? affiliate.total_earnings ?? 0).toFixed(2)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Total commissions earned</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CreditCard className="h-4 w-4 text-violet-500" />
+                    <span className="text-xs text-muted-foreground">Total Payouts</span>
+                  </div>
+                  <div className="text-2xl font-bold text-violet-600">${Number(affiliateStats?.totalPayouts ?? 0).toFixed(2)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Paid out by admin</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <span className="text-xs text-muted-foreground">Last Payout Date</span>
+                  </div>
+                  <div className="text-lg font-bold">
+                    {affiliateStats?.lastPayoutDate
+                      ? format(new Date(affiliateStats.lastPayoutDate), 'MMM dd, yyyy')
+                      : '”'}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">Most recent payment</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* â”€â”€ Earnings This Month (filter/export) â”€â”€ */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Earnings This Month</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3 mb-4">
+                  <DollarSign className="h-6 w-6 text-green-600" />
+                  <div className="text-2xl font-semibold">${Number(affiliateStats?.monthlyEarnings ?? 0).toFixed(2)}</div>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Input type="date" value={filters.dateFrom || ''} onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} />
+                  <Input type="date" value={filters.dateTo || ''} onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} />
+                  <Button variant="outline" onClick={() => setFilters({ packageType: 'all' })}><RefreshCw className="h-4 w-4 mr-1" />Reset</Button>
+                  <Button onClick={exportEarnings}><Download className="h-4 w-4 mr-1" />Export Earnings</Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* â”€â”€ Referral Network â”€â”€ */}
             <Card>
               <CardHeader className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />Referral Network</CardTitle>
@@ -415,6 +603,11 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                       <TableHead>Commission Earned</TableHead>
                       <TableHead>Referral Date</TableHead>
                       <TableHead>Conversion Date</TableHead>
+                      <TableHead>Subscription Status</TableHead>
+                      <TableHead>Plan Price</TableHead>
+                      <TableHead>Stripe Paid</TableHead>
+                      <TableHead>Last Payment</TableHead>
+                      <TableHead>Transaction ID</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -427,31 +620,53 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                           <div className="text-sm text-muted-foreground">{r.referred_user_email}</div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">{r.plan_name || r.package_name || 'N/A'}</Badge>
-                          </div>
+                          <Badge variant="outline">{r.plan_name || r.package_name || 'N/A'}</Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">{r.plan_type || 'N/A'}</Badge>
-                          </div>
+                          <Badge variant="outline">{r.plan_type || 'N/A'}</Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">{r.purchase_type || 'Subscription'}</Badge>
-                          </div>
+                          <Badge variant="outline">{r.purchase_type || 'Subscription'}</Badge>
                         </TableCell>
                         <TableCell>${Number(r.package_price || 0).toFixed(2)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2"><TrendingUp className="h-4 w-4 text-green-600" />${Number(r.commission_earned || 0).toFixed(2)}</div>
                         </TableCell>
-                        <TableCell>{r.referral_date ? format(new Date(r.referral_date), 'MMM dd, yyyy') : '—'}</TableCell>
-                        <TableCell>{r.conversion_date ? format(new Date(r.conversion_date), 'MMM dd, yyyy') : (r.last_purchase_date ? format(new Date(r.last_purchase_date), 'MMM dd, yyyy') : '—')}</TableCell>
+                        <TableCell>{r.referral_date ? format(new Date(r.referral_date), 'MMM dd, yyyy') : '”'}</TableCell>
+                        <TableCell>{r.conversion_date ? format(new Date(r.conversion_date), 'MMM dd, yyyy') : (r.last_purchase_date ? format(new Date(r.last_purchase_date), 'MMM dd, yyyy') : '”')}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const state = r.payment_state || 'unknown';
+                            const colorMap: Record<string, string> = {
+                              active: 'bg-green-100 text-green-800',
+                              unpaid: 'bg-amber-100 text-amber-800',
+                              cancelled: 'bg-red-100 text-red-800',
+                              churned: 'bg-orange-100 text-orange-800',
+                              pending: 'bg-gray-100 text-gray-800',
+                              unknown: 'bg-gray-100 text-gray-800',
+                            };
+                            return <Badge className={colorMap[state] || colorMap.unknown}>{state.charAt(0).toUpperCase() + state.slice(1)}</Badge>;
+                          })()}
+                        </TableCell>
+                        <TableCell>{r.plan_price ? `$${Number(r.plan_price).toFixed(2)}` : '”'}</TableCell>
+                        <TableCell>
+                          {r.is_stripe_paid ? (
+                            <Badge className="bg-emerald-100 text-emerald-800">Yes</Badge>
+                          ) : (
+                            <Badge className="bg-gray-100 text-gray-800">No</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{r.last_payment_date ? format(new Date(r.last_payment_date), 'MMM dd, yyyy') : '”'}</TableCell>
+                        <TableCell>
+                          {r.stripe_transaction_id ? (
+                            <span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded">{r.stripe_transaction_id}</span>
+                          ) : '”'}
+                        </TableCell>
                       </TableRow>
                     ))}
                     {pagedReferrals.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No referrals found</TableCell>
+                        <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">No referrals found</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -471,6 +686,115 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                     <Button variant="outline" disabled={page >= Math.ceil(filteredReferrals.length / pageSize)} onClick={() => setPage((p) => p + 1)}>Next</Button>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* â”€â”€ Affiliate Override Referrals â”€â”€ */}
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Affiliate Override Referrals
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Referrals and earnings coming from affiliates recruited by{' '}
+                      <span className="font-medium text-foreground">{affiliate.first_name} {affiliate.last_name}</span>
+                    </CardDescription>
+                  </div>
+                  <div className="flex flex-col items-end text-sm gap-1">
+                    <div className="text-muted-foreground">
+                      Total override referrals:{' '}
+                      <span className="font-medium text-foreground">{(childSummary.totalReferrals || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="text-muted-foreground">
+                      Total earnings from child referrals:{' '}
+                      <span className="font-medium text-foreground">${(childSummary.totalCommission || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Affiliate Override</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Order Date</TableHead>
+                      <TableHead>Commission</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {childReferrals.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-10">
+                          <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                            <Users className="h-8 w-8" />
+                            <p>No affiliate override referrals found</p>
+                            <p className="text-xs">This affiliate has no affiliates override with referrals yet</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      childReferrals.map((referral) => (
+                        <TableRow key={referral.id}>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">{referral.childAffiliateName}</div>
+                              <div className="text-xs text-muted-foreground">ID: {referral.childAffiliateId ?? '”'}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">{referral.customerName}</div>
+                              <div className="text-sm text-muted-foreground">{referral.customerEmail}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">{referral.product}</div>
+                              <div className="text-sm text-muted-foreground">
+                                ${referral.orderValue.toLocaleString()} Â· {referral.commissionRate.toFixed(2)}%
+                              </div>
+                              {typeof referral.childCommissionRate === 'number' && typeof referral.childOrderValue === 'number' ? (
+                                <div className="text-xs text-muted-foreground">
+                                  Child: ${referral.childOrderValue.toLocaleString()} Â· {referral.childCommissionRate.toFixed(2)}%
+                                </div>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={getChildStatusColor(referral.status)}>
+                              {formatChildStatusLabel(referral.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {referral.orderDate
+                                ? format(new Date(referral.orderDate), 'MMM dd, yyyy')
+                                : '”'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium text-green-600">
+                                You: ${referral.commissionAmount.toLocaleString()}
+                              </div>
+                              {typeof referral.childCommissionAmount === 'number' ? (
+                                <div className="text-xs text-muted-foreground">
+                                  Child: ${referral.childCommissionAmount.toLocaleString()}
+                                </div>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
           </div>

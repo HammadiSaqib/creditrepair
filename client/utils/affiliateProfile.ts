@@ -25,6 +25,16 @@ export interface ReferralItem {
   referral_date?: string | null;
   conversion_date?: string | null;
   notes?: string | null;
+  // Stripe / subscription fields
+  user_status?: string | null;
+  subscription_status?: string | null;
+  stripe_subscription_id?: string | null;
+  payment_state?: string | null;
+  is_stripe_paid?: boolean;
+  plan_price?: number | null;
+  last_payment_date?: string | null;
+  stripe_transaction_id?: string | null;
+  current_period_end?: string | null;
 }
 
 export interface Filters {

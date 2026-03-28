@@ -605,9 +605,9 @@ router.get('/:id/referrals', authenticateToken, requireSuperAdminRole, async (re
       return res.status(404).json({ error: 'Affiliate not found or access denied' });
     }
     
-    // Get referrals
+    // Get referrals with subscription status and Stripe data
     const referralsQuery = `
-      SELECT 
+      SELECT
         ar.id,
         ar.referred_user_id,
         ar.commission_amount,
@@ -618,29 +618,75 @@ router.get('/:id/referrals', authenticateToken, requireSuperAdminRole, async (re
         u.email as referred_user_email,
         u.first_name as referred_user_first_name,
         u.last_name as referred_user_last_name,
+        u.status as user_status,
+        s.status as subscription_status,
+        s.stripe_subscription_id,
+        s.plan_name as subscription_plan_name,
+        s.plan_type as subscription_plan_type,
+        s.current_period_end,
         (
-          SELECT bt.plan_name 
-          FROM billing_transactions bt 
-          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded' 
-          ORDER BY bt.created_at DESC 
+          SELECT bt.plan_name
+          FROM billing_transactions bt
+          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded'
+          ORDER BY bt.created_at DESC
           LIMIT 1
         ) AS plan_name,
         (
-          SELECT bt.plan_type 
-          FROM billing_transactions bt 
-          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded' 
-          ORDER BY bt.created_at DESC 
+          SELECT bt.plan_type
+          FROM billing_transactions bt
+          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded'
+          ORDER BY bt.created_at DESC
           LIMIT 1
-        ) AS plan_type
+        ) AS plan_type,
+        (
+          SELECT bt.amount
+          FROM billing_transactions bt
+          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded'
+          ORDER BY bt.created_at DESC
+          LIMIT 1
+        ) AS plan_price,
+        (
+          SELECT MAX(bt.created_at)
+          FROM billing_transactions bt
+          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded'
+        ) AS last_payment_date,
+        (
+          SELECT bt.stripe_payment_intent_id
+          FROM billing_transactions bt
+          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded'
+          ORDER BY bt.created_at DESC LIMIT 1
+        ) AS stripe_transaction_id
       FROM affiliate_referrals ar
       LEFT JOIN users u ON ar.referred_user_id = u.id
+      LEFT JOIN subscriptions s ON u.id = s.user_id
       WHERE ar.affiliate_id = ?
       ORDER BY ar.referral_date DESC
     `;
-    
+
     const referrals = await executeQuery(referralsQuery, [affiliateId]);
-    
-    res.json({ success: true, data: referrals });
+
+    // Transform to include payment state
+    const transformedReferrals = (referrals as any[]).map((r: any) => {
+      const subStatus = String(r.subscription_status || '').toLowerCase();
+      const userStatus = String(r.user_status || '').toLowerCase();
+
+      let payment_state = 'pending';
+      if (subStatus === 'active') payment_state = 'active';
+      else if (['unpaid', 'past_due', 'incomplete'].includes(subStatus)) payment_state = 'unpaid';
+      else if (['canceled', 'cancelled'].includes(subStatus)) payment_state = 'cancelled';
+      else if (userStatus === 'inactive') payment_state = 'churned';
+
+      return {
+        ...r,
+        payment_state,
+        is_stripe_paid: subStatus === 'active',
+        plan_price: r.plan_price ? parseFloat(r.plan_price) : null,
+        last_payment_date: r.last_payment_date || null,
+        stripe_transaction_id: r.stripe_transaction_id || null,
+      };
+    });
+
+    res.json({ success: true, data: transformedReferrals });
   } catch (error) {
     console.error('Error fetching affiliate referrals:', error);
     res.status(500).json({ error: 'Failed to fetch affiliate referrals' });
@@ -683,6 +729,218 @@ router.get('/:id/earnings/monthly', authenticateToken, requireSuperAdminRole, as
   } catch (error) {
     console.error('Error fetching monthly earnings:', error);
     res.status(500).json({ error: 'Failed to fetch monthly earnings' });
+  }
+});
+
+// GET /api/affiliate-management/:id/stats - Get extended stats cards for affiliate profile
+router.get('/:id/stats', authenticateToken, requireSuperAdminRole, async (req, res) => {
+  try {
+    const affiliateId = String(req.params.id).replace('AFF-', '');
+
+    const verifyResult = await executeQuery('SELECT id FROM affiliates WHERE id = ?', [affiliateId]);
+    if (!verifyResult || verifyResult.length === 0) {
+      return res.status(404).json({ error: 'Affiliate not found' });
+    }
+
+    // All referrals with subscription / payment state
+    const referralsQuery = `
+      SELECT
+        ar.id,
+        s.status as subscription_status,
+        u.status as user_status,
+        (
+          SELECT bt.amount FROM billing_transactions bt
+          WHERE bt.user_id = ar.referred_user_id AND bt.status = 'succeeded'
+          ORDER BY bt.created_at DESC LIMIT 1
+        ) AS last_plan_price,
+        ar.commission_amount
+      FROM affiliate_referrals ar
+      LEFT JOIN users u ON ar.referred_user_id = u.id
+      LEFT JOIN subscriptions s ON u.id = s.user_id
+      WHERE ar.affiliate_id = ?
+    `;
+
+    // All-time commissions earned (regardless of payout)
+    const earningsQuery = `
+      SELECT
+        COALESCE(SUM(commission_amount),0) AS all_time_earnings,
+        COALESCE(SUM(CASE WHEN MONTH(created_at)=MONTH(CURRENT_DATE()) AND YEAR(created_at)=YEAR(CURRENT_DATE()) THEN commission_amount ELSE 0 END),0) AS monthly_earnings
+      FROM affiliate_commissions
+      WHERE affiliate_id = ? AND status IN ('pending','approved','paid')
+    `;
+
+    // Total already paid out
+    const payoutsQuery = `
+      SELECT
+        COALESCE(SUM(amount),0) AS total_payouts,
+        MAX(payment_date) AS last_payout_date
+      FROM commission_payments
+      WHERE affiliate_id = ? AND status = 'completed'
+    `;
+
+    const [referralsRaw, earningsRaw, payoutsRaw] = await Promise.all([
+      executeQuery(referralsQuery, [affiliateId]),
+      executeQuery(earningsQuery, [affiliateId]),
+      executeQuery(payoutsQuery, [affiliateId]),
+    ]);
+
+    let activeClients = 0;
+    let unpaidClients = 0;
+    let cancelledClients = 0;
+    let currentMRR = 0;
+
+    (referralsRaw as any[]).forEach((r: any) => {
+      const subStatus = String(r.subscription_status || '').toLowerCase();
+      const userStatus = String(r.user_status || '').toLowerCase();
+      const planPrice = parseFloat(r.last_plan_price || 0);
+
+      if (subStatus === 'active') {
+        activeClients++;
+        currentMRR += planPrice;
+      } else if (['unpaid', 'past_due', 'incomplete'].includes(subStatus)) {
+        unpaidClients++;
+      } else if (['canceled', 'cancelled'].includes(subStatus) || userStatus === 'inactive') {
+        cancelledClients++;
+      }
+    });
+
+    const allTimeEarnings = parseFloat((earningsRaw as any[])[0]?.all_time_earnings || 0);
+    const monthlyEarnings = parseFloat((earningsRaw as any[])[0]?.monthly_earnings || 0);
+    const totalPayouts = parseFloat((payoutsRaw as any[])[0]?.total_payouts || 0);
+    const lastPayoutDate = (payoutsRaw as any[])[0]?.last_payout_date || null;
+
+    res.json({
+      success: true,
+      data: {
+        totalAllTimeReferrals: (referralsRaw as any[]).length,
+        activeClients,
+        unpaidClients,
+        cancelledClients,
+        monthlyEarnings,
+        allTimeEarnings,
+        totalPayouts,
+        lastPayoutDate,
+        currentMRR,
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching affiliate stats:', error);
+    res.status(500).json({ error: 'Failed to fetch affiliate stats' });
+  }
+});
+
+// GET /api/affiliate-management/:id/referrals/child - Get affiliate override referrals for super admin
+router.get('/:id/referrals/child', authenticateToken, requireSuperAdminRole, async (req, res) => {
+  try {
+    const affiliateId = String(req.params.id).replace('AFF-', '');
+
+    const verifyResult = await executeQuery('SELECT id FROM affiliates WHERE id = ?', [affiliateId]);
+    if (!verifyResult || verifyResult.length === 0) {
+      return res.status(404).json({ error: 'Affiliate not found' });
+    }
+
+    const summaryQuery = `
+      SELECT
+        COUNT(*) as total_referrals,
+        COALESCE(SUM(ac.commission_amount), 0) +
+        COALESCE(SUM(CASE
+          WHEN ac.id IS NULL AND child.parent_commission_rate > 0 AND ar.commission_rate > 0
+            THEN (ar.commission_amount * child.parent_commission_rate / ar.commission_rate)
+          ELSE 0
+        END), 0) as total_commission
+      FROM affiliate_referrals ar
+      JOIN affiliates child ON child.id = ar.affiliate_id
+      LEFT JOIN affiliate_commissions ac ON ac.referral_id = ar.id AND ac.affiliate_id = ?
+      WHERE child.parent_affiliate_id = ?
+    `;
+
+    const dataQuery = `
+      SELECT
+        ar.id as referral_id,
+        ar.referred_user_id,
+        ar.status as referral_status,
+        ar.commission_amount as referral_commission_amount,
+        ar.commission_rate as referral_commission_rate,
+        ar.referral_date,
+        ar.conversion_date,
+        ar.payment_date,
+        child.id as child_affiliate_id,
+        child.first_name as child_first_name,
+        child.last_name as child_last_name,
+        child.email as child_email,
+        child.parent_commission_rate as child_parent_commission_rate,
+        u.first_name as customer_first_name,
+        u.last_name as customer_last_name,
+        u.email as customer_email,
+        ac.id as commission_id,
+        ac.order_value,
+        ac.commission_rate,
+        ac.commission_amount,
+        ac.status as commission_status,
+        ac.product,
+        ac.order_date,
+        ac.payment_date as commission_payment_date
+      FROM affiliate_referrals ar
+      JOIN affiliates child ON child.id = ar.affiliate_id
+      JOIN users u ON u.id = ar.referred_user_id
+      LEFT JOIN affiliate_commissions ac ON ac.referral_id = ar.id AND ac.affiliate_id = ?
+      WHERE child.parent_affiliate_id = ?
+      ORDER BY COALESCE(ac.order_date, ar.referral_date) DESC
+    `;
+
+    const [summaryRows, rows] = await Promise.all([
+      executeQuery(summaryQuery, [affiliateId, affiliateId]),
+      executeQuery(dataQuery, [affiliateId, affiliateId]),
+    ]);
+
+    const summary = {
+      totalReferrals: (summaryRows as any[])[0]?.total_referrals || 0,
+      totalCommission: parseFloat((summaryRows as any[])[0]?.total_commission) || 0,
+    };
+
+    const transformed = (rows as any[]).map((row: any) => {
+      const childCommissionRate = parseFloat(row.referral_commission_rate) || 0;
+      const childCommissionAmount = parseFloat(row.referral_commission_amount) || 0;
+      const childOrderValue = childCommissionRate > 0 ? (childCommissionAmount * 100) / childCommissionRate : 0;
+      const fallbackParentRate = parseFloat(row.child_parent_commission_rate) || 0;
+      const parentCommissionRate = parseFloat(row.commission_rate) || fallbackParentRate;
+      const parentCommissionAmount = parseFloat(row.commission_amount) || (parentCommissionRate > 0 ? (childOrderValue * parentCommissionRate) / 100 : 0);
+      const parentOrderValue = parseFloat(row.order_value) || childOrderValue;
+      const normalizedReferralStatus = String(row.referral_status || '').toLowerCase();
+      const normalizedCommissionStatus = String(row.commission_status || '').toLowerCase();
+      const status =
+        normalizedReferralStatus === 'paid' || normalizedCommissionStatus === 'paid'
+          ? 'paid'
+          : normalizedReferralStatus === 'approved' || normalizedCommissionStatus === 'approved'
+          ? 'approved'
+          : row.commission_status || row.referral_status;
+
+      return {
+        id: row.commission_id || row.referral_id,
+        childAffiliateId: row.child_affiliate_id,
+        childAffiliateName:
+          `${row.child_first_name || ''} ${row.child_last_name || ''}`.trim() || row.child_email || 'Unknown',
+        customerName:
+          `${row.customer_first_name || ''} ${row.customer_last_name || ''}`.trim() || 'Unknown',
+        customerEmail: row.customer_email || '',
+        product: row.product || 'Referral',
+        orderValue: parentOrderValue,
+        commissionRate: parentCommissionRate,
+        commissionAmount: parentCommissionAmount,
+        childCommissionRate,
+        childCommissionAmount,
+        childOrderValue,
+        status,
+        orderDate: row.order_date || row.referral_date,
+        paymentDate: row.commission_payment_date || row.payment_date,
+        level: 2,
+      };
+    });
+
+    res.json({ success: true, data: transformed, summary });
+  } catch (error) {
+    console.error('Error fetching child affiliate referrals for admin:', error);
+    res.status(500).json({ error: 'Failed to fetch child affiliate referrals' });
   }
 });
 
