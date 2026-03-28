@@ -763,25 +763,33 @@ router.get('/:id/stats', authenticateToken, requireSuperAdminRole, async (req, r
     // All-time commissions earned (regardless of payout)
     const earningsQuery = `
       SELECT
-        COALESCE(SUM(commission_amount),0) AS all_time_earnings,
-        COALESCE(SUM(CASE WHEN MONTH(created_at)=MONTH(CURRENT_DATE()) AND YEAR(created_at)=YEAR(CURRENT_DATE()) THEN commission_amount ELSE 0 END),0) AS monthly_earnings
+        COALESCE(SUM(CASE WHEN status IN ('pending','approved','paid') THEN commission_amount ELSE 0 END),0) AS all_time_earnings,
+        COALESCE(SUM(CASE WHEN status IN ('pending','approved','paid') AND MONTH(COALESCE(order_date, created_at))=MONTH(CURRENT_DATE()) AND YEAR(COALESCE(order_date, created_at))=YEAR(CURRENT_DATE()) THEN commission_amount ELSE 0 END),0) AS monthly_earnings
       FROM affiliate_commissions
-      WHERE affiliate_id = ? AND status IN ('pending','approved','paid')
+      WHERE affiliate_id = ?
     `;
 
-    // Total already paid out
+    // Total already paid out (check both commission_payments and affiliate_payouts)
     const payoutsQuery = `
       SELECT
-        COALESCE(SUM(amount),0) AS total_payouts,
-        MAX(payment_date) AS last_payout_date
-      FROM commission_payments
-      WHERE affiliate_id = ? AND status = 'completed'
+        COALESCE(
+          (SELECT SUM(amount) FROM commission_payments WHERE affiliate_id = ? AND status = 'completed'),
+          0
+        ) +
+        COALESCE(
+          (SELECT SUM(amount) FROM affiliate_payouts WHERE affiliate_id = ? AND status = 'paid'),
+          0
+        ) AS total_payouts,
+        GREATEST(
+          COALESCE((SELECT MAX(payment_date) FROM commission_payments WHERE affiliate_id = ? AND status = 'completed'), '1970-01-01'),
+          COALESCE((SELECT MAX(paid_at) FROM affiliate_payouts WHERE affiliate_id = ? AND status = 'paid'), '1970-01-01')
+        ) AS last_payout_date
     `;
 
     const [referralsRaw, earningsRaw, payoutsRaw] = await Promise.all([
       executeQuery(referralsQuery, [affiliateId]),
       executeQuery(earningsQuery, [affiliateId]),
-      executeQuery(payoutsQuery, [affiliateId]),
+      executeQuery(payoutsQuery, [affiliateId, affiliateId, affiliateId, affiliateId]),
     ]);
 
     let activeClients = 0;
@@ -807,7 +815,8 @@ router.get('/:id/stats', authenticateToken, requireSuperAdminRole, async (req, r
     const allTimeEarnings = parseFloat((earningsRaw as any[])[0]?.all_time_earnings || 0);
     const monthlyEarnings = parseFloat((earningsRaw as any[])[0]?.monthly_earnings || 0);
     const totalPayouts = parseFloat((payoutsRaw as any[])[0]?.total_payouts || 0);
-    const lastPayoutDate = (payoutsRaw as any[])[0]?.last_payout_date || null;
+    const rawPayoutDate = (payoutsRaw as any[])[0]?.last_payout_date;
+    const lastPayoutDate = (rawPayoutDate && rawPayoutDate !== '1970-01-01' && rawPayoutDate !== '1970-01-01 00:00:00') ? rawPayoutDate : null;
 
     res.json({
       success: true,

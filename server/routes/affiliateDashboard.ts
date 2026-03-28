@@ -154,7 +154,13 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
           WHEN status = 'paid' 
             AND COALESCE(payment_date, approval_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
           THEN 1 ELSE 0
-        END) AS month_paid_count
+        END) AS month_paid_count,
+        COALESCE(SUM(CASE 
+          WHEN status IN ('pending','approved','paid') 
+            AND COALESCE(order_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+          THEN commission_amount 
+          ELSE 0 
+        END), 0) AS month_all_earned_amount
       FROM affiliate_commissions
       WHERE affiliate_id = ?
     `;
@@ -171,6 +177,7 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       pending_count: pendingCountRaw = 0,
       paid_count: paidCountRaw = 0,
       month_paid_count: monthPaidCountRaw = 0,
+      month_all_earned_amount: monthAllEarnedAmountRaw = 0,
     } = earningsAggregate[0] || {};
 
     const totalPaidAmount = parseFloat(totalPaidAmountRaw) || 0;
@@ -183,6 +190,7 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
     const pendingSignups = parseInt(pendingCountRaw) || 0;
     const paidCommissionCount = parseInt(paidCountRaw) || 0;
     const currentMonthPaidCount = parseInt(monthPaidCountRaw) || 0;
+    const monthAllEarnedAmount = parseFloat(monthAllEarnedAmountRaw) || 0;
 
     const totalPaidEarnings = totalPaidAmount - totalCancelledAmount;
     const currentMonthNet = currentMonthPaidGross - currentMonthCancelled;
@@ -297,21 +305,32 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
 
     const tierInfo = getTierInfo(affiliateData.plan_type, affiliateData.paid_referrals_count);
 
-    // Calculate non-renewals (referrals who were active but cancelled/expired in the last 30 days)
+    // Non-renewals: referrals who are NOT cancelled but have unpaid/past_due subscriptions (didn't pay)
     const nonRenewalsQuery = `
-      SELECT COUNT(DISTINCT ac.id) as non_renewals_count,
-             COALESCE(SUM(ac.commission_amount), 0) as lost_commission_amount
-      FROM affiliate_commissions ac
-      WHERE ac.affiliate_id = ?
-        AND ac.status IN ('cancelled', 'refunded', 'chargeback')
-        AND ac.updated_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+      SELECT COUNT(DISTINCT ar.id) as non_renewals_count
+      FROM affiliate_referrals ar
+      JOIN users u ON ar.referred_user_id = u.id
+      LEFT JOIN subscriptions s ON u.id = s.user_id
+      WHERE ar.affiliate_id = ?
+        AND ar.status NOT IN ('cancelled')
+        AND (s.status IN ('unpaid', 'past_due', 'incomplete', 'incomplete_expired') OR s.id IS NULL)
+        AND u.status != 'inactive'
     `;
     
     console.log('📉 [AFFILIATE STATS] Executing non-renewals query:', nonRenewalsQuery, 'with params:', [affiliateId]);
     const nonRenewalsResult = await executeQuery(nonRenewalsQuery, [affiliateId]);
     console.log('📉 [AFFILIATE STATS] Non-renewals result:', nonRenewalsResult);
     const nonRenewalsCount = nonRenewalsResult[0]?.non_renewals_count || 0;
-    const lostCommissionAmount = nonRenewalsResult[0]?.lost_commission_amount || 0;
+
+    // Lost commission: commission from churned/cancelled referrals (referrals that are out)
+    const lostCommissionQuery = `
+      SELECT COALESCE(SUM(ac.commission_amount), 0) as lost_commission_amount
+      FROM affiliate_commissions ac
+      WHERE ac.affiliate_id = ?
+        AND ac.status IN ('cancelled', 'refunded', 'chargeback')
+    `;
+    const lostCommissionResult = await executeQuery(lostCommissionQuery, [affiliateId]);
+    const lostCommissionAmount = parseFloat(lostCommissionResult[0]?.lost_commission_amount) || 0;
 
     // Calculate potential lost commission for next month (based on current active referrals who might not renew)
     const potentialLostCommissionQuery = `
@@ -542,13 +561,13 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
 
     const stats = {
       totalEarnings: totalPaidEarnings,
-      monthlyEarnings: currentMonthNet,
+      monthlyEarnings: monthAllEarnedAmount,
       yearlyEarnings: parseFloat(yearlyEarnings) || 0,
       totalReferrals: freshTotalReferrals,
       activeReferrals: activeReferrals,
       clickThroughRate: 8.4, // Mock data - would need click tracking
       conversionRate: parseFloat(conversionRate.toFixed(1)),
-      pendingCommissions: totalPendingValue,
+      pendingCommissions: Math.max((totalPaidAmount + totalPendingValue) - totalPayouts, 0),
       pendingSignupCount: pendingSignups,
       commissionRate: parseFloat(affiliateData.commission_rate) || 10,
       status: affiliateData.status,
