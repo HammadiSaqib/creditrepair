@@ -339,15 +339,25 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
     console.log('📉 [AFFILIATE STATS] Non-renewals result:', nonRenewalsResult);
     const nonRenewalsCount = nonRenewalsResult[0]?.non_renewals_count || 0;
 
-    // Lost commission: commission from churned/cancelled referrals (referrals that are out)
+    // Lost commission: total revenue paid by referrals who are now cancelled/churned × commission rate
+    // Must match the same cancellation detection used in the pipeline (subscription status or user inactive),
+    // not just affiliate_referrals.status which is often never updated to 'cancelled'.
     const lostCommissionQuery = `
-      SELECT COALESCE(SUM(ac.commission_amount), 0) as lost_commission_amount
-      FROM affiliate_commissions ac
-      WHERE ac.affiliate_id = ?
-        AND ac.status IN ('cancelled', 'refunded', 'chargeback')
+      SELECT COALESCE(SUM(bt.amount), 0) as cancelled_revenue
+      FROM affiliate_referrals ar
+      JOIN users u ON ar.referred_user_id = u.id
+      LEFT JOIN subscriptions s ON u.id = s.user_id
+      JOIN billing_transactions bt ON bt.user_id = ar.referred_user_id AND bt.status = 'succeeded'
+      WHERE ar.affiliate_id = ?
+        AND (
+          ar.status = 'cancelled'
+          OR s.status IN ('canceled', 'cancelled')
+          OR (u.status = 'inactive' AND (s.status IS NULL OR s.status != 'active'))
+        )
     `;
     const lostCommissionResult = await executeQuery(lostCommissionQuery, [affiliateId]);
-    const lostCommissionAmount = parseFloat(lostCommissionResult[0]?.lost_commission_amount) || 0;
+    const cancelledRevenue = parseFloat(lostCommissionResult[0]?.cancelled_revenue) || 0;
+    const lostCommissionAmount = (cancelledRevenue * commissionRate) / 100;
 
     // Calculate potential lost commission for next month (based on current active referrals who might not renew)
     const potentialLostCommissionQuery = `
