@@ -580,7 +580,7 @@ export default function AffiliateDashboard() {
               <div className="text-2xl font-extrabold text-amber-600">
                 {loading ? <SkeletonPill /> : <AnimatedNumber value={earningsStats.pendingCommissions} prefix="$" decimals={2} />}
               </div>
-              <p className="text-xs text-gray-500 mt-1">Processed on the 15th</p>
+              <p className="text-xs text-gray-500 mt-1">Processed on the 5th</p>
             </div>
 
             {/* MRR */}
