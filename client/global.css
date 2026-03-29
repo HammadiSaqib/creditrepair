@@ -250,24 +250,17 @@
   }
 
   /* PDF export helpers */
-  .analysis-pdf-root > * {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
   .pdf-avoid-break {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
   .pdf-section {
-    break-inside: avoid;
-    page-break-inside: avoid;
     margin-bottom: 2rem;
   }
 
   .pdf-break-before {
-    page-break-before: always;
+    /* removed forced page break to reduce empty space */
   }
 
   .pdf-exporting {
@@ -275,17 +268,30 @@
   }
 
   .analysis-pdf-root.pdf-export-active {
-    max-width: 740px;
+    max-width: 1000px;
     margin: 0 auto;
     background: #ffffff;
-    padding: 20px;
-    border-radius: 20px;
+    padding: 30px;
+    border-radius: 0;
     box-shadow: none;
   }
 
   .analysis-pdf-root.pdf-export-active .pdf-section {
     margin-bottom: 24px;
     box-shadow: none;
+  }
+
+  /* Prevent SVG icon clipping in PDF export */
+  .analysis-pdf-root.pdf-export-active svg {
+    overflow: visible !important;
+    flex-shrink: 0;
+  }
+
+  .analysis-pdf-root.pdf-export-active .pdf-icon-wrap {
+    overflow: visible !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .pdf-table-wrapper {

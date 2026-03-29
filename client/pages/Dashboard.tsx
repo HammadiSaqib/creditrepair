@@ -279,7 +279,7 @@ export default function Dashboard() {
     if (userProfile?.role === 'admin' || userProfile?.role === 'super_admin') {
       try {
         const affiliateResponse = await api.get('/api/auth/affiliate/status');
-        const { status, affiliate_id, referral_slug } = affiliateResponse.data || {};
+        const { status, affiliate_id, referral_slug, partner_monitoring_link } = affiliateResponse.data || {};
         setHasAffiliateAccess(true);
         setAffiliateVerificationStatus(status || null);
         if (affiliate_id) {
@@ -288,7 +288,10 @@ export default function Dashboard() {
             ? referral_slug 
             : String(affiliate_id);
           setAffiliateLink(`${window.location.origin}/ref/${refPart}`);
-          // Do not override partnerMonitoringLink; referral fetch controls it
+          // Use the affiliate's own partner monitoring link if set
+          if (typeof partner_monitoring_link === 'string' && partner_monitoring_link.trim().length > 0) {
+            setPartnerMonitoringLink(partner_monitoring_link.trim());
+          }
         } else {
           setAffiliateId(null);
           setAffiliateLink("");

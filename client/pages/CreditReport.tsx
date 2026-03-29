@@ -2522,7 +2522,7 @@ export default function CreditReport() {
       window.scrollTo({ top: 0, behavior: 'instant' });
 
       const opt = {
-        margin: [18, 14, 18, 14],
+        margin: [15, 15, 15, 15],
         filename: 'CreditReport-Analysis.pdf',
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
@@ -2530,13 +2530,12 @@ export default function CreditReport() {
           useCORS: true,
           scrollX: 0,
           scrollY: 0,
-          windowWidth: 1920,
+          windowWidth: 1000,
         },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
         pagebreak: {
           mode: ['css', 'avoid-all'],
-          avoid: ['.pdf-avoid-break', '.pdf-table-wrapper', '.analysis-pdf-root > *'],
-          before: ['.pdf-break-before', '.pdf-section-break'],
+          avoid: ['.pdf-avoid-break', '.pdf-table-wrapper'],
         },
       } as any;
 
@@ -17905,7 +17904,7 @@ export default function CreditReport() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                   <div className="bg-blue-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-7 bg-blue-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-sm font-bold leading-none">
+                    <div className="w-16 bg-blue-600 rounded text-white mx-auto mb-3 text-sm font-bold py-2 text-center leading-normal">
                       EQ
                     </div>
                     <h4 className="font-semibold text-blue-800">Equifax</h4>
@@ -17914,7 +17913,7 @@ export default function CreditReport() {
                     </p>
                   </div>
                   <div className="bg-green-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-7 bg-green-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-sm font-bold leading-none">
+                    <div className="w-16 bg-green-600 rounded text-white mx-auto mb-3 text-sm font-bold py-2 text-center leading-normal">
                       EX
                     </div>
                     <h4 className="font-semibold text-green-800">Experian</h4>
@@ -17923,7 +17922,7 @@ export default function CreditReport() {
                     </p>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-4 text-center">
-                    <div className="w-12 h-7 bg-purple-600 rounded text-white flex items-center justify-center mx-auto mb-3 text-sm font-bold leading-none">
+                    <div className="w-16 bg-purple-600 rounded text-white mx-auto mb-3 text-sm font-bold py-2 text-center leading-normal">
                       TU
                     </div>
                     <h4 className="font-semibold text-purple-800">
@@ -18044,7 +18043,7 @@ export default function CreditReport() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-blue-50 rounded-lg p-4">
-                    <DollarSign className="h-8 w-8 text-blue-600 mb-3" />
+                    <DollarSign size={32} className="text-blue-600 mb-3" />
                     <h4 className="font-semibold text-blue-800 mb-2">
                       Access to Financial Products
                     </h4>
@@ -18054,7 +18053,7 @@ export default function CreditReport() {
                     </p>
                   </div>
                   <div className="bg-green-50 rounded-lg p-4">
-                    <Building2 className="h-8 w-8 text-green-600 mb-3" />
+                    <Building2 size={32} className="text-green-600 mb-3" />
                     <h4 className="font-semibold text-green-800 mb-2">
                       Employment & Housing
                     </h4>
@@ -18064,7 +18063,7 @@ export default function CreditReport() {
                     </p>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-4">
-                    <Shield className="h-8 w-8 text-purple-600 mb-3" />
+                    <Shield size={32} className="text-purple-600 mb-3" />
                     <h4 className="font-semibold text-purple-800 mb-2">
                       Insurance Premiums
                     </h4>
@@ -18095,7 +18094,7 @@ export default function CreditReport() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                   <div className="text-center">
-                    <Building2 className="h-12 w-12 text-blue-600 mx-auto mb-4" />
+                    <div className="pdf-icon-wrap w-12 h-12 mx-auto mb-4"><Building2 size={48} className="text-blue-600" /></div>
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Renting an Apartment
                     </h4>
@@ -18106,7 +18105,7 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center">
-                    <CreditCard className="h-12 w-12 text-green-600 mx-auto mb-4" />
+                    <div className="pdf-icon-wrap w-12 h-12 mx-auto mb-4"><CreditCard size={48} className="text-green-600" /></div>
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Buying a Car
                     </h4>
@@ -18117,7 +18116,7 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center">
-                    <Wallet className="h-12 w-12 text-purple-600 mx-auto mb-4" />
+                    <div className="pdf-icon-wrap w-12 h-12 mx-auto mb-4"><Wallet size={48} className="text-purple-600" /></div>
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Everyday Purchases
                     </h4>
@@ -18128,7 +18127,7 @@ export default function CreditReport() {
                   </div>
 
                   <div className="text-center">
-                    <Zap className="h-12 w-12 text-orange-600 mx-auto mb-4" />
+                    <div className="pdf-icon-wrap w-12 h-12 mx-auto mb-4"><Zap size={48} className="text-orange-600" /></div>
                     <h4 className="font-semibold text-gray-800 mb-2">
                       Utility Services
                     </h4>
@@ -18141,12 +18140,12 @@ export default function CreditReport() {
               </div>
 
               {/* Major Life Decisions */}
-              <div className="bg-white rounded-xl p-6 border border-green-200 shadow-sm pdf-section pdf-break-before">
-                <h3 className="text-xl font-bold text-gray-800 mb-6">
+              <div className="bg-white rounded-xl p-4 border border-green-200 shadow-sm mt-2 pdf-avoid-break">
+                <h3 className="text-xl font-bold text-gray-800 mb-3">
                   How Credit Impacts Major Life Decisions
                 </h3>
 
-                <div className="space-y-6">
+                <div className="space-y-4">
                   <div className="flex items-start gap-4">
                     <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
                       <Building2 className="h-6 w-6 text-blue-600" />
@@ -18248,7 +18247,7 @@ export default function CreditReport() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                   <div className="text-center">
-                    <div className="w-16 h-8 bg-blue-600 rounded text-white flex items-center justify-center mx-auto mb-5 text-sm font-bold">
+                    <div className="w-16 bg-blue-600 rounded text-white mx-auto mb-5 text-sm font-bold py-2 text-center leading-normal">
                       TU
                     </div>
                     <div className="text-4xl font-bold text-blue-600 mb-2">
@@ -18262,7 +18261,7 @@ export default function CreditReport() {
                     <div className="text-xs text-blue-600">{reportData?.bureauDates?.transunion || 'N/A'}</div>
                   </div>
                   <div className="text-center">
-                    <div className="w-16 h-8 bg-green-600 rounded text-white flex items-center justify-center mx-auto mb-5 text-sm font-bold">
+                    <div className="w-16 bg-green-600 rounded text-white mx-auto mb-5 text-sm font-bold py-2 text-center leading-normal">
                       EX
                     </div>
                     <div className="text-4xl font-bold text-green-600 mb-2">
@@ -18276,7 +18275,7 @@ export default function CreditReport() {
                     <div className="text-xs text-green-600">{reportData?.bureauDates?.experian || 'N/A'}</div>
                   </div>
                   <div className="text-center">
-                    <div className="w-16 h-8 bg-purple-600 rounded text-white flex items-center justify-center mx-auto mb-5 text-sm font-bold">
+                    <div className="w-16 bg-purple-600 rounded text-white mx-auto mb-5 text-sm font-bold py-2 text-center leading-normal">
                       EQ
                     </div>
                     <div className="text-4xl font-bold text-purple-600 mb-2">
