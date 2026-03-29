@@ -49,7 +49,7 @@ const updateCardValidation = [
 // Get all cards with filtering and pagination
 router.get('/', authenticateToken, [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 500 }).withMessage('Limit must be between 1-500'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1-100'),
   query('search').optional().trim().isLength({ max: 255 }).withMessage('Search term too long'),
   query('status').optional().isIn(['active', 'inactive']).withMessage('Status must be active or inactive'),
   query('type').optional().isIn(['business', 'personal']).withMessage('Type must be business or personal'),
@@ -71,11 +71,6 @@ router.get('/', authenticateToken, [
     const status = req.query.status as string;
     const type = req.query.type as string;
     const bankId = req.query.bank_id as string;
-    const ids = String(req.query.ids || '')
-      .split(',')
-      .map((value) => parseInt(value.trim(), 10))
-      .filter((value) => Number.isFinite(value) && value > 0);
-    const recommendedOnly = ['1', 'true', 'yes'].includes(String(req.query.recommended_only || '').toLowerCase());
 
     let whereConditions = [];
     let queryParams: any[] = [];
@@ -100,53 +95,7 @@ router.get('/', authenticateToken, [
       queryParams.push(parseInt(bankId));
     }
 
-    if (ids.length > 0) {
-      whereConditions.push(`c.id IN (${ids.map(() => '?').join(', ')})`);
-      queryParams.push(...ids);
-    }
-
-    if (recommendedOnly) {
-      whereConditions.push('b.is_recommended = true');
-      whereConditions.push('b.is_active = true');
-    }
-
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const normalizeJsonArray = (value: any): string[] => {
-      if (Array.isArray(value)) {
-        return value.filter((item) => typeof item === 'string' && item.trim().length > 0);
-      }
-      if (typeof value === 'string' && value.trim().length > 0) {
-        try {
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed)) {
-            return parsed.filter((item) => typeof item === 'string' && item.trim().length > 0);
-          }
-        } catch {
-          return value.split(/[|,]/).map((item) => item.trim()).filter(Boolean);
-        }
-      }
-      return [];
-    };
-
-    const normalizeStateValue = (value: any): string | string[] | undefined => {
-      if (Array.isArray(value)) {
-        const items = value.filter((item) => typeof item === 'string' && item.trim().length > 0);
-        return items.length > 0 ? items : undefined;
-      }
-      if (typeof value === 'string' && value.trim().length > 0) {
-        try {
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed)) {
-            const items = parsed.filter((item) => typeof item === 'string' && item.trim().length > 0);
-            return items.length > 0 ? items : undefined;
-          }
-        } catch {
-        }
-        return value;
-      }
-      return undefined;
-    };
 
     // Get total count
     const countQuery = `
@@ -170,13 +119,7 @@ router.get('/', authenticateToken, [
         c.card_link,
         c.card_type,
         c.funding_type,
-        c.credit_bureaus,
-        c.state,
         c.is_active,
-        b.state as bank_state,
-        b.credit_bureaus as bank_credit_bureaus,
-        b.primary_bureau,
-        b.is_recommended,
         c.created_at,
         c.updated_at
       FROM cards c
@@ -186,15 +129,7 @@ router.get('/', authenticateToken, [
       LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const cardsResult = await executeQuery(cardsQuery, queryParams) as RowDataPacket[];
-    const cards = cardsResult.map((card) => ({
-      ...card,
-      credit_bureaus: normalizeJsonArray(card.credit_bureaus),
-      state: normalizeStateValue(card.state),
-      bank_state: normalizeStateValue(card.bank_state),
-      bank_credit_bureaus: normalizeJsonArray(card.bank_credit_bureaus),
-      is_recommended: Boolean(card.is_recommended),
-    }));
+    const cards = await executeQuery(cardsQuery, queryParams) as RowDataPacket[];
 
     res.json({
       cards,

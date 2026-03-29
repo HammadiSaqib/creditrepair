@@ -25,16 +25,11 @@ interface FundingCard {
   bank_id: number;
   bank_name?: string;
   bank_logo?: string;
-  bank_state?: string | string[];
-  bank_credit_bureaus?: string[];
-  primary_bureau?: string;
-  is_recommended?: boolean;
   card_name: string;
   card_link: string;
   card_type: CardType;
   funding_type: string;
   credit_bureaus: string[];
-  state?: string | string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -54,18 +49,6 @@ function formatCurrency(n: number): string {
   }
 }
 
-function mergeUniqueCards(...groups: FundingCard[][]): FundingCard[] {
-  const merged = new Map<number, FundingCard>();
-  for (const group of groups) {
-    for (const card of group) {
-      if (card?.id) {
-        merged.set(card.id, card);
-      }
-    }
-  }
-  return Array.from(merged.values());
-}
-
 export default function FundingDIY() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -80,7 +63,7 @@ export default function FundingDIY() {
   const [goalDialogOpen, setGoalDialogOpen] = useState<boolean>(false);
 
   const [cards, setCards] = useState<FundingCard[]>([]);
-  const [submittedCards, setSubmittedCards] = useState<FundingCard[]>([]);
+  const [allCards, setAllCards] = useState<FundingCard[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedBureau, setSelectedBureau] = useState<string>("all");
@@ -214,29 +197,28 @@ export default function FundingDIY() {
   const productTypesFromState: string[] = Array.isArray((location.state as any)?.productTypes)
     ? ((location.state as any).productTypes as string[]).map(canonicalProductType)
     : ['Credit Card', 'Line of Credit', 'Loan', 'SBA Loan', 'Merchant Cash Advance', 'Sub Prime Lenders'];
-  const availableCards = useMemo(() => mergeUniqueCards(cards, submittedCards), [cards, submittedCards]);
   const allowedFundingTypeSet = useMemo(() => {
     const set = new Set<string>();
     productTypesFromState.map(canonicalProductType).filter(Boolean).forEach((t) => set.add(t));
-    for (const c of availableCards) {
+    for (const c of [...(cards || []), ...(allCards || [])]) {
       const raw = String((c as any)?.funding_type || '').trim();
       const canon = canonicalProductType(raw);
       if (raw) set.add(raw);
       if (canon) set.add(canon);
     }
     return set;
-  }, [productTypesFromState, availableCards, canonicalProductType]);
+  }, [productTypesFromState, cards, allCards, canonicalProductType]);
   const fundingTypes = useMemo(() => {
-    const source = availableCards.filter((c) => allowedFundingTypeSet.has(canonicalProductType(c.funding_type)));
+    const source = (cards || []).filter((c) => allowedFundingTypeSet.has(canonicalProductType(c.funding_type)));
     const unique = Array.from(new Set(source.map((c) => canonicalProductType(c.funding_type)).filter(Boolean)));
     const merged = [...unique];
     if (isPersonal || isBoth) {
-      const hasHomeEquityLike = availableCards.some((c) => cardMatchesPersonalExtra(HOME_EQUITY_COMPOSITE, c));
+      const hasHomeEquityLike = (cards || []).some((c) => cardMatchesPersonalExtra(HOME_EQUITY_COMPOSITE, c));
       if (hasHomeEquityLike && !merged.includes(HOME_EQUITY_COMPOSITE)) merged.push(HOME_EQUITY_COMPOSITE);
       if (!merged.includes('Auto Loan')) merged.push('Auto Loan');
     }
     return ["all", ...merged];
-  }, [availableCards, allowedFundingTypeSet, isPersonal, isBoth]);
+  }, [cards, allowedFundingTypeSet, isPersonal, isBoth]);
 
   // Client details for eligibility
   const [clientDetails, setClientDetails] = useState<any>(null);
@@ -258,26 +240,22 @@ export default function FundingDIY() {
   const [bankSearchMap, setBankSearchMap] = useState<Record<number, string>>({});
   const [selectedSlots, setSelectedSlots] = useState<Array<{ bankId: number; cardId: number }>>([]);
 
+  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; primary_bureau?: string; recommended?: boolean; priority_rank?: number }>>([]);
+
   const banksFromCards = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; primary_bureau?: string; recommended?: boolean; priority_rank?: number }>();
-    for (const c of availableCards) {
+    const map = new Map<number, { id: number; name: string; logo?: string }>();
+    for (const c of cards) {
       if (c.bank_id && !map.has(c.bank_id)) {
-        map.set(c.bank_id, {
-          id: c.bank_id,
-          name: c.bank_name || `Bank #${c.bank_id}`,
-          logo: c.bank_logo,
-          state: c.bank_state,
-          credit_bureaus: Array.isArray(c.bank_credit_bureaus) ? c.bank_credit_bureaus : [],
-          primary_bureau: c.primary_bureau,
-          recommended: Boolean(c.is_recommended),
-          priority_rank: 0,
-        });
+        map.set(c.bank_id, { id: c.bank_id, name: c.bank_name || `Bank #${c.bank_id}`, logo: c.bank_logo });
       }
     }
     return Array.from(map.values());
-  }, [availableCards]);
+  }, [cards]);
 
-  const allBanks = banksFromCards;
+  const allBanks = useMemo(() => {
+    if (banks && banks.length > 0) return banks;
+    return banksFromCards;
+  }, [banks, banksFromCards]);
 
   const canonBureau = (s: string): 'Experian' | 'Equifax' | 'TransUnion' | null => {
     const t = String(s || '').toLowerCase().replace(/\s+/g, '').replace(/[-_]/g, '');
@@ -315,7 +293,7 @@ export default function FundingDIY() {
   };
 
   const countCardsForBankBureau = (bankId: number, bureau: 'Experian' | 'Equifax' | 'TransUnion') => {
-    const source = availableCards;
+    const source = (cards.length > 0 ? cards : allCards) as FundingCard[];
     return source.filter((c) => c.bank_id === bankId && cardHasBureau(c, bureau)).length;
   };
 
@@ -449,7 +427,7 @@ export default function FundingDIY() {
   // Eligibility helpers
   const bankEligibility = (bankId?: number) => {
     const state = String((selectedState || resolveClientState() || '')).toUpperCase();
-    const cardsByBank = availableCards.filter(c => c.bank_id === bankId);
+    const cardsByBank = allCards.filter(c => c.bank_id === bankId);
     let stateRank = 0;
     let isNationwide = false;
     const norm = (s: string) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -529,7 +507,7 @@ export default function FundingDIY() {
               (allowedSet.size === 0 && (elig.bureauEligible.Experian || elig.bureauEligible.Equifax || elig.bureauEligible.TransUnion))
               || (allowedSet.size > 0 && Array.from(allowedSet).some((b) => (elig.bureauEligible as any)[b]))
             );
-        const hasRelevantProduct = availableCards.some((c) => {
+        const hasRelevantProduct = ((cards.length > 0 ? cards : allCards) || []).some((c) => {
           if (c.bank_id !== bank.id) return false;
           if (!allowedFundingTypeSet.has(canonicalProductType(c.funding_type))) return false;
           if (!isBoth && c.card_type !== resolvedType) return false;
@@ -555,32 +533,34 @@ export default function FundingDIY() {
         if (scoreB !== scoreA) return scoreB - scoreA;
         return a.name.localeCompare(b.name);
       });
-  }, [allBanks, availableCards, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth, selectedState, clientDetails, fundableBureaus]);
+  }, [allBanks, cards, allCards, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth, selectedState, clientDetails, fundableBureaus]);
 
   useEffect(() => {
     const fetchCards = async () => {
       try {
         setLoading(true);
         setError(null);
-        const params = new URLSearchParams({
-          status: 'active',
-          recommended_only: 'true',
-          limit: '500',
-        });
-        if (resolvedType) {
-          params.set('type', resolvedType);
+        const limit = 100;
+        let page = 1;
+        let collected: FundingCard[] = [];
+        while (true) {
+          const url = resolvedType
+            ? `/api/cards?type=${resolvedType}&status=active&page=${page}&limit=${limit}`
+            : `/api/cards?status=active&page=${page}&limit=${limit}`;
+          const response = await fetch(url, {
+            headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+          });
+          if (!response.ok) throw new Error("Failed to fetch funding cards");
+          const data = await response.json();
+          const fetched = (data.cards || []).map((c: FundingCard) => ({
+            ...c,
+            funding_type: String(c.funding_type || ''),
+          })) as FundingCard[];
+          collected = collected.concat(fetched);
+          const pages = Number((data?.pagination?.pages ?? 1));
+          if (!Number.isFinite(pages) || page >= pages) break;
+          page += 1;
         }
-        const response = await fetch(`/api/cards?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
-        });
-        if (!response.ok) throw new Error("Failed to fetch funding cards");
-        const data = await response.json();
-        const collected = (data.cards || []).map((c: FundingCard) => ({
-          ...c,
-          funding_type: String(c.funding_type || ''),
-          credit_bureaus: Array.isArray(c.credit_bureaus) ? c.credit_bureaus : [],
-          bank_credit_bureaus: Array.isArray(c.bank_credit_bureaus) ? c.bank_credit_bureaus : [],
-        })) as FundingCard[];
         setCards(collected);
         setAdminData((prev) => {
           const next = { ...prev };
@@ -599,51 +579,72 @@ export default function FundingDIY() {
       }
     };
     fetchCards();
-  }, [resolvedType]);
+  }, [resolvedType, canonicalProductType]);
 
   useEffect(() => {
-    if (submittedRows.length === 0) {
-      setSubmittedCards([]);
-      return;
-    }
-    const missingIds = submittedRows
-      .map((row) => Number(row.card_id))
-      .filter((id) => Number.isFinite(id) && !cards.some((card) => card.id === id));
-    if (missingIds.length === 0) {
-      setSubmittedCards([]);
-      return;
-    }
-
-    let cancelled = false;
-    const fetchSubmittedCards = async () => {
+    const fetchAllCards = async () => {
       try {
-        const params = new URLSearchParams({
-          status: 'active',
-          ids: missingIds.join(','),
-          limit: String(missingIds.length),
-        });
-        const resp = await fetch(`/api/cards?${params.toString()}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-        });
-        if (!resp.ok) return;
-        const data = await resp.json();
-        if (!cancelled) {
-          setSubmittedCards((data.cards || []).map((c: FundingCard) => ({
+        const limit = 100;
+        let page = 1;
+        let collected: FundingCard[] = [];
+        while (true) {
+          const resp = await fetch(`/api/cards?status=active&page=${page}&limit=${limit}`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+          });
+          if (!resp.ok) break;
+          const data = await resp.json();
+          const fetched = (data.cards || []).map((c: FundingCard) => ({
             ...c,
             funding_type: String(c.funding_type || ''),
-            credit_bureaus: Array.isArray(c.credit_bureaus) ? c.credit_bureaus : [],
-            bank_credit_bureaus: Array.isArray(c.bank_credit_bureaus) ? c.bank_credit_bureaus : [],
-          })));
+          })) as FundingCard[];
+          collected = collected.concat(fetched);
+          const pages = Number((data?.pagination?.pages ?? 1));
+          if (!Number.isFinite(pages) || page >= pages) break;
+          page += 1;
         }
-      } catch {
-      }
+        setAllCards(collected);
+      } catch {}
     };
+    fetchAllCards();
+  }, [canonicalProductType]);
 
-    fetchSubmittedCards();
-    return () => {
-      cancelled = true;
+  useEffect(() => {
+    const fetchBanks = async () => {
+      try {
+        const token = localStorage.getItem("auth_token");
+        const all: Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; primary_bureau?: string }> = [];
+        let page = 1;
+        const limit = 1000;
+        while (true) {
+          const resp = await fetch(`/api/banks?page=${page}&limit=${limit}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!resp.ok) break;
+          const data = await resp.json();
+          const items = (data.banks || []).map((b: any) => ({
+            id: Number(b.id),
+            name: String(b.name || b.bank_name || `Bank #${b.id}`),
+            logo: b.logo || b.bank_logo,
+            state: b?.state ?? undefined,
+            credit_bureaus: Array.isArray(b?.credit_bureaus)
+              ? b.credit_bureaus
+              : (typeof b?.credit_bureaus === 'string'
+                ? (() => { try { const arr = JSON.parse(b.credit_bureaus); return Array.isArray(arr) ? arr : []; } catch { return []; } })()
+                : []),
+            primary_bureau: b?.primary_bureau ?? b?.primaryBureau ?? undefined,
+            recommended: Boolean(b?.is_recommended ?? b?.recommended ?? b?.isPriority ?? false),
+            priority_rank: Number(b?.priority_rank ?? b?.rank ?? 0)
+          }));
+          all.push(...items);
+          const totalPages = Number((data?.pagination?.totalPages ?? 1));
+          if (!Number.isFinite(totalPages) || page >= totalPages) break;
+          page += 1;
+        }
+        setBanks(all);
+      } catch {}
     };
-  }, [submittedRows, cards]);
+    fetchBanks();
+  }, []);
 
   // Fetch existing submissions to lock approved cards for the selected client
   useEffect(() => {
@@ -699,7 +700,7 @@ export default function FundingDIY() {
     if (hydratedLockedSlots) return;
     const lockedIds = Object.keys(lockedMap).map((k) => parseInt(k, 10)).filter((n) => Number.isFinite(n));
     if (lockedIds.length === 0) return;
-    const sourceCards: FundingCard[] = availableCards;
+    const sourceCards: FundingCard[] = (cards && cards.length > 0) ? cards : allCards;
     if (!sourceCards || sourceCards.length === 0) return;
     const lockedCards = lockedIds
       .map((id) => sourceCards.find((c) => {
@@ -718,7 +719,7 @@ export default function FundingDIY() {
       return merged;
     });
     setHydratedLockedSlots(true);
-  }, [resolvedType, lockedMap, availableCards, hydratedLockedSlots]);
+  }, [resolvedType, lockedMap, cards, allCards, hydratedLockedSlots]);
 
   const filteredCards = useMemo(() => {
     const selectedCanon = selectedFundingType === 'all' ? 'all' : canonicalProductType(selectedFundingType);
@@ -726,14 +727,14 @@ export default function FundingDIY() {
     const isCanonical = canonicalCategories.includes(String(selectedFundingType));
     const byType = (() => {
       if (selectedCanon === "all") {
-        return availableCards.filter((c) => {
+        return cards.filter((c) => {
           const raw = String(c.funding_type || '');
           const canon = canonicalProductType(raw);
           return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
         });
       }
       if (isCanonical) {
-        return availableCards
+        return cards
           .filter((c) => canonicalProductType(c.funding_type || "").toLowerCase() === String(selectedCanon).toLowerCase())
           .filter((c) => {
             const raw = String(c.funding_type || '');
@@ -742,7 +743,7 @@ export default function FundingDIY() {
           });
       }
       if (isPersonalExtraType(selectedFundingType)) {
-        return availableCards
+        return cards
           .filter((c) => cardMatchesPersonalExtra(selectedFundingType, c))
           .filter((c) => {
             const raw = String(c.funding_type || '');
@@ -750,7 +751,7 @@ export default function FundingDIY() {
             return allowedFundingTypeSet.has(raw) || allowedFundingTypeSet.has(canon);
           });
       }
-      return availableCards
+      return cards
         .filter((c) => String(c.funding_type || '').toLowerCase() === String(selectedFundingType).toLowerCase())
         .filter((c) => {
           const raw = String(c.funding_type || '');
@@ -774,7 +775,7 @@ export default function FundingDIY() {
     const canon = canonBureau(selectedBureau);
     if (!canon) return byClientBureau;
     return byClientBureau.filter((c) => cardHasBureau(c, canon));
-  }, [availableCards, selectedFundingType, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth, fundableBureaus]);
+  }, [cards, selectedFundingType, selectedBureau, allowedFundingTypeSet, resolvedType, isBoth, fundableBureaus]);
 
   useEffect(() => {
     if (!(resolvedType || isBoth)) return;
@@ -841,7 +842,7 @@ export default function FundingDIY() {
     let total = 0;
     let highest = 0;
     let charged = 0;
-    for (const c of availableCards) {
+    for (const c of cards) {
       const a = adminData[c.id];
       if (a?.status === "approved" && (a.amountApproved || 0) > 0) {
         const amt = a.amountApproved || 0;
@@ -851,18 +852,18 @@ export default function FundingDIY() {
       }
     }
     return { totalFunding: total, highestAmount: highest, amountCharged: charged };
-  }, [availableCards, adminData, globalAdminPercent]);
+  }, [cards, adminData, globalAdminPercent]);
 
   const hasAnyApproved = useMemo(() => {
-    return availableCards.some((c) => adminData[c.id]?.status === "approved" && (adminData[c.id]?.amountApproved || 0) > 0);
-  }, [availableCards, adminData]);
+    return cards.some((c) => adminData[c.id]?.status === "approved" && (adminData[c.id]?.amountApproved || 0) > 0);
+  }, [cards, adminData]);
 
   useEffect(() => {
     if (!(resolvedType || isBoth)) return;
     if (hydratedLockedSlots) return;
     if (selectedFundingType !== 'all' || selectedBureau !== 'all') return;
     if (slotForms.some((s) => s.bankId || s.cardId)) return;
-    const sourceCards: FundingCard[] = availableCards;
+    const sourceCards: FundingCard[] = (cards && cards.length > 0) ? cards : allCards;
     if (!sourceCards || sourceCards.length === 0) return;
     const priorityBankIds = sortedBanks.filter((b) => b.recommended).map((b) => b.id);
     const bankOrder = new Map<number, number>();
@@ -929,7 +930,7 @@ export default function FundingDIY() {
     if (newSlots.length > 0) {
       setSlotForms(newSlots);
     }
-  }, [resolvedType, isBoth, hydratedLockedSlots, slotForms, availableCards, sortedBanks, allowedFundingTypeSet, location.state, selectedFundingType, selectedBureau]);
+  }, [resolvedType, isBoth, hydratedLockedSlots, slotForms, cards, allCards, sortedBanks, allowedFundingTypeSet, location.state, selectedFundingType, selectedBureau]);
 
   const updateAdmin = (cardId: number, patch: Partial<AdminInputs>) => {
     setAdminData((prev) => ({ ...prev, [cardId]: { ...prev[cardId], ...patch } }));
@@ -1326,7 +1327,7 @@ export default function FundingDIY() {
               {submittedRows.length > 0 && (
                 <div className="mb-4 space-y-6">
                   {(() => {
-                    const sourceCards = availableCards;
+                    const sourceCards = (cards.length > 0 ? cards : allCards);
                     const approved = submittedRows.filter(r => String(r.status) === 'approved');
                     const pending = submittedRows.filter(r => String(r.status) !== 'approved');
                     return (
@@ -1338,7 +1339,7 @@ export default function FundingDIY() {
                               {approved.map((row, idx) => {
                                 const card = sourceCards.find(c => c.id === row.card_id);
                                 if (!card) return null;
-                                const bank = allBanks.find(b => b.id === card.bank_id);
+                                const bank = banks.find(b => b.id === card.bank_id);
                                 return (
                                   <Card key={`locked-${row.card_id}-${idx}`}>
                                     <CardHeader>
@@ -1383,7 +1384,7 @@ export default function FundingDIY() {
                               {pending.map((row, idx) => {
                                 const card = sourceCards.find(c => c.id === row.card_id);
                                 if (!card) return null;
-                                const bank = allBanks.find(b => b.id === card.bank_id);
+                                const bank = banks.find(b => b.id === card.bank_id);
                                 return (
                                   <Card key={`pending-${row.card_id}-${idx}`}>
                                     <CardHeader>
@@ -1536,7 +1537,7 @@ export default function FundingDIY() {
                           <SelectValue placeholder="Select card" />
                         </SelectTrigger>
                         <SelectContent>
-                          {availableCards
+                          {(cards.length > 0 ? cards : allCards)
                             .filter(c => {
                               const goalOk = isBoth ? true : c.card_type === resolvedType;
                               return ((c.bank_id === slot.bankId && goalOk) || c.id === slot.cardId);
@@ -1606,8 +1607,8 @@ export default function FundingDIY() {
                       </Select>
 
                       {slot.cardId && (() => {
-                        const card = availableCards.find(c => c.id === slot.cardId);
-                        const bank = allBanks.find(b => b.id === slot.bankId);
+                        const card = cards.find(c => c.id === slot.cardId);
+                        const bank = banks.find(b => b.id === slot.bankId);
                         if (!card) return null;
                         return (
                           <Card className="hover:shadow-xl transition-all duration-300 border-2 hover:border-green-300 group relative overflow-hidden">
@@ -1758,9 +1759,9 @@ export default function FundingDIY() {
                   <Label>Comparison</Label>
                   <div className="grid md:grid-cols-3 gap-4 mt-2">
                     {selectedSlots.map((sel, idx) => {
-                      const card = availableCards.find(c => c.id === sel.cardId);
+                      const card = cards.find(c => c.id === sel.cardId);
                       if (!card) return null;
-                      const bank = allBanks.find(b => b.id === sel.bankId);
+                      const bank = banks.find(b => b.id === sel.bankId);
                       return (
                         <Card key={`${sel.cardId}-${idx}`}>
                           <CardHeader>
