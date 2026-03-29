@@ -4018,13 +4018,23 @@ export default function CreditReport() {
               const chargeOffsCount = negativeAccounts.filter((acc: any) => 
                 acc.PaymentStatus?.includes('Charge')
               ).length;
-              const latePaymentsCount = negativeAccounts.filter((acc: any) => 
-                acc.PaymentStatus?.includes('Late') || acc.WorstPayStatus?.includes('Late')
-              ).length;
+              // Detect late payments from ALL bureau accounts (not just negativeAccounts)
+              // Check PayStatusHistory digits 1-5 (30/60/90/120/150+ days late),
+              // PaymentStatus/WorstPayStatus text, and AmountPastDue
+              const latePaymentsCount = bureauAccounts.filter((acc: any) => {
+                const payHist = String(acc.PayStatusHistory || '');
+                const hasLateInHistory = /[1-5]/.test(payHist);
+                const ps = String(acc.PaymentStatus || '').toLowerCase();
+                const wps = String(acc.WorstPayStatus || '').toLowerCase();
+                const hasLateInStatus = ps.includes('late') || wps.includes('late') ||
+                  ps.includes('past due') || wps.includes('past due') ||
+                  ps.includes('delinquent') || wps.includes('delinquent');
+                const hasPastDue = (parseFloat(acc.AmountPastDue) || 0) > 0;
+                return hasLateInHistory || hasLateInStatus || hasPastDue;
+              }).length;
 
               criteria[bureauId].noCollections = collectionsCount === 0;
               criteria[bureauId].noChargeOffs = chargeOffsCount === 0;
-              // Approximate late payments in past 12 months with available fields
               criteria[bureauId].noLatePaymentsIn12Months = latePaymentsCount === 0;
               // Back-compat alias for views that expect noLatePayments
               (criteria[bureauId] as any).noLatePayments = criteria[bureauId].noLatePaymentsIn12Months;
