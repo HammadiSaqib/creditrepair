@@ -540,31 +540,26 @@ export default function FundingDIY() {
       try {
         setLoading(true);
         setError(null);
-        const limit = 100;
-        let page = 1;
-        let collected: FundingCard[] = [];
-        while (true) {
-          const url = resolvedType
-            ? `/api/cards?type=${resolvedType}&status=active&page=${page}&limit=${limit}`
-            : `/api/cards?status=active&page=${page}&limit=${limit}`;
-          const response = await fetch(url, {
-            headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
-          });
-          if (!response.ok) throw new Error("Failed to fetch funding cards");
-          const data = await response.json();
-          const fetched = (data.cards || []).map((c: FundingCard) => ({
-            ...c,
-            funding_type: String(c.funding_type || ''),
-          })) as FundingCard[];
-          collected = collected.concat(fetched);
-          const pages = Number((data?.pagination?.pages ?? 1));
-          if (!Number.isFinite(pages) || page >= pages) break;
-          page += 1;
-        }
-        setCards(collected);
+        // Fetch all active cards in a single request to avoid slow pagination loops
+        const response = await fetch(`/api/cards?status=active&page=1&limit=2000`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem("auth_token")}` },
+        });
+        if (!response.ok) throw new Error("Failed to fetch funding cards");
+        const data = await response.json();
+        const allFetched = (data.cards || []).map((c: FundingCard) => ({
+          ...c,
+          funding_type: String(c.funding_type || ''),
+        })) as FundingCard[];
+        // Set allCards (unfiltered) for eligibility checks
+        setAllCards(allFetched);
+        // Set cards filtered by type for display
+        const typed = resolvedType
+          ? allFetched.filter((c) => c.card_type === resolvedType)
+          : allFetched;
+        setCards(typed);
         setAdminData((prev) => {
           const next = { ...prev };
-          for (const c of collected) {
+          for (const c of typed) {
             if (!next[c.id]) {
               next[c.id] = { status: "not_approved", amountApproved: 0, description: "" };
             }
@@ -580,33 +575,6 @@ export default function FundingDIY() {
     };
     fetchCards();
   }, [resolvedType, canonicalProductType]);
-
-  useEffect(() => {
-    const fetchAllCards = async () => {
-      try {
-        const limit = 100;
-        let page = 1;
-        let collected: FundingCard[] = [];
-        while (true) {
-          const resp = await fetch(`/api/cards?status=active&page=${page}&limit=${limit}`, {
-            headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-          });
-          if (!resp.ok) break;
-          const data = await resp.json();
-          const fetched = (data.cards || []).map((c: FundingCard) => ({
-            ...c,
-            funding_type: String(c.funding_type || ''),
-          })) as FundingCard[];
-          collected = collected.concat(fetched);
-          const pages = Number((data?.pagination?.pages ?? 1));
-          if (!Number.isFinite(pages) || page >= pages) break;
-          page += 1;
-        }
-        setAllCards(collected);
-      } catch {}
-    };
-    fetchAllCards();
-  }, [canonicalProductType]);
 
   useEffect(() => {
     const fetchBanks = async () => {

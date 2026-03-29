@@ -49,7 +49,7 @@ const updateCardValidation = [
 // Get all cards with filtering and pagination
 router.get('/', authenticateToken, [
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1-100'),
+  query('limit').optional().isInt({ min: 1, max: 2000 }).withMessage('Limit must be between 1-2000'),
   query('search').optional().trim().isLength({ max: 255 }).withMessage('Search term too long'),
   query('status').optional().isIn(['active', 'inactive']).withMessage('Status must be active or inactive'),
   query('type').optional().isIn(['business', 'personal']).withMessage('Type must be business or personal'),
@@ -65,7 +65,7 @@ router.get('/', authenticateToken, [
     const rawLimit = parseInt(req.query.limit as string);
     // Sanitize and cap pagination values, then inline into SQL to avoid ER_WRONG_ARGUMENTS
     const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
-    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 10;
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 2000) : 10;
     const offset = (page - 1) * limit;
     const search = req.query.search as string;
     const status = req.query.status as string;
