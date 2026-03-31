@@ -534,10 +534,27 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
 
     // Non-renewals: referrals who are NOT cancelled but have unpaid/past_due subscriptions (didn't pay)
     const nonRenewalsQuery = `
-      SELECT COUNT(DISTINCT ar.id) as non_renewals_count
+      SELECT 
+        COUNT(DISTINCT ar.id) as non_renewals_count,
+        COALESCE(SUM(
+          CASE
+            WHEN s.plan_type = 'yearly' THEN CAST(bt_latest.amount AS DECIMAL(10,2)) / 12
+            ELSE CAST(bt_latest.amount AS DECIMAL(10,2))
+          END
+        ), 0) as non_renewal_revenue
       FROM affiliate_referrals ar
       JOIN users u ON ar.referred_user_id = u.id
       LEFT JOIN subscriptions s ON u.id = s.user_id
+      LEFT JOIN (
+        SELECT bt.user_id, bt.amount
+        FROM billing_transactions bt
+        INNER JOIN (
+          SELECT user_id, MAX(id) as max_id
+          FROM billing_transactions
+          WHERE status = 'succeeded'
+          GROUP BY user_id
+        ) bt_latest_ids ON bt.id = bt_latest_ids.max_id
+      ) bt_latest ON bt_latest.user_id = u.id
       WHERE ar.affiliate_id = ?
         AND ar.status NOT IN ('cancelled')
         AND (s.status IN ('unpaid', 'past_due', 'incomplete', 'incomplete_expired') OR s.id IS NULL)
@@ -548,6 +565,8 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
     const nonRenewalsResult = await executeQuery(nonRenewalsQuery, [affiliateId]);
     console.log('📉 [AFFILIATE STATS] Non-renewals result:', nonRenewalsResult);
     const nonRenewalsCount = nonRenewalsResult[0]?.non_renewals_count || 0;
+    const nonRenewalRevenue = parseFloat(nonRenewalsResult[0]?.non_renewal_revenue) || 0;
+    const nonRenewalsAmount = (nonRenewalRevenue * currentTierRate) / 100;
 
     // Lost commission: total revenue paid by referrals who are now cancelled/churned × commission rate
     // Must match the same cancellation detection used in the pipeline (subscription status or user inactive),
@@ -681,16 +700,16 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       const payoutsResult = await executeQuery(`
         SELECT
           COALESCE(
-            (SELECT SUM(amount) FROM affiliate_payouts WHERE affiliate_id = ? AND status = 'paid'),
+            (SELECT SUM(amount) FROM affiliate_payouts WHERE affiliate_id = ? AND status IN ('generated', 'emailed', 'paid')),
             0
           ) +
           COALESCE(
-            (SELECT SUM(amount) FROM commission_payments WHERE affiliate_id = ? AND status = 'completed'),
+            (SELECT SUM(amount) FROM commission_payments WHERE affiliate_id = ? AND status IN ('pending', 'completed')),
             0
           ) as total_payouts,
           GREATEST(
-            COALESCE((SELECT MAX(paid_at) FROM affiliate_payouts WHERE affiliate_id = ? AND status = 'paid'), '1970-01-01'),
-            COALESCE((SELECT MAX(payment_date) FROM commission_payments WHERE affiliate_id = ? AND status = 'completed'), '1970-01-01')
+            COALESCE((SELECT MAX(COALESCE(paid_at, created_at)) FROM affiliate_payouts WHERE affiliate_id = ? AND status IN ('generated', 'emailed', 'paid')), '1970-01-01'),
+            COALESCE((SELECT MAX(COALESCE(payment_date, created_at)) FROM commission_payments WHERE affiliate_id = ? AND status IN ('pending', 'completed')), '1970-01-01')
           ) as last_payout_date
       `, [affiliateId, affiliateId, affiliateId, affiliateId]);
       totalPayouts = parseFloat(payoutsResult[0]?.total_payouts) || 0;
@@ -818,6 +837,7 @@ router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (r
       tierInfo: tierInfo,
       // New non-renewals and lost commission fields
       nonRenewalsCount: parseInt(nonRenewalsCount) || 0,
+      nonRenewalsAmount: parseFloat(nonRenewalsAmount.toFixed(2)) || 0,
       lostCommissionAmount: parseFloat(lostCommissionAmount) || 0,
       churnedReferrals: cancelledCount,
       churnedCommission: cancelledTotal,
@@ -964,7 +984,7 @@ router.get('/dashboard/recent-referrals', authenticateToken, requireAffiliateRol
         normalizedStatus = 'unpaid';
       }
 
-      const planName = referral.plan_name || referral.subscription_plan || 'Unknown Plan';
+      const planName = referral.plan_name || referral.subscription_plan || 'No Plan';
       const planValue = referral.plan_price != null ? Number(referral.plan_price) : 0;
       const commission = parseFloat(referral.commission_amount) || 0;
 

@@ -55,6 +55,7 @@ interface EarningsStats {
     referralsToNext: number;
   };
   nonRenewalsCount?: number;
+  nonRenewalsAmount?: number;
   lostCommissionAmount?: number;
   estimatedLostCommission?: number;
   atRiskReferrals?: number;
@@ -78,6 +79,13 @@ interface EarningsStats {
   lastPayoutDate?: string | null;
   currentMRR?: number;
   mrrBase?: number;
+}
+
+interface TierInfo {
+  currentTier: string;
+  nextTier: string;
+  progressToNext: number;
+  referralsToNext: number;
 }
 
 interface RecentReferral {
@@ -110,9 +118,68 @@ interface ReferralPurchaseItem {
   commissionEarned: number;
 }
 
-const getStartOfCurrentMonth = () => {
+const getStartOfMonth = (monthOffset: number = 0) => {
   const date = new Date();
-  return new Date(date.getFullYear(), date.getMonth(), 1);
+  return new Date(date.getFullYear(), date.getMonth() + monthOffset, 1);
+};
+
+const calculatePercentageChange = (currentValue: number, previousValue: number) => {
+  if (previousValue > 0) {
+    return Number((((currentValue - previousValue) / previousValue) * 100).toFixed(1));
+  }
+
+  return currentValue > 0 ? 100 : 0;
+};
+
+const getTierProgress = (planType?: string, subscriptionStatus?: string | null, paidReferralsCount: number = 0) => {
+  const normalizedPlanType = String(planType || "").toLowerCase();
+  const hasPaidPlan = subscriptionStatus === "active" || ["paid_partner", "partner", "pro", "premium"].includes(normalizedPlanType);
+
+  if (!hasPaidPlan || normalizedPlanType === "free" || normalizedPlanType === "starter") {
+    if (paidReferralsCount >= 100) {
+      return {
+        currentTierRate: 15,
+        tierInfo: {
+          currentTier: "Free - Advanced",
+          nextTier: "Upgrade to Pro Partner for higher rates",
+          progressToNext: 100,
+          referralsToNext: 0,
+        } satisfies TierInfo,
+      };
+    }
+
+    return {
+      currentTierRate: 10,
+      tierInfo: {
+        currentTier: "Free - Starter",
+        nextTier: "Free - Advanced (15%)",
+        progressToNext: paidReferralsCount,
+        referralsToNext: Math.max(100 - paidReferralsCount, 0),
+      } satisfies TierInfo,
+    };
+  }
+
+  if (paidReferralsCount >= 100) {
+    return {
+      currentTierRate: 25,
+      tierInfo: {
+        currentTier: "Pro - Premium",
+        nextTier: "Maximum tier reached",
+        progressToNext: 100,
+        referralsToNext: 0,
+      } satisfies TierInfo,
+    };
+  }
+
+  return {
+    currentTierRate: 20,
+    tierInfo: {
+      currentTier: "Pro - Standard",
+      nextTier: "Pro - Premium (25%)",
+      progressToNext: paidReferralsCount,
+      referralsToNext: Math.max(100 - paidReferralsCount, 0),
+    } satisfies TierInfo,
+  };
 };
 
 // Animated count-up number component
@@ -163,7 +230,7 @@ export default function AffiliateDashboard() {
   const [earningsStats, setEarningsStats] = useState<EarningsStats>({
     totalEarnings: 0, monthlyEarnings: 0, yearlyEarnings: 0,
     pendingCommissions: 0, paidCommissions: 0, conversionRate: "0%", avgCommission: 0,
-    nonRenewalsCount: 0, lostCommissionAmount: 0, estimatedLostCommission: 0,
+    nonRenewalsCount: 0, nonRenewalsAmount: 0, lostCommissionAmount: 0, estimatedLostCommission: 0,
     atRiskReferrals: 0, pendingSignupCount: 0, churnedReferrals: 0, churnedCommission: 0,
     currentMonthReferralLeads: 0, currentMonthConversionCount: 0, currentMonthConversionRate: 0,
     currentMonthAverageCommission: 0, currentMonthPaidCommissionCount: 0,
@@ -198,10 +265,11 @@ export default function AffiliateDashboard() {
           affiliateApi.getReferralPurchases().catch(() => null),
         ]);
 
+        const statsData = statsResponse.data?.success ? statsResponse.data.data : null;
         let nextStatsPatch: Partial<EarningsStats> = {};
 
-        if (statsResponse.data?.success) {
-          const d = statsResponse.data.data;
+        if (statsData) {
+          const d = statsData;
           const total = d.totalReferrals || 0;
           const baseStats: EarningsStats = {
             totalEarnings: d.totalEarnings || 0,
@@ -219,6 +287,7 @@ export default function AffiliateDashboard() {
             churnedReferrals: d.churnedReferrals || 0,
             churnedCommission: d.churnedCommission || 0,
             nonRenewalsCount: d.nonRenewalsCount || 0,
+            nonRenewalsAmount: d.nonRenewalsAmount || 0,
             lostCommissionAmount: d.lostCommissionAmount || 0,
             estimatedLostCommission: d.estimatedLostCommission || 0,
             atRiskReferrals: d.atRiskReferrals || 0,
@@ -242,51 +311,72 @@ export default function AffiliateDashboard() {
         if (refResp.data?.success) {
           const refs = refResp.data.data || [];
           setRecentReferrals(refs);
-          if (refs.length > 0) {
-            setEarningsStats((prev) => ({
-              ...prev,
-              paidReferralsCount: refs.filter((r: any) => r.status === "paid").length,
-            }));
-          }
         }
 
         const referralRows: ReferralListItem[] = referralsResponse.data?.success ? (referralsResponse.data.data || []) : [];
         const purchaseRows: ReferralPurchaseItem[] = purchasesResponse?.data?.success ? (purchasesResponse.data.data || []) : [];
+        const hasPurchaseData = Boolean(purchasesResponse?.data?.success);
 
-        if (referralRows.length > 0 || purchaseRows.length > 0) {
-          const currentMonthStart = getStartOfCurrentMonth();
+        if (referralRows.length > 0 || hasPurchaseData) {
+          const currentMonthStart = getStartOfMonth();
+          const previousMonthStart = getStartOfMonth(-1);
           const paidReferralCount = referralRows.filter((row) => row.status === "paid").length;
           const unpaidReferralCount = referralRows.filter((row) => row.status === "unpaid" || row.status === "pending").length;
           const cancelledReferralCount = referralRows.filter((row) => row.status === "cancelled" || row.status === "churned").length;
           const totalReferralCount = referralRows.length;
-          const totalCommissionEarned = purchaseRows.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
-          const currentMonthPurchases = purchaseRows.filter((row) => new Date(row.createdAt) >= currentMonthStart);
-          const monthlyCommissionEarned = currentMonthPurchases.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
-          const latestPurchase = purchaseRows
-            .slice()
-            .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0];
           const currentMonthReferralLeads = referralRows.filter((row) => row.signupDate && new Date(row.signupDate) >= currentMonthStart).length;
-          const currentMonthConversionCount = currentMonthPurchases.length;
-          const currentMonthConversionRate = currentMonthReferralLeads > 0 ? (currentMonthConversionCount / currentMonthReferralLeads) * 100 : 0;
+          const { currentTierRate, tierInfo } = getTierProgress(statsData?.planType, statsData?.subscriptionStatus, paidReferralCount);
 
           nextStatsPatch = {
-            totalEarnings: Number(totalCommissionEarned.toFixed(2)),
-            monthlyEarnings: Number(monthlyCommissionEarned.toFixed(2)),
             totalReferrals: totalReferralCount,
             activePayingClients: paidReferralCount,
             unpaidClients: unpaidReferralCount,
             cancelledClients: cancelledReferralCount,
-            avgCommission: paidReferralCount > 0 ? Number((totalCommissionEarned / paidReferralCount).toFixed(2)) : 0,
-            currentMonthAverageCommission: currentMonthConversionCount > 0 ? Number((monthlyCommissionEarned / currentMonthConversionCount).toFixed(2)) : 0,
+            paidReferralsCount: paidReferralCount,
+            currentTierRate,
+            tierInfo,
             currentMonthReferralLeads,
-            currentMonthConversionCount,
-            currentMonthConversionRate: Number(currentMonthConversionRate.toFixed(1)),
             conversionRate: totalReferralCount > 0 ? Number(((paidReferralCount / totalReferralCount) * 100).toFixed(1)) : 0,
-            lastPayment: latestPurchase ? {
-              amount: latestPurchase.commissionEarned,
-              date: new Date(latestPurchase.createdAt).toLocaleDateString(),
-            } : undefined,
           };
+
+          if (hasPurchaseData) {
+            const totalCommissionEarned = purchaseRows.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
+            const payoutsSent = Number(statsData?.totalPayouts) || 0;
+            const currentMonthPurchases = purchaseRows.filter((row) => {
+              const purchaseDate = new Date(row.createdAt);
+              return purchaseDate >= currentMonthStart;
+            });
+            const previousMonthPurchases = purchaseRows.filter((row) => {
+              const purchaseDate = new Date(row.createdAt);
+              return purchaseDate >= previousMonthStart && purchaseDate < currentMonthStart;
+            });
+            const monthlyCommissionEarned = currentMonthPurchases.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
+            const priorMonthCommissionEarned = previousMonthPurchases.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
+            const latestPurchase = purchaseRows
+              .slice()
+              .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0];
+            const currentMonthConversionCount = currentMonthPurchases.length;
+            const currentMonthConversionRate = currentMonthReferralLeads > 0 ? (currentMonthConversionCount / currentMonthReferralLeads) * 100 : 0;
+
+            nextStatsPatch = {
+              ...nextStatsPatch,
+              totalEarnings: Number(totalCommissionEarned.toFixed(2)),
+              monthlyEarnings: Number(monthlyCommissionEarned.toFixed(2)),
+              pendingCommissions: Number(Math.max(totalCommissionEarned - payoutsSent, 0).toFixed(2)),
+              avgCommission: paidReferralCount > 0 ? Number((totalCommissionEarned / paidReferralCount).toFixed(2)) : 0,
+              currentMonthAverageCommission: currentMonthConversionCount > 0 ? Number((monthlyCommissionEarned / currentMonthConversionCount).toFixed(2)) : 0,
+              currentMonthConversionCount,
+              currentMonthConversionRate: Number(currentMonthConversionRate.toFixed(1)),
+              totalEarningsChange: {
+                percentage: calculatePercentageChange(monthlyCommissionEarned, priorMonthCommissionEarned),
+                period: "last month",
+              },
+              lastPayment: latestPurchase ? {
+                amount: latestPurchase.commissionEarned,
+                date: new Date(latestPurchase.createdAt).toLocaleDateString(),
+              } : undefined,
+            };
+          }
 
           setEarningsStats((prev) => ({
             ...prev,
@@ -322,6 +412,7 @@ export default function AffiliateDashboard() {
   const unpaid = earningsStats?.unpaidClients ?? 0;
   const cancelled = earningsStats?.cancelledClients ?? 0;
   const pipelineMax = Math.max(totalRef, 1);
+  const totalEarningsChangePercentage = earningsStats?.totalEarningsChange?.percentage ?? null;
 
   return (
     <AffiliateLayout title="Dashboard" description="Your affiliate command center">
@@ -378,16 +469,20 @@ export default function AffiliateDashboard() {
                     <DollarSign className="h-6 w-6 text-white" />
                   </div>
                   <span className="text-xs font-bold text-emerald-300 uppercase tracking-widest">All-Time Revenue</span>
-                  {earningsStats?.totalEarningsChange && (
+                  {earningsStats?.totalEarningsChange && totalEarningsChangePercentage !== null && (
                     <span className={`ml-auto flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
-                      earningsStats.totalEarningsChange.percentage >= 0
+                      totalEarningsChangePercentage > 0
                         ? "bg-emerald-500/20 text-emerald-300"
-                        : "bg-red-500/20 text-red-300"
+                        : totalEarningsChangePercentage < 0
+                          ? "bg-red-500/20 text-red-300"
+                          : "bg-white/10 text-gray-200"
                     }`}>
-                      {earningsStats.totalEarningsChange.percentage >= 0
+                      {totalEarningsChangePercentage > 0
                         ? <ArrowUpRight className="h-3.5 w-3.5" />
-                        : <ArrowDownRight className="h-3.5 w-3.5" />}
-                      {Math.abs(earningsStats.totalEarningsChange.percentage)}%
+                        : totalEarningsChangePercentage < 0
+                          ? <ArrowDownRight className="h-3.5 w-3.5" />
+                          : null}
+                      {Math.abs(totalEarningsChangePercentage)}%
                     </span>
                   )}
                 </div>
@@ -582,7 +677,6 @@ export default function AffiliateDashboard() {
             <div className="space-y-4">
               {[
                 { label: "Active Paying", count: active, icon: <CheckCircle2 className="h-4 w-4" />, color: "bg-emerald-500", light: "bg-emerald-50", text: "text-emerald-700", sub: "Live subscriptions" },
-                { label: "Unpaid / At Risk", count: unpaid, icon: <AlertTriangle className="h-4 w-4" />, color: "bg-amber-500", light: "bg-amber-50", text: "text-amber-700", sub: "Past due or incomplete" },
                 { label: "Cancelled / Churned", count: cancelled, icon: <XCircle className="h-4 w-4" />, color: "bg-red-500", light: "bg-red-50", text: "text-red-700", sub: "Lost clients" },
               ].map((row) => (
                 <div key={row.label} className={`flex items-center gap-4 rounded-xl ${row.light} px-4 py-3`}>
@@ -604,12 +698,6 @@ export default function AffiliateDashboard() {
                   </div>
                 </div>
               ))}
-            </div>
-
-            {/* health score */}
-            <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Conversion Rate</span>
-              <span className="font-bold text-teal-600 text-lg">{loading ? "—" : formatPercentage(earningsStats.conversionRate)}</span>
             </div>
           </div>
 
@@ -669,13 +757,11 @@ export default function AffiliateDashboard() {
         </div>
 
         {/* ── RISK / PERFORMANCE ROW ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {[
             { label: "Lost Commission", value: formatCurrency(earningsStats.lostCommissionAmount), icon: <TrendingDown className="h-5 w-5 text-white" />, grad: "from-rose-500 to-red-600", sub: "From non-renewals", warn: true },
-            { label: "Non-Renewals", value: formatCount(earningsStats.nonRenewalsCount), icon: <Activity className="h-5 w-5 text-white" />, grad: "from-orange-500 to-red-500", sub: "Last 30 days", warn: true },
-            { label: "At Risk", value: formatCount(earningsStats.atRiskReferrals), icon: <Clock className="h-5 w-5 text-white" />, grad: "from-amber-400 to-orange-500", sub: "Potential churn", warn: false },
-            { label: "Avg Commission", value: formatCurrency(earningsStats.avgCommission), icon: <Target className="h-5 w-5 text-white" />, grad: "from-teal-500 to-cyan-600", sub: "Per referral", warn: false },
-          ].map((item) => (
+            { label: "Non-Renewals", value: formatCurrency(earningsStats.nonRenewalsAmount), icon: <Activity className="h-5 w-5 text-white" />, grad: "from-orange-500 to-red-500", sub: "Missed renewal value", warn: true },
+            ].map((item) => (
             <div key={item.label} className="rounded-2xl bg-white border border-gray-100 shadow-sm p-4 hover:shadow-md transition-all">
               <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br ${item.grad} shadow mb-3`}>
                 {item.icon}
@@ -768,7 +854,7 @@ export default function AffiliateDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm font-semibold truncate ${sc.text}`}>{r.customerName}</p>
-                        <p className="text-xs text-gray-500 truncate">{r.planName || "—"} · {r.dateReferred}</p>
+                        <p className="text-xs text-gray-500 truncate">{r.planName || "No Plan"} · {r.dateReferred}</p>
                       </div>
                       <div className="text-right shrink-0">
                         <p className="text-sm font-bold text-gray-800">{formatCurrency(r.commission)}</p>
@@ -786,46 +872,6 @@ export default function AffiliateDashboard() {
 
           {/* Leaderboard */}
           <AffiliateLeaderboard />
-        </div>
-
-        {/* ── PERFORMANCE + PAYMENT STATUS ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
-            <h3 className="font-bold text-gray-900 text-lg mb-1">Affiliate Performance</h3>
-            <p className="text-sm text-gray-500 mb-5">Your metrics this month</p>
-            <div className="space-y-4">
-              {[
-                { label: "Total Referrals", value: formatCount(earningsStats?.currentMonthReferralLeads ?? earningsStats?.totalReferrals ?? 0), color: "text-blue-700" },
-                { label: "Conversion Rate", value: formatPercentage(earningsStats?.currentMonthConversionRate ?? earningsStats?.conversionRate), color: "text-teal-700" },
-                { label: "Avg Commission / Sale", value: formatCurrency(earningsStats?.currentMonthAverageCommission ?? earningsStats?.avgCommission ?? 0), color: "text-emerald-700" },
-              ].map((m) => (
-                <div key={m.label} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-                  <span className="text-sm text-gray-600">{m.label}</span>
-                  <span className={`text-lg font-extrabold ${m.color}`}>{loading ? "—" : m.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-6">
-            <h3 className="font-bold text-gray-900 text-lg mb-1">Payment Status</h3>
-            <p className="text-sm text-gray-500 mb-5">Commission payment information</p>
-            <div className="space-y-3">
-              {[
-                { label: "Last Payment", value: earningsStats?.lastPayment ? `${formatCurrency(earningsStats.lastPayment.amount)} · ${earningsStats.lastPayment.date}` : "No payments yet", dot: "bg-emerald-500" },
-                { label: "Next Payment", value: earningsStats?.nextPayment?.date ? `${earningsStats.nextPayment.date} (${earningsStats.nextPayment.status})` : "No scheduled payments", dot: "bg-amber-500" },
-                { label: "Payment Method", value: earningsStats?.paymentMethod || "Not configured", dot: "bg-blue-500" },
-              ].map((p) => (
-                <div key={p.label} className="flex items-start justify-between gap-3 py-2 border-b border-gray-100 last:border-0">
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`h-2 w-2 rounded-full ${p.dot} mt-1`} />
-                    <span className="text-sm text-gray-600">{p.label}</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-800 text-right">{p.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
       </div>

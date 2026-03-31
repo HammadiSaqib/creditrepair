@@ -300,10 +300,10 @@ export default function AffiliateReferrals() {
 
   const filteredReferrals = referrals.filter((referral) => {
     const searchValue = searchTerm.toLowerCase();
-    const matchesSearch = (referral.customerName?.toLowerCase() || '').includes(searchValue) ||
-                         (referral.email?.toLowerCase() || '').includes(searchValue) ||
-                         (referral.id?.toLowerCase() || '').includes(searchValue) ||
-                         (referral.phone?.toLowerCase() || '').includes(searchValue);
+    const matchesSearch = String(referral.customerName || '').toLowerCase().includes(searchValue) ||
+                         String(referral.email || '').toLowerCase().includes(searchValue) ||
+                         String(referral.id || '').toLowerCase().includes(searchValue) ||
+                         String(referral.phone || '').toLowerCase().includes(searchValue);
     const matchesStatus = statusFilter === "all" || referral.status === statusFilter;
     const matchesTier = tierFilter === "all" || referral.tier === tierFilter;
     return matchesSearch && matchesStatus && matchesTier;
@@ -495,7 +495,9 @@ export default function AffiliateReferrals() {
               <div className="text-2xl font-bold text-emerald-600">
                 {loading || (!purchasesLoaded && loadingPurchases)
                   ? '...'
-                  : `$${(purchaseSummary.totalCommissionEarned || stats.totalCommission || 0).toLocaleString()}`}
+                  : purchasesLoaded
+                    ? `$${(purchaseSummary.totalCommissionEarned || 0).toLocaleString()}`
+                    : '...'}
               </div>
               <p className="text-xs text-muted-foreground">
                 Click to view every subscription payout
