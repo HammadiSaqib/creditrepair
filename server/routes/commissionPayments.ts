@@ -1,11 +1,9 @@
 import express from 'express';
-import crypto from 'crypto';
-import { ENV_CONFIG } from '../config/environment.js';
 import multer from 'multer';
 import path from 'path';
 import { authenticateToken, requireRole } from '../middleware/authMiddleware.js';
-import { executeQuery, getRecords, insertRecord, updateRecord } from '../database/mysqlConfig.js';
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { executeQuery, getRecords, updateRecord } from '../database/mysqlConfig.js';
+import { RowDataPacket } from 'mysql2';
 
 const router = express.Router();
 
@@ -120,6 +118,33 @@ router.post('/',
         return res.status(404).json({ success: false, message: 'Affiliate not found' });
       }
       
+      // Ensure commission_payments table exists before querying it
+      await executeQuery(
+        `CREATE TABLE IF NOT EXISTS commission_payments (
+           id INT AUTO_INCREMENT PRIMARY KEY,
+           affiliate_id INT NOT NULL,
+           amount DECIMAL(10, 2) NOT NULL,
+           transaction_id VARCHAR(255) NOT NULL UNIQUE,
+           payment_method ENUM('bank_transfer','paypal','stripe','check','other','manual') NOT NULL DEFAULT 'bank_transfer',
+           status ENUM('pending','completed','failed') NOT NULL DEFAULT 'pending',
+           payment_date DATETIME NOT NULL,
+           notes TEXT,
+           proof_of_payment_url VARCHAR(500),
+           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+           INDEX idx_affiliate_id (affiliate_id),
+           INDEX idx_status (status),
+           INDEX idx_payment_date (payment_date)
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+      );
+
+      // Try to add 'manual' to payment_method enum if it doesn't exist
+      try {
+        await executeQuery(
+          `ALTER TABLE commission_payments MODIFY COLUMN payment_method ENUM('bank_transfer','paypal','stripe','check','other','manual') NOT NULL DEFAULT 'bank_transfer'`
+        );
+      } catch {}
+
       // Check if transaction ID already exists
       const existingTransaction = await getRecords<RowDataPacket>(
         'SELECT id FROM commission_payments WHERE transaction_id = ?',
@@ -133,66 +158,12 @@ router.post('/',
         });
       }
       
-      // Record payout directly in affiliate_payouts instead of commission_payments
-      // Optional: continue to adjust outstanding totals
-      await updateRecord(
-        'UPDATE affiliates SET total_earnings = total_earnings - ? WHERE id = ?',
-        [amount, affiliate_id]
-      );
-
-      const now = new Date();
-      const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-      const commissionMonth = `${prev.getFullYear()}-${pad(prev.getMonth() + 1)}`;
-      const payoutMonth = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
-      const postedAmount = Number(amount);
-
+      // Insert each payment as a NEW row (additive — never overwrites previous payments)
+      const methodValue = ['bank_transfer', 'paypal', 'stripe', 'check', 'other', 'manual'].includes(payment_method) ? payment_method : 'other';
       await executeQuery(
-        `CREATE TABLE IF NOT EXISTS affiliate_payouts (
-           id INT AUTO_INCREMENT PRIMARY KEY,
-           affiliate_id INT NOT NULL,
-           admin_user_id INT NULL,
-           commission_month CHAR(7) NOT NULL,
-           payout_month CHAR(7) NOT NULL,
-           amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-           invoice_id INT NULL,
-           invoice_number VARCHAR(64) NULL,
-           invoice_public_token VARCHAR(64) NULL,
-           invoice_url VARCHAR(255) NULL,
-           status ENUM('generated','emailed','paid','cancelled') DEFAULT 'generated',
-           paid_at DATETIME NULL,
-           notes VARCHAR(255) NULL,
-           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-           UNIQUE KEY uniq_affiliate_commission_month (affiliate_id, commission_month)
-         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
-      );
-
-      const adminUserId = (req as any)?.user?.id || null;
-
-      try {
-        await executeQuery(
-          `ALTER TABLE affiliate_payouts
-             ADD COLUMN IF NOT EXISTS payslip_number VARCHAR(64) NULL,
-             ADD COLUMN IF NOT EXISTS payslip_token VARCHAR(64) NULL,
-             ADD COLUMN IF NOT EXISTS payslip_url VARCHAR(255) NULL`
-        );
-      } catch (alterErr: any) {
-        try { await executeQuery(`ALTER TABLE affiliate_payouts ADD COLUMN payslip_number VARCHAR(64) NULL`); } catch (e: any) {}
-        try { await executeQuery(`ALTER TABLE affiliate_payouts ADD COLUMN payslip_token VARCHAR(64) NULL`); } catch (e: any) {}
-        try { await executeQuery(`ALTER TABLE affiliate_payouts ADD COLUMN payslip_url VARCHAR(255) NULL`); } catch (e: any) {}
-      }
-
-      const payslipToken = crypto.randomBytes(24).toString('hex');
-      const frontendBase = String(ENV_CONFIG.FRONTEND_URL || '').replace(/\/$/, '');
-      const payslipUrl = frontendBase ? `${frontendBase}/payslip/${payslipToken}` : null;
-      const payslipNumber = `PS-${commissionMonth.replace('-', '')}-${parseInt(String(affiliate_id), 10)}`;
-      await executeQuery(
-        `INSERT INTO affiliate_payouts (
-           affiliate_id, admin_user_id, commission_month, payout_month, amount, status, paid_at, notes, payslip_number, payslip_token, payslip_url, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, 'paid', NOW(), ?, ?, ?, ?, NOW(), NOW())
-         ON DUPLICATE KEY UPDATE amount = VALUES(amount), status = 'paid', paid_at = NOW(), notes = VALUES(notes), payslip_number = VALUES(payslip_number), payslip_token = VALUES(payslip_token), payslip_url = VALUES(payslip_url), updated_at = NOW()`,
-        [parseInt(String(affiliate_id), 10), adminUserId, commissionMonth, payoutMonth, postedAmount, notes || null, payslipNumber, payslipToken, payslipUrl]
+        `INSERT INTO commission_payments (affiliate_id, amount, transaction_id, payment_method, status, payment_date, notes, proof_of_payment_url, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'completed', NOW(), ?, ?, NOW(), NOW())`,
+        [parseInt(String(affiliate_id), 10), Number(amount), transaction_id, methodValue, notes || null, proof_of_payment_url]
       );
 
       res.json({ 
