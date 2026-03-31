@@ -90,6 +90,28 @@ interface AffiliateStats {
   currentMRR: number;
 }
 
+interface ProfileReferralRow {
+  id: string | number;
+  referred_user_id?: number | null;
+  referred_user_email?: string | null;
+  referred_user_first_name?: string | null;
+  referred_user_last_name?: string | null;
+  plan_name?: string | null;
+  package_name?: string | null;
+  plan_type?: string | null;
+  purchase_type?: string | null;
+  package_price?: number | null;
+  commission_earned?: number | null;
+  referral_date?: string | null;
+  conversion_date?: string | null;
+  last_purchase_date?: string | null;
+  payment_state?: string | null;
+  plan_price?: number | null;
+  is_stripe_paid?: boolean;
+  last_payment_date?: string | null;
+  stripe_transaction_id?: string | null;
+}
+
 interface Filters {
   packageType: string;
   dateFrom?: string;
@@ -132,6 +154,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null);
   const [referrals, setReferrals] = useState<ReferralItem[]>([]);
   const [commissions, setCommissions] = useState<CommissionItem[]>([]);
+  const [profileReferrals, setProfileReferrals] = useState<ProfileReferralRow[]>([]);
   const [affiliateStats, setAffiliateStats] = useState<AffiliateStats | null>(null);
   const [childReferrals, setChildReferrals] = useState<ChildReferral[]>([]);
   const [childSummary, setChildSummary] = useState<{ totalReferrals: number; totalCommission: number }>({ totalReferrals: 0, totalCommission: 0 });
@@ -150,12 +173,13 @@ const SuperAdminAffiliateProfile: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        const [affResp, refs, earnResp, commResp, statsResp, childResp] = await Promise.all([
+        const [affResp, refs, earnResp, commResp, statsResp, dashboardRefsResp, childResp] = await Promise.all([
           superAdminApi.getAffiliates(),
           api.get(`/api/affiliate-management/${id}/referrals`),
           api.get(`/api/affiliate-management/${id}/earnings/monthly`),
           superAdminApi.getCommissionHistory({ affiliate_id: String(id) }),
-          api.get(`/api/affiliate-management/${id}/stats`).catch(() => ({ data: null })),
+          api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
+          api.get(`/api/affiliate-management/${id}/dashboard-referrals`).catch(() => ({ data: null })),
           api.get(`/api/affiliate-management/${id}/referrals/child`).catch(() => ({ data: null })),
         ]);
 
@@ -173,7 +197,41 @@ const SuperAdminAffiliateProfile: React.FC = () => {
           : [];
         if (mounted) setCommissions(commData);
 
-        // Extended stats from new endpoint
+        const dashboardReferralData = Array.isArray(dashboardRefsResp.data?.data) ? dashboardRefsResp.data.data : [];
+        if (mounted) {
+          setProfileReferrals(
+            dashboardReferralData.map((row: any) => {
+              const fullName = String(row.customerName || '').trim();
+              const nameParts = fullName ? fullName.split(/\s+/) : [];
+              const firstName = nameParts[0] || '';
+              const lastName = nameParts.slice(1).join(' ');
+
+              return {
+                id: row.id,
+                referred_user_id: row.referredUserId ?? null,
+                referred_user_email: row.email || null,
+                referred_user_first_name: firstName,
+                referred_user_last_name: lastName,
+                plan_name: row.planName || null,
+                package_name: row.planName || null,
+                plan_type: row.tier || null,
+                purchase_type: 'Subscription',
+                package_price: typeof row.planPrice === 'number' ? row.planPrice : null,
+                commission_earned: typeof row.commission === 'number' ? row.commission : 0,
+                referral_date: row.signupDate || null,
+                conversion_date: row.conversionDate || null,
+                last_purchase_date: row.lastPaymentDate || null,
+                payment_state: row.status || null,
+                plan_price: typeof row.planPrice === 'number' ? row.planPrice : null,
+                is_stripe_paid: Boolean(row.isStripePaid),
+                last_payment_date: row.lastPaymentDate || null,
+                stripe_transaction_id: row.stripeTransactionId || row.transactionId || null,
+              } satisfies ProfileReferralRow;
+            })
+          );
+        }
+
+        // Dashboard-parity summary so super-admin sees the same headline numbers as the affiliate dashboard
         const stats: AffiliateStats | null = statsResp.data?.data || null;
         if (mounted && stats) setAffiliateStats(stats);
 
@@ -267,9 +325,13 @@ const SuperAdminAffiliateProfile: React.FC = () => {
     () => mergeReferralsWithCommissions(referrals, commissions),
     [referrals, commissions]
   );
+  const referralRowsForProfile = useMemo(
+    () => (profileReferrals.length > 0 ? profileReferrals : (mergedReferrals as ProfileReferralRow[])),
+    [profileReferrals, mergedReferrals]
+  );
   const filteredReferrals = useMemo(
-    () => filterReferrals(mergedReferrals as any[], filters),
-    [mergedReferrals, filters]
+    () => filterReferrals(referralRowsForProfile as any[], filters),
+    [referralRowsForProfile, filters]
   );
   const pagedReferrals = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -283,12 +345,12 @@ const SuperAdminAffiliateProfile: React.FC = () => {
 
   const packageOptions = useMemo(() => {
     const set = new Set<string>();
-    mergedReferrals.forEach((r: any) => {
+    referralRowsForProfile.forEach((r: any) => {
       const name = r.plan_name || r.package_name;
       if (name) set.add(name);
     });
     return Array.from(set);
-  }, [mergedReferrals]);
+  }, [referralRowsForProfile]);
 
   const exportEarnings = () => {
     toCsv(
@@ -300,7 +362,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
   const exportReferralBreakdown = () => {
     toCsv(
       `affiliate_${id}_referrals.csv`,
-      mergedReferrals.map((r: any) => ({
+      referralRowsForProfile.map((r: any) => ({
         email: r.referred_user_email || '',
         name: `${r.referred_user_first_name || ''} ${r.referred_user_last_name || ''}`.trim(),
         package: r.package_name || '',
@@ -377,11 +439,11 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <div className="text-xs text-muted-foreground">Total Earnings</div>
-                      <div className="text-xl font-semibold">${Number(affiliate.total_earnings || 0).toFixed(2)}</div>
+                      <div className="text-xl font-semibold">${Number(affiliateStats?.allTimeEarnings ?? affiliate.total_earnings ?? 0).toFixed(2)}</div>
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground">Referrals</div>
-                      <div className="text-xl font-semibold">{affiliate.total_referrals || 0}</div>
+                      <div className="text-xl font-semibold">{affiliateStats?.totalAllTimeReferrals ?? affiliate.total_referrals ?? 0}</div>
                     </div>
                     <div>
                       <div className="text-xs text-muted-foreground">Commission Rate</div>
@@ -545,7 +607,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                   <div className="text-lg font-bold">
                     {affiliateStats?.lastPayoutDate
                       ? format(new Date(affiliateStats.lastPayoutDate), 'MMM dd, yyyy')
-                      : '”'}
+                      : '—'}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">Most recent payment</div>
                 </CardContent>
@@ -638,6 +700,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                           {(() => {
                             const state = r.payment_state || 'unknown';
                             const colorMap: Record<string, string> = {
+                              paid: 'bg-emerald-100 text-emerald-800',
                               active: 'bg-green-100 text-green-800',
                               unpaid: 'bg-amber-100 text-amber-800',
                               cancelled: 'bg-red-100 text-red-800',

@@ -3,6 +3,11 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import { executeQuery } from '../database/mysqlConfig.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
+import {
+  getAffiliateDashboardPurchasesData,
+  getAffiliateDashboardReferralsData,
+  getAffiliateDashboardStatsData,
+} from './affiliateDashboard.js';
 import { SecurityLogger } from '../utils/securityLogger.js';
 
 const router = express.Router();
@@ -585,6 +590,89 @@ router.post('/:id/toggle-status', authenticateToken, requireSuperAdminRole, asyn
   }
 });
 
+// GET /api/affiliate-management/:id/dashboard-summary - Get the exact dashboard-visible summary for an affiliate
+router.get('/:id/dashboard-summary', authenticateToken, requireSuperAdminRole, async (req, res) => {
+  try {
+    const affiliateId = Number(String(req.params.id || '').replace('AFF-', ''));
+    if (!Number.isFinite(affiliateId) || affiliateId <= 0) {
+      return res.status(400).json({ error: 'Invalid affiliate id' });
+    }
+
+    const verifyResult = await executeQuery('SELECT id FROM affiliates WHERE id = ?', [affiliateId]);
+    if (!verifyResult || verifyResult.length === 0) {
+      return res.status(404).json({ error: 'Affiliate not found' });
+    }
+
+    const [dashboardStats, dashboardReferrals, dashboardPurchases] = await Promise.all([
+      getAffiliateDashboardStatsData(affiliateId),
+      getAffiliateDashboardReferralsData(affiliateId),
+      getAffiliateDashboardPurchasesData(affiliateId),
+    ]);
+
+    const referralRows = Array.isArray(dashboardReferrals) ? dashboardReferrals : [];
+    const purchaseRows = Array.isArray(dashboardPurchases?.data) ? dashboardPurchases.data : [];
+
+    const paidReferralCount = referralRows.filter((row: any) => row.status === 'paid').length;
+    const unpaidReferralCount = referralRows.filter((row: any) => row.status === 'unpaid').length;
+    const cancelledReferralCount = referralRows.filter((row: any) => row.status === 'cancelled' || row.status === 'churned').length;
+    const totalReferralCount = referralRows.length;
+
+    const currentMonthStart = new Date();
+    currentMonthStart.setDate(1);
+    currentMonthStart.setHours(0, 0, 0, 0);
+
+    const totalCommissionEarned = purchaseRows.reduce((sum: number, row: any) => sum + (Number(row.commissionEarned) || 0), 0);
+    const monthlyCommissionEarned = purchaseRows
+      .filter((row: any) => new Date(row.createdAt) >= currentMonthStart)
+      .reduce((sum: number, row: any) => sum + (Number(row.commissionEarned) || 0), 0);
+
+    res.json({
+      success: true,
+      data: {
+        totalAllTimeReferrals: totalReferralCount,
+        activeClients: paidReferralCount,
+        unpaidClients: unpaidReferralCount,
+        cancelledClients: cancelledReferralCount,
+        monthlyEarnings: purchaseRows.length > 0 ? Number(monthlyCommissionEarned.toFixed(2)) : Number(dashboardStats?.monthlyEarnings || 0),
+        allTimeEarnings: purchaseRows.length > 0 ? Number(totalCommissionEarned.toFixed(2)) : Number(dashboardStats?.totalEarnings || 0),
+        totalPayouts: Number(dashboardStats?.totalPayouts || 0),
+        lastPayoutDate: dashboardStats?.lastPayoutDate || null,
+        currentMRR: Number(dashboardStats?.currentMRR || 0),
+      }
+    });
+  } catch (error: any) {
+    console.error('Error fetching affiliate dashboard parity summary:', error);
+    if (error?.code === 'AFFILIATE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Affiliate not found' });
+    }
+    res.status(500).json({ error: 'Failed to fetch affiliate dashboard summary' });
+  }
+});
+
+// GET /api/affiliate-management/:id/dashboard-referrals - Get the same referral rows used by the affiliate dashboard/referrals view
+router.get('/:id/dashboard-referrals', authenticateToken, requireSuperAdminRole, async (req, res) => {
+  try {
+    const affiliateId = Number(String(req.params.id || '').replace('AFF-', ''));
+    if (!Number.isFinite(affiliateId) || affiliateId <= 0) {
+      return res.status(400).json({ error: 'Invalid affiliate id' });
+    }
+
+    const verifyResult = await executeQuery('SELECT id FROM affiliates WHERE id = ?', [affiliateId]);
+    if (!verifyResult || verifyResult.length === 0) {
+      return res.status(404).json({ error: 'Affiliate not found' });
+    }
+
+    const rows = await getAffiliateDashboardReferralsData(affiliateId);
+    res.json({ success: true, data: rows });
+  } catch (error: any) {
+    console.error('Error fetching affiliate dashboard parity referrals:', error);
+    if (error?.code === 'AFFILIATE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Affiliate not found' });
+    }
+    res.status(500).json({ error: 'Failed to fetch affiliate dashboard referrals' });
+  }
+});
+
 // GET /api/affiliate-management/:id/referrals - Get affiliate referrals
 router.get('/:id/referrals', authenticateToken, requireSuperAdminRole, async (req, res) => {
   try {
@@ -760,11 +848,12 @@ router.get('/:id/stats', authenticateToken, requireSuperAdminRole, async (req, r
       WHERE ar.affiliate_id = ?
     `;
 
-    // All-time commissions earned (regardless of payout)
+    // All-time commissions earned (paid only, net of cancellations — matches dashboard logic)
     const earningsQuery = `
       SELECT
-        COALESCE(SUM(CASE WHEN status IN ('pending','approved','paid') THEN commission_amount ELSE 0 END),0) AS all_time_earnings,
-        COALESCE(SUM(CASE WHEN status IN ('pending','approved','paid') AND MONTH(COALESCE(order_date, created_at))=MONTH(CURRENT_DATE()) AND YEAR(COALESCE(order_date, created_at))=YEAR(CURRENT_DATE()) THEN commission_amount ELSE 0 END),0) AS monthly_earnings
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN commission_amount ELSE 0 END),0) AS all_time_paid,
+        COALESCE(SUM(CASE WHEN status IN ('cancelled','refunded','chargeback') THEN commission_amount ELSE 0 END),0) AS all_time_cancelled,
+        COALESCE(SUM(CASE WHEN status IN ('pending','approved','paid') AND COALESCE(order_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') THEN commission_amount ELSE 0 END),0) AS monthly_earnings
       FROM affiliate_commissions
       WHERE affiliate_id = ?
     `;
@@ -786,33 +875,54 @@ router.get('/:id/stats', authenticateToken, requireSuperAdminRole, async (req, r
         ) AS last_payout_date
     `;
 
-    const [referralsRaw, earningsRaw, payoutsRaw] = await Promise.all([
+    const [referralsRaw, earningsRaw, payoutsRaw, activePayingResult, unpaidClientsResult, cancelledClientsResult] = await Promise.all([
       executeQuery(referralsQuery, [affiliateId]),
       executeQuery(earningsQuery, [affiliateId]),
       executeQuery(payoutsQuery, [affiliateId, affiliateId, affiliateId, affiliateId]),
+      executeQuery(`
+        SELECT COUNT(DISTINCT ar.id) as active_paying
+        FROM affiliate_referrals ar
+        JOIN users u ON ar.referred_user_id = u.id
+        LEFT JOIN subscriptions s ON u.id = s.user_id
+        WHERE ar.affiliate_id = ? AND s.status = 'active'
+      `, [affiliateId]),
+      executeQuery(`
+        SELECT COUNT(DISTINCT ar.id) as unpaid_clients
+        FROM affiliate_referrals ar
+        JOIN users u ON ar.referred_user_id = u.id
+        LEFT JOIN subscriptions s ON u.id = s.user_id
+        WHERE ar.affiliate_id = ? AND s.status IN ('unpaid', 'past_due', 'incomplete')
+      `, [affiliateId]),
+      executeQuery(`
+        SELECT COUNT(DISTINCT ar.id) as cancelled_clients
+        FROM affiliate_referrals ar
+        JOIN users u ON ar.referred_user_id = u.id
+        LEFT JOIN subscriptions s ON u.id = s.user_id
+        WHERE ar.affiliate_id = ?
+          AND (
+            s.status IN ('canceled', 'cancelled')
+            OR (u.status = 'inactive' AND (s.status IS NULL OR s.status != 'active'))
+          )
+      `, [affiliateId]),
     ]);
 
-    let activeClients = 0;
-    let unpaidClients = 0;
-    let cancelledClients = 0;
-    let currentMRR = 0;
+    const activeClients = parseInt((activePayingResult as any[])[0]?.active_paying) || 0;
+    const unpaidClients = parseInt((unpaidClientsResult as any[])[0]?.unpaid_clients) || 0;
+    const cancelledClients = parseInt((cancelledClientsResult as any[])[0]?.cancelled_clients) || 0;
 
+    // Calculate MRR from active clients
+    let currentMRR = 0;
     (referralsRaw as any[]).forEach((r: any) => {
       const subStatus = String(r.subscription_status || '').toLowerCase();
-      const userStatus = String(r.user_status || '').toLowerCase();
       const planPrice = parseFloat(r.last_plan_price || 0);
-
       if (subStatus === 'active') {
-        activeClients++;
         currentMRR += planPrice;
-      } else if (['unpaid', 'past_due', 'incomplete'].includes(subStatus)) {
-        unpaidClients++;
-      } else if (['canceled', 'cancelled'].includes(subStatus) || userStatus === 'inactive') {
-        cancelledClients++;
       }
     });
 
-    const allTimeEarnings = parseFloat((earningsRaw as any[])[0]?.all_time_earnings || 0);
+    const allTimePaid = parseFloat((earningsRaw as any[])[0]?.all_time_paid || 0);
+    const allTimeCancelled = parseFloat((earningsRaw as any[])[0]?.all_time_cancelled || 0);
+    const allTimeEarnings = allTimePaid - allTimeCancelled;
     const monthlyEarningsFromCommissions = parseFloat((earningsRaw as any[])[0]?.monthly_earnings || 0);
     const totalPayouts = parseFloat((payoutsRaw as any[])[0]?.total_payouts || 0);
     const rawPayoutDate = (payoutsRaw as any[])[0]?.last_payout_date;
@@ -836,10 +946,17 @@ router.get('/:id/stats', authenticateToken, requireSuperAdminRole, async (req, r
     const realMonthlyEarnings = (totalReferralRevenueThisMonth * affCommissionRate) / 100;
     const monthlyEarnings = Math.max(monthlyEarningsFromCommissions, realMonthlyEarnings);
 
+    // Get fresh total referrals count from source table (avoids duplicates from JOINs)
+    const freshTotalResult = await executeQuery(
+      'SELECT COUNT(*) as total_referrals_count FROM affiliate_referrals WHERE affiliate_id = ?',
+      [affiliateId]
+    );
+    const totalAllTimeReferrals = parseInt((freshTotalResult as any[])[0]?.total_referrals_count) || 0;
+
     res.json({
       success: true,
       data: {
-        totalAllTimeReferrals: (referralsRaw as any[]).length,
+        totalAllTimeReferrals,
         activeClients,
         unpaidClients,
         cancelledClients,

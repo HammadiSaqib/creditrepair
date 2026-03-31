@@ -260,6 +260,765 @@ async function resolveAffiliateId(req: any): Promise<number | null> {
   }
 }
 
+export async function getAffiliateDashboardStatsData(affiliateId: number) {
+  const affiliateQuery = `
+    SELECT 
+      total_earnings,
+      total_referrals,
+      commission_rate,
+      plan_type,
+      paid_referrals_count,
+      status,
+      created_at,
+      admin_id
+    FROM affiliates 
+    WHERE id = ?
+  `;
+
+  const affiliate = await executeQuery(affiliateQuery, [affiliateId]);
+  if (!affiliate || affiliate.length === 0) {
+    const error: any = new Error('Affiliate not found');
+    error.code = 'AFFILIATE_NOT_FOUND';
+    throw error;
+  }
+
+  const affiliateData = affiliate[0];
+
+  let subscriptionData = null;
+  if (affiliateData.admin_id) {
+    const subscriptionQuery = `
+      SELECT 
+        plan_name,
+        plan_type,
+        status,
+        current_period_start,
+        current_period_end
+      FROM subscriptions 
+      WHERE user_id = ? AND status = 'active'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    const subscriptionResult = await executeQuery(subscriptionQuery, [affiliateData.admin_id]);
+    if (subscriptionResult && subscriptionResult.length > 0) {
+      subscriptionData = subscriptionResult[0];
+    }
+  }
+
+  const earningsAggregationQuery = `
+    SELECT 
+      COALESCE(SUM(CASE WHEN status = 'paid' THEN commission_amount ELSE 0 END), 0) AS paid_amount,
+      COALESCE(SUM(CASE WHEN status IN ('cancelled', 'refunded', 'chargeback') THEN commission_amount ELSE 0 END), 0) AS cancelled_amount,
+      COALESCE(SUM(CASE WHEN status = 'pending' THEN commission_amount ELSE 0 END), 0) AS pending_amount,
+      COALESCE(SUM(CASE 
+        WHEN status = 'paid' 
+          AND COALESCE(payment_date, approval_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+        THEN commission_amount 
+        ELSE 0 
+      END), 0) AS month_paid_amount,
+      COALESCE(SUM(CASE 
+        WHEN status IN ('cancelled', 'refunded', 'chargeback') 
+          AND COALESCE(updated_at, payment_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+        THEN commission_amount 
+        ELSE 0 
+      END), 0) AS month_cancelled_amount,
+      COALESCE(SUM(CASE 
+        WHEN status = 'paid' 
+          AND COALESCE(payment_date, approval_date, created_at) >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01') 
+          AND COALESCE(payment_date, approval_date, created_at) < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+        THEN commission_amount 
+        ELSE 0 
+      END), 0) AS prior_month_paid_amount,
+      COALESCE(SUM(CASE 
+        WHEN status IN ('cancelled', 'refunded', 'chargeback') 
+          AND COALESCE(updated_at, payment_date, created_at) >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01') 
+          AND COALESCE(updated_at, payment_date, created_at) < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+        THEN commission_amount 
+        ELSE 0 
+      END), 0) AS prior_month_cancelled_amount,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+      SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) AS paid_count,
+      SUM(CASE 
+        WHEN status = 'paid' 
+          AND COALESCE(payment_date, approval_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+        THEN 1 ELSE 0
+      END) AS month_paid_count,
+      COALESCE(SUM(CASE 
+        WHEN status IN ('pending','approved','paid') 
+          AND COALESCE(order_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01') 
+        THEN commission_amount 
+        ELSE 0 
+      END), 0) AS month_all_earned_amount
+    FROM affiliate_commissions
+    WHERE affiliate_id = ?
+  `;
+
+  const earningsAggregate = await executeQuery(earningsAggregationQuery, [affiliateId]);
+  const {
+    paid_amount: totalPaidAmountRaw = 0,
+    cancelled_amount: totalCancelledAmountRaw = 0,
+    pending_amount: totalPendingValueRaw = 0,
+    month_paid_amount: monthPaidAmountRaw = 0,
+    month_cancelled_amount: monthCancelledAmountRaw = 0,
+    prior_month_paid_amount: priorMonthPaidAmountRaw = 0,
+    prior_month_cancelled_amount: priorMonthCancelledAmountRaw = 0,
+    pending_count: pendingCountRaw = 0,
+    paid_count: paidCountRaw = 0,
+    month_paid_count: monthPaidCountRaw = 0,
+    month_all_earned_amount: monthAllEarnedAmountRaw = 0,
+  } = earningsAggregate[0] || {};
+
+  const totalPaidAmount = parseFloat(totalPaidAmountRaw) || 0;
+  const totalCancelledAmount = parseFloat(totalCancelledAmountRaw) || 0;
+  const totalPendingValue = parseFloat(totalPendingValueRaw) || 0;
+  const currentMonthPaidGross = parseFloat(monthPaidAmountRaw) || 0;
+  const currentMonthCancelled = parseFloat(monthCancelledAmountRaw) || 0;
+  const priorMonthPaidGross = parseFloat(priorMonthPaidAmountRaw) || 0;
+  const priorMonthCancelled = parseFloat(priorMonthCancelledAmountRaw) || 0;
+  const pendingSignups = parseInt(pendingCountRaw) || 0;
+  const currentMonthPaidCount = parseInt(monthPaidCountRaw) || 0;
+  const monthAllEarnedAmount = parseFloat(monthAllEarnedAmountRaw) || 0;
+
+  const totalPaidEarnings = totalPaidAmount - totalCancelledAmount;
+  const currentMonthNet = currentMonthPaidGross - currentMonthCancelled;
+  const priorMonthNet = priorMonthPaidGross - priorMonthCancelled;
+
+  const commissionRate = parseFloat(affiliateData.commission_rate) || 10;
+  const monthlyBillingQuery = `
+    SELECT COALESCE(SUM(bt.amount), 0) AS total_referral_revenue_this_month
+    FROM billing_transactions bt
+    JOIN affiliate_referrals ar ON bt.user_id = ar.referred_user_id
+    WHERE ar.affiliate_id = ?
+      AND bt.status = 'succeeded'
+      AND bt.created_at >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+  `;
+  const monthlyBillingResult = await executeQuery(monthlyBillingQuery, [affiliateId]);
+  const totalReferralRevenueThisMonth = parseFloat(monthlyBillingResult[0]?.total_referral_revenue_this_month) || 0;
+  const realMonthlyEarnings = (totalReferralRevenueThisMonth * commissionRate) / 100;
+  const effectiveMonthlyEarnings = Math.max(monthAllEarnedAmount, realMonthlyEarnings);
+
+  const statusBreakdownQuery = `
+    SELECT status, COALESCE(SUM(commission_amount), 0) AS amount, COUNT(*) AS count
+    FROM affiliate_commissions
+    WHERE affiliate_id = ? AND status IN ('paid', 'cancelled', 'refunded', 'chargeback')
+    GROUP BY status
+  `;
+  const statusBreakdown = await executeQuery(statusBreakdownQuery, [affiliateId]);
+  const cancelledTotal = statusBreakdown
+    .filter((row: any) => ['cancelled', 'refunded', 'chargeback'].includes(row.status))
+    .reduce((sum: number, row: any) => sum + parseFloat(row.amount || 0), 0);
+
+  const cancelledCount = statusBreakdown
+    .filter((row: any) => ['cancelled', 'refunded', 'chargeback'].includes(row.status))
+    .reduce((sum: number, row: any) => sum + (parseInt(row.count) || 0), 0);
+
+  const activeReferralsQuery = `
+    SELECT COUNT(DISTINCT ar.id) as active_referrals
+    FROM affiliate_referrals ar
+    WHERE ar.affiliate_id = ? 
+      AND ar.status IN ('approved', 'converted')
+  `;
+  const activeResult = await executeQuery(activeReferralsQuery, [affiliateId]);
+  const activeReferrals = activeResult[0]?.active_referrals || 0;
+  const conversionRate = affiliateData.total_referrals > 0 ? (activeReferrals / affiliateData.total_referrals * 100) : 0;
+
+  const nextPayment = new Date();
+  nextPayment.setMonth(nextPayment.getMonth() + 1);
+  nextPayment.setDate(1);
+
+  const calculateCurrentTierRate = (planType: string | null | undefined, paidReferralsCount: number) => {
+    const normalizedPlanType = planType?.toLowerCase();
+    const hasPaidPlan = subscriptionData?.status === 'active' || 
+      normalizedPlanType === 'paid_partner' || 
+      normalizedPlanType === 'partner' || 
+      normalizedPlanType === 'pro' || 
+      normalizedPlanType === 'premium';
+
+    if (!hasPaidPlan || normalizedPlanType === 'free' || normalizedPlanType === 'starter') {
+      return paidReferralsCount >= 100 ? 15.0 : 10.0;
+    }
+
+    return paidReferralsCount >= 100 ? 25.0 : 20.0;
+  };
+
+  const currentTierRate = calculateCurrentTierRate(affiliateData.plan_type, affiliateData.paid_referrals_count);
+
+  const getTierInfo = (planType: string | null | undefined, paidReferralsCount: number) => {
+    const normalizedPlanType = planType?.toLowerCase();
+    const hasPaidPlan = subscriptionData?.status === 'active' || 
+      normalizedPlanType === 'paid_partner' || 
+      normalizedPlanType === 'partner' || 
+      normalizedPlanType === 'pro' || 
+      normalizedPlanType === 'premium';
+
+    if (!hasPaidPlan || normalizedPlanType === 'free' || normalizedPlanType === 'starter') {
+      if (paidReferralsCount >= 100) {
+        return {
+          currentTier: 'Free - Advanced',
+          nextTier: 'Upgrade to Pro Partner for higher rates',
+          progressToNext: 100,
+          referralsToNext: 0,
+        };
+      }
+
+      return {
+        currentTier: 'Free - Starter',
+        nextTier: 'Free - Advanced (15%)',
+        progressToNext: (paidReferralsCount / 100) * 100,
+        referralsToNext: 100 - paidReferralsCount,
+      };
+    }
+
+    if (paidReferralsCount >= 100) {
+      return {
+        currentTier: 'Pro - Premium',
+        nextTier: 'Maximum tier reached',
+        progressToNext: 100,
+        referralsToNext: 0,
+      };
+    }
+
+    return {
+      currentTier: 'Pro - Standard',
+      nextTier: 'Pro - Premium (25%)',
+      progressToNext: (paidReferralsCount / 100) * 100,
+      referralsToNext: 100 - paidReferralsCount,
+    };
+  };
+
+  const tierInfo = getTierInfo(affiliateData.plan_type, affiliateData.paid_referrals_count);
+
+  const nonRenewalsQuery = `
+    SELECT 
+      COUNT(DISTINCT ar.id) as non_renewals_count,
+      COALESCE(SUM(
+        CASE
+          WHEN s.plan_type = 'yearly' THEN CAST(bt_latest.amount AS DECIMAL(10,2)) / 12
+          ELSE CAST(bt_latest.amount AS DECIMAL(10,2))
+        END
+      ), 0) as non_renewal_revenue
+    FROM affiliate_referrals ar
+    JOIN users u ON ar.referred_user_id = u.id
+    LEFT JOIN subscriptions s ON u.id = s.user_id
+    LEFT JOIN (
+      SELECT bt.user_id, bt.amount
+      FROM billing_transactions bt
+      INNER JOIN (
+        SELECT user_id, MAX(id) as max_id
+        FROM billing_transactions
+        WHERE status = 'succeeded'
+        GROUP BY user_id
+      ) bt_latest_ids ON bt.id = bt_latest_ids.max_id
+    ) bt_latest ON bt_latest.user_id = u.id
+    WHERE ar.affiliate_id = ?
+      AND ar.status NOT IN ('cancelled')
+      AND (s.status IN ('unpaid', 'past_due', 'incomplete', 'incomplete_expired') OR s.id IS NULL)
+      AND u.status != 'inactive'
+  `;
+  const nonRenewalsResult = await executeQuery(nonRenewalsQuery, [affiliateId]);
+  const nonRenewalsCount = nonRenewalsResult[0]?.non_renewals_count || 0;
+  const nonRenewalRevenue = parseFloat(nonRenewalsResult[0]?.non_renewal_revenue) || 0;
+  const nonRenewalsAmount = (nonRenewalRevenue * currentTierRate) / 100;
+
+  const lostCommissionQuery = `
+    SELECT COALESCE(SUM(bt.amount), 0) as cancelled_revenue
+    FROM affiliate_referrals ar
+    JOIN users u ON ar.referred_user_id = u.id
+    LEFT JOIN subscriptions s ON u.id = s.user_id
+    JOIN billing_transactions bt ON bt.user_id = ar.referred_user_id AND bt.status = 'succeeded'
+    WHERE ar.affiliate_id = ?
+      AND (
+        ar.status = 'cancelled'
+        OR s.status IN ('canceled', 'cancelled')
+        OR (u.status = 'inactive' AND (s.status IS NULL OR s.status != 'active'))
+      )
+  `;
+  const lostCommissionResult = await executeQuery(lostCommissionQuery, [affiliateId]);
+  const cancelledRevenue = parseFloat(lostCommissionResult[0]?.cancelled_revenue) || 0;
+  const lostCommissionAmount = (cancelledRevenue * commissionRate) / 100;
+
+  const potentialLostCommissionQuery = `
+    SELECT COUNT(DISTINCT ar.id) as at_risk_referrals,
+           COALESCE(AVG(ac.commission_amount), 0) as avg_commission
+    FROM affiliate_referrals ar
+    JOIN affiliate_commissions ac ON ar.id = ac.referral_id
+    LEFT JOIN users u ON ar.referred_user_id = u.id
+    WHERE ar.affiliate_id = ? 
+      AND ar.status IN ('approved', 'converted', 'paid')
+      AND ac.status = 'paid'
+      AND (u.status IS NULL OR u.status = 'active')
+  `;
+  const potentialLostResult = await executeQuery(potentialLostCommissionQuery, [affiliateId]);
+  const atRiskReferrals = potentialLostResult[0]?.at_risk_referrals || 0;
+  const avgCommission = potentialLostResult[0]?.avg_commission || 0;
+
+  const yearlyEarningsQuery = `
+    SELECT COALESCE(SUM(commission_amount), 0) as yearly_earnings
+    FROM affiliate_commissions 
+    WHERE affiliate_id = ? 
+      AND created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)
+      AND status = 'paid'
+  `;
+  const yearlyResult = await executeQuery(yearlyEarningsQuery, [affiliateId]);
+  const yearlyEarnings = yearlyResult[0]?.yearly_earnings || 0;
+  const estimatedLostCommission = atRiskReferrals * avgCommission * 0.2;
+
+  const freshTotalReferralsQuery = `
+    SELECT COUNT(*) as total_referrals_count
+    FROM affiliate_referrals
+    WHERE affiliate_id = ?
+  `;
+  const freshTotalResult = await executeQuery(freshTotalReferralsQuery, [affiliateId]);
+  const freshTotalReferrals = parseInt(freshTotalResult[0]?.total_referrals_count) || 0;
+
+  const [activePayingResult, unpaidClientsResult, cancelledClientsResult] = await Promise.all([
+    executeQuery(`
+      SELECT COUNT(DISTINCT ar.id) as active_paying
+      FROM affiliate_referrals ar
+      JOIN users u ON ar.referred_user_id = u.id
+      LEFT JOIN subscriptions s ON u.id = s.user_id
+      WHERE ar.affiliate_id = ?
+        AND s.status = 'active'
+    `, [affiliateId]),
+    executeQuery(`
+      SELECT COUNT(DISTINCT ar.id) as unpaid_clients
+      FROM affiliate_referrals ar
+      JOIN users u ON ar.referred_user_id = u.id
+      LEFT JOIN subscriptions s ON u.id = s.user_id
+      WHERE ar.affiliate_id = ?
+        AND s.status IN ('unpaid', 'past_due', 'incomplete')
+    `, [affiliateId]),
+    executeQuery(`
+      SELECT COUNT(DISTINCT ar.id) as cancelled_clients
+      FROM affiliate_referrals ar
+      JOIN users u ON ar.referred_user_id = u.id
+      LEFT JOIN subscriptions s ON u.id = s.user_id
+      WHERE ar.affiliate_id = ?
+        AND (
+          s.status IN ('canceled', 'cancelled')
+          OR (u.status = 'inactive' AND (s.status IS NULL OR s.status != 'active'))
+        )
+    `, [affiliateId]),
+  ]);
+
+  const activePayingClients = parseInt(activePayingResult[0]?.active_paying) || 0;
+  const unpaidClients = parseInt(unpaidClientsResult[0]?.unpaid_clients) || 0;
+  const cancelledClients = parseInt(cancelledClientsResult[0]?.cancelled_clients) || 0;
+
+  let totalPayouts = 0;
+  let lastPayoutDate: string | null = null;
+  try {
+    await executeQuery(`
+      CREATE TABLE IF NOT EXISTS affiliate_payouts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        affiliate_id INT NOT NULL,
+        admin_user_id INT NULL,
+        commission_month CHAR(7) NOT NULL,
+        payout_month CHAR(7) NOT NULL,
+        amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        invoice_id INT NULL,
+        invoice_number VARCHAR(64) NULL,
+        invoice_public_token VARCHAR(64) NULL,
+        invoice_url VARCHAR(255) NULL,
+        status ENUM('generated','emailed','paid','cancelled') DEFAULT 'generated',
+        paid_at DATETIME NULL,
+        notes VARCHAR(255) NULL,
+        payslip_number VARCHAR(64) NULL,
+        payslip_token VARCHAR(64) NULL,
+        payslip_url VARCHAR(255) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_affiliate_commission_month (affiliate_id, commission_month)
+      )
+    `, []);
+
+    const payoutsResult = await executeQuery(`
+      SELECT
+        COALESCE(
+          (SELECT SUM(amount) FROM affiliate_payouts WHERE affiliate_id = ? AND status IN ('generated', 'emailed', 'paid')),
+          0
+        ) +
+        COALESCE(
+          (SELECT SUM(amount) FROM commission_payments WHERE affiliate_id = ? AND status IN ('pending', 'completed')),
+          0
+        ) as total_payouts,
+        GREATEST(
+          COALESCE((SELECT MAX(COALESCE(paid_at, created_at)) FROM affiliate_payouts WHERE affiliate_id = ? AND status IN ('generated', 'emailed', 'paid')), '1970-01-01'),
+          COALESCE((SELECT MAX(COALESCE(payment_date, created_at)) FROM commission_payments WHERE affiliate_id = ? AND status IN ('pending', 'completed')), '1970-01-01')
+        ) as last_payout_date
+    `, [affiliateId, affiliateId, affiliateId, affiliateId]);
+    totalPayouts = parseFloat(payoutsResult[0]?.total_payouts) || 0;
+    const rawPayoutDate = payoutsResult[0]?.last_payout_date;
+    if (rawPayoutDate && rawPayoutDate !== '1970-01-01' && rawPayoutDate !== '1970-01-01 00:00:00') {
+      lastPayoutDate = rawPayoutDate;
+    }
+  } catch (payoutErr) {
+    console.warn('[AFFILIATE STATS] Payout query failed, using defaults:', payoutErr);
+  }
+
+  let currentMRR = 0;
+  let mrrBase = 0;
+  try {
+    const mrrResult = await executeQuery(`
+      SELECT COALESCE(SUM(
+        CASE
+          WHEN s.plan_type = 'yearly' THEN CAST(bt_latest.amount AS DECIMAL(10,2)) / 12
+          ELSE CAST(bt_latest.amount AS DECIMAL(10,2))
+        END
+      ), 0) as mrr_base
+      FROM affiliate_referrals ar
+      JOIN users u ON ar.referred_user_id = u.id
+      JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
+      LEFT JOIN (
+        SELECT bt.user_id, bt.amount
+        FROM billing_transactions bt
+        INNER JOIN (
+          SELECT user_id, MAX(id) as max_id
+          FROM billing_transactions
+          WHERE status = 'succeeded'
+          GROUP BY user_id
+        ) bt_max ON bt.id = bt_max.max_id
+      ) bt_latest ON bt_latest.user_id = u.id
+      WHERE ar.affiliate_id = ?
+    `, [affiliateId]);
+    mrrBase = parseFloat(mrrResult[0]?.mrr_base) || 0;
+    currentMRR = mrrBase * (currentTierRate / 100);
+  } catch (mrrErr) {
+    console.warn('[AFFILIATE STATS] MRR query failed:', mrrErr);
+  }
+
+  const lastPaymentQuery = `
+    SELECT 
+      commission_amount as amount,
+      DATE_FORMAT(created_at, '%b %d') as date
+    FROM affiliate_commissions 
+    WHERE affiliate_id = ? AND status = 'paid'
+    ORDER BY created_at DESC 
+    LIMIT 1
+  `;
+  const lastPaymentResult = await executeQuery(lastPaymentQuery, [affiliateId]);
+  const lastPayment = lastPaymentResult[0] ? {
+    amount: parseFloat(lastPaymentResult[0].amount),
+    date: lastPaymentResult[0].date,
+  } : null;
+
+  const earningsChangePercentage = priorMonthNet > 0
+    ? ((currentMonthNet - priorMonthNet) / priorMonthNet * 100)
+    : (currentMonthNet > 0 ? 100 : 0);
+
+  const currentMonthConversionsQuery = `
+    SELECT COUNT(*) as conversions
+    FROM affiliate_referrals 
+    WHERE affiliate_id = ? 
+      AND status IN ('approved', 'converted', 'paid')
+      AND COALESCE(conversion_date, referral_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+      AND COALESCE(conversion_date, referral_date, created_at) < DATE_FORMAT(DATE_ADD(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 1 MONTH), '%Y-%m-01')
+  `;
+
+  const lastMonthConversionsQuery = `
+    SELECT COUNT(*) as conversions
+    FROM affiliate_referrals 
+    WHERE affiliate_id = ? 
+      AND status IN ('approved', 'converted', 'paid')
+      AND COALESCE(conversion_date, referral_date, created_at) >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH), '%Y-%m-01')
+      AND COALESCE(conversion_date, referral_date, created_at) < DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+  `;
+
+  const currentMonthReferralLeadsQuery = `
+    SELECT COUNT(*) as leads
+    FROM affiliate_referrals
+    WHERE affiliate_id = ?
+      AND COALESCE(referral_date, created_at) >= DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01')
+      AND COALESCE(referral_date, created_at) < DATE_FORMAT(DATE_ADD(DATE_FORMAT(CURRENT_DATE(), '%Y-%m-01'), INTERVAL 1 MONTH), '%Y-%m-01')
+  `;
+
+  const currentMonthConversions = await executeQuery(currentMonthConversionsQuery, [affiliateId]);
+  const lastMonthConversions = await executeQuery(lastMonthConversionsQuery, [affiliateId]);
+  const currentMonthReferralLeads = await executeQuery(currentMonthReferralLeadsQuery, [affiliateId]);
+
+  const currentConversions = parseInt(currentMonthConversions[0]?.conversions) || 0;
+  const lastConversions = parseInt(lastMonthConversions[0]?.conversions) || 0;
+  const currentReferralLeads = parseInt(currentMonthReferralLeads[0]?.leads) || 0;
+  const conversionChangePercentage = lastConversions > 0
+    ? ((currentConversions - lastConversions) / lastConversions * 100)
+    : 0;
+
+  const currentMonthConversionRate = currentReferralLeads > 0 ? (currentConversions / currentReferralLeads * 100) : 0;
+  const currentMonthAverageCommission = currentMonthPaidCount > 0 ? (currentMonthNet / currentMonthPaidCount) : 0;
+
+  return {
+    totalEarnings: totalPaidEarnings,
+    monthlyEarnings: effectiveMonthlyEarnings,
+    yearlyEarnings: parseFloat(yearlyEarnings) || 0,
+    totalReferrals: freshTotalReferrals,
+    activeReferrals,
+    clickThroughRate: 8.4,
+    conversionRate: parseFloat(conversionRate.toFixed(1)),
+    pendingCommissions: Math.max((totalPaidAmount + totalPendingValue) - totalPayouts, 0),
+    pendingSignupCount: pendingSignups,
+    commissionRate: parseFloat(affiliateData.commission_rate) || 10,
+    status: affiliateData.status,
+    planType: subscriptionData ? subscriptionData.plan_type : (affiliateData.plan_type || 'free'),
+    actualPlanName: subscriptionData ? subscriptionData.plan_name : null,
+    subscriptionStatus: subscriptionData ? subscriptionData.status : null,
+    paidReferralsCount: affiliateData.paid_referrals_count || 0,
+    paidCommissions: affiliateData.paid_referrals_count || 0,
+    currentTierRate,
+    tierInfo,
+    nonRenewalsCount: parseInt(nonRenewalsCount) || 0,
+    nonRenewalsAmount: parseFloat(nonRenewalsAmount.toFixed(2)) || 0,
+    lostCommissionAmount: parseFloat(lostCommissionAmount) || 0,
+    churnedReferrals: cancelledCount,
+    churnedCommission: cancelledTotal,
+    estimatedLostCommission: parseFloat(estimatedLostCommission.toFixed(2)) || 0,
+    atRiskReferrals: parseInt(atRiskReferrals) || 0,
+    activePayingClients,
+    unpaidClients,
+    cancelledClients,
+    totalPayouts,
+    lastPayoutDate,
+    currentMRR: parseFloat(currentMRR.toFixed(2)),
+    mrrBase: parseFloat(mrrBase.toFixed(2)),
+    lastPayment,
+    nextPayment: pendingSignups > 0 ? {
+      date: nextPayment.toISOString().split('T')[0].replace(/-/g, '/'),
+      status: 'Pending',
+    } : null,
+    paymentMethod: lastPayment ? 'Bank Transfer' : null,
+    totalEarningsChange: {
+      percentage: parseFloat(earningsChangePercentage.toFixed(1)),
+      period: 'last month',
+    },
+    conversionRateChange: {
+      percentage: parseFloat(conversionChangePercentage.toFixed(1)),
+      period: 'last month',
+    },
+    currentMonthReferralLeads: currentReferralLeads,
+    currentMonthConversionCount: currentConversions,
+    currentMonthConversionRate: parseFloat(currentMonthConversionRate.toFixed(1)),
+    currentMonthAverageCommission: parseFloat(currentMonthAverageCommission.toFixed(2)),
+    currentMonthPaidCommissionCount: currentMonthPaidCount,
+  };
+}
+
+export async function getAffiliateDashboardReferralsData(
+  affiliateId: number,
+  page: number = 1,
+  limit: number = 50,
+) {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, limit)) : 50;
+  const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+  const safeOffset = (safePage - 1) * safeLimit;
+
+  const query = `
+    SELECT
+      ar.id,
+      ar.transaction_id,
+      ar.referred_user_id,
+      u.first_name,
+      u.last_name,
+      u.email,
+      u.phone,
+      u.stripe_customer_id,
+      ar.created_at as signup_date,
+      ar.conversion_date,
+      u.status as user_status,
+      ar.status as referral_status,
+      COALESCE(ac.total_commission, ar.commission_amount, 0) as commission_earned,
+      s.status as subscription_status,
+      s.stripe_subscription_id,
+      s.plan_name as subscription_plan_name,
+      s.current_period_end,
+      CASE
+        WHEN u.status = 'inactive' THEN 'churned'
+        WHEN s.status IN ('canceled') THEN 'cancelled'
+        WHEN s.status IN ('unpaid','past_due','incomplete') THEN 'unpaid'
+        WHEN ac.latest_status IN ('paid','settled','approved') OR ac.payment_date IS NOT NULL THEN 'paid'
+        WHEN ar.status IN ('approved','converted','paid') THEN 'paid'
+        ELSE 'pending'
+      END as final_status,
+      (
+        SELECT bt.amount
+        FROM billing_transactions bt
+        WHERE bt.user_id = u.id AND bt.status = 'succeeded'
+        ORDER BY bt.created_at DESC LIMIT 1
+      ) as plan_price,
+      (
+        SELECT MAX(bt.created_at)
+        FROM billing_transactions bt
+        WHERE bt.user_id = u.id AND bt.status = 'succeeded'
+      ) as last_payment_date,
+      (
+        SELECT bt.stripe_payment_intent_id
+        FROM billing_transactions bt
+        WHERE bt.user_id = u.id AND bt.status = 'succeeded'
+        ORDER BY bt.created_at DESC LIMIT 1
+      ) as stripe_transaction_id
+    FROM affiliate_referrals ar
+    JOIN users u ON ar.referred_user_id = u.id
+    LEFT JOIN subscriptions s ON u.id = s.user_id
+    LEFT JOIN (
+      SELECT
+        referral_id,
+        affiliate_id,
+        SUM(commission_amount) AS total_commission,
+        MAX(status) AS latest_status,
+        MAX(payment_date) AS payment_date
+      FROM affiliate_commissions
+      GROUP BY referral_id, affiliate_id
+    ) ac ON ar.id = ac.referral_id AND ac.affiliate_id = ?
+    WHERE ar.affiliate_id = ?
+    ORDER BY ar.created_at DESC
+    LIMIT ${safeLimit} OFFSET ${safeOffset}
+  `;
+
+  const referrals = await executeQuery(query, [affiliateId, affiliateId]);
+  const transformedReferrals = await mapWithConcurrency(referrals || [], STRIPE_PAYMENT_HISTORY_CONCURRENCY, async (referral: any) => {
+    const stripePayments = await getCustomerPaymentHistory(referral.stripe_customer_id || null);
+    const latestStripePayment = stripePayments[0] || null;
+    const fallbackPlanPrice = referral.plan_price ? parseFloat(referral.plan_price) : null;
+
+    return {
+      id: referral.id,
+      referredUserId: referral.referred_user_id,
+      customerName: `${referral.first_name || ''} ${referral.last_name || ''}`.trim() || `User ${referral.id}`,
+      email: referral.email,
+      phone: referral.phone || null,
+      status: referral.final_status,
+      signupDate: referral.signup_date,
+      conversionDate: referral.conversion_date,
+      commission: parseFloat(referral.commission_earned) || 0,
+      lifetimeValue: parseFloat(referral.commission_earned) || 0,
+      tier: parseFloat(referral.commission_earned) > 100 ? 'enterprise' :
+        parseFloat(referral.commission_earned) > 50 ? 'premium' : 'basic',
+      transactionId: referral.transaction_id,
+      planPrice: latestStripePayment ? latestStripePayment.amount : fallbackPlanPrice,
+      planName: referral.subscription_plan_name || null,
+      subscriptionStatus: referral.subscription_status || null,
+      isStripePaid: String(referral.subscription_status || '').toLowerCase() === 'active',
+      lastPaymentDate: latestStripePayment?.createdAt || referral.last_payment_date || null,
+      stripeTransactionId: latestStripePayment?.paymentIntentId || referral.stripe_transaction_id || referral.transaction_id || null,
+      paymentHistory: stripePayments,
+      currentPeriodEnd: referral.current_period_end || null,
+    };
+  });
+
+  return transformedReferrals;
+}
+
+export async function getAffiliateDashboardPurchasesData(affiliateId: number) {
+  const affiliateRows = await executeQuery(
+    `SELECT id, commission_rate, plan_type
+     FROM affiliates
+     WHERE id = ?
+     LIMIT 1`,
+    [affiliateId]
+  );
+
+  const affiliate = affiliateRows?.[0] || {};
+  const baseCommissionRate = getAffiliateBaseCommissionRate(affiliate.plan_type, parseFloat(affiliate.commission_rate));
+
+  const referralRows = await executeQuery(
+    `SELECT
+       ar.id AS referral_id,
+       ar.referred_user_id,
+       ar.transaction_id,
+       u.first_name,
+       u.last_name,
+       u.email,
+       u.stripe_customer_id
+     FROM affiliate_referrals ar
+     JOIN users u ON ar.referred_user_id = u.id
+     WHERE ar.affiliate_id = ?
+       AND u.stripe_customer_id IS NOT NULL
+     ORDER BY ar.created_at ASC`,
+    [affiliateId]
+  );
+
+  const referralPurchases = await mapWithConcurrency(referralRows || [], STRIPE_PAYMENT_HISTORY_CONCURRENCY, async (referral: any) => {
+    const payments = await getCustomerPaymentHistory(referral.stripe_customer_id || null);
+    return payments.map((payment) => ({
+      referralId: String(referral.referral_id),
+      referredUserId: referral.referred_user_id,
+      customerName: `${referral.first_name || ''} ${referral.last_name || ''}`.trim() || referral.email || `User ${referral.referred_user_id}`,
+      email: referral.email,
+      stripeCustomerId: referral.stripe_customer_id,
+      paymentIntentId: payment.paymentIntentId,
+      amount: Number(payment.amount) || 0,
+      currency: payment.currency,
+      createdAt: payment.createdAt,
+      description: payment.description || '',
+      transactionId: referral.transaction_id || null,
+    }));
+  });
+
+  const uniquePurchases = Array.from(
+    new Map(
+      referralPurchases
+        .flat()
+        .map((purchase) => [`${purchase.stripeCustomerId}:${purchase.paymentIntentId}`, purchase])
+    ).values()
+  );
+
+  const purchases = uniquePurchases
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+
+  const currentMonthStart = new Date();
+  currentMonthStart.setUTCDate(1);
+  currentMonthStart.setUTCHours(0, 0, 0, 0);
+  const nextMonthStart = new Date(currentMonthStart);
+  nextMonthStart.setUTCMonth(nextMonthStart.getUTCMonth() + 1);
+
+  let currentMonthPaidCount = 0;
+
+  const purchaseTimeline = purchases.map((purchase, index) => {
+    const createdAtDate = new Date(purchase.createdAt);
+    const isCurrentMonth = createdAtDate >= currentMonthStart && createdAtDate < nextMonthStart;
+    if (isCurrentMonth) {
+      currentMonthPaidCount += 1;
+    }
+
+    const qualifiesForBonus = isCurrentMonth && currentMonthPaidCount > 100;
+    const effectiveCommissionRate = getEffectiveCommissionRate(baseCommissionRate, qualifiesForBonus);
+    const commissionEarned = Number(((purchase.amount * effectiveCommissionRate) / 100).toFixed(2));
+
+    return {
+      id: `${purchase.paymentIntentId}-${index + 1}`,
+      index: index + 1,
+      referralId: purchase.referralId,
+      referredUserId: purchase.referredUserId,
+      customerName: purchase.customerName,
+      email: purchase.email,
+      stripeCustomerId: purchase.stripeCustomerId,
+      paymentIntentId: purchase.paymentIntentId,
+      amount: purchase.amount,
+      currency: purchase.currency,
+      createdAt: purchase.createdAt,
+      description: purchase.description,
+      baseCommissionRate,
+      effectiveCommissionRate,
+      commissionEarned,
+      currentMonthPaidSequence: isCurrentMonth ? currentMonthPaidCount : null,
+      isThresholdBonus: qualifiesForBonus,
+      transactionId: purchase.transactionId,
+    };
+  });
+
+  const summary = {
+    totalPurchases: purchaseTimeline.length,
+    totalRevenue: Number(purchaseTimeline.reduce((sum, purchase) => sum + purchase.amount, 0).toFixed(2)),
+    totalCommissionEarned: Number(purchaseTimeline.reduce((sum, purchase) => sum + purchase.commissionEarned, 0).toFixed(2)),
+    currentMonthPurchases: purchaseTimeline.filter((purchase) => purchase.currentMonthPaidSequence !== null).length,
+    thresholdBonusPurchases: purchaseTimeline.filter((purchase) => purchase.isThresholdBonus).length,
+    baseCommissionRate,
+  };
+
+  return {
+    data: purchaseTimeline,
+    summary,
+  };
+}
+
 // GET /api/affiliate/dashboard/stats - Get affiliate earnings and performance stats
 router.get('/dashboard/stats', authenticateToken, requireAffiliateRole, async (req, res) => {
   try {
