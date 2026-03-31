@@ -95,7 +95,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
       name: "Commissions",
       href: "/affiliate/commissions",
       icon: CreditCard,
-      badge: affiliateStats?.pendingCommissions ? String(affiliateStats.pendingCommissions) : null,
+      badge: null,
     },
     {
       name: "Subscription",
