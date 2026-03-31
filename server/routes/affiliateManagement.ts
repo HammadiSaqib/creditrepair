@@ -603,19 +603,67 @@ router.get('/:id/dashboard-summary', authenticateToken, requireSuperAdminRole, a
       return res.status(404).json({ error: 'Affiliate not found' });
     }
 
-    const [dashboardStats, dashboardReferrals, dashboardPurchases] = await Promise.all([
+    // Use the same data sources as the affiliate dashboard, but with NO row limit for accurate counts
+    const [dashboardStats, dashboardPurchases, statusCountRows] = await Promise.all([
       getAffiliateDashboardStatsData(affiliateId),
-      getAffiliateDashboardReferralsData(affiliateId),
       getAffiliateDashboardPurchasesData(affiliateId),
+      // Direct count query matching the exact same CASE logic as the affiliate /referrals endpoint — no LIMIT
+      executeQuery(`
+        SELECT
+          COUNT(*) as total_count,
+          SUM(CASE
+            WHEN u.status = 'inactive' THEN 1
+            WHEN s.status IN ('canceled') THEN 1
+            ELSE 0
+          END) as cancelled_count,
+          SUM(CASE
+            WHEN u.status != 'inactive' AND (s.status IS NULL OR s.status NOT IN ('canceled'))
+              AND s.status IN ('unpaid','past_due','incomplete') THEN 1
+            ELSE 0
+          END) as unpaid_count,
+          SUM(CASE
+            WHEN u.status != 'inactive'
+              AND (s.status IS NULL OR s.status NOT IN ('canceled','unpaid','past_due','incomplete'))
+              AND (
+                ac.latest_status IN ('paid','settled','approved') OR ac.payment_date IS NOT NULL
+                OR ar.status IN ('approved','converted','paid')
+              ) THEN 1
+            ELSE 0
+          END) as paid_count,
+          SUM(CASE
+            WHEN u.status != 'inactive'
+              AND (s.status IS NULL OR s.status NOT IN ('canceled','unpaid','past_due','incomplete'))
+              AND (ac.latest_status IS NULL OR ac.latest_status NOT IN ('paid','settled','approved'))
+              AND ac.payment_date IS NULL
+              AND (ar.status IS NULL OR ar.status NOT IN ('approved','converted','paid'))
+            THEN 1
+            ELSE 0
+          END) as pending_count
+        FROM affiliate_referrals ar
+        JOIN users u ON ar.referred_user_id = u.id
+        LEFT JOIN subscriptions s ON u.id = s.user_id
+        LEFT JOIN (
+          SELECT
+            referral_id,
+            affiliate_id,
+            SUM(commission_amount) AS total_commission,
+            MAX(status) AS latest_status,
+            MAX(payment_date) AS payment_date
+          FROM affiliate_commissions
+          GROUP BY referral_id, affiliate_id
+        ) ac ON ar.id = ac.referral_id AND ac.affiliate_id = ?
+        WHERE ar.affiliate_id = ?
+      `, [affiliateId, affiliateId]),
     ]);
 
-    const referralRows = Array.isArray(dashboardReferrals) ? dashboardReferrals : [];
     const purchaseRows = Array.isArray(dashboardPurchases?.data) ? dashboardPurchases.data : [];
 
-    const paidReferralCount = referralRows.filter((row: any) => row.status === 'paid').length;
-    const unpaidReferralCount = referralRows.filter((row: any) => row.status === 'unpaid').length;
-    const cancelledReferralCount = referralRows.filter((row: any) => row.status === 'cancelled' || row.status === 'churned').length;
-    const totalReferralCount = referralRows.length;
+    const counts = statusCountRows?.[0] || {};
+    const totalReferralCount = Number(counts.total_count) || 0;
+    const paidReferralCount = Number(counts.paid_count) || 0;
+    const unpaidReferralCount = Number(counts.unpaid_count) || 0;
+    const cancelledReferralCount = Number(counts.cancelled_count) || 0;
+    const pendingReferralCount = Number(counts.pending_count) || 0;
 
     const currentMonthStart = new Date();
     currentMonthStart.setDate(1);
@@ -625,6 +673,12 @@ router.get('/:id/dashboard-summary', authenticateToken, requireSuperAdminRole, a
     const monthlyCommissionEarned = purchaseRows
       .filter((row: any) => new Date(row.createdAt) >= currentMonthStart)
       .reduce((sum: number, row: any) => sum + (Number(row.commissionEarned) || 0), 0);
+    const effectiveMonthlyEarnings = Math.max(monthlyCommissionEarned, Number(dashboardStats?.monthlyEarnings || 0));
+
+    const totalPayouts = Number(dashboardStats?.totalPayouts || 0);
+    const pendingPayouts = purchaseRows.length > 0
+      ? Number(Math.max(totalCommissionEarned - totalPayouts, 0).toFixed(2))
+      : Number(Math.max((dashboardStats?.totalEarnings || 0) - totalPayouts, 0).toFixed(2));
 
     res.json({
       success: true,
@@ -633,9 +687,11 @@ router.get('/:id/dashboard-summary', authenticateToken, requireSuperAdminRole, a
         activeClients: paidReferralCount,
         unpaidClients: unpaidReferralCount,
         cancelledClients: cancelledReferralCount,
-        monthlyEarnings: purchaseRows.length > 0 ? Number(monthlyCommissionEarned.toFixed(2)) : Number(dashboardStats?.monthlyEarnings || 0),
+        pendingClients: pendingReferralCount,
+        monthlyEarnings: Number(effectiveMonthlyEarnings.toFixed(2)),
         allTimeEarnings: purchaseRows.length > 0 ? Number(totalCommissionEarned.toFixed(2)) : Number(dashboardStats?.totalEarnings || 0),
-        totalPayouts: Number(dashboardStats?.totalPayouts || 0),
+        totalPayouts: totalPayouts,
+        pendingPayouts: pendingPayouts,
         lastPayoutDate: dashboardStats?.lastPayoutDate || null,
         currentMRR: Number(dashboardStats?.currentMRR || 0),
       }

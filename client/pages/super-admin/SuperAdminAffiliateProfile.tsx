@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { api, superAdminApi } from '@/lib/api';
 import { format } from 'date-fns';
-import { Download, RefreshCw, Calendar, DollarSign, Users, Mail, Phone, Building, TrendingUp, CreditCard, Activity, XCircle, AlertTriangle, BarChart2 } from 'lucide-react';
+import { Download, RefreshCw, Calendar, DollarSign, Users, Mail, Phone, Building, TrendingUp, CreditCard, Activity, XCircle, AlertTriangle, BarChart2, Clock } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { aggregateMonthlyEarnings, mergeReferralsWithCommissions, filterReferrals } from '@/utils/affiliateProfile';
 
@@ -83,11 +83,25 @@ interface AffiliateStats {
   activeClients: number;
   unpaidClients: number;
   cancelledClients: number;
+  pendingClients: number;
   monthlyEarnings: number;
   allTimeEarnings: number;
   totalPayouts: number;
+  pendingPayouts: number;
   lastPayoutDate: string | null;
   currentMRR: number;
+}
+
+interface PaymentHistoryItem {
+  id: number;
+  affiliate_id: number;
+  amount: number;
+  transaction_id: string;
+  payment_method: string;
+  status: string;
+  payment_date: string;
+  notes?: string;
+  created_at: string;
 }
 
 interface ProfileReferralRow {
@@ -165,6 +179,10 @@ const SuperAdminAffiliateProfile: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
   const [lastPayout, setLastPayout] = useState<{ isPaid: boolean; amount: number; commission_month: string; payout_month: string; invoice_url?: string; payslip_url?: string } | null>(null);
   const [paying, setPaying] = useState(false);
+  const [paymentHistory, setPaymentHistory] = useState<PaymentHistoryItem[]>([]);
+  const [showAllPayments, setShowAllPayments] = useState(false);
+  const [editingPaymentAmount, setEditingPaymentAmount] = useState(false);
+  const [customPaymentAmount, setCustomPaymentAmount] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -173,7 +191,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
         setLoading(true);
         setError(null);
 
-        const [affResp, refs, earnResp, commResp, statsResp, dashboardRefsResp, childResp] = await Promise.all([
+        const [affResp, refs, earnResp, commResp, statsResp, dashboardRefsResp, childResp, payHistResp] = await Promise.all([
           superAdminApi.getAffiliates(),
           api.get(`/api/affiliate-management/${id}/referrals`),
           api.get(`/api/affiliate-management/${id}/earnings/monthly`),
@@ -181,6 +199,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
           api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
           api.get(`/api/affiliate-management/${id}/dashboard-referrals`).catch(() => ({ data: null })),
           api.get(`/api/affiliate-management/${id}/referrals/child`).catch(() => ({ data: null })),
+          api.get(`/api/commission-payments/affiliate/${id}`).catch(() => ({ data: null })),
         ]);
 
         const list: Affiliate[] = affResp.data?.data || affResp.data || [];
@@ -234,6 +253,11 @@ const SuperAdminAffiliateProfile: React.FC = () => {
         // Dashboard-parity summary so super-admin sees the same headline numbers as the affiliate dashboard
         const stats: AffiliateStats | null = statsResp.data?.data || null;
         if (mounted && stats) setAffiliateStats(stats);
+
+        // Payment history for this affiliate
+        if (mounted && payHistResp.data?.success) {
+          setPaymentHistory(payHistResp.data.data || []);
+        }
 
         // Child referrals
         if (mounted && childResp.data) {
@@ -466,48 +490,135 @@ const SuperAdminAffiliateProfile: React.FC = () => {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Last Month Payment</CardTitle>
+                  <CardTitle>Pending Payouts & Payments</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-muted-foreground">{lastPayout?.commission_month || ''} â†’ {lastPayout?.payout_month || ''}</div>
-                      <div className="text-xl font-semibold">${Number(lastPayout?.amount || 0).toFixed(2)}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {lastPayout?.isPaid ? (
-                        <Badge className="bg-green-100 text-green-800">Already Paid</Badge>
-                      ) : (
-                        <Button disabled={paying} onClick={async () => {
-                          try {
-                            setPaying(true);
-                            const txn = `AFF-${id}-${Date.now()}`;
-                            const fd = new FormData();
-                            fd.append('affiliate_id', String(id));
-                            fd.append('amount', String(Number(lastPayout?.amount || 0)));
-                            fd.append('transaction_id', txn);
-                            fd.append('payment_method', 'manual');
-                            fd.append('notes', `Payout for ${lastPayout?.commission_month || ''}`);
-                            await api.post('/api/commission-payments', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-                            const payoutResp = await api.get(`/api/commissions/payout-status/${id}`, { params: { strict: true } });
-                            const d = payoutResp.data?.data || payoutResp.data || null;
-                            if (d) setLastPayout({ isPaid: !!d.isPaid, amount: Number(d.amount || 0), commission_month: String(d.commission_month || ''), payout_month: String(d.payout_month || ''), invoice_url: d.invoice_url || undefined, payslip_url: d.payslip_url || undefined });
-                          } finally {
-                            setPaying(false);
-                          }
-                        }}>Mark as Paid</Button>
-                      )}
-                      {lastPayout?.payslip_url ? (
-                        <Button variant="link" className="p-0 h-auto text-xs" onClick={() => window.open(lastPayout?.payslip_url as string, '_blank')}>Payslip</Button>
-                      ) : null}
-                    </div>
+                <CardContent className="space-y-4">
+                  {/* Pending payout amount */}
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Pending Payouts</div>
+                    <div className="text-2xl font-bold text-orange-600">${Number(affiliateStats?.pendingPayouts ?? 0).toFixed(2)}</div>
+                    <div className="text-xs text-muted-foreground">Awaiting payment</div>
                   </div>
+
+                  {/* Mark as Paid with editable amount */}
+                  <div className="border-t pt-3 space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground">Record a payment</div>
+                    {editingPaymentAmount ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">$</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={customPaymentAmount}
+                          onChange={(e) => setCustomPaymentAmount(e.target.value)}
+                          placeholder="Enter amount"
+                          className="h-9 w-32"
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setEditingPaymentAmount(false);
+                            setCustomPaymentAmount('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">
+                          ${Number(customPaymentAmount || affiliateStats?.pendingPayouts || lastPayout?.amount || 0).toFixed(2)}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingPaymentAmount(true);
+                            setCustomPaymentAmount(String(Number(affiliateStats?.pendingPayouts || lastPayout?.amount || 0).toFixed(2)));
+                          }}
+                        >
+                          Edit Amount
+                        </Button>
+                      </div>
+                    )}
+                    <Button
+                      disabled={paying}
+                      className="w-full"
+                      onClick={async () => {
+                        const payAmount = Number(customPaymentAmount || affiliateStats?.pendingPayouts || lastPayout?.amount || 0);
+                        if (payAmount <= 0) return;
+                        try {
+                          setPaying(true);
+                          const txn = `AFF-${id}-${Date.now()}`;
+                          const fd = new FormData();
+                          fd.append('affiliate_id', String(id));
+                          fd.append('amount', String(payAmount));
+                          fd.append('transaction_id', txn);
+                          fd.append('payment_method', 'manual');
+                          fd.append('notes', `Manual payout by admin`);
+                          await api.post('/api/commission-payments', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+                          // Refresh payment history and stats
+                          const [payHistResp2, statsResp2, payoutResp2] = await Promise.all([
+                            api.get(`/api/commission-payments/affiliate/${id}`).catch(() => ({ data: null })),
+                            api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
+                            api.get(`/api/commissions/payout-status/${id}`, { params: { strict: true } }).catch(() => ({ data: null })),
+                          ]);
+                          if (payHistResp2.data?.success) setPaymentHistory(payHistResp2.data.data || []);
+                          if (statsResp2.data?.data) setAffiliateStats(statsResp2.data.data);
+                          const d = payoutResp2.data?.data || payoutResp2.data || null;
+                          if (d) setLastPayout({ isPaid: !!d.isPaid, amount: Number(d.amount || 0), commission_month: String(d.commission_month || ''), payout_month: String(d.payout_month || ''), invoice_url: d.invoice_url || undefined, payslip_url: d.payslip_url || undefined });
+                          setEditingPaymentAmount(false);
+                          setCustomPaymentAmount('');
+                        } finally {
+                          setPaying(false);
+                        }
+                      }}
+                    >
+                      {paying ? 'Processing...' : 'Mark as Paid'}
+                    </Button>
+                  </div>
+
+                  {/* Payment history */}
+                  <div className="border-t pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-xs font-medium text-muted-foreground">Payment History</div>
+                      {paymentHistory.length > 3 && (
+                        <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => setShowAllPayments(!showAllPayments)}>
+                          {showAllPayments ? 'Show Less' : `See All (${paymentHistory.length})`}
+                        </Button>
+                      )}
+                    </div>
+                    {paymentHistory.length === 0 ? (
+                      <div className="text-sm text-muted-foreground py-2">No payments recorded yet</div>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {(showAllPayments ? paymentHistory : paymentHistory.slice(0, 3)).map((p) => (
+                          <div key={p.id} className="flex items-center justify-between p-2 bg-muted/50 rounded-md text-sm">
+                            <div>
+                              <div className="font-medium">${Number(p.amount).toFixed(2)}</div>
+                              <div className="text-xs text-muted-foreground">{p.payment_method} · {format(new Date(p.created_at), 'MMM dd, yyyy')}</div>
+                              {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
+                            </div>
+                            <Badge className={p.status === 'completed' || p.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                              {p.status}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {lastPayout?.payslip_url ? (
+                    <Button variant="link" className="p-0 h-auto text-xs" onClick={() => window.open(lastPayout?.payslip_url as string, '_blank')}>View Latest Payslip</Button>
+                  ) : null}
                 </CardContent>
               </Card>
             </div>
 
             {/* â”€â”€ Stats Cards Row â”€â”€ */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
               <Card>
                 <CardContent className="pt-5">
                   <div className="flex items-center gap-2 mb-1">
@@ -527,6 +638,17 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                   </div>
                   <div className="text-2xl font-bold text-green-600">{affiliateStats?.activeClients ?? 0}</div>
                   <div className="text-xs text-muted-foreground mt-1">Clients</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Clock className="h-4 w-4 text-blue-400" />
+                    <span className="text-xs text-muted-foreground">Pending</span>
+                  </div>
+                  <div className="text-2xl font-bold text-blue-500">{affiliateStats?.pendingClients ?? 0}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Signed up</div>
                 </CardContent>
               </Card>
 
@@ -564,7 +686,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
               </Card>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               <Card>
                 <CardContent className="pt-5">
                   <div className="flex items-center gap-2 mb-1">
@@ -595,6 +717,17 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                   </div>
                   <div className="text-2xl font-bold text-violet-600">${Number(affiliateStats?.totalPayouts ?? 0).toFixed(2)}</div>
                   <div className="text-xs text-muted-foreground mt-1">Paid out by admin</div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertTriangle className="h-4 w-4 text-orange-500" />
+                    <span className="text-xs text-muted-foreground">Pending Payouts</span>
+                  </div>
+                  <div className="text-2xl font-bold text-orange-600">${Number(affiliateStats?.pendingPayouts ?? 0).toFixed(2)}</div>
+                  <div className="text-xs text-muted-foreground mt-1">Awaiting payment</div>
                 </CardContent>
               </Card>
 

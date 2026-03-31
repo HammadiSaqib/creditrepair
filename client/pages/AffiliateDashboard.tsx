@@ -20,8 +20,6 @@ import {
   Activity,
   Clock,
   X,
-  ArrowUpRight,
-  ArrowDownRight,
   Zap,
   ChevronRight,
   CheckCircle2,
@@ -38,6 +36,7 @@ interface EarningsStats {
   totalEarnings: number;
   monthlyEarnings: number;
   yearlyEarnings?: number;
+  commissionRate?: number;
   totalReferrals?: number;
   pendingCommissions: number;
   paidCommissions: number;
@@ -354,6 +353,8 @@ export default function AffiliateDashboard() {
             });
             const monthlyCommissionEarned = currentMonthPurchases.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
             const priorMonthCommissionEarned = previousMonthPurchases.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
+            const serverMonthlyEarnings = Number(statsData?.monthlyEarnings) || 0;
+            const effectiveMonthlyCommissionEarned = Math.max(monthlyCommissionEarned, serverMonthlyEarnings);
             const latestPurchase = purchaseRows
               .slice()
               .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0];
@@ -363,14 +364,14 @@ export default function AffiliateDashboard() {
             nextStatsPatch = {
               ...nextStatsPatch,
               totalEarnings: Number(totalCommissionEarned.toFixed(2)),
-              monthlyEarnings: Number(monthlyCommissionEarned.toFixed(2)),
+              monthlyEarnings: Number(effectiveMonthlyCommissionEarned.toFixed(2)),
               pendingCommissions: Number(Math.max(totalCommissionEarned - payoutsSent, 0).toFixed(2)),
               avgCommission: paidReferralCount > 0 ? Number((totalCommissionEarned / paidReferralCount).toFixed(2)) : 0,
-              currentMonthAverageCommission: currentMonthConversionCount > 0 ? Number((monthlyCommissionEarned / currentMonthConversionCount).toFixed(2)) : 0,
+              currentMonthAverageCommission: currentMonthConversionCount > 0 ? Number((effectiveMonthlyCommissionEarned / currentMonthConversionCount).toFixed(2)) : 0,
               currentMonthConversionCount,
               currentMonthConversionRate: Number(currentMonthConversionRate.toFixed(1)),
               totalEarningsChange: {
-                percentage: calculatePercentageChange(monthlyCommissionEarned, priorMonthCommissionEarned),
+                percentage: calculatePercentageChange(effectiveMonthlyCommissionEarned, priorMonthCommissionEarned),
                 period: "last month",
               },
               lastPayment: latestPurchase ? {
@@ -415,7 +416,7 @@ export default function AffiliateDashboard() {
   const unpaid = earningsStats?.unpaidClients ?? 0;
   const cancelled = earningsStats?.cancelledClients ?? 0;
   const pipelineMax = Math.max(totalRef, 1);
-  const totalEarningsChangePercentage = earningsStats?.totalEarningsChange?.percentage ?? null;
+  const commissionRateBadge = earningsStats?.currentTierRate ?? earningsStats?.commissionRate ?? 10;
 
   return (
     <AffiliateLayout title="Dashboard" description="Your affiliate command center">
@@ -472,22 +473,9 @@ export default function AffiliateDashboard() {
                     <DollarSign className="h-6 w-6 text-white" />
                   </div>
                   <span className="text-xs font-bold text-emerald-300 uppercase tracking-widest">All-Time Revenue</span>
-                  {earningsStats?.totalEarningsChange && totalEarningsChangePercentage !== null && (
-                    <span className={`ml-auto flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${
-                      totalEarningsChangePercentage > 0
-                        ? "bg-emerald-500/20 text-emerald-300"
-                        : totalEarningsChangePercentage < 0
-                          ? "bg-red-500/20 text-red-300"
-                          : "bg-white/10 text-gray-200"
-                    }`}>
-                      {totalEarningsChangePercentage > 0
-                        ? <ArrowUpRight className="h-3.5 w-3.5" />
-                        : totalEarningsChangePercentage < 0
-                          ? <ArrowDownRight className="h-3.5 w-3.5" />
-                          : null}
-                      {Math.abs(totalEarningsChangePercentage)}%
-                    </span>
-                  )}
+                  <span className="ml-auto flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300">
+                    {commissionRateBadge}% rate
+                  </span>
                 </div>
                 <div className="text-5xl sm:text-6xl font-black text-white tracking-tight drop-shadow-lg">
                   {loading ? <SkeletonPill /> : <AnimatedNumber value={earningsStats.totalEarnings} prefix="$" decimals={2} />}
