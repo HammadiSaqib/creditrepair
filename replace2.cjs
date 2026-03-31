@@ -1,409 +1,21 @@
-import { Fragment, useState, useEffect } from "react";
-import AffiliateLayout from "@/components/AffiliateLayout";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Users,
-  Search,
-  Download,
-  TrendingUp,
-  Mail,
-  Phone,
-  X,
-  CreditCard,
-  ChevronDown,
-  ChevronUp,
-  Loader2,
-  DollarSign,
-  Star,
-  Activity,
-  Award,
-  Clock,
-  Briefcase
-} from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useToast } from "@/hooks/use-toast";
-import { affiliateApi } from "@/lib/api";
+const fs = require('fs');
+const content = fs.readFileSync('client/pages/AffiliateReferrals.tsx', 'utf8');
 
-interface Referral {
-  id: string;
-  customerName: string;
-  email: string;
-  phone?: string;
-  status: "unpaid" | "paid" | "cancelled" | "expired" | "churned" | "pending";
-  tier: "basic" | "premium" | "enterprise";
-  signupDate: string;
-  conversionDate?: string;
-  commission: number;
-  lifetimeValue: number;
-  source: string;
-  trackingCode: string;
-  lastActivity: string;
-  transactionId?: string;
-  planPrice?: number;
-  planName?: string;
-  subscriptionStatus?: string;
-  isStripePaid?: boolean;
-  lastPaymentDate?: string;
-  stripeTransactionId?: string;
-  paymentHistory?: Array<{
-    paymentIntentId: string;
-    amount: number;
-    currency: string;
-    createdAt: string;
-    description?: string;
-  }>;
+const returnIndex = content.indexOf('  return (\n    <AffiliateLayout');
+if (returnIndex === -1) {
+  console.log('Return statement not found');
+  process.exit(1);
 }
 
-interface ChildReferral {
-  id: string;
-  childAffiliateId?: number;
-  childAffiliateName: string;
-  customerName: string;
-  customerEmail: string;
-  product: string;
-  orderValue: number;
-  commissionRate: number;
-  commissionAmount: number;
-  childOrderValue?: number;
-  childCommissionRate?: number;
-  childCommissionAmount?: number;
-  status: "pending" | "approved" | "paid" | "rejected";
-  orderDate: string;
-  paymentDate?: string;
-  level: number;
-}
+const beforeReturn = content.substring(0, returnIndex);
 
-interface ReferralStats {
-  totalReferrals: number;
-  pendingReferrals: number;
-  convertedReferrals: number;
-  cancelledReferrals: number;
-  activeReferrals: number;
-  conversionRate: number;
-  totalCommission: number;
-  avgLifetimeValue: number;
-}
-
-interface ReferralPurchase {
-  id: string;
-  index: number;
-  referralId: string;
-  referredUserId: number;
-  customerName: string;
-  email: string;
-  stripeCustomerId: string;
-  paymentIntentId: string;
-  amount: number;
-  currency: string;
-  createdAt: string;
-  description?: string;
-  baseCommissionRate: number;
-  effectiveCommissionRate: number;
-  commissionEarned: number;
-  currentMonthPaidSequence: number | null;
-  isThresholdBonus: boolean;
-  transactionId?: string | null;
-}
-
-interface ReferralPurchaseSummary {
-  totalPurchases: number;
-  totalRevenue: number;
-  totalCommissionEarned: number;
-  currentMonthPurchases: number;
-  thresholdBonusPurchases: number;
-  baseCommissionRate: number;
-}
-
-interface ChildReferralSummary {
-  totalReferrals: number;
-  totalCommission: number;
-}
-
-export default function AffiliateReferrals() {
-  const { toast } = useToast();
-  const [referrals, setReferrals] = useState<Referral[]>([]);
-  const [childReferrals, setChildReferrals] = useState<ChildReferral[]>([]);
-  const [childSummary, setChildSummary] = useState<ChildReferralSummary>({
-    totalReferrals: 0,
-    totalCommission: 0
-  });
-  const [stats, setStats] = useState<ReferralStats>({
-    totalReferrals: 0,
-    pendingReferrals: 0,
-    convertedReferrals: 0,
-    cancelledReferrals: 0,
-    activeReferrals: 0,
-    conversionRate: 0,
-    totalCommission: 0,
-    avgLifetimeValue: 0,
-  });
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [tierFilter, setTierFilter] = useState("all");
-  const [expandedPaymentRows, setExpandedPaymentRows] = useState<Record<string, boolean>>({});
-  const [isAllTimeEarningsOpen, setIsAllTimeEarningsOpen] = useState(false);
-  const [loadingPurchases, setLoadingPurchases] = useState(false);
-  const [purchasesLoaded, setPurchasesLoaded] = useState(false);
-  const [referralPurchases, setReferralPurchases] = useState<ReferralPurchase[]>([]);
-  const [purchaseSummary, setPurchaseSummary] = useState<ReferralPurchaseSummary>({
-    totalPurchases: 0,
-    totalRevenue: 0,
-    totalCommissionEarned: 0,
-    currentMonthPurchases: 0,
-    thresholdBonusPurchases: 0,
-    baseCommissionRate: 10,
-  });
-
-  useEffect(() => {
-    fetchReferrals();
-  }, []);
-
-  const hasActiveFilters = Boolean(searchTerm) || statusFilter !== "all" || tierFilter !== "all";
-
-  const fetchReferrals = async () => {
-    try {
-      setLoading(true);
-
-      const [referralsResponse, childReferralsResponse, statsResponse, purchasesResponse] = await Promise.all([
-        affiliateApi.getReferrals(),
-        affiliateApi.getChildReferrals(),
-        affiliateApi.getReferralStats(),
-        affiliateApi.getReferralPurchases().catch(() => null),
-      ]);
-
-      if (referralsResponse.data && referralsResponse.data.success) {
-        setReferrals(referralsResponse.data.data);
-      }
-
-      if (childReferralsResponse.data && childReferralsResponse.data.success) {
-        setChildReferrals(childReferralsResponse.data.data || []);
-        setChildSummary(childReferralsResponse.data.summary || { totalReferrals: 0, totalCommission: 0 });
-      }
-
-      if (statsResponse.data && statsResponse.data.success) {
-        setStats(statsResponse.data.data);
-      }
-
-      if (purchasesResponse?.data?.success) {
-        setReferralPurchases(purchasesResponse.data.data || []);
-        setPurchaseSummary(purchasesResponse.data.summary || {
-          totalPurchases: 0,
-          totalRevenue: 0,
-          totalCommissionEarned: 0,
-          currentMonthPurchases: 0,
-          thresholdBonusPurchases: 0,
-          baseCommissionRate: 10,
-        });
-        setPurchasesLoaded(true);
-      }
-    } catch (error) {
-      console.error('Error fetching referrals:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load referrals data",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getChildStatusColor = (status: string) => {
-    switch (status) {
-      case "paid":
-        return "bg-green-100 text-green-800";
-      case "approved":
-        return "bg-blue-100 text-blue-800";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "rejected":
-        return "bg-red-100 text-red-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "unpaid":
-        return "bg-yellow-100 text-yellow-800";
-      case "paid":
-        return "bg-green-100 text-green-800";
-      case "cancelled":
-      case "canceled":
-        return "bg-red-100 text-red-800";
-      case "churned":
-        return "bg-orange-100 text-orange-800";
-      case "pending":
-        return "bg-blue-100 text-blue-800";
-      case "expired":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const formatStatusLabel = (status: string) => {
-    const normalized = String(status || "").toLowerCase();
-    if (normalized === "cancelled" || normalized === "canceled") return "Canceled";
-    if (normalized === "churned") return "Churned";
-    if (normalized === "paid") return "Paid";
-    if (normalized === "unpaid") return "Unpaid";
-    if (normalized === "pending") return "Pending";
-    if (normalized === "expired") return "Expired";
-    return status;
-  };
-
-  const formatChildStatusLabel = (status: string) => {
-    const normalized = String(status || "").toLowerCase();
-    if (normalized === "paid") return "Paid";
-    if (normalized === "approved") return "Approved";
-    if (normalized === "pending") return "Pending";
-    if (normalized === "rejected") return "Rejected";
-    return status;
-  };
-  const getTierColor = (tier: string) => {
-    switch (tier) {
-      case "basic":
-        return "bg-slate-100 text-slate-800";
-      case "premium":
-        return "bg-purple-100 text-purple-800";
-      case "enterprise":
-        return "bg-orange-100 text-orange-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const filteredReferrals = referrals.filter((referral) => {
-    const searchValue = searchTerm.toLowerCase();
-    const matchesSearch = String(referral.customerName || '').toLowerCase().includes(searchValue) ||
-                         String(referral.email || '').toLowerCase().includes(searchValue) ||
-                         String(referral.id || '').toLowerCase().includes(searchValue) ||
-                         String(referral.phone || '').toLowerCase().includes(searchValue);
-    const matchesStatus = statusFilter === "all" || referral.status === statusFilter;
-    const matchesTier = tierFilter === "all" || referral.tier === tierFilter;
-    return matchesSearch && matchesStatus && matchesTier;
-  });
-
-  const filteredChildReferrals = childReferrals.filter((referral) => {
-    const matchesSearch = (referral.childAffiliateName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (referral.customerName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (referral.customerEmail?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-      (referral.product?.toLowerCase() || '').includes(searchTerm.toLowerCase());
-    return matchesSearch;
-  });
-
-  const visibleReferrals = filteredReferrals;
-  const visiblePaidReferrals = visibleReferrals.filter((referral) => referral.status === "paid").length;
-  const visibleUnpaidReferrals = visibleReferrals.filter((referral) => referral.status === "unpaid" || referral.status === "pending").length;
-  const visibleCancelledReferrals = visibleReferrals.filter((referral) => referral.status === "cancelled" || referral.status === "churned").length;
-  const visibleLifetimeAverage = visiblePaidReferrals > 0
-    ? visibleReferrals
-        .filter((referral) => referral.status === "paid")
-        .reduce((sum, referral) => sum + (Number(referral.lifetimeValue) || 0), 0) / visiblePaidReferrals
-    : 0;
-  const displayTotalReferrals = hasActiveFilters ? visibleReferrals.length : referrals.length;
-  const displayPaidReferrals = hasActiveFilters ? visiblePaidReferrals : visiblePaidReferrals;
-  const displayUnpaidReferrals = hasActiveFilters ? visibleUnpaidReferrals : visibleUnpaidReferrals;
-  const displayCancelledReferrals = hasActiveFilters ? visibleCancelledReferrals : visibleCancelledReferrals;
-  const displayAvgLifetimeValue = hasActiveFilters ? visibleLifetimeAverage : (visibleLifetimeAverage || stats.avgLifetimeValue || 0);
-
-  const togglePaymentHistory = (referralId: string) => {
-    setExpandedPaymentRows((prev) => ({
-      ...prev,
-      [referralId]: !prev[referralId],
-    }));
-  };
-
-  const exportReferrals = () => {
-    const csvContent = [
-      ['ID', 'Name', 'Email', 'Phone', 'Status', 'Tier', 'Signup Date', 'Commission', 'Lifetime Value'].join(','),
-      ...filteredReferrals.map(referral => [
-        referral.id,
-        referral.customerName,
-        referral.email,
-        referral.phone || '',
-        referral.status,
-        referral.tier,
-        referral.signupDate,
-        referral.commission,
-        referral.lifetimeValue
-      ].join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'affiliate-referrals.csv';
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
-
-  const openAllTimeEarnings = async () => {
-    setIsAllTimeEarningsOpen(true);
-
-    if (purchasesLoaded || loadingPurchases) {
-      return;
-    }
-
-    try {
-      setLoadingPurchases(true);
-      const response = await affiliateApi.getReferralPurchases();
-      if (response.data?.success) {
-        setReferralPurchases(response.data.data || []);
-        setPurchaseSummary(response.data.summary || {
-          totalPurchases: 0,
-          totalRevenue: 0,
-          totalCommissionEarned: 0,
-          currentMonthPurchases: 0,
-          thresholdBonusPurchases: 0,
-          baseCommissionRate: 10,
-        });
-        setPurchasesLoaded(true);
-      }
-    } catch (error) {
-      console.error('Error fetching referral purchases:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load all-time earnings purchases',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoadingPurchases(false);
-    }
-  };
-
-  return (
-    <AffiliateLayout
-      title="Referrals Management"
-      description="Track, manage, and optimize your referral network"
-    >
-      <div className="relative isolate overflow-hidden rounded-[32px] border border-slate-200/70 bg-gradient-to-b from-green-50/70 via-white to-teal-50/80 px-4 py-6 shadow-[0_30px_80px_-48px_rgba(20,184,166,0.35)] sm:px-6 lg:px-8">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(20,184,166,0.08),_transparent_42%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.08),_transparent_36%)]" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-gradient-to-b from-white/20 via-green-50/40 to-transparent" />
-
-        <div className="relative z-10 space-y-8">
+const newReturn = `  return (
+    <AffiliateLayout>
+      <div className="min-h-screen pb-16 bg-slate-50/30">
+        <div className="absolute inset-0 bg-[url('/grid-pattern.svg')] opacity-[0.02] pointer-events-none" />
+        <div className="absolute top-0 left-0 right-0 h-[500px] bg-gradient-to-b from-indigo-50/80 via-white to-transparent pointer-events-none" />
+        
+        <div className="relative z-10 space-y-8 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
           {/* Header Section */}
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
@@ -412,8 +24,8 @@ export default function AffiliateReferrals() {
             className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 bg-white p-8 rounded-3xl border border-slate-200/60 shadow-sm"
           >
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-50 text-green-700 text-sm font-semibold mb-6 ring-1 ring-green-600/10 shadow-sm">
-                <Star className="h-4 w-4 fill-green-700" />
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 text-sm font-semibold mb-6 ring-1 ring-indigo-600/10 shadow-sm">
+                <Star className="h-4 w-4 fill-indigo-700" />
                 Referral Hub
               </div>
               <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-3">
@@ -432,7 +44,7 @@ export default function AffiliateReferrals() {
                 <Download className="h-4 w-4 mr-2" />
                 Export Data
               </Button>
-              <Button onClick={openAllTimeEarnings} className="bg-gradient-to-r from-green-600 via-green-500 to-teal-600 hover:from-green-700 hover:via-green-600 hover:to-teal-700 text-white shadow-lg shadow-green-200 hover:shadow-xl hover:shadow-green-300 hover:-translate-y-0.5 transition-all duration-300 h-12 px-8 rounded-xl border-0 font-semibold text-base">
+              <Button onClick={openAllTimeEarnings} className="bg-gradient-to-r from-indigo-600 via-indigo-500 to-violet-600 hover:from-indigo-700 hover:via-indigo-600 hover:to-violet-700 text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 hover:-translate-y-0.5 transition-all duration-300 h-12 px-8 rounded-xl border-0 font-semibold text-base">
                 <DollarSign className="h-5 w-5 mr-2" />
                 All-Time Earnings
               </Button>
@@ -474,7 +86,7 @@ export default function AffiliateReferrals() {
               },
               {
                 title: "Avg. Lifetime",
-                value: loading ? '...' : `$${(displayAvgLifetimeValue || 0).toLocaleString()}`,
+                value: loading ? '...' : \`$\${(displayAvgLifetimeValue || 0).toLocaleString()}\`,
                 subtitle: "Value per paid converted",
                 icon: Activity,
                 color: "text-fuchsia-600",
@@ -484,13 +96,13 @@ export default function AffiliateReferrals() {
               },
               {
                 title: "All-Time Earnings",
-                value: loading || (!purchasesLoaded && loadingPurchases) ? '...' : purchasesLoaded ? `$${(purchaseSummary.totalCommissionEarned || 0).toLocaleString()}` : '...',
+                value: loading || (!purchasesLoaded && loadingPurchases) ? '...' : purchasesLoaded ? \`$\${(purchaseSummary.totalCommissionEarned || 0).toLocaleString()}\` : '...',
                 subtitle: "Click to view timeline",
                 icon: Award,
-                color: "text-teal-600",
-                bg: "bg-teal-50",
-                ring: "ring-teal-100",
-                shadow: "shadow-teal-100",
+                color: "text-indigo-600",
+                bg: "bg-indigo-50",
+                ring: "ring-indigo-100",
+                shadow: "shadow-indigo-100",
                 onClick: openAllTimeEarnings,
                 isClickable: true
               },
@@ -513,11 +125,11 @@ export default function AffiliateReferrals() {
               >
                 <div 
                   onClick={stat.onClick}
-                  className={`relative overflow-hidden rounded-3xl bg-white p-6 border-2 border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 group ${stat.isClickable ? 'cursor-pointer hover:-translate-y-1' : ''}`}
+                  className={\`relative overflow-hidden rounded-3xl bg-white p-6 border-2 border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 group \${stat.isClickable ? 'cursor-pointer hover:-translate-y-1' : ''}\`}
                 >
                   <div className="flex items-center justify-between mb-4">
-                    <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${stat.bg} ${stat.ring} ring-1 shadow-inner ${stat.shadow}`}>
-                      <stat.icon className={`h-6 w-6 ${stat.color}`} strokeWidth={2.5} />
+                    <div className={\`flex h-14 w-14 items-center justify-center rounded-2xl \${stat.bg} \${stat.ring} ring-1 shadow-inner \${stat.shadow}\`}>
+                      <stat.icon className={\`h-6 w-6 \${stat.color}\`} strokeWidth={2.5} />
                     </div>
                     <div className="p-2 opacity-0 group-hover:opacity-[0.04] transition-opacity duration-500 scale-50 group-hover:scale-100">
                       <stat.icon className="h-24 w-24 absolute -right-6 -top-6 text-slate-900" />
@@ -558,12 +170,12 @@ export default function AffiliateReferrals() {
                   {/* Filters */}
                   <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto h-full">
                     <div className="relative group w-full xl:w-[320px]">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-green-500 transition-colors" />
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                       <Input
                         placeholder="Search by name, email, or ID..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-12 bg-slate-50 border-transparent hover:border-slate-200 h-12 w-full rounded-2xl focus-visible:ring-green-500 focus-visible:bg-white transition-all text-base shadow-inner"
+                        className="pl-12 bg-slate-50 border-transparent hover:border-slate-200 h-12 w-full rounded-2xl focus-visible:ring-indigo-500 focus-visible:bg-white transition-all text-base shadow-inner"
                       />
                     </div>
                     <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -642,14 +254,14 @@ export default function AffiliateReferrals() {
                     ) : (
                       filteredReferrals.map((referral) => (
                         <Fragment key={referral.id}>
-                          <TableRow className="group hover:bg-green-50/30 transition-colors border-slate-100 cursor-default">
+                          <TableRow className="group hover:bg-indigo-50/30 transition-colors border-slate-100 cursor-default">
                             <TableCell className="py-5 pl-8">
                               <div className="flex items-center gap-4">
-                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-green-100 to-teal-100 text-green-700 flex items-center justify-center font-bold shadow-sm ring-2 ring-white">
+                                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-100 to-violet-100 text-indigo-700 flex items-center justify-center font-bold shadow-sm ring-2 ring-white">
                                   {referral.customerName?.charAt(0).toUpperCase() || '?'}
                                 </div>
                                 <div>
-                                  <div className="font-bold text-slate-900 text-base group-hover:text-green-700 transition-colors">{referral.customerName}</div>
+                                  <div className="font-bold text-slate-900 text-base group-hover:text-indigo-700 transition-colors">{referral.customerName}</div>
                                   <div className="text-[11px] text-slate-400 font-mono mt-0.5 tracking-wider bg-slate-50 inline-block px-1.5 rounded">ID: {referral.id}</div>
                                 </div>
                               </div>
@@ -670,11 +282,11 @@ export default function AffiliateReferrals() {
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-col gap-2 items-start">
-                                <Badge className={`px-3 py-1 whitespace-nowrap shadow-sm font-bold ${getStatusColor(referral.status)}`}>
+                                <Badge className={\`px-3 py-1 whitespace-nowrap shadow-sm font-bold \${getStatusColor(referral.status)}\`}>
                                   <div className="w-1.5 h-1.5 rounded-full bg-current mr-2 inline-block opacity-70" />
                                   {formatStatusLabel(referral.status)}
                                 </Badge>
-                                <Badge className={`font-semibold shadow-sm ${getTierColor(referral.tier)}`}>
+                                <Badge className={\`font-semibold shadow-sm \${getTierColor(referral.tier)}\`}>
                                   {referral.tier}
                                 </Badge>
                               </div>
@@ -689,12 +301,12 @@ export default function AffiliateReferrals() {
                             </TableCell>
                             <TableCell>
                               <span className="inline-flex items-center justify-center px-3 py-1.5 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-700 font-black text-sm border-2 border-emerald-200/50 shadow-sm">
-                                ${(referral.commission || 0).toLocaleString()}
+                                \${(referral.commission || 0).toLocaleString()}
                               </span>
                             </TableCell>
                             <TableCell>
                               {referral.planPrice ? (
-                                <span className="font-bold text-slate-700 text-base">${referral.planPrice.toFixed(2)}</span>
+                                <span className="font-bold text-slate-700 text-base">\${referral.planPrice.toFixed(2)}</span>
                               ) : (
                                 <span className="text-slate-300 font-bold">-</span>
                               )}
@@ -716,7 +328,7 @@ export default function AffiliateReferrals() {
                                   <button
                                     type="button"
                                     onClick={() => togglePaymentHistory(referral.id)}
-                                    className="flex items-center gap-1.5 text-[11px] font-bold text-teal-600 hover:text-teal-800 bg-teal-50 hover:bg-teal-100 px-2.5 py-1 rounded-md transition-all w-max ring-1 ring-teal-600/10 shadow-sm"
+                                    className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md transition-all w-max ring-1 ring-indigo-600/10 shadow-sm"
                                   >
                                     Last: {new Date(referral.lastPaymentDate).toLocaleDateString()}
                                     {(referral.paymentHistory?.length || 0) > 0 ? (
@@ -728,13 +340,13 @@ export default function AffiliateReferrals() {
                             </TableCell>
                             <TableCell className="text-right pr-8">
                               <span className="font-black text-slate-900 text-xl tracking-tight">
-                                ${(referral.lifetimeValue || 0).toLocaleString()}
+                                \${(referral.lifetimeValue || 0).toLocaleString()}
                               </span>
                             </TableCell>
                           </TableRow>
                           <AnimatePresence>
                             {expandedPaymentRows[referral.id] && (referral.paymentHistory?.length || 0) > 0 && (
-                              <TableRow key={`${referral.id}-payments`}>
+                              <TableRow key={\`\${referral.id}-payments\`}>
                                 <TableCell colSpan={8} className="p-0 border-0">
                                   <motion.div 
                                     initial={{ height: 0, opacity: 0 }}
@@ -749,10 +361,10 @@ export default function AffiliateReferrals() {
                                       </h4>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {referral.paymentHistory?.map((payment) => (
-                                          <div key={payment.paymentIntentId} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/60 flex flex-col justify-between hover:border-teal-300 hover:shadow-md transition-all group">
+                                          <div key={payment.paymentIntentId} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/60 flex flex-col justify-between hover:border-indigo-300 hover:shadow-md transition-all group">
                                             <div className="flex justify-between items-start mb-3">
-                                              <div className="font-black text-slate-900 text-lg group-hover:text-teal-700 transition-colors">
-                                                ${payment.amount.toFixed(2)} <span className="text-[10px] text-slate-400 font-bold uppercase ml-0.5">{payment.currency}</span>
+                                              <div className="font-black text-slate-900 text-lg group-hover:text-indigo-700 transition-colors">
+                                                \${payment.amount.toFixed(2)} <span className="text-[10px] text-slate-400 font-bold uppercase ml-0.5">{payment.currency}</span>
                                               </div>
                                               <div className="text-[10px] font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded-md border border-slate-100">
                                                 {payment.paymentIntentId.slice(-10)}
@@ -795,8 +407,8 @@ export default function AffiliateReferrals() {
                   </div>
                   <div className="flex items-center gap-6 text-sm bg-slate-50 p-3 rounded-2xl border border-slate-100 shadow-inner w-full lg:w-auto">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-white shadow-sm border border-teal-100 flex items-center justify-center">
-                        <Users className="h-5 w-5 text-teal-600" />
+                      <div className="w-12 h-12 rounded-xl bg-white shadow-sm border border-indigo-100 flex items-center justify-center">
+                        <Users className="h-5 w-5 text-indigo-600" />
                       </div>
                       <div>
                         <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">Sub-Network</div>
@@ -810,7 +422,7 @@ export default function AffiliateReferrals() {
                       </div>
                       <div>
                         <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">Override Value</div>
-                        <div className="font-black text-emerald-600 text-xl">${(childSummary.totalCommission || 0).toLocaleString()}</div>
+                        <div className="font-black text-emerald-600 text-xl">\${(childSummary.totalCommission || 0).toLocaleString()}</div>
                       </div>
                     </div>
                   </div>
@@ -854,9 +466,9 @@ export default function AffiliateReferrals() {
                       </TableRow>
                     ) : (
                       filteredChildReferrals.map((referral) => (
-                        <TableRow key={referral.id} className="hover:bg-green-50/30 transition-colors border-slate-100">
+                        <TableRow key={referral.id} className="hover:bg-indigo-50/30 transition-colors border-slate-100">
                           <TableCell className="pl-8 py-5">
-                            <div className="font-bold text-slate-900 group-hover:text-green-700">{referral.childAffiliateName}</div>
+                            <div className="font-bold text-slate-900 group-hover:text-indigo-700">{referral.childAffiliateName}</div>
                             <div className="text-[11px] text-slate-400 font-mono mt-0.5 bg-slate-50 inline-block px-1.5 rounded">ID: {referral.childAffiliateId ?? "-"}</div>
                           </TableCell>
                           <TableCell>
@@ -866,11 +478,11 @@ export default function AffiliateReferrals() {
                           <TableCell>
                             <div className="font-black text-slate-900">{referral.product}</div>
                             <div className="text-[10px] text-slate-500 mt-1 bg-slate-100/80 inline-block px-2 py-1 rounded-md font-bold uppercase tracking-widest border border-slate-200/50">
-                              Val: ${referral.orderValue.toLocaleString()} @ {referral.commissionRate.toFixed(1)}%
+                              Val: \${referral.orderValue.toLocaleString()} @ {referral.commissionRate.toFixed(1)}%
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge className={`px-3 py-1 whitespace-nowrap shadow-sm font-bold ${getChildStatusColor(referral.status)}`}>
+                            <Badge className={\`px-3 py-1 whitespace-nowrap shadow-sm font-bold \${getChildStatusColor(referral.status)}\`}>
                               <div className="w-1.5 h-1.5 rounded-full bg-current mr-2 inline-block opacity-70" />
                               {formatChildStatusLabel(referral.status)}
                             </Badge>
@@ -881,11 +493,11 @@ export default function AffiliateReferrals() {
                           <TableCell className="text-right pr-8">
                             <div className="inline-flex flex-col items-end">
                               <span className="font-black text-emerald-600 text-xl bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-100 shadow-sm">
-                                +${referral.commissionAmount.toLocaleString()}
+                                +\${referral.commissionAmount.toLocaleString()}
                               </span>
                               {typeof referral.childCommissionAmount === "number" && (
                                 <span className="text-[10px] uppercase font-black text-slate-400 mt-1.5 px-1.5 py-0.5">
-                                  Sub earned: ${referral.childCommissionAmount.toLocaleString()}
+                                  Sub earned: \${referral.childCommissionAmount.toLocaleString()}
                                 </span>
                               )}
                             </div>
@@ -903,38 +515,38 @@ export default function AffiliateReferrals() {
 
       <Dialog open={isAllTimeEarningsOpen} onOpenChange={setIsAllTimeEarningsOpen}>
         <DialogContent className="max-w-5xl rounded-[2rem] overflow-hidden p-0 border-0 shadow-2xl">
-          <div className="bg-gradient-to-br from-slate-900 via-[#0b1120] to-green-950 p-10 text-white relative overflow-hidden">
+          <div className="bg-gradient-to-br from-indigo-900 via-slate-900 to-indigo-950 p-10 text-white relative overflow-hidden">
             <div className="absolute top-0 right-0 p-8 opacity-5">
               <Award className="w-64 h-64" />
             </div>
             <DialogHeader className="relative z-10">
               <DialogTitle className="text-3xl font-black text-white flex items-center gap-3">
-                <div className="bg-teal-500/20 p-2 rounded-xl backdrop-blur-sm ring-1 ring-white/10">
-                  <Award className="h-8 w-8 text-teal-300" />
+                <div className="bg-indigo-500/20 p-2 rounded-xl backdrop-blur-sm ring-1 ring-white/10">
+                  <Award className="h-8 w-8 text-indigo-300" />
                 </div>
                 All-Time Earnings Ledger
               </DialogTitle>
-              <DialogDescription className="text-teal-200/80 text-sm max-w-2xl mt-3 font-medium leading-relaxed">
+              <DialogDescription className="text-indigo-200/80 text-sm max-w-2xl mt-3 font-medium leading-relaxed">
                 Complete and immutable timeline of every recorded subscription purchase. Volume bonuses execute instantly once thresholds are crossed.
               </DialogDescription>
             </DialogHeader>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-10 relative z-10">
               <div className="bg-white/5 backdrop-blur-md rounded-2xl p-5 border border-white/10 hover:bg-white/10 transition-colors">
-                <div className="text-[11px] font-black uppercase tracking-widest text-teal-300/80 mb-2">Total Volume</div>
+                <div className="text-[11px] font-black uppercase tracking-widest text-indigo-300/80 mb-2">Total Volume</div>
                 <div className="text-3xl font-black">{purchaseSummary.totalPurchases.toLocaleString()}</div>
               </div>
               <div className="bg-white/5 backdrop-blur-md rounded-2xl p-5 border border-white/10 hover:bg-white/10 transition-colors">
-                <div className="text-[11px] font-black uppercase tracking-widest text-teal-300/80 mb-2">Network Rev</div>
-                <div className="text-3xl font-black">${purchaseSummary.totalRevenue.toLocaleString()}</div>
+                <div className="text-[11px] font-black uppercase tracking-widest text-indigo-300/80 mb-2">Network Rev</div>
+                <div className="text-3xl font-black">\${purchaseSummary.totalRevenue.toLocaleString()}</div>
               </div>
               <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-400/10 backdrop-blur-md rounded-2xl p-5 border border-emerald-500/30 shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden group">
                 <div className="absolute -right-4 -top-4 opacity-10 group-hover:opacity-20 transition-opacity"><DollarSign className="w-24 h-24 text-emerald-400" /></div>
                 <div className="text-[11px] font-black uppercase tracking-widest text-emerald-300/80 relative z-10 mb-2">Your Earnings</div>
-                <div className="text-3xl font-black text-emerald-400 relative z-10">${purchaseSummary.totalCommissionEarned.toLocaleString()}</div>
+                <div className="text-3xl font-black text-emerald-400 relative z-10">\${purchaseSummary.totalCommissionEarned.toLocaleString()}</div>
               </div>
               <div className="bg-white/5 backdrop-blur-md rounded-2xl p-5 border border-white/10 hover:bg-white/10 transition-colors">
-                <div className="text-[11px] font-black uppercase tracking-widest text-teal-300/80 mb-2">Base Multiplier</div>
+                <div className="text-[11px] font-black uppercase tracking-widest text-indigo-300/80 mb-2">Base Multiplier</div>
                 <div className="text-3xl font-black">{purchaseSummary.baseCommissionRate.toFixed(1)}%</div>
               </div>
             </div>
@@ -943,7 +555,7 @@ export default function AffiliateReferrals() {
           <div className="h-[60vh] overflow-y-auto bg-slate-50/50 p-8">
             {loadingPurchases ? (
               <div className="flex flex-col items-center justify-center h-full gap-5 text-slate-400">
-                <Loader2 className="h-10 w-10 animate-spin text-teal-500" />
+                <Loader2 className="h-10 w-10 animate-spin text-indigo-500" />
                 <p className="font-bold tracking-tight text-lg">Syncing blockchain-level ledger...</p>
               </div>
             ) : referralPurchases.length === 0 ? (
@@ -960,11 +572,11 @@ export default function AffiliateReferrals() {
                     initial={{ opacity: 0, scale: 0.98, y: 10 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     key={purchase.id}
-                    className={`p-6 rounded-3xl border-2 bg-white shadow-sm transition-all hover:shadow-xl ${purchase.isThresholdBonus ? 'border-rose-200 hover:border-rose-300 shadow-rose-100/50' : 'border-slate-100 hover:border-teal-100'}`}
+                    className={\`p-6 rounded-3xl border-2 bg-white shadow-sm transition-all hover:shadow-xl \${purchase.isThresholdBonus ? 'border-rose-200 hover:border-rose-300 shadow-rose-100/50' : 'border-slate-100 hover:border-indigo-100'}\`}
                   >
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                       <div className="flex items-start gap-5">
-                        <div className={`w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center text-base font-black shadow-inner ${purchase.isThresholdBonus ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-700'}`}>
+                        <div className={\`w-12 h-12 shrink-0 rounded-2xl flex items-center justify-center text-base font-black shadow-inner \${purchase.isThresholdBonus ? 'bg-rose-50 text-rose-700' : 'bg-slate-50 text-slate-700'}\`}>
                           #{purchase.index}
                         </div>
                         <div className="space-y-2">
@@ -990,12 +602,12 @@ export default function AffiliateReferrals() {
                         <div className="text-left lg:text-right">
                           <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Revenue</div>
                           <div className="text-2xl font-black text-slate-900 tracking-tight">
-                            ${purchase.amount.toFixed(2)} <span className="text-[11px] text-slate-400 font-bold uppercase ml-0.5">{purchase.currency}</span>
+                            \${purchase.amount.toFixed(2)} <span className="text-[11px] text-slate-400 font-bold uppercase ml-0.5">{purchase.currency}</span>
                           </div>
                         </div>
                         <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-2 border-emerald-100/80 px-4 py-2 rounded-xl flex flex-col items-end shadow-sm">
                           <div className="text-base font-black text-emerald-700">
-                            Earned ${purchase.commissionEarned.toFixed(2)}
+                            Earned \${purchase.commissionEarned.toFixed(2)}
                           </div>
                           <div className="text-[10px] font-black text-emerald-600/60 uppercase tracking-widest mt-0.5">
                             @ {purchase.effectiveCommissionRate.toFixed(1)}% Multiplier
@@ -1013,3 +625,7 @@ export default function AffiliateReferrals() {
     </AffiliateLayout>
   );
 }
+`;
+
+fs.writeFileSync('C:/Users/munib/Downloads/ScoreMachineV2RawCode/client/pages/AffiliateReferrals.tsx', beforeReturn + newReturn, 'utf8');
+console.log('Done!');

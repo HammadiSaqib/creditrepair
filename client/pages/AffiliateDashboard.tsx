@@ -321,7 +321,8 @@ export default function AffiliateDashboard() {
           const currentMonthStart = getStartOfMonth();
           const previousMonthStart = getStartOfMonth(-1);
           const paidReferralCount = referralRows.filter((row) => row.status === "paid").length;
-          const unpaidReferralCount = referralRows.filter((row) => row.status === "unpaid" || row.status === "pending").length;
+          const pendingReferralCount = referralRows.filter((row) => row.status === "pending").length;
+          const unpaidReferralCount = referralRows.filter((row) => row.status === "unpaid").length;
           const cancelledReferralCount = referralRows.filter((row) => row.status === "cancelled" || row.status === "churned").length;
           const totalReferralCount = referralRows.length;
           const currentMonthReferralLeads = referralRows.filter((row) => row.signupDate && new Date(row.signupDate) >= currentMonthStart).length;
@@ -330,6 +331,7 @@ export default function AffiliateDashboard() {
           nextStatsPatch = {
             totalReferrals: totalReferralCount,
             activePayingClients: paidReferralCount,
+            pendingSignupCount: pendingReferralCount,
             unpaidClients: unpaidReferralCount,
             cancelledClients: cancelledReferralCount,
             paidReferralsCount: paidReferralCount,
@@ -409,6 +411,7 @@ export default function AffiliateDashboard() {
 
   const totalRef = earningsStats?.totalReferrals ?? 0;
   const active = earningsStats?.activePayingClients ?? 0;
+  const pending = earningsStats?.pendingSignupCount ?? 0;
   const unpaid = earningsStats?.unpaidClients ?? 0;
   const cancelled = earningsStats?.cancelledClients ?? 0;
   const pipelineMax = Math.max(totalRef, 1);
@@ -674,9 +677,11 @@ export default function AffiliateDashboard() {
               <span className="text-3xl font-extrabold text-gray-800">{loading ? "—" : formatCount(totalRef)}</span>
             </div>
 
-            <div className="space-y-4">
+              <div className="space-y-4">
               {[
                 { label: "Active Paying", count: active, icon: <CheckCircle2 className="h-4 w-4" />, color: "bg-emerald-500", light: "bg-emerald-50", text: "text-emerald-700", sub: "Live subscriptions" },
+                { label: "Pending", count: pending, icon: <Timer className="h-4 w-4" />, color: "bg-amber-500", light: "bg-amber-50", text: "text-amber-700", sub: "Signed up but not converted" },
+                { label: "Unpaid", count: unpaid, icon: <AlertTriangle className="h-4 w-4" />, color: "bg-orange-500", light: "bg-orange-50", text: "text-orange-700", sub: "Converted with payment still due" },
                 { label: "Cancelled / Churned", count: cancelled, icon: <XCircle className="h-4 w-4" />, color: "bg-red-500", light: "bg-red-50", text: "text-red-700", sub: "Lost clients" },
               ].map((row) => (
                 <div key={row.label} className={`flex items-center gap-4 rounded-xl ${row.light} px-4 py-3`}>
@@ -725,14 +730,14 @@ export default function AffiliateDashboard() {
               )}
             </div>
 
-            {/* Pending */}
+            {/* Pending Payouts */}
             <div className="rounded-2xl bg-white border border-gray-100 shadow-sm p-5 hover:shadow-md transition-all">
               <div className="flex items-center gap-3 mb-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 shadow-md">
                   <Timer className="h-5 w-5 text-white" />
                 </div>
                 <div>
-                  <p className="font-bold text-gray-900">Pending</p>
+                  <p className="font-bold text-gray-900">Pending Payouts</p>
                   <p className="text-xs text-gray-500">Awaiting payment</p>
                 </div>
               </div>
