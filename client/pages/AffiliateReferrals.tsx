@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import AffiliateLayout from "@/components/AffiliateLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -35,6 +36,10 @@ import {
   ExternalLink,
   X,
   CreditCard,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  DollarSign,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { affiliateApi } from "@/lib/api";
@@ -60,6 +65,13 @@ interface Referral {
   isStripePaid?: boolean;
   lastPaymentDate?: string;
   stripeTransactionId?: string;
+  paymentHistory?: Array<{
+    paymentIntentId: string;
+    amount: number;
+    currency: string;
+    createdAt: string;
+    description?: string;
+  }>;
 }
 
 interface ChildReferral {
@@ -88,7 +100,38 @@ interface ReferralStats {
   cancelledReferrals: number;
   activeReferrals: number;
   conversionRate: number;
+  totalCommission: number;
   avgLifetimeValue: number;
+}
+
+interface ReferralPurchase {
+  id: string;
+  index: number;
+  referralId: string;
+  referredUserId: number;
+  customerName: string;
+  email: string;
+  stripeCustomerId: string;
+  paymentIntentId: string;
+  amount: number;
+  currency: string;
+  createdAt: string;
+  description?: string;
+  baseCommissionRate: number;
+  effectiveCommissionRate: number;
+  commissionEarned: number;
+  currentMonthPaidSequence: number | null;
+  isThresholdBonus: boolean;
+  transactionId?: string | null;
+}
+
+interface ReferralPurchaseSummary {
+  totalPurchases: number;
+  totalRevenue: number;
+  totalCommissionEarned: number;
+  currentMonthPurchases: number;
+  thresholdBonusPurchases: number;
+  baseCommissionRate: number;
 }
 
 interface ChildReferralSummary {
@@ -108,8 +151,10 @@ export default function AffiliateReferrals() {
     totalReferrals: 0,
     pendingReferrals: 0,
     convertedReferrals: 0,
+    cancelledReferrals: 0,
     activeReferrals: 0,
     conversionRate: 0,
+    totalCommission: 0,
     avgLifetimeValue: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -118,31 +163,61 @@ export default function AffiliateReferrals() {
   const [tierFilter, setTierFilter] = useState("all");
   const [sortBy, setSortBy] = useState("signupDate");
   const [sortOrder, setSortOrder] = useState("desc");
+  const [expandedPaymentRows, setExpandedPaymentRows] = useState<Record<string, boolean>>({});
+  const [isAllTimeEarningsOpen, setIsAllTimeEarningsOpen] = useState(false);
+  const [loadingPurchases, setLoadingPurchases] = useState(false);
+  const [purchasesLoaded, setPurchasesLoaded] = useState(false);
+  const [referralPurchases, setReferralPurchases] = useState<ReferralPurchase[]>([]);
+  const [purchaseSummary, setPurchaseSummary] = useState<ReferralPurchaseSummary>({
+    totalPurchases: 0,
+    totalRevenue: 0,
+    totalCommissionEarned: 0,
+    currentMonthPurchases: 0,
+    thresholdBonusPurchases: 0,
+    baseCommissionRate: 10,
+  });
 
   useEffect(() => {
     fetchReferrals();
   }, []);
 
+  const hasActiveFilters = Boolean(searchTerm) || statusFilter !== "all" || tierFilter !== "all";
+
   const fetchReferrals = async () => {
     try {
       setLoading(true);
-      
-      // Fetch referrals
-      const referralsResponse = await affiliateApi.getReferrals();
+
+      const [referralsResponse, childReferralsResponse, statsResponse, purchasesResponse] = await Promise.all([
+        affiliateApi.getReferrals(),
+        affiliateApi.getChildReferrals(),
+        affiliateApi.getReferralStats(),
+        affiliateApi.getReferralPurchases().catch(() => null),
+      ]);
+
       if (referralsResponse.data && referralsResponse.data.success) {
         setReferrals(referralsResponse.data.data);
       }
 
-      const childReferralsResponse = await affiliateApi.getChildReferrals();
       if (childReferralsResponse.data && childReferralsResponse.data.success) {
         setChildReferrals(childReferralsResponse.data.data || []);
         setChildSummary(childReferralsResponse.data.summary || { totalReferrals: 0, totalCommission: 0 });
       }
 
-      // Fetch referral stats
-      const statsResponse = await affiliateApi.getReferralStats();
       if (statsResponse.data && statsResponse.data.success) {
         setStats(statsResponse.data.data);
+      }
+
+      if (purchasesResponse?.data?.success) {
+        setReferralPurchases(purchasesResponse.data.data || []);
+        setPurchaseSummary(purchasesResponse.data.summary || {
+          totalPurchases: 0,
+          totalRevenue: 0,
+          totalCommissionEarned: 0,
+          currentMonthPurchases: 0,
+          thresholdBonusPurchases: 0,
+          baseCommissionRate: 10,
+        });
+        setPurchasesLoaded(true);
       }
     } catch (error) {
       console.error('Error fetching referrals:', error);
@@ -242,6 +317,21 @@ export default function AffiliateReferrals() {
     return matchesSearch;
   });
 
+  const visibleReferrals = filteredReferrals;
+  const visiblePaidReferrals = visibleReferrals.filter((referral) => referral.status === "paid").length;
+  const visibleUnpaidReferrals = visibleReferrals.filter((referral) => referral.status === "unpaid" || referral.status === "pending").length;
+  const visibleCancelledReferrals = visibleReferrals.filter((referral) => referral.status === "cancelled" || referral.status === "churned").length;
+  const visibleLifetimeAverage = visiblePaidReferrals > 0
+    ? visibleReferrals
+        .filter((referral) => referral.status === "paid")
+        .reduce((sum, referral) => sum + (Number(referral.lifetimeValue) || 0), 0) / visiblePaidReferrals
+    : 0;
+  const displayTotalReferrals = hasActiveFilters ? visibleReferrals.length : referrals.length;
+  const displayPaidReferrals = hasActiveFilters ? visiblePaidReferrals : visiblePaidReferrals;
+  const displayUnpaidReferrals = hasActiveFilters ? visibleUnpaidReferrals : visibleUnpaidReferrals;
+  const displayCancelledReferrals = hasActiveFilters ? visibleCancelledReferrals : visibleCancelledReferrals;
+  const displayAvgLifetimeValue = hasActiveFilters ? visibleLifetimeAverage : (visibleLifetimeAverage || stats.avgLifetimeValue || 0);
+
   const handleFollowUp = async (referralId: string) => {
     try {
       await affiliateApi.sendFollowUp(referralId);
@@ -257,6 +347,13 @@ export default function AffiliateReferrals() {
         variant: "destructive",
       });
     }
+  };
+
+  const togglePaymentHistory = (referralId: string) => {
+    setExpandedPaymentRows((prev) => ({
+      ...prev,
+      [referralId]: !prev[referralId],
+    }));
   };
 
   const exportReferrals = () => {
@@ -284,6 +381,40 @@ export default function AffiliateReferrals() {
     window.URL.revokeObjectURL(url);
   };
 
+  const openAllTimeEarnings = async () => {
+    setIsAllTimeEarningsOpen(true);
+
+    if (purchasesLoaded || loadingPurchases) {
+      return;
+    }
+
+    try {
+      setLoadingPurchases(true);
+      const response = await affiliateApi.getReferralPurchases();
+      if (response.data?.success) {
+        setReferralPurchases(response.data.data || []);
+        setPurchaseSummary(response.data.summary || {
+          totalPurchases: 0,
+          totalRevenue: 0,
+          totalCommissionEarned: 0,
+          currentMonthPurchases: 0,
+          thresholdBonusPurchases: 0,
+          baseCommissionRate: 10,
+        });
+        setPurchasesLoaded(true);
+      }
+    } catch (error) {
+      console.error('Error fetching referral purchases:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load all-time earnings purchases',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingPurchases(false);
+    }
+  };
+
   return (
     <AffiliateLayout
       title="Referrals Management"
@@ -291,7 +422,7 @@ export default function AffiliateReferrals() {
     >
       <div className="space-y-6">
         {/* Stats Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Referrals</CardTitle>
@@ -299,10 +430,10 @@ export default function AffiliateReferrals() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-blue-600">
-                {loading ? '...' : (stats.totalReferrals || 0).toLocaleString()}
+                {loading ? '...' : (displayTotalReferrals || 0).toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">
-                All time referrals
+                {hasActiveFilters ? 'Visible referrals' : 'Visible referral rows'}
               </p>
             </CardContent>
           </Card>
@@ -314,10 +445,10 @@ export default function AffiliateReferrals() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-yellow-600">
-                {loading ? '...' : (stats.pendingReferrals || 0).toLocaleString()}
+                {loading ? '...' : (displayUnpaidReferrals || 0).toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">
-                Awaiting payment
+                Matches the current referral list
               </p>
             </CardContent>
           </Card>
@@ -329,10 +460,10 @@ export default function AffiliateReferrals() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                {loading ? '...' : (stats.convertedReferrals || 0).toLocaleString()}
+                {loading ? '...' : (displayPaidReferrals || 0).toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">
-                {loading ? '...' : `${(stats.conversionRate || 0).toFixed(1)}%`} conversion rate
+                Matches the current referral list
               </p>
             </CardContent>
           </Card>
@@ -344,10 +475,30 @@ export default function AffiliateReferrals() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-purple-600">
-                {loading ? '...' : `$${(stats.avgLifetimeValue || 0).toLocaleString()}`}
+                {loading ? '...' : `$${(displayAvgLifetimeValue || 0).toLocaleString()}`}
               </div>
               <p className="text-xs text-muted-foreground">
-                Per converted referral
+                Average for visible paid referrals
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card
+            className="cursor-pointer transition-colors hover:border-emerald-300 hover:bg-emerald-50/40"
+            onClick={openAllTimeEarnings}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">All-Time Earnings</CardTitle>
+              <DollarSign className="h-4 w-4 text-emerald-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-emerald-600">
+                {loading || (!purchasesLoaded && loadingPurchases)
+                  ? '...'
+                  : `$${(purchaseSummary.totalCommissionEarned || stats.totalCommission || 0).toLocaleString()}`}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Click to view every subscription payout
               </p>
             </CardContent>
           </Card>
@@ -359,10 +510,10 @@ export default function AffiliateReferrals() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">
-                {loading ? '...' : (stats.cancelledReferrals || 0).toLocaleString()}
+                {loading ? '...' : (displayCancelledReferrals || 0).toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">
-                Lost clients
+                Matches the current referral list
               </p>
             </CardContent>
           </Card>
@@ -476,7 +627,8 @@ export default function AffiliateReferrals() {
                     </TableRow>
                   ) : (
                     filteredReferrals.map((referral) => (
-                      <TableRow key={referral.id}>
+                      <Fragment key={referral.id}>
+                      <TableRow>
                         <TableCell>
                           <div className="space-y-1">
                             <div className="font-medium">{referral.customerName}</div>
@@ -546,7 +698,16 @@ export default function AffiliateReferrals() {
                         </TableCell>
                         <TableCell>
                           {referral.lastPaymentDate ? (
-                            <span className="text-xs">{new Date(referral.lastPaymentDate).toLocaleDateString()}</span>
+                            <button
+                              type="button"
+                              onClick={() => togglePaymentHistory(referral.id)}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-800"
+                            >
+                              <span>{new Date(referral.lastPaymentDate).toLocaleDateString()}</span>
+                              {(referral.paymentHistory?.length || 0) > 0 ? (
+                                expandedPaymentRows[referral.id] ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                              ) : null}
+                            </button>
                           ) : (
                             <span className="text-xs text-gray-400">-</span>
                           )}
@@ -566,6 +727,38 @@ export default function AffiliateReferrals() {
                           )}
                         </TableCell>
                       </TableRow>
+                      {expandedPaymentRows[referral.id] && (referral.paymentHistory?.length || 0) > 0 ? (
+                        <TableRow key={`${referral.id}-payments`}>
+                          <TableCell colSpan={12} className="bg-slate-50/70">
+                            <div className="space-y-2 py-2">
+                              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                Payment History
+                              </div>
+                              <div className="space-y-2">
+                                {referral.paymentHistory?.map((payment) => (
+                                  <div key={payment.paymentIntentId} className="flex flex-col gap-1 rounded-md border bg-white p-3 text-sm md:flex-row md:items-center md:justify-between">
+                                    <div className="space-y-1">
+                                      <div className="font-medium">
+                                        {new Date(payment.createdAt).toLocaleDateString()} {new Date(payment.createdAt).toLocaleTimeString()}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground font-mono">
+                                        {payment.paymentIntentId}
+                                      </div>
+                                      {payment.description ? (
+                                        <div className="text-xs text-muted-foreground">{payment.description}</div>
+                                      ) : null}
+                                    </div>
+                                    <div className="font-semibold text-green-600">
+                                      ${payment.amount.toFixed(2)} {payment.currency}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                      </Fragment>
                     ))
                   )}
                 </TableBody>
@@ -691,6 +884,94 @@ export default function AffiliateReferrals() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={isAllTimeEarningsOpen} onOpenChange={setIsAllTimeEarningsOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>All-Time Earnings Timeline</DialogTitle>
+            <DialogDescription>
+              Oldest subscription purchases first. Rows turn red only after the current month already has 100 paid purchases, so purchase 101 and later get the +5% bonus.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Total Purchases</div>
+              <div className="mt-1 text-2xl font-semibold">{purchaseSummary.totalPurchases.toLocaleString()}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Referral Revenue</div>
+              <div className="mt-1 text-2xl font-semibold">${purchaseSummary.totalRevenue.toLocaleString()}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Commission Earned</div>
+              <div className="mt-1 text-2xl font-semibold text-emerald-600">${purchaseSummary.totalCommissionEarned.toLocaleString()}</div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">Current Base Rate</div>
+              <div className="mt-1 text-2xl font-semibold">{purchaseSummary.baseCommissionRate.toFixed(2)}%</div>
+            </div>
+          </div>
+
+          <div className="max-h-[60vh] overflow-y-auto rounded-lg border">
+            {loadingPurchases ? (
+              <div className="flex items-center justify-center gap-3 p-10 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading purchase history...
+              </div>
+            ) : referralPurchases.length === 0 ? (
+              <div className="p-10 text-center text-sm text-muted-foreground">
+                No subscription purchases found for this affiliate yet.
+              </div>
+            ) : (
+              <div className="divide-y">
+                {referralPurchases.map((purchase) => (
+                  <div
+                    key={purchase.id}
+                    className={`p-4 ${purchase.isThresholdBonus ? 'bg-red-50/70' : 'bg-background'}`}
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-slate-900 px-2 text-xs font-semibold text-white">
+                            {purchase.index}
+                          </span>
+                          <span className="font-semibold">{purchase.customerName}</span>
+                          {purchase.isThresholdBonus ? (
+                            <Badge className="bg-red-100 text-red-800">101+ This Month</Badge>
+                          ) : null}
+                        </div>
+                        <div className="text-sm text-muted-foreground">{purchase.email}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {new Date(purchase.createdAt).toLocaleDateString()} {new Date(purchase.createdAt).toLocaleTimeString()}
+                        </div>
+                        <div className="text-xs font-mono text-muted-foreground">{purchase.paymentIntentId}</div>
+                        {purchase.description ? (
+                          <div className="text-xs text-muted-foreground">{purchase.description}</div>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1 text-left md:text-right">
+                        <div className="text-lg font-semibold">${purchase.amount.toFixed(2)} {purchase.currency}</div>
+                        <div className="text-sm text-emerald-600 font-semibold">
+                          Earned ${purchase.commissionEarned.toFixed(2)} at {purchase.effectiveCommissionRate.toFixed(2)}%
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Base rate: {purchase.baseCommissionRate.toFixed(2)}%
+                        </div>
+                        {purchase.currentMonthPaidSequence ? (
+                          <div className="text-xs text-muted-foreground">
+                            Current month paid purchase #{purchase.currentMonthPaidSequence}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AffiliateLayout>
   );
 }

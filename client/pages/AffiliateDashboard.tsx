@@ -97,6 +97,24 @@ interface RecentReferral {
   lastTransactionId?: string;
 }
 
+interface ReferralListItem {
+  id: string;
+  status: "pending" | "paid" | "cancelled" | "churned" | "unpaid" | "expired";
+  signupDate?: string;
+}
+
+interface ReferralPurchaseItem {
+  id: string;
+  amount: number;
+  createdAt: string;
+  commissionEarned: number;
+}
+
+const getStartOfCurrentMonth = () => {
+  const date = new Date();
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+};
+
 // Animated count-up number component
 function AnimatedNumber({ value, prefix = "", suffix = "", decimals = 0 }: { value: number; prefix?: string; suffix?: string; decimals?: number }) {
   const [display, setDisplay] = useState(0);
@@ -173,11 +191,19 @@ export default function AffiliateDashboard() {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        const statsResponse = await affiliateApi.getStats();
+        const [statsResponse, refResp, referralsResponse, purchasesResponse] = await Promise.all([
+          affiliateApi.getStats(),
+          affiliateApi.getRecentReferrals(10),
+          affiliateApi.getReferrals(),
+          affiliateApi.getReferralPurchases().catch(() => null),
+        ]);
+
+        let nextStatsPatch: Partial<EarningsStats> = {};
+
         if (statsResponse.data?.success) {
           const d = statsResponse.data.data;
           const total = d.totalReferrals || 0;
-          setEarningsStats({
+          const baseStats: EarningsStats = {
             totalEarnings: d.totalEarnings || 0,
             monthlyEarnings: d.monthlyEarnings || 0,
             yearlyEarnings: d.yearlyEarnings || 0,
@@ -209,9 +235,10 @@ export default function AffiliateDashboard() {
             lastPayoutDate: d.lastPayoutDate || null,
             currentMRR: d.currentMRR || 0,
             mrrBase: d.mrrBase || 0,
-          });
+          };
+          setEarningsStats(baseStats);
         }
-        const refResp = await affiliateApi.getRecentReferrals(10);
+
         if (refResp.data?.success) {
           const refs = refResp.data.data || [];
           setRecentReferrals(refs);
@@ -221,6 +248,50 @@ export default function AffiliateDashboard() {
               paidReferralsCount: refs.filter((r: any) => r.status === "paid").length,
             }));
           }
+        }
+
+        const referralRows: ReferralListItem[] = referralsResponse.data?.success ? (referralsResponse.data.data || []) : [];
+        const purchaseRows: ReferralPurchaseItem[] = purchasesResponse?.data?.success ? (purchasesResponse.data.data || []) : [];
+
+        if (referralRows.length > 0 || purchaseRows.length > 0) {
+          const currentMonthStart = getStartOfCurrentMonth();
+          const paidReferralCount = referralRows.filter((row) => row.status === "paid").length;
+          const unpaidReferralCount = referralRows.filter((row) => row.status === "unpaid" || row.status === "pending").length;
+          const cancelledReferralCount = referralRows.filter((row) => row.status === "cancelled" || row.status === "churned").length;
+          const totalReferralCount = referralRows.length;
+          const totalCommissionEarned = purchaseRows.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
+          const currentMonthPurchases = purchaseRows.filter((row) => new Date(row.createdAt) >= currentMonthStart);
+          const monthlyCommissionEarned = currentMonthPurchases.reduce((sum, row) => sum + (Number(row.commissionEarned) || 0), 0);
+          const latestPurchase = purchaseRows
+            .slice()
+            .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())[0];
+          const currentMonthReferralLeads = referralRows.filter((row) => row.signupDate && new Date(row.signupDate) >= currentMonthStart).length;
+          const currentMonthConversionCount = currentMonthPurchases.length;
+          const currentMonthConversionRate = currentMonthReferralLeads > 0 ? (currentMonthConversionCount / currentMonthReferralLeads) * 100 : 0;
+
+          nextStatsPatch = {
+            totalEarnings: Number(totalCommissionEarned.toFixed(2)),
+            monthlyEarnings: Number(monthlyCommissionEarned.toFixed(2)),
+            totalReferrals: totalReferralCount,
+            activePayingClients: paidReferralCount,
+            unpaidClients: unpaidReferralCount,
+            cancelledClients: cancelledReferralCount,
+            avgCommission: paidReferralCount > 0 ? Number((totalCommissionEarned / paidReferralCount).toFixed(2)) : 0,
+            currentMonthAverageCommission: currentMonthConversionCount > 0 ? Number((monthlyCommissionEarned / currentMonthConversionCount).toFixed(2)) : 0,
+            currentMonthReferralLeads,
+            currentMonthConversionCount,
+            currentMonthConversionRate: Number(currentMonthConversionRate.toFixed(1)),
+            conversionRate: totalReferralCount > 0 ? Number(((paidReferralCount / totalReferralCount) * 100).toFixed(1)) : 0,
+            lastPayment: latestPurchase ? {
+              amount: latestPurchase.commissionEarned,
+              date: new Date(latestPurchase.createdAt).toLocaleDateString(),
+            } : undefined,
+          };
+
+          setEarningsStats((prev) => ({
+            ...prev,
+            ...nextStatsPatch,
+          }));
         }
       } catch (e) {
         console.error("Dashboard fetch error:", e);

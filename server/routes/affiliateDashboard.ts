@@ -1,10 +1,220 @@
 import express from 'express';
+import Stripe from 'stripe';
 import { executeQuery } from '../database/mysqlConfig.js';
 import { authenticateToken } from '../middleware/authMiddleware.js';
 import { SecurityLogger } from '../utils/securityLogger.js';
 
 const router = express.Router();
 const securityLogger = new SecurityLogger();
+let stripeClient: Stripe | null | undefined;
+
+type StripePaymentHistoryItem = {
+  paymentIntentId: string;
+  amount: number;
+  currency: string;
+  createdAt: string;
+  description: string;
+};
+
+const STRIPE_PAYMENT_HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
+const STRIPE_PAYMENT_HISTORY_CONCURRENCY = 2;
+const MAX_STRIPE_RATE_LIMIT_RETRIES = 5;
+const stripePaymentHistoryCache = new Map<string, {
+  expiresAt: number;
+  value: StripePaymentHistoryItem[];
+}>();
+const stripePaymentHistoryInFlight = new Map<string, Promise<StripePaymentHistoryItem[]>>();
+
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isRetryableStripeError(error: any) {
+  const code = String(error?.code || error?.type || '').toLowerCase();
+  const statusCode = Number(error?.statusCode || error?.status || error?.raw?.statusCode || 0);
+  return code === 'rate_limit' || statusCode === 429;
+}
+
+async function withStripeRateLimitRetry<T>(operation: () => Promise<T>) {
+  let attempt = 0;
+  let delayMs = 500;
+
+  while (true) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isRetryableStripeError(error) || attempt >= MAX_STRIPE_RATE_LIMIT_RETRIES - 1) {
+        throw error;
+      }
+
+      attempt += 1;
+      await sleep(delayMs);
+      delayMs *= 2;
+    }
+  }
+}
+
+async function mapWithConcurrency<T, TResult>(
+  items: T[],
+  concurrencyLimit: number,
+  iteratee: (item: T, index: number) => Promise<TResult>
+) {
+  if (items.length === 0) {
+    return [] as TResult[];
+  }
+
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+
+      if (currentIndex >= items.length) {
+        return;
+      }
+
+      results[currentIndex] = await iteratee(items[currentIndex], currentIndex);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrencyLimit, items.length) }, () => worker())
+  );
+
+  return results;
+}
+
+async function getStripeClient(): Promise<Stripe | null> {
+  if (stripeClient !== undefined) {
+    return stripeClient;
+  }
+
+  try {
+    const stripeConfigs = await executeQuery(
+      'SELECT stripe_secret_key FROM stripe_config WHERE is_active = TRUE ORDER BY created_at DESC LIMIT 1',
+      []
+    );
+    const dbSecretKey = stripeConfigs && stripeConfigs[0]?.stripe_secret_key;
+    const secretKey = dbSecretKey || process.env.STRIPE_SECRET_KEY;
+
+    if (!secretKey) {
+      stripeClient = null;
+      return stripeClient;
+    }
+
+    stripeClient = new Stripe(secretKey, {
+      apiVersion: '2024-06-20',
+    });
+    return stripeClient;
+  } catch (error) {
+    console.error('Error initializing Stripe for affiliate dashboard:', error);
+    stripeClient = null;
+    return stripeClient;
+  }
+}
+
+async function fetchCustomerPaymentHistory(customerId: string) {
+  const stripe = await getStripeClient();
+  if (!stripe) {
+    return [] as StripePaymentHistoryItem[];
+  }
+
+  const payments: StripePaymentHistoryItem[] = [];
+  let startingAfter: string | undefined;
+  let hasMore = true;
+
+  while (hasMore) {
+    const paymentIntentPage = await withStripeRateLimitRetry(() => stripe.paymentIntents.list({
+      customer: customerId,
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    }));
+
+    paymentIntentPage.data.forEach((paymentIntent) => {
+      if (paymentIntent.status !== 'succeeded') {
+        return;
+      }
+
+      payments.push({
+        paymentIntentId: paymentIntent.id,
+        amount: typeof paymentIntent.amount === 'number' ? paymentIntent.amount / 100 : 0,
+        currency: paymentIntent.currency ? paymentIntent.currency.toUpperCase() : 'USD',
+        createdAt: new Date(paymentIntent.created * 1000).toISOString(),
+        description: paymentIntent.description || '',
+      });
+    });
+
+    hasMore = paymentIntentPage.has_more;
+    startingAfter = hasMore && paymentIntentPage.data.length > 0
+      ? paymentIntentPage.data[paymentIntentPage.data.length - 1].id
+      : undefined;
+  }
+
+  payments.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  return payments;
+}
+
+async function getCustomerPaymentHistory(customerId?: string | null) {
+  if (!customerId) {
+    return [] as StripePaymentHistoryItem[];
+  }
+
+  const cachedEntry = stripePaymentHistoryCache.get(customerId);
+  if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
+    return cachedEntry.value;
+  }
+
+  if (cachedEntry) {
+    stripePaymentHistoryCache.delete(customerId);
+  }
+
+  const inFlightRequest = stripePaymentHistoryInFlight.get(customerId);
+  if (inFlightRequest) {
+    return inFlightRequest;
+  }
+
+  const request = (async () => {
+    try {
+      const payments = await fetchCustomerPaymentHistory(customerId);
+      stripePaymentHistoryCache.set(customerId, {
+        expiresAt: Date.now() + STRIPE_PAYMENT_HISTORY_CACHE_TTL_MS,
+        value: payments,
+      });
+      return payments;
+    } catch (error) {
+      console.error(`Error fetching Stripe payment history for customer ${customerId}:`, error);
+      return [] as StripePaymentHistoryItem[];
+    } finally {
+      stripePaymentHistoryInFlight.delete(customerId);
+    }
+  })();
+
+  stripePaymentHistoryInFlight.set(customerId, request);
+  return request;
+}
+
+function getAffiliateBaseCommissionRate(planType?: string | null, configuredRate?: number | null) {
+  const normalizedPlanType = String(planType || '').toLowerCase();
+  const numericRate = Number(configuredRate) || 0;
+  const hasPaidPlan = ['paid_partner', 'partner', 'pro', 'premium'].includes(normalizedPlanType) || numericRate >= 20;
+
+  if (numericRate > 0) {
+    return hasPaidPlan ? Math.max(20, Math.min(25, numericRate)) : Math.max(10, Math.min(15, numericRate));
+  }
+
+  return hasPaidPlan ? 20 : 10;
+}
+
+function getEffectiveCommissionRate(baseRate: number, qualifiesForBonus: boolean) {
+  const normalizedBaseRate = Number(baseRate) || 0;
+  const maxRate = normalizedBaseRate >= 20 ? 25 : 15;
+  if (!qualifiesForBonus) {
+    return normalizedBaseRate;
+  }
+  return Math.min(normalizedBaseRate + 5, maxRate);
+}
 
 // Middleware to ensure only affiliates OR admins with affiliate access can use these routes
 const requireAffiliateRole = (req: any, res: any, next: any) => {
@@ -1206,6 +1416,7 @@ router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, re
         u.last_name,
         u.email,
         u.phone,
+        u.stripe_customer_id,
         ar.created_at as signup_date,
         ar.conversion_date,
         u.status as user_status,
@@ -1261,26 +1472,34 @@ router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, re
     const referrals = await executeQuery(query, [affiliateId, affiliateId]);
 
     // Transform data to match frontend interface
-    const transformedReferrals = referrals.map((referral: any) => ({
-      id: referral.id,
-      customerName: `${referral.first_name || ''} ${referral.last_name || ''}`.trim() || `User ${referral.id}`,
-      email: referral.email,
-      status: referral.final_status,
-      signupDate: referral.signup_date,
-      conversionDate: referral.conversion_date,
-      commission: parseFloat(referral.commission_earned) || 0,
-      lifetimeValue: parseFloat(referral.commission_earned) || 0,
-      tier: parseFloat(referral.commission_earned) > 100 ? 'enterprise' :
-            parseFloat(referral.commission_earned) > 50 ? 'premium' : 'basic',
-      transactionId: referral.transaction_id,
-      planPrice: referral.plan_price ? parseFloat(referral.plan_price) : null,
-      planName: referral.subscription_plan_name || null,
-      subscriptionStatus: referral.subscription_status || null,
-      isStripePaid: String(referral.subscription_status || '').toLowerCase() === 'active',
-      lastPaymentDate: referral.last_payment_date || null,
-      stripeTransactionId: referral.stripe_transaction_id || referral.transaction_id || null,
-      currentPeriodEnd: referral.current_period_end || null,
-    }));
+    const transformedReferrals = await mapWithConcurrency(referrals || [], STRIPE_PAYMENT_HISTORY_CONCURRENCY, async (referral: any) => {
+      const stripePayments = await getCustomerPaymentHistory(referral.stripe_customer_id || null);
+      const latestStripePayment = stripePayments[0] || null;
+      const fallbackPlanPrice = referral.plan_price ? parseFloat(referral.plan_price) : null;
+
+      return {
+        id: referral.id,
+        customerName: `${referral.first_name || ''} ${referral.last_name || ''}`.trim() || `User ${referral.id}`,
+        email: referral.email,
+        phone: referral.phone || null,
+        status: referral.final_status,
+        signupDate: referral.signup_date,
+        conversionDate: referral.conversion_date,
+        commission: parseFloat(referral.commission_earned) || 0,
+        lifetimeValue: parseFloat(referral.commission_earned) || 0,
+        tier: parseFloat(referral.commission_earned) > 100 ? 'enterprise' :
+              parseFloat(referral.commission_earned) > 50 ? 'premium' : 'basic',
+        transactionId: referral.transaction_id,
+        planPrice: latestStripePayment ? latestStripePayment.amount : fallbackPlanPrice,
+        planName: referral.subscription_plan_name || null,
+        subscriptionStatus: referral.subscription_status || null,
+        isStripePaid: String(referral.subscription_status || '').toLowerCase() === 'active',
+        lastPaymentDate: latestStripePayment?.createdAt || referral.last_payment_date || null,
+        stripeTransactionId: latestStripePayment?.paymentIntentId || referral.stripe_transaction_id || referral.transaction_id || null,
+        paymentHistory: stripePayments,
+        currentPeriodEnd: referral.current_period_end || null,
+      };
+    });
     
     res.json({
       success: true,
@@ -1290,6 +1509,130 @@ router.get('/referrals', authenticateToken, requireAffiliateRole, async (req, re
   } catch (error) {
     console.error('Error fetching referrals:', error);
     res.status(500).json({ error: 'Failed to fetch referrals' });
+  }
+});
+
+router.get('/referrals/purchases', authenticateToken, requireAffiliateRole, async (req, res) => {
+  try {
+    const affiliateId = await resolveAffiliateId(req);
+    if (!affiliateId) {
+      return res.status(404).json({ error: 'Affiliate not found for this user' });
+    }
+
+    const affiliateRows = await executeQuery(
+      `SELECT id, commission_rate, plan_type
+       FROM affiliates
+       WHERE id = ?
+       LIMIT 1`,
+      [affiliateId]
+    );
+
+    const affiliate = affiliateRows?.[0] || {};
+    const baseCommissionRate = getAffiliateBaseCommissionRate(affiliate.plan_type, parseFloat(affiliate.commission_rate));
+
+    const referralRows = await executeQuery(
+      `SELECT
+         ar.id AS referral_id,
+         ar.referred_user_id,
+         ar.transaction_id,
+         u.first_name,
+         u.last_name,
+         u.email,
+         u.stripe_customer_id
+       FROM affiliate_referrals ar
+       JOIN users u ON ar.referred_user_id = u.id
+       WHERE ar.affiliate_id = ?
+         AND u.stripe_customer_id IS NOT NULL
+       ORDER BY ar.created_at ASC`,
+      [affiliateId]
+    );
+
+    const referralPurchases = await mapWithConcurrency(referralRows || [], STRIPE_PAYMENT_HISTORY_CONCURRENCY, async (referral: any) => {
+      const payments = await getCustomerPaymentHistory(referral.stripe_customer_id || null);
+      return payments.map((payment) => ({
+        referralId: String(referral.referral_id),
+        referredUserId: referral.referred_user_id,
+        customerName: `${referral.first_name || ''} ${referral.last_name || ''}`.trim() || referral.email || `User ${referral.referred_user_id}`,
+        email: referral.email,
+        stripeCustomerId: referral.stripe_customer_id,
+        paymentIntentId: payment.paymentIntentId,
+        amount: Number(payment.amount) || 0,
+        currency: payment.currency,
+        createdAt: payment.createdAt,
+        description: payment.description || '',
+        transactionId: referral.transaction_id || null,
+      }));
+    });
+
+    const uniquePurchases = Array.from(
+      new Map(
+        referralPurchases
+          .flat()
+          .map((purchase) => [`${purchase.stripeCustomerId}:${purchase.paymentIntentId}`, purchase])
+      ).values()
+    );
+
+    const purchases = uniquePurchases
+      .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
+
+    const currentMonthStart = new Date();
+    currentMonthStart.setUTCDate(1);
+    currentMonthStart.setUTCHours(0, 0, 0, 0);
+    const nextMonthStart = new Date(currentMonthStart);
+    nextMonthStart.setUTCMonth(nextMonthStart.getUTCMonth() + 1);
+
+    let currentMonthPaidCount = 0;
+
+    const purchaseTimeline = purchases.map((purchase, index) => {
+      const createdAtDate = new Date(purchase.createdAt);
+      const isCurrentMonth = createdAtDate >= currentMonthStart && createdAtDate < nextMonthStart;
+      if (isCurrentMonth) {
+        currentMonthPaidCount += 1;
+      }
+
+      const qualifiesForBonus = isCurrentMonth && currentMonthPaidCount > 100;
+      const effectiveCommissionRate = getEffectiveCommissionRate(baseCommissionRate, qualifiesForBonus);
+      const commissionEarned = Number(((purchase.amount * effectiveCommissionRate) / 100).toFixed(2));
+
+      return {
+        id: `${purchase.paymentIntentId}-${index + 1}`,
+        index: index + 1,
+        referralId: purchase.referralId,
+        referredUserId: purchase.referredUserId,
+        customerName: purchase.customerName,
+        email: purchase.email,
+        stripeCustomerId: purchase.stripeCustomerId,
+        paymentIntentId: purchase.paymentIntentId,
+        amount: purchase.amount,
+        currency: purchase.currency,
+        createdAt: purchase.createdAt,
+        description: purchase.description,
+        baseCommissionRate,
+        effectiveCommissionRate,
+        commissionEarned,
+        currentMonthPaidSequence: isCurrentMonth ? currentMonthPaidCount : null,
+        isThresholdBonus: qualifiesForBonus,
+        transactionId: purchase.transactionId,
+      };
+    });
+
+    const summary = {
+      totalPurchases: purchaseTimeline.length,
+      totalRevenue: Number(purchaseTimeline.reduce((sum, purchase) => sum + purchase.amount, 0).toFixed(2)),
+      totalCommissionEarned: Number(purchaseTimeline.reduce((sum, purchase) => sum + purchase.commissionEarned, 0).toFixed(2)),
+      currentMonthPurchases: purchaseTimeline.filter((purchase) => purchase.currentMonthPaidSequence !== null).length,
+      thresholdBonusPurchases: purchaseTimeline.filter((purchase) => purchase.isThresholdBonus).length,
+      baseCommissionRate,
+    };
+
+    res.json({
+      success: true,
+      data: purchaseTimeline,
+      summary,
+    });
+  } catch (error) {
+    console.error('Error fetching affiliate referral purchases:', error);
+    res.status(500).json({ error: 'Failed to fetch affiliate referral purchases' });
   }
 });
 

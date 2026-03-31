@@ -15,6 +15,12 @@ interface BureauScoresChartProps {
   allReports?: any[];
 }
 
+const parseChartDate = (value?: string) => {
+  if (!value || value === 'N/A') return Number.NaN;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? Number.NaN : timestamp;
+};
+
 const BureauScoresChart: React.FC<BureauScoresChartProps> = ({ reportData, allReports = [] }) => {
   // Extract current scores from reportData
   const getCurrentScores = (): BureauScore[] => {
@@ -124,6 +130,15 @@ const BureauScoresChart: React.FC<BureauScoresChartProps> = ({ reportData, allRe
       }
 
       return scores;
+    }).sort((left, right) => {
+      const leftDate = parseChartDate(left[0]?.date);
+      const rightDate = parseChartDate(right[0]?.date);
+
+      if (Number.isNaN(leftDate) && Number.isNaN(rightDate)) return 0;
+      if (Number.isNaN(leftDate)) return 1;
+      if (Number.isNaN(rightDate)) return -1;
+
+      return leftDate - rightDate;
     });
   };
 

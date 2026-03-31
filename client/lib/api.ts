@@ -780,6 +780,7 @@ export const affiliateApi = {
 
   // Referrals endpoints
   getReferrals: () => api.get('/api/affiliate/referrals'),
+  getReferralPurchases: () => api.get('/api/affiliate/referrals/purchases'),
   getChildReferrals: () => api.get('/api/affiliate/referrals/child'),
   getReferralStats: () => api.get('/api/affiliate/referrals/stats'),
   sendFollowUp: (referralId: string) => api.post(`/api/affiliate/referrals/${referralId}/follow-up`),
