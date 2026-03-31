@@ -203,6 +203,61 @@ router.put('/:paymentId/status',
   }
 );
 
+// Edit a payment record (amount and/or notes)
+router.put('/:paymentId',
+  authenticateToken,
+  requireRole('super_admin'),
+  async (req, res) => {
+    try {
+      const { paymentId } = req.params;
+      const { amount, notes } = req.body;
+
+      if (amount === undefined && notes === undefined) {
+        return res.status(400).json({ success: false, message: 'Provide amount or notes to update' });
+      }
+
+      // Verify payment exists
+      const existing = await getRecords<RowDataPacket>(
+        'SELECT id FROM commission_payments WHERE id = ?',
+        [paymentId]
+      );
+      if (existing.length === 0) {
+        return res.status(404).json({ success: false, message: 'Payment not found' });
+      }
+
+      const setClauses: string[] = [];
+      const params: any[] = [];
+
+      if (amount !== undefined) {
+        const numAmount = Number(amount);
+        if (isNaN(numAmount) || numAmount < 0) {
+          return res.status(400).json({ success: false, message: 'Invalid amount' });
+        }
+        setClauses.push('amount = ?');
+        params.push(numAmount);
+      }
+
+      if (notes !== undefined) {
+        setClauses.push('notes = ?');
+        params.push(notes);
+      }
+
+      setClauses.push('updated_at = NOW()');
+      params.push(paymentId);
+
+      await updateRecord(
+        `UPDATE commission_payments SET ${setClauses.join(', ')} WHERE id = ?`,
+        params
+      );
+
+      res.json({ success: true, message: 'Payment updated successfully' });
+    } catch (error) {
+      console.error('Error updating payment record:', error);
+      res.status(500).json({ success: false, message: 'Failed to update payment' });
+    }
+  }
+);
+
 // Delete a payment record
 router.delete('/:paymentId', 
   authenticateToken, 

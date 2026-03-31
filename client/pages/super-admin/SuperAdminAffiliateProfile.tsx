@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { api, superAdminApi } from '@/lib/api';
 import { format } from 'date-fns';
-import { Download, RefreshCw, Calendar, DollarSign, Users, Mail, Phone, Building, TrendingUp, CreditCard, Activity, XCircle, AlertTriangle, BarChart2, Clock } from 'lucide-react';
+import { Download, RefreshCw, Calendar, DollarSign, Users, Mail, Phone, Building, TrendingUp, CreditCard, Activity, XCircle, AlertTriangle, BarChart2, Clock, Pencil, Trash2, Check, X } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { aggregateMonthlyEarnings, mergeReferralsWithCommissions, filterReferrals } from '@/utils/affiliateProfile';
 
@@ -183,6 +183,11 @@ const SuperAdminAffiliateProfile: React.FC = () => {
   const [showAllPayments, setShowAllPayments] = useState(false);
   const [editingPaymentAmount, setEditingPaymentAmount] = useState(false);
   const [customPaymentAmount, setCustomPaymentAmount] = useState('');
+  const [editingPaymentId, setEditingPaymentId] = useState<number | null>(null);
+  const [editPaymentAmount, setEditPaymentAmount] = useState('');
+  const [editPaymentNotes, setEditPaymentNotes] = useState('');
+  const [savingPaymentEdit, setSavingPaymentEdit] = useState(false);
+  const [deletingPaymentId, setDeletingPaymentId] = useState<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -595,15 +600,108 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                     ) : (
                       <div className="space-y-2 max-h-60 overflow-y-auto">
                         {(showAllPayments ? paymentHistory : paymentHistory.slice(0, 3)).map((p) => (
-                          <div key={p.id} className="flex items-center justify-between p-2 bg-muted/50 rounded-md text-sm">
-                            <div>
-                              <div className="font-medium">${Number(p.amount).toFixed(2)}</div>
-                              <div className="text-xs text-muted-foreground">{p.payment_method} · {format(new Date(p.created_at), 'MMM dd, yyyy')}</div>
-                              {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
-                            </div>
-                            <Badge className={p.status === 'completed' || p.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                              {p.status}
-                            </Badge>
+                          <div key={p.id} className="p-2 bg-muted/50 rounded-md text-sm">
+                            {editingPaymentId === p.id ? (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground w-14">Amount</span>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    value={editPaymentAmount}
+                                    onChange={(e) => setEditPaymentAmount(e.target.value)}
+                                    className="h-7 text-sm"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-muted-foreground w-14">Notes</span>
+                                  <Input
+                                    value={editPaymentNotes}
+                                    onChange={(e) => setEditPaymentNotes(e.target.value)}
+                                    placeholder="Notes (optional)"
+                                    className="h-7 text-sm"
+                                  />
+                                </div>
+                                <div className="flex justify-end gap-1">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2"
+                                    disabled={savingPaymentEdit}
+                                    onClick={() => { setEditingPaymentId(null); setEditPaymentAmount(''); setEditPaymentNotes(''); }}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    className="h-7 px-2"
+                                    disabled={savingPaymentEdit || !editPaymentAmount}
+                                    onClick={async () => {
+                                      try {
+                                        setSavingPaymentEdit(true);
+                                        await api.put(`/api/commission-payments/${p.id}`, { amount: Number(editPaymentAmount), notes: editPaymentNotes });
+                                        setEditingPaymentId(null);
+                                        const [payHistResp, statsResp2] = await Promise.all([
+                                          api.get(`/api/commission-payments/affiliate/${id}`).catch(() => ({ data: null })),
+                                          api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
+                                        ]);
+                                        if (payHistResp.data?.success) setPaymentHistory(payHistResp.data.data || []);
+                                        if (statsResp2.data?.data) setAffiliateStats(statsResp2.data.data);
+                                      } finally { setSavingPaymentEdit(false); }
+                                    }}
+                                  >
+                                    <Check className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium">${Number(p.amount).toFixed(2)}</div>
+                                  <div className="text-xs text-muted-foreground">{p.payment_method} · {format(new Date(p.created_at), 'MMM dd, yyyy')}</div>
+                                  {p.notes && <div className="text-xs text-muted-foreground">{p.notes}</div>}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Badge className={p.status === 'completed' || p.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                                    {p.status}
+                                  </Badge>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0"
+                                    onClick={() => {
+                                      setEditingPaymentId(p.id);
+                                      setEditPaymentAmount(String(Number(p.amount).toFixed(2)));
+                                      setEditPaymentNotes(p.notes || '');
+                                    }}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                                    disabled={deletingPaymentId === p.id}
+                                    onClick={async () => {
+                                      if (!confirm('Delete this payment record? This will affect pending payout calculations.')) return;
+                                      try {
+                                        setDeletingPaymentId(p.id);
+                                        await api.delete(`/api/commission-payments/${p.id}`);
+                                        const [payHistResp, statsResp2] = await Promise.all([
+                                          api.get(`/api/commission-payments/affiliate/${id}`).catch(() => ({ data: null })),
+                                          api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
+                                        ]);
+                                        if (payHistResp.data?.success) setPaymentHistory(payHistResp.data.data || []);
+                                        if (statsResp2.data?.data) setAffiliateStats(statsResp2.data.data);
+                                      } finally { setDeletingPaymentId(null); }
+                                    }}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
