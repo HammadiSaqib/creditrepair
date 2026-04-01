@@ -64,6 +64,7 @@ import employeesRoutes from "./routes/employees.js";
 import debtPayoffRoutes from "./routes/debtPayoff.js";
 import shopRoutes from "./routes/shop.js";
 import testimonialsRoutes, { publicTestimonialsRoutes } from "./routes/testimonials.js";
+import testimonialsExternalRoutes from "./routes/testimonialsExternal.js";
 import integrationsRoutes from "./routes/integrations.js";
 import { emailService } from "./services/emailService.js";
 
@@ -457,6 +458,9 @@ export async function createServer(vite?: ViteDevServer) {
   app.use("/api/community", communityRoutes);
   // Public testimonials route for landing page
   app.use("/api/testimonials", publicTestimonialsRoutes);
+
+  // External testimonials API (public, CORS-open, for PHP/Node.js integrations)
+  app.use("/api/v1/testimonials", testimonialsExternalRoutes);
 
   // =============================================================================
   // FEATURE REQUESTS ROUTES (Admin-only)
