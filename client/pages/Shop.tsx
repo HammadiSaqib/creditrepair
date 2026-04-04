@@ -10,9 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from 'sonner';
 import { v4 as uuidv4 } from 'uuid';
 import { shopApi } from '@/lib/api';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ShoppingBag, Download, ShieldCheck, Zap, Star, Search, ArrowRight, Loader2, CheckCircle, RefreshCw, Lock } from 'lucide-react';
+import { ShoppingBag, Download, ShieldCheck, Zap, Star, Loader2, CheckCircle, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
 interface ShopProductFile {
@@ -65,8 +64,11 @@ function triggerDownloads(urls: string[]) {
   }
 }
 
-export default function Shop() {
-  const navigate = useNavigate();
+interface ShopProps {
+  embed?: boolean;
+}
+
+export default function Shop({ embed = false }: ShopProps) {
   const cookieId = useCookieId();
   const [products, setProducts] = useState<ShopProduct[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -101,17 +103,73 @@ export default function Shop() {
     loadProducts();
   }, []);
 
+  useEffect(() => {
+    if (!embed || typeof window === 'undefined' || window.parent === window) {
+      return;
+    }
+
+    const postEmbedHeight = () => {
+      const height = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+      );
+
+      window.parent.postMessage(
+        {
+          type: 'scoremachine:shop-embed-resize',
+          height,
+        },
+        '*',
+      );
+    };
+
+    postEmbedHeight();
+
+    const frameId = window.requestAnimationFrame(postEmbedHeight);
+    const resizeObserver = new ResizeObserver(() => {
+      postEmbedHeight();
+    });
+
+    resizeObserver.observe(document.body);
+    window.addEventListener('resize', postEmbedHeight);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', postEmbedHeight);
+    };
+  }, [embed, loading, error, products.length, reDownloadDialogOpen, codeRequested]);
+
   const formatPrice = useMemo(() => (p: number) => {
     const n = Number(p);
     return isFinite(n) ? `$${n.toFixed(2)}` : '$0.00';
   }, []);
+
+  const redirectToCheckout = (url: string) => {
+    if (!embed) {
+      window.location.href = url;
+      return;
+    }
+
+    try {
+      if (window.top && window.top !== window.self) {
+        window.top.location.href = url;
+        return;
+      }
+    } catch {}
+
+    const redirected = window.open(url, '_top');
+    if (!redirected) {
+      window.location.href = url;
+    }
+  };
 
   const openPurchase = async (product: ShopProduct) => {
     try {
       setCheckingOut(true);
       const billingLink = product.stripe_billing_link?.trim();
       if (billingLink) {
-        window.location.href = billingLink;
+        redirectToCheckout(billingLink);
         return;
       }
       const resp = await shopApi.createCheckout({
@@ -122,7 +180,7 @@ export default function Shop() {
       });
       const url = resp.data?.url;
       if (url) {
-        window.location.href = url;
+        redirectToCheckout(url);
       } else {
         toast.error('Unable to start checkout');
       }
@@ -203,49 +261,62 @@ export default function Shop() {
     show: { opacity: 1, y: 0 }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50/50 flex flex-col font-sans">
-      <Helmet>
-        <title>Shop - Score Machine</title>
-        <meta name="description" content="Browse premium shop products, purchase instantly, and re-download using email verification." />
-        <link rel="canonical" href="https://scoremachine.com/shop" />
-      </Helmet>
-      <SiteHeader />
-      
-      {/* Hero Section */}
-      <section className="relative bg-white overflow-hidden pt-16 pb-20 lg:pt-24 lg:pb-28">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-purple-50 opacity-60" />
-        <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="max-w-3xl mx-auto"
-          >
-            <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-gray-900 mb-6">
-              Premium Digital <span className="text-transparent bg-clip-text bg-gradient-to-r from-ocean-blue to-sea-green">Resources</span>
-            </h1>
-            <p className="text-xl text-gray-600 mb-8 leading-relaxed">
-              Elevate your credit repair business with our professionally crafted templates, guides, and tools. 
-              Secure checkout and instant delivery.
-            </p>
-            
-            <div className="flex flex-wrap justify-center gap-3">
-              <Badge variant="secondary" className="px-4 py-2 bg-white border border-blue-100 shadow-sm text-blue-700 rounded-full text-sm font-medium flex items-center gap-2">
-                <Zap className="w-4 h-4 text-blue-500 fill-blue-500" /> Instant Access
-              </Badge>
-              <Badge variant="secondary" className="px-4 py-2 bg-white border border-green-100 shadow-sm text-green-700 rounded-full text-sm font-medium flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-green-500 fill-green-500" /> Secure Payment
-              </Badge>
-              <Badge variant="secondary" className="px-4 py-2 bg-white border border-purple-100 shadow-sm text-purple-700 rounded-full text-sm font-medium flex items-center gap-2">
-                <Star className="w-4 h-4 text-purple-500 fill-purple-500" /> Premium Quality
-              </Badge>
-            </div>
-          </motion.div>
-        </div>
-      </section>
+  const mainClassName = 'flex-grow container mx-auto px-4 py-12 sm:px-6 lg:px-8 -mt-10 relative z-10';
+  const rootClassName = embed
+    ? 'min-h-screen bg-gray-50/50 font-sans pt-10'
+    : 'min-h-screen bg-gray-50/50 flex flex-col font-sans';
 
-      <main className="flex-grow container mx-auto px-4 py-12 sm:px-6 lg:px-8 -mt-10 relative z-10">
+  return (
+    <div className={rootClassName}>
+      <Helmet>
+        <title>{embed ? 'Shop Embed - Score Machine' : 'Shop - Score Machine'}</title>
+        <meta name="description" content="Browse premium shop products, purchase instantly, and re-download using email verification." />
+        {embed ? (
+          <>
+            <meta name="robots" content="noindex,nofollow" />
+            <link rel="canonical" href="https://thescoremachine.com/shop" />
+          </>
+        ) : (
+          <link rel="canonical" href="https://thescoremachine.com/shop" />
+        )}
+      </Helmet>
+      {!embed && <SiteHeader />}
+
+      {!embed && (
+        <section className="relative bg-white overflow-hidden pt-16 pb-20 lg:pt-24 lg:pb-28">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-purple-50 opacity-60" />
+          <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="max-w-3xl mx-auto"
+            >
+              <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-gray-900 mb-6">
+                Premium Digital <span className="text-transparent bg-clip-text bg-gradient-to-r from-ocean-blue to-sea-green">Resources</span>
+              </h1>
+              <p className="text-xl text-gray-600 mb-8 leading-relaxed">
+                Elevate your credit repair business with our professionally crafted templates, guides, and tools.
+                Secure checkout and instant delivery.
+              </p>
+
+              <div className="flex flex-wrap justify-center gap-3">
+                <Badge variant="secondary" className="px-4 py-2 bg-white border border-blue-100 shadow-sm text-blue-700 rounded-full text-sm font-medium flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-blue-500 fill-blue-500" /> Instant Access
+                </Badge>
+                <Badge variant="secondary" className="px-4 py-2 bg-white border border-green-100 shadow-sm text-green-700 rounded-full text-sm font-medium flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-green-500 fill-green-500" /> Secure Payment
+                </Badge>
+                <Badge variant="secondary" className="px-4 py-2 bg-white border border-purple-100 shadow-sm text-purple-700 rounded-full text-sm font-medium flex items-center gap-2">
+                  <Star className="w-4 h-4 text-purple-500 fill-purple-500" /> Premium Quality
+                </Badge>
+              </div>
+            </motion.div>
+          </div>
+        </section>
+      )}
+
+      <main className={mainClassName}>
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="w-10 h-10 text-ocean-blue animate-spin mb-4" />
@@ -341,7 +412,7 @@ export default function Shop() {
           </motion.div>
         )}
       </main>
-      <Footer />
+      {!embed && <Footer />}
 
       <Dialog open={reDownloadDialogOpen} onOpenChange={setReDownloadDialogOpen}>
         <DialogContent className="sm:max-w-md">

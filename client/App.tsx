@@ -254,6 +254,7 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
           <Route path="/" element={<Index />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/shop" element={<Shop />} />
+          <Route path="/shop/embed" element={<Shop embed />} />
           <Route path="/shop/success" element={<ShopSuccess />} />
           <Route path="/features" element={<Features />} />
           <Route path="/blog" element={<BlogIndex />} />
