@@ -20,7 +20,12 @@ async function startServer() {
   const distPath = path.join(__dirname, "../spa");
 
   app.use((req, res, next) => {
-    if (req.path === '/shop/embed' || req.path === '/shop/embed/') {
+    if (
+      req.path === '/shop/embed' ||
+      req.path === '/shop/embed/' ||
+      req.path === '/pricing/embed' ||
+      req.path === '/pricing/embed/'
+    ) {
       res.removeHeader('X-Frame-Options');
       res.setHeader('Content-Security-Policy', embedContentSecurityPolicy);
     }

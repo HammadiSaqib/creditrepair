@@ -57,7 +57,11 @@ const getPopularPlan = (plans: PricingPlan[]) => {
   return sortedByPrice[middleIndex].id;
 };
 
-export default function Pricing() {
+interface PricingProps {
+  embed?: boolean;
+}
+
+export default function Pricing({ embed = false }: PricingProps) {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -219,6 +223,10 @@ export default function Pricing() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (embed) {
+        return;
+      }
+
       try {
         const resp = await api.get("/api/testimonials");
         const rows = (resp?.data?.data ?? resp?.data ?? []) as Array<{ id: number; video: string; client_name: string; client_role?: string | null }>;
@@ -230,7 +238,7 @@ export default function Pricing() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [embed]);
 
   const VideoThumbnail = ({ src, alt, className }: { src: string; alt?: string; className?: string }) => {
     const [thumb, setThumb] = useState<string | null>(null);
@@ -397,17 +405,71 @@ export default function Pricing() {
     };
     
     sessionStorage.setItem('selectedPlan', JSON.stringify(planData));
-    
-    navigate('/register');
+
+    if (!embed) {
+      navigate('/register');
+      return;
+    }
+
+    const registerUrl = `${window.location.origin}/register`;
+
+    try {
+      if (window.top && window.top !== window.self) {
+        window.top.location.href = registerUrl;
+        return;
+      }
+    } catch {}
+
+    const redirected = window.open(registerUrl, '_top');
+    if (!redirected) {
+      window.location.href = registerUrl;
+    }
   };
 
   const handleViewDemo = () => {
     window.open('https://www.youtube.com/watch?v=4KwPYMarpbo', '_blank', 'noopener,noreferrer');
   };
 
+  useEffect(() => {
+    if (!embed || typeof window === 'undefined' || window.parent === window) {
+      return;
+    }
+
+    const postEmbedHeight = () => {
+      const height = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+      );
+
+      window.parent.postMessage(
+        {
+          type: 'scoremachine:pricing-embed-resize',
+          height,
+        },
+        '*',
+      );
+    };
+
+    postEmbedHeight();
+
+    const frameId = window.requestAnimationFrame(postEmbedHeight);
+    const resizeObserver = new ResizeObserver(() => {
+      postEmbedHeight();
+    });
+
+    resizeObserver.observe(document.body);
+    window.addEventListener('resize', postEmbedHeight);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', postEmbedHeight);
+    };
+  }, [embed, loading, error, billingCycle, plans.length]);
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className={`${embed ? 'min-h-[480px]' : 'min-h-screen'} bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center`}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading pricing plans...</p>
@@ -421,7 +483,7 @@ export default function Pricing() {
   
   if (error && plans.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className={`${embed ? 'min-h-[480px]' : 'min-h-screen'} bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center`}>
         <div className="text-center max-w-md mx-auto px-4">
           <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-4">
             <h3 className="text-lg font-medium text-red-800 mb-2">Unable to Load Pricing</h3>
@@ -439,87 +501,92 @@ export default function Pricing() {
   }
 
   const heroPlan = plans.find((plan) => plan.id === popularPlanId) ?? plans[0];
+  const rootClassName = embed ? 'min-h-screen bg-gray-50/50 font-sans py-8' : 'min-h-screen bg-white';
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className={rootClassName}>
       <Helmet>
-        <title>Pricing Plans - Score Machine | Professional Credit Analysis Tools</title>
+        <title>{embed ? 'Pricing Embed - Score Machine' : 'Pricing Plans - Score Machine | Professional Credit Analysis Tools'}</title>
         <meta name="description" content="Explore transparent pricing for Score Machine’s AI-powered credit analysis tools. Access automated workflows, progress tracking, client dashboards, report summaries, and secure credit data organization. No credit improvement or funding outcomes are implied or guaranteed." />
-        <link rel="canonical" href="https://scoremachine.com/pricing" />
+        {embed ? (
+          <>
+            <meta name="robots" content="noindex,nofollow" />
+            <link rel="canonical" href="https://thescoremachine.com/pricing" />
+          </>
+        ) : (
+          <link rel="canonical" href="https://thescoremachine.com/pricing" />
+        )}
       </Helmet>
-      <SiteHeader />
+      {!embed && <SiteHeader />}
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-emerald-50"></div>
-        
-        {/* Decorative elements */}
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
-          <div className="absolute top-20 left-10 w-72 h-72 bg-blue-600/10 rounded-full blur-3xl"></div>
-          <div className="absolute bottom-20 right-10 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl"></div>
-        </div>
+      {!embed && (
+        <section className="relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-emerald-50"></div>
+          <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
+            <div className="absolute top-20 left-10 w-72 h-72 bg-blue-600/10 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-20 right-10 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl"></div>
+          </div>
 
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
-          <div className="text-center space-y-8">
-            <Badge 
-              variant="secondary" 
-              className="bg-gradient-to-r from-blue-600/10 to-emerald-600/10 text-white border-blue-600/20"
-            >
-              <Zap className="w-4 h-4 mr-2" />
-              Plans that unlock your Toolkit
-            </Badge>
-
-            <h1 className="text-5xl lg:text-7xl font-bold leading-tight">
-              Unlock Your
-              <span className="block bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent pb-3">
-                Credit Strategy Toolkit
-              </span>
-            </h1>
-
-            <p className="text-xl text-gray-600 leading-relaxed max-w-3xl mx-auto">
-              Activate any subscription to unlock our full AI-powered Toolkit: Progress Report + Score Timeline, Client Summary PDF, Full AI Credit File Analysis, and the Underwriting Blueprint. Your tools are delivered in the welcome email after you subscribe.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button
-                size="lg"
-                className="text-lg px-8 py-6 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 shadow-xl"
-                onClick={() => heroPlan && handleSelectPlan(heroPlan)}
-                disabled={!heroPlan}
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-32">
+            <div className="text-center space-y-8">
+              <Badge 
+                variant="secondary" 
+                className="bg-gradient-to-r from-blue-600/10 to-emerald-600/10 text-white border-blue-600/20"
               >
-                Subscribe & Unlock
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="text-lg px-8 py-6 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
-                onClick={handleViewDemo}
-              >
-                View Demo
-              </Button>
-            </div>
+                <Zap className="w-4 h-4 mr-2" />
+                Plans that unlock your Toolkit
+              </Badge>
 
-            <div className="flex flex-wrap gap-6 pt-4 justify-center">
-              <div className="flex items-center gap-2">
-                <Check className="h-5 w-5 text-emerald-600" />
-                <span className="text-sm font-medium">Toolkit included with active subscription</span>
+              <h1 className="text-5xl lg:text-7xl font-bold leading-tight">
+                Unlock Your
+                <span className="block bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent pb-3">
+                  Credit Strategy Toolkit
+                </span>
+              </h1>
+
+              <p className="text-xl text-gray-600 leading-relaxed max-w-3xl mx-auto">
+                Activate any subscription to unlock our full AI-powered Toolkit: Progress Report + Score Timeline, Client Summary PDF, Full AI Credit File Analysis, and the Underwriting Blueprint. Your tools are delivered in the welcome email after you subscribe.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Button
+                  size="lg"
+                  className="text-lg px-8 py-6 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 shadow-xl"
+                  onClick={() => heroPlan && handleSelectPlan(heroPlan)}
+                  disabled={!heroPlan}
+                >
+                  Subscribe & Unlock
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="text-lg px-8 py-6 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white"
+                  onClick={handleViewDemo}
+                >
+                  View Demo
+                </Button>
               </div>
-              <div className="flex items-center gap-2">
-                <Check className="h-5 w-5 text-emerald-600" />
-                <span className="text-sm font-medium">Delivered via welcome email after you subscribe</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Check className="h-5 w-5 text-emerald-600" />
-                <span className="text-sm font-medium">Structured, informative analysis to help you review credit data</span>
+
+              <div className="flex flex-wrap gap-6 pt-4 justify-center">
+                <div className="flex items-center gap-2">
+                  <Check className="h-5 w-5 text-emerald-600" />
+                  <span className="text-sm font-medium">Toolkit included with active subscription</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="h-5 w-5 text-emerald-600" />
+                  <span className="text-sm font-medium">Delivered via welcome email after you subscribe</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Check className="h-5 w-5 text-emerald-600" />
+                  <span className="text-sm font-medium">Structured, informative analysis to help you review credit data</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* Connection Status Banner */}
-      {error && plans.length > 0 && (
+      {!embed && error && plans.length > 0 && (
         <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2">
           <div className="max-w-7xl mx-auto">
             <div className="flex items-center justify-between">
@@ -754,6 +821,7 @@ export default function Pricing() {
          </div>
        </section>
 
+      {!embed && (
       <section className="py-16 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
@@ -887,8 +955,9 @@ export default function Pricing() {
             );
           })()}
       </section>
+      )}
 
-       {/* FAQ Section */}
+      {!embed && (
        <section className="py-16 bg-gray-50/50">
          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
            <div className="text-center mb-12">
@@ -936,8 +1005,9 @@ export default function Pricing() {
            </div>
          </div>
        </section>
+      )}
 
-      {/* Compliance & Transparency */}
+      {!embed && (
       <section className="py-12 bg-white border-t">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8">
@@ -962,13 +1032,16 @@ export default function Pricing() {
           </div>
         </div>
       </section>
+      )}
        
+      {!embed && (
        <div className="py-8 bg-gray-50 text-center px-4">
         <p className="text-xs text-gray-500 max-w-4xl mx-auto leading-relaxed">
           Score Machine provides tools for organizing and reviewing credit report information. It does not guarantee credit improvement, funding approval, or specific financial outcomes. All insights are for informational purposes only.
         </p>
        </div>
-       <Footer />
+      )}
+      {!embed && <Footer />}
     </div>
   );
 }
