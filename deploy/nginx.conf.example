@@ -5,14 +5,14 @@
 server {
     listen 80;
     listen [::]:80;
-    server_name thescoremachine.com www.thescoremachine.com admin.thescoremachine.com super-admin.thescoremachine.com affiliate.thescoremachine.com support.thescoremachine.com funding-manager.thescoremachine.com member.thescoremachine.com api.thescoremachine.com;
+    server_name thescoremachine.com www.thescoremachine.com admin.thescoremachine.com super-admin.thescoremachine.com affiliate.thescoremachine.com support.thescoremachine.com funding-manager.thescoremachine.com member.thescoremachine.com ref.thescoremachine.com api.thescoremachine.com;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name thescoremachine.com www.thescoremachine.com admin.thescoremachine.com super-admin.thescoremachine.com affiliate.thescoremachine.com support.thescoremachine.com funding-manager.thescoremachine.com member.thescoremachine.com api.thescoremachine.com;
+    server_name thescoremachine.com www.thescoremachine.com admin.thescoremachine.com super-admin.thescoremachine.com affiliate.thescoremachine.com support.thescoremachine.com funding-manager.thescoremachine.com member.thescoremachine.com ref.thescoremachine.com api.thescoremachine.com;
 
     # Managed by Certbot. If you use a wildcard certificate, update these paths.
     ssl_certificate /etc/letsencrypt/live/thescoremachine.com/fullchain.pem;
