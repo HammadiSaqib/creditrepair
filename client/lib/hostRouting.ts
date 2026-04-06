@@ -14,6 +14,7 @@ export type PublicHostAlias = (typeof PUBLIC_HOST_ALIASES)[number];
 
 type NonAdminPortalAlias = Exclude<PortalAlias, "admin">;
 type KnownSubdomainAlias = PortalAlias | PublicHostAlias;
+const REFERRAL_FALLBACK_ALIAS: PortalAlias = "admin";
 
 interface RedirectInput {
   hostname: string;
@@ -205,7 +206,7 @@ export function buildReferralLandingUrl(
   referralId: string,
   options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,
 ) {
-  return buildPublicAliasUrl("ref", `/${referralId}`, options);
+  return buildAliasUrl(REFERRAL_FALLBACK_ALIAS, `/ref/${referralId}`, options);
 }
 
 export function buildReferralPricingUrl(
@@ -217,7 +218,7 @@ export function buildReferralPricingUrl(
     searchParams.set("ref", String(affiliateId));
   }
 
-  return buildPublicAliasUrl("ref", "/pricing", {
+  return buildAliasUrl(REFERRAL_FALLBACK_ALIAS, "/pricing", {
     ...options,
     search: searchParams.toString() ? `?${searchParams.toString()}` : "",
   });
@@ -238,7 +239,7 @@ export function buildReferralRegisterUrl(
     searchParams.set("plan", String(params.planId));
   }
 
-  return buildPublicAliasUrl("ref", "/register", {
+  return buildAliasUrl(REFERRAL_FALLBACK_ALIAS, "/register", {
     ...options,
     search: searchParams.toString() ? `?${searchParams.toString()}` : "",
   });
@@ -374,16 +375,20 @@ export function getCanonicalPortalRedirect(input: RedirectInput): PortalRedirect
       };
     }
 
+    if (currentAlias === REFERRAL_FALLBACK_ALIAS) {
+      return null;
+    }
+
     return {
       type: "host",
-      targetUrl: buildPublicAliasUrl("ref", referralPath, input),
+      targetUrl: buildAliasUrl(REFERRAL_FALLBACK_ALIAS, `/ref${referralPath}`, input),
     };
   }
 
   if (currentPublicAlias === "refadmin") {
     return {
       type: "host",
-      targetUrl: buildPublicAliasUrl("ref", pathname === "/" ? "/register" : pathname, input),
+      targetUrl: buildAliasUrl(REFERRAL_FALLBACK_ALIAS, pathname === "/" ? "/register" : pathname, input),
     };
   }
 
@@ -405,18 +410,18 @@ export function getCanonicalPortalRedirect(input: RedirectInput): PortalRedirect
   }
 
   const isReferralRegisterPath = pathname === "/register" && (searchParams.has("ref") || searchParams.has("plan"));
-  if (isReferralRegisterPath && currentPublicAlias !== "ref") {
+  if (isReferralRegisterPath && currentPublicAlias !== "ref" && currentAlias !== REFERRAL_FALLBACK_ALIAS) {
     return {
       type: "host",
-      targetUrl: buildPublicAliasUrl("ref", pathname, input),
+      targetUrl: buildAliasUrl(REFERRAL_FALLBACK_ALIAS, pathname, input),
     };
   }
 
   const isReferralPricingPath = pathname === "/pricing" && searchParams.has("ref");
-  if (isReferralPricingPath && currentPublicAlias !== "ref") {
+  if (isReferralPricingPath && currentPublicAlias !== "ref" && currentAlias !== REFERRAL_FALLBACK_ALIAS) {
     return {
       type: "host",
-      targetUrl: buildPublicAliasUrl("ref", pathname, input),
+      targetUrl: buildAliasUrl(REFERRAL_FALLBACK_ALIAS, pathname, input),
     };
   }
 

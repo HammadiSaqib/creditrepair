@@ -6,12 +6,28 @@ import {
   writeStoredAuthSnapshot,
 } from './authStorage';
 
-// Prefer env; otherwise default to current origin so dev auto-ports (e.g., 3002) work
-// This avoids hard-coding localhost:3001, ensuring Vite’s proxy catches /api on the same origin
-const API_BASE_URL = import.meta.env.VITE_API_URL || 
-  (typeof window !== 'undefined' 
-    ? window.location.origin 
-    : 'http://localhost:3001');
+function resolveApiBaseUrl() {
+  const configuredApiUrl = String(import.meta.env.VITE_API_URL || '').trim();
+
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname.toLowerCase();
+    const isTrustedScoreMachineSubdomain =
+      hostname.endsWith('.thescoremachine.com') &&
+      hostname !== 'thescoremachine.com' &&
+      hostname !== 'www.thescoremachine.com';
+    const isTrustedLocalAlias = hostname.endsWith('.localhost');
+
+    if (isTrustedScoreMachineSubdomain || isTrustedLocalAlias) {
+      return window.location.origin;
+    }
+
+    return configuredApiUrl || window.location.origin;
+  }
+
+  return configuredApiUrl || 'http://localhost:3001';
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
