@@ -132,12 +132,13 @@ function stripPortalPrefix(prefix: string, pathname: string, alias: PortalAlias)
 export function getHostAlias(hostname: string): PortalAlias | null {
   const normalized = hostname.toLowerCase();
   const withoutPort = normalized.split(":")[0];
+  const parts = withoutPort.split(".").filter(Boolean);
 
-  if (!withoutPort.endsWith(".localhost")) {
+  if (parts.length < 2) {
     return null;
   }
 
-  const subdomain = withoutPort.slice(0, -".localhost".length);
+  const subdomain = parts[0];
   return isPortalAlias(subdomain) ? subdomain : null;
 }
 

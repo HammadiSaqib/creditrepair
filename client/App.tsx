@@ -246,6 +246,11 @@ function HostAliasCanonicalizer() {
     }
 
     if (redirect.type === "host" && redirect.targetUrl) {
+      const currentUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (redirect.targetUrl === currentUrl) {
+        return;
+      }
+
       const encoded = stageCrossSubdomainAuthTransfer(redirect.targetUrl);
       const finalUrl = encoded
         ? `${redirect.targetUrl}#${"__sm_auth_transfer__:"}${encoded}`
