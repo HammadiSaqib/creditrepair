@@ -194,6 +194,28 @@ const defaultCorsOrigins = [
   'https://www.thescoremachine.com',
 ];
 
+const envCorsOrigins = (process.env.CORS_ORIGIN || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedCorsOrigins = new Set([...defaultCorsOrigins, ...envCorsOrigins]);
+
+function isTrustedScoreMachineOrigin(origin: string) {
+  try {
+    const parsed = new URL(origin);
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (parsed.protocol !== "https:") {
+      return false;
+    }
+
+    return hostname === "thescoremachine.com" || hostname.endsWith(".thescoremachine.com");
+  } catch {
+    return false;
+  }
+}
+
 export async function createServer(vite?: ViteDevServer) {
   const app = express();
   const httpServer = createHttpServer(app);
@@ -226,7 +248,7 @@ export async function createServer(vite?: ViteDevServer) {
   // Middleware
   app.use(cors({
     origin: (origin, callback) => {
-      if (!origin || defaultCorsOrigins.includes(origin)) {
+      if (!origin || allowedCorsOrigins.has(origin) || isTrustedScoreMachineOrigin(origin)) {
         callback(null, true);
         return;
       }
