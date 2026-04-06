@@ -1,7 +1,7 @@
 server {
     listen 80;
     listen [::]:80;
-    server_name thescoremachine.com www.thescoremachine.com admin.thescoremachine.com super-admin.thescoremachine.com affiliate.thescoremachine.com support.thescoremachine.com funding-manager.thescoremachine.com member.thescoremachine.com ref.thescoremachine.com api.thescoremachine.com;
+    server_name thescoremachine.com www.thescoremachine.com admin.thescoremachine.com super-admin.thescoremachine.com affiliate.thescoremachine.com support.thescoremachine.com funding-manager.thescoremachine.com member.thescoremachine.com ref.thescoremachine.com onboarding.thescoremachine.com api.thescoremachine.com;
 
     # Temporary HTTP-only bootstrap config.
     # Use this first so nginx can start before certificates exist.

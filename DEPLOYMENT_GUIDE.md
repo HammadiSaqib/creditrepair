@@ -153,7 +153,7 @@ After deployment, test:
 Follow these steps to run the app at `https://thescoremachine.com` and secure the portal subdomains with HTTPS and WebSocket support.
 
 ### 1) DNS Setup
-- Create `A` records for `thescoremachine.com`, `www`, `admin`, `super-admin`, `affiliate`, `support`, `funding-manager`, `member`, `ref`, and `api` pointing to your VPS IPv4.
+- Create `A` records for `thescoremachine.com`, `www`, `admin`, `super-admin`, `affiliate`, `support`, `funding-manager`, `member`, `ref`, `onboarding`, and `api` pointing to your VPS IPv4.
 - Optionally create `AAAA` records for IPv6 if available.
 - Propagation can take up to 30 minutes.
 
@@ -166,7 +166,7 @@ Follow these steps to run the app at `https://thescoremachine.com` and secure th
 - Copy `.env.production.example` to `.env` in project root: `cp .env.production.example .env`.
 - Set values:
    - `FRONTEND_URL=https://thescoremachine.com`
-   - `CORS_ORIGIN=https://thescoremachine.com,https://www.thescoremachine.com,https://admin.thescoremachine.com,https://super-admin.thescoremachine.com,https://affiliate.thescoremachine.com,https://support.thescoremachine.com,https://funding-manager.thescoremachine.com,https://member.thescoremachine.com,https://ref.thescoremachine.com,https://api.thescoremachine.com`
+   - `CORS_ORIGIN=https://thescoremachine.com,https://www.thescoremachine.com,https://admin.thescoremachine.com,https://super-admin.thescoremachine.com,https://affiliate.thescoremachine.com,https://support.thescoremachine.com,https://funding-manager.thescoremachine.com,https://member.thescoremachine.com,https://ref.thescoremachine.com,https://onboarding.thescoremachine.com,https://api.thescoremachine.com`
    - `VITE_API_URL=https://thescoremachine.com`
   - Provide secure `JWT_SECRET` (64+ random hex) and MySQL credentials.
 
@@ -219,6 +219,7 @@ for d in \
    super-admin.thescoremachine.com \
    affiliate.thescoremachine.com \
    ref.thescoremachine.com \
+   onboarding.thescoremachine.com \
    support.thescoremachine.com \
    funding-manager.thescoremachine.com \
    member.thescoremachine.com \
@@ -237,8 +238,9 @@ sudo certbot --nginx \
    -d www.thescoremachine.com \
    -d admin.thescoremachine.com \
    -d super-admin.thescoremachine.com \
-   -d affiliate.thescoremachine.com
-   -d ref.thescoremachine.com
+   -d affiliate.thescoremachine.com \
+   -d ref.thescoremachine.com \
+   -d onboarding.thescoremachine.com
 sudo systemctl reload nginx
 ```
 
@@ -253,12 +255,20 @@ sudo certbot --nginx --cert-name thescoremachine.com --expand \
    -d super-admin.thescoremachine.com \
    -d affiliate.thescoremachine.com \
    -d ref.thescoremachine.com \
+   -d onboarding.thescoremachine.com \
    -d support.thescoremachine.com \
    -d funding-manager.thescoremachine.com \
    -d member.thescoremachine.com
 ```
 
 Add `api.thescoremachine.com` in a later `--expand` run only if you actually create that DNS record.
+
+If onboarding links must be secure like `admin`, `member`, and `ref`, then `onboarding.thescoremachine.com` has to exist in all three places at the same time:
+- DNS record
+- Nginx `server_name`
+- active Let's Encrypt certificate SAN list
+
+If one is missing, the onboarding URL will still show `Not Secure` or fall back to plain HTTP.
 
 If Certbot says the nginx plugin is broken because of missing certificate files:
 ```bash
@@ -276,6 +286,7 @@ sudo certbot --nginx \
    -d super-admin.thescoremachine.com \
    -d affiliate.thescoremachine.com \
    -d ref.thescoremachine.com \
+   -d onboarding.thescoremachine.com \
    -d support.thescoremachine.com \
    -d funding-manager.thescoremachine.com \
    -d member.thescoremachine.com \
@@ -287,6 +298,7 @@ sudo certbot --nginx \
 - `curl -I https://admin.thescoremachine.com/login`
 - `curl -I https://affiliate.thescoremachine.com/login`
 - `curl -I https://ref.thescoremachine.com/register?ref=test&plan=1`
+- `curl -I https://onboarding.thescoremachine.com/test-admin`
 - Open site in browser; authenticate; check APIs and WebSocket features.
 - If `TokenExpiredError` appears, clear browser storage (localStorage/sessionStorage) and login again.
 
