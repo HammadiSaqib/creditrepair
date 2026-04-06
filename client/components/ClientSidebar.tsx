@@ -1,8 +1,10 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { authApi } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { isPortalSidebarActive } from "@/lib/hostRouting";
 import {
   LayoutDashboard,
   User,
@@ -94,12 +96,13 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
   }, [location.pathname]);
 
   const isActive = (path: string) => {
-    return location.pathname === path || location.pathname.startsWith(path + "/");
+    return isPortalSidebarActive(location.pathname, path, 'member');
   };
 
   const handleLogout = async () => {
     try {
       // Clear all auth-related localStorage items
+      clearPortalReturnContext();
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('userRole');
@@ -114,6 +117,7 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
     } catch (error) {
       console.error("Logout error:", error);
       // Even if API call fails, clear tokens and redirect
+      clearPortalReturnContext();
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('userRole');

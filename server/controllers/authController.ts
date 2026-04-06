@@ -595,6 +595,7 @@ export class AuthController {
       
       // Generate token for the target admin
       const token = generateToken(targetAdmin);
+      const refreshToken = generateRefreshToken(targetAdmin);
       
       // Return admin data (without password)
       const adminData = {
@@ -612,6 +613,7 @@ export class AuthController {
       res.json({
         message: 'Login as admin successful',
         token,
+        refresh_token: refreshToken,
         user: adminData,
       });
     } catch (error) {
@@ -655,6 +657,7 @@ export class AuthController {
         admin_id: affiliate.admin_id
       };
       const token = generateToken(tokenUser);
+      const refreshToken = generateRefreshToken(tokenUser);
 
       // Return affiliate data (without password)
       const affiliateData = {
@@ -675,6 +678,7 @@ export class AuthController {
       res.json({
         message: 'Login as affiliate successful',
         token,
+        refresh_token: refreshToken,
         user: affiliateData,
       });
     } catch (error) {

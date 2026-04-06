@@ -1,8 +1,10 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { authApi } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { isPortalSidebarActive } from "@/lib/hostRouting";
 import {
   Headphones,
   Ticket,
@@ -114,7 +116,7 @@ export default function SupportSidebar({ className }: SupportSidebarProps) {
     },
   ];
 
-  const isActive = (href: string) => location.pathname === href;
+  const isActive = (href: string) => isPortalSidebarActive(location.pathname, href, 'support');
 
   // Fetch user profile
   useEffect(() => {
@@ -135,6 +137,7 @@ export default function SupportSidebar({ className }: SupportSidebarProps) {
   const handleLogout = async () => {
     try {
       // Clear all auth-related localStorage items
+      clearPortalReturnContext();
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('userRole');
@@ -146,6 +149,7 @@ export default function SupportSidebar({ className }: SupportSidebarProps) {
     } catch (error) {
       console.error("Logout error:", error);
       // Even if API call fails, clear token and redirect
+      clearPortalReturnContext();
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('userRole');

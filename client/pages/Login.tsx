@@ -15,6 +15,9 @@ import { Progress } from "@/components/ui/progress";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { authApi, setAuthToken } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
+import { usePortalLoginRedirect } from "@/hooks/usePortalLoginRedirect";
+import { getPortalNavigationTarget } from "@/lib/hostRouting";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -57,6 +60,8 @@ export default function Login() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { refreshProfile } = useAuthContext();
+
+  usePortalLoginRedirect({ allowedRoles: ["admin", "super_admin"] });
 
   // Form state
   const [loginData, setLoginData] = useState({
@@ -206,11 +211,17 @@ export default function Login() {
       if (response.data?.token) {
         setAuthToken(response.data.token);
         await refreshProfile();
+        clearPortalReturnContext();
         toast({
           title: "Welcome back!",
           description: "Successfully logged in to your dashboard.",
         });
-        navigate("/dashboard");
+        const dashboardTarget = getPortalNavigationTarget("admin", "/dashboard");
+        if (dashboardTarget.external) {
+          window.location.href = dashboardTarget.target;
+          return;
+        }
+        navigate(dashboardTarget.target);
       }
     } catch (error) {
       console.error("Login error:", error);

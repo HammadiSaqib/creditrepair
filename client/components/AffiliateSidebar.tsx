@@ -1,9 +1,16 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { authApi, affiliateApi, billingApi } from "@/lib/api";
+import {
+  clearPortalReturnContext,
+  getPortalReturnContext,
+  stageCrossSubdomainAuthTransfer,
+} from "@/lib/authStorage";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { getPortalNavigationTarget, isPortalSidebarActive } from "@/lib/hostRouting";
 import {
+  ArrowLeft,
   DollarSign,
   BarChart3,
   Users,
@@ -35,6 +42,26 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
   const [subscription, setSubscription] = useState<any>(null);
   const { hasActiveSubscription, isLoading } = useSubscriptionStatus();
   const { userProfile } = useAuthContext();
+  const portalReturnContext = getPortalReturnContext();
+  const adminDashboardTarget = getPortalNavigationTarget("admin", "/dashboard");
+  const adminSessionTransferTarget = getPortalNavigationTarget("admin", "/session-transfer");
+  const superAdminAffiliatesTarget = getPortalNavigationTarget("super-admin", "/affiliates");
+  const isSuperAdminAffiliateReturn = (() => {
+    if (!portalReturnContext?.targetUrl) {
+      return false;
+    }
+
+    try {
+      const parsed = new URL(portalReturnContext.targetUrl, window.location.href);
+      return (
+        parsed.hostname.toLowerCase().startsWith("super-admin.") &&
+        parsed.pathname.startsWith("/affiliates")
+      );
+    } catch {
+      return false;
+    }
+  })();
+  const showAffiliateBackLink = Boolean(portalReturnContext) || userProfile?.role === 'admin';
   
   console.log('🔍 AffiliateSidebar - hasActiveSubscription:', hasActiveSubscription);
   console.log('🔍 AffiliateSidebar - isLoading:', isLoading);
@@ -105,7 +132,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
     },
   ];
 
-  const isActive = (href: string) => location.pathname === href;
+  const isActive = (href: string) => isPortalSidebarActive(location.pathname, href, 'affiliate');
   const filteredNavigation = navigation.filter((item) => item.href !== "/affiliate/analytics");
 
   // Fetch affiliate stats
@@ -143,6 +170,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
   const handleLogout = async () => {
     try {
       // Clear all auth-related localStorage items
+      clearPortalReturnContext();
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('userRole');
@@ -154,6 +182,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
     } catch (error) {
       console.error("Logout error:", error);
       // Even if API call fails, clear token and redirect
+      clearPortalReturnContext();
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('userRole');
@@ -301,8 +330,121 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
               ></div>
             </div>
             <div className="mt-3">
-              {console.log('🔍 AffiliateSidebar - isLoading:', isLoading, 'hasActiveSubscription:', hasActiveSubscription, 'subscription:', subscription, 'userProfile?.admin_id:', userProfile?.admin_id, 'userProfile?.plan_type:', userProfile?.plan_type)}
-              {!isLoading && (!hasActiveSubscription || !userProfile?.admin_id || userProfile?.plan_type !== 'paid_partner') ? (
+              {showAffiliateBackLink ? (
+                <div className="space-y-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full justify-start items-start gap-2 border-green-500/20 text-green-700 dark:text-green-300 dark:hover:bg-green-900/20 px-3 py-2 h-auto min-h-[40px] whitespace-normal text-left leading-snug"
+                    onClick={() => {
+                      const fallbackTargetUrl = adminDashboardTarget.external
+                        ? adminDashboardTarget.target
+                        : null;
+                      const directTargetUrl = fallbackTargetUrl;
+
+                      // Use admin session-transfer route so role/profile is re-validated on admin host.
+                      const transferTargetUrl = adminSessionTransferTarget.external
+                        ? adminSessionTransferTarget.target
+                        : directTargetUrl;
+
+                      if (transferTargetUrl) {
+                        const transferRedirectPath = (() => {
+                          if (!directTargetUrl) {
+                            return "/dashboard";
+                          }
+
+                          try {
+                            const parsed = new URL(directTargetUrl, window.location.href);
+                            return parsed.pathname || "/dashboard";
+                          } catch {
+                            return "/dashboard";
+                          }
+                        })();
+
+                        const encoded = stageCrossSubdomainAuthTransfer(transferTargetUrl, {
+                          transferRedirectPath,
+                        });
+
+                        const directParams = new URLSearchParams();
+                        const directToken = window.localStorage.getItem('auth_token') || window.localStorage.getItem('token');
+                        const directRefresh = window.localStorage.getItem('refresh_token');
+                        const directRole = window.localStorage.getItem('userRole');
+                        const directUserId = window.localStorage.getItem('userId');
+                        const directUserName = window.localStorage.getItem('userName');
+
+                        if (directToken) {
+                          directParams.set('__sm_direct_token', directToken);
+                        }
+                        if (directRefresh) {
+                          directParams.set('__sm_direct_refresh', directRefresh);
+                        }
+                        if (directRole) {
+                          directParams.set('__sm_direct_role', directRole);
+                        }
+                        if (directUserId) {
+                          directParams.set('__sm_direct_user_id', directUserId);
+                        }
+                        if (directUserName) {
+                          directParams.set('__sm_direct_user_name', directUserName);
+                        }
+                        directParams.set('__sm_direct_redirect', transferRedirectPath);
+
+                        clearPortalReturnContext();
+                        const hashParts: string[] = [];
+                        if (encoded) {
+                          hashParts.push(`${"__sm_auth_transfer__:"}${encoded}`);
+                        }
+                        if (directParams.toString()) {
+                          hashParts.push(directParams.toString());
+                        }
+
+                        const finalUrl = hashParts.length > 0
+                          ? `${transferTargetUrl}#${hashParts.join('&')}`
+                          : transferTargetUrl;
+                        window.location.href = finalUrl;
+                        return;
+                      }
+
+                      clearPortalReturnContext();
+                      if (adminDashboardTarget.external) {
+                        window.location.href = adminDashboardTarget.target;
+                        return;
+                      }
+
+                      navigate(adminDashboardTarget.target);
+                    }}
+                  >
+                    <ArrowLeft className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span className="whitespace-normal break-words text-left leading-snug">
+                      Back To Admin Dashboard
+                    </span>
+                  </Button>
+
+                  {isSuperAdminAffiliateReturn && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full justify-start items-start gap-2 border-blue-500/20 text-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/20 px-3 py-2 h-auto min-h-[40px] whitespace-normal text-left leading-snug"
+                      onClick={() => {
+                        const target = portalReturnContext?.targetUrl || (superAdminAffiliatesTarget.external
+                          ? superAdminAffiliatesTarget.target
+                          : null);
+
+                        clearPortalReturnContext();
+                        if (target) {
+                          window.location.href = target;
+                          return;
+                        }
+                      }}
+                    >
+                      <ArrowLeft className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span className="whitespace-normal break-words text-left leading-snug">
+                        Back To Super-Admin Dashboard
+                      </span>
+                    </Button>
+                  )}
+                </div>
+              ) : !isLoading && !hasActiveSubscription ? (
                 <Button
                   size="sm"
                   className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white"
@@ -382,7 +524,7 @@ export default function AffiliateSidebar({ className }: AffiliateSidebarProps) {
             </div>
             <div className="flex items-center space-x-1">
               {/* Dashboard Switcher for Admin users */}
-              {userProfile?.role === 'admin' && (
+              {userProfile?.role === 'admin' && !showAffiliateBackLink && (
                 <Button 
                   size="sm"
                   onClick={() => navigate('/dashboard')}

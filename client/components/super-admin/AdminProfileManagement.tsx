@@ -31,6 +31,8 @@ import {
 import { Checkbox } from '../ui/checkbox';
 import { superAdminApi } from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
+import { stageCrossSubdomainAuthTransfer } from '../../lib/authStorage';
+import { buildAliasUrl } from '../../lib/hostRouting';
 import { Plus, Edit, Trash2, Search, Eye, EyeOff, User, Shield, Settings, LogIn } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
 
@@ -493,10 +495,30 @@ const AdminProfileManagement: React.FC = () => {
     try {
       const response = await superAdminApi.loginAsAdmin(admin.id);
       if (response.data?.token) {
-        // Store the token and redirect to admin dashboard
-        localStorage.setItem('auth_token', response.data.token);
-        // Use React Router navigation instead of window.location for better UX
-        window.location.href = '/dashboard';
+        const targetUrl = buildAliasUrl('admin', '/session-transfer');
+        const targetUser = response.data.user || admin;
+
+        const encoded = stageCrossSubdomainAuthTransfer(targetUrl, {
+          auth: {
+            auth_token: response.data.token,
+            token: response.data.token,
+            refresh_token: response.data.refresh_token,
+            userRole: targetUser.role || 'admin',
+            userId: String(targetUser.id),
+            userName: `${targetUser.first_name || admin.first_name} ${targetUser.last_name || admin.last_name}`.trim(),
+          },
+          returnContext: {
+            label: 'Back To Super Admin Dashboard',
+            targetUrl: buildAliasUrl('super-admin', '/admins'),
+          },
+          transferRedirectPath: '/dashboard',
+        });
+
+        const finalUrl = encoded
+          ? `${targetUrl}#${"__sm_auth_transfer__:"}${encoded}`
+          : targetUrl;
+
+        window.location.href = finalUrl;
         toast({
           title: "Success",
           description: `Logged in as ${admin.first_name} ${admin.last_name}`

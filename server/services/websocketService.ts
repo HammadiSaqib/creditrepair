@@ -4,6 +4,20 @@ import jwt from 'jsonwebtoken';
 import { securityLogger, LogLevel, SecurityEventType } from '../utils/securityLogger.js';
 import { ENV_CONFIG } from '../config/environment.js';
 
+const portalAliases = [
+  'admin',
+  'super-admin',
+  'support',
+  'affiliate',
+  'funding-manager',
+  'member',
+];
+
+const portalLocalhostOrigins = portalAliases.flatMap((alias) => [
+  `http://${alias}.localhost:3001`,
+  `http://${alias}.localhost:3000`,
+]);
+
 // Use the same JWT_SECRET as the rest of the application
 const JWT_SECRET = ENV_CONFIG.JWT_SECRET;
 
@@ -51,7 +65,13 @@ export class WebSocketService {
 
   constructor(server: HTTPServer) {
     // Build CORS origins dynamically, allowing env override in development
-    const devOrigins = ['http://localhost:3003', 'http://localhost:3001', 'http://localhost:3000', 'http://localhost:5173'];
+    const devOrigins = [
+      'http://localhost:3003',
+      'http://localhost:3001',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      ...portalLocalhostOrigins,
+    ];
     const envOrigins: string[] = [];
     if (process.env.CORS_ORIGIN) {
       envOrigins.push(...(process.env.CORS_ORIGIN.includes(',')

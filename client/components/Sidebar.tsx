@@ -1,5 +1,11 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { authApi, clientsApi, creditReportScraperApi } from "@/lib/api";
+import {
+  clearPortalReturnContext,
+  getPortalReturnContext,
+  stageCrossSubdomainAuthTransfer,
+} from "@/lib/authStorage";
+import { buildAliasUrl } from "@/lib/hostRouting";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -7,6 +13,7 @@ import { useAuthContext } from "@/contexts/AuthContext";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { usePagePermissions } from "@/hooks/usePagePermissions";
 import {
+  ArrowLeft,
   CreditCard,
   LayoutDashboard,
   Users,
@@ -53,6 +60,26 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
   const subscriptionStatus = useSubscriptionStatus();
   const { userProfile } = useAuthContext();
   const { hasPermission } = usePagePermissions();
+  const portalReturnContext = getPortalReturnContext();
+
+  const openAffiliatePortal = (pathname: string = "/dashboard") => {
+    const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+    const targetUrl = buildAliasUrl("affiliate", "/session-transfer");
+
+    const encoded = stageCrossSubdomainAuthTransfer(targetUrl, {
+      returnContext: {
+        label: "Back To Admin Dashboard",
+        targetUrl: buildAliasUrl("admin", "/dashboard"),
+      },
+      transferRedirectPath: normalizedPath,
+    });
+
+    const finalUrl = encoded
+      ? `${targetUrl}#${"__sm_auth_transfer__:"}${encoded}`
+      : targetUrl;
+
+    window.location.href = finalUrl;
+  };
 
   const navigation = [
     {
@@ -313,6 +340,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
   const handleLogout = async () => {
     try {
       // Clear all auth-related localStorage items
+      clearPortalReturnContext();
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('userRole');
@@ -324,6 +352,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
     } catch (error) {
       console.error("Logout error:", error);
       // Even if API call fails, clear token and redirect
+      clearPortalReturnContext();
       localStorage.removeItem('token');
       localStorage.removeItem('auth_token');
       localStorage.removeItem('userRole');
@@ -560,7 +589,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
                 onClick={() => navigate("/invoices")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-slate-300/60 text-slate-700 hover:ocean-blue"
+                className="w-full justify-start border-slate-300/60 text-slate-700 hover:bg-opacity-90"
               >
                 <FileText className="h-4 w-4 mr-2" />
                 Invoices
@@ -572,6 +601,22 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
 
       {/* Bottom Section */}
       <div className="p-4 border-t border-border/40 dark:border-slate-700 space-y-2">
+        {portalReturnContext && !collapsed && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start items-start gap-2 border-ocean-blue/20 text-ocean-blue hover:bg-opacity-90 px-3 py-2 h-auto min-h-[40px] whitespace-normal text-left leading-snug"
+            onClick={() => {
+              window.location.href = portalReturnContext.targetUrl;
+            }}
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0 mt-0.5" />
+            <span className="whitespace-normal break-words text-left leading-snug">
+              {portalReturnContext.label}
+            </span>
+          </Button>
+        )}
+
         {/* Compact Admin Status for small screens */}
         {!collapsed && isSmallScreen && (
           <div className="mt-2 p-3 rounded-lg border border-cyan-200/60 dark:border-cyan-600/40 bg-white dark:bg-slate-900 flex items-center justify-between gap-2">
@@ -585,7 +630,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
               size="sm"
               variant="outline"
               className="text-xs"
-              onClick={() => navigate('/affiliate/dashboard')}
+              onClick={() => openAffiliatePortal()}
             >
               Affiliate
             </Button>
@@ -614,7 +659,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
             <Button
               size="sm"
               className="w-full gradient-primary hover:opacity-90 text-white text-[10px] sm:text-xs font-semibold shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center whitespace-nowrap px-2"
-              onClick={() => navigate('/affiliate/dashboard')}
+              onClick={() => openAffiliatePortal()}
             >
               <Share2 className="h-3 w-3 mr-1 shrink-0" />
               <span className="truncate">Go to Affiliate Pro Dashboard</span>
@@ -716,6 +761,7 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
                   const Icon = item.icon;
                   const active = isActive(item.href);
                   const disabled = item.disabled;
+                  const hasCustomClick = 'onClick' in item && typeof item.onClick === 'function';
                   const baseClasses = disabled
                     ? "text-slate-400 cursor-not-allowed"
                     : active
@@ -724,13 +770,13 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
                   return (
                     <li key={item.pageKey ?? item.name} className="flex-none">
                       <Link
-                        to={disabled || item.onClick ? location.pathname : item.href}
+                        to={disabled || hasCustomClick ? location.pathname : item.href}
                         onClick={disabled
                           ? (e) => e.preventDefault()
-                          : item.onClick
+                          : hasCustomClick
                           ? (e) => {
                               e.preventDefault();
-                              item.onClick?.();
+                              item.onClick();
                             }
                           : undefined}
                         className={`flex h-16 min-w-[80px] px-2 flex-col items-center justify-center gap-0.5 transition-colors ${

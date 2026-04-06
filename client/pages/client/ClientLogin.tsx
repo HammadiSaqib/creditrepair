@@ -8,6 +8,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CreditCard, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { toast } from "sonner";
 import { authApi, setAuthToken } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
+import { usePortalLoginRedirect } from "@/hooks/usePortalLoginRedirect";
+import { getPortalNavigationTarget } from "@/lib/hostRouting";
 
 const ClientLogin = () => {
   const navigate = useNavigate();
@@ -19,6 +22,8 @@ const ClientLogin = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  usePortalLoginRedirect({ allowedRoles: ['client'] });
 
   useEffect(() => {
     const prefillEmail = searchParams.get('email');
@@ -102,13 +107,19 @@ const ClientLogin = () => {
         if (response.data.user.role === 'client') {
           console.log('🎯 ClientLogin: User is client, navigating to dashboard...');
           toast.success('Welcome back!');
+          clearPortalReturnContext();
           // Set a session flag so dashboard can refresh once after login
           try {
             sessionStorage.setItem('client_just_logged_in', '1');
           } catch (e) {
             // ignore storage errors
           }
-          navigate('/member/dashboard');
+          const dashboardTarget = getPortalNavigationTarget('member', '/dashboard');
+          if (dashboardTarget.external) {
+            window.location.href = dashboardTarget.target;
+            return;
+          }
+          navigate(dashboardTarget.target);
         } else {
           console.log('❌ ClientLogin: User is not a client, role:', response.data.user.role);
           toast.error('Access denied. Client credentials required.');

@@ -47,7 +47,7 @@ export const SECURITY_CONFIG = {
     ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3001',
     CREDENTIALS: true,
     METHODS: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    ALLOWED_HEADERS: ['Content-Type', 'Authorization', 'X-Requested-With']
+    ALLOWED_HEADERS: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Skip-Refresh-Token-Persist']
   },
 
   // Input Validation

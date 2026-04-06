@@ -80,6 +80,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { clientsApi, analyticsApi, apiRequest, api, creditReportScraperApi, authApi } from "@/lib/api";
 import axios from 'axios';
+import { stageCrossSubdomainAuthTransfer } from "@/lib/authStorage";
+import { buildAliasUrl } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
@@ -321,13 +323,30 @@ export default function Dashboard() {
     }
   };
 
+  const openAffiliatePortal = (pathname: string) => {
+    const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+    const targetUrl = buildAliasUrl('affiliate', '/session-transfer');
+
+    const encoded = stageCrossSubdomainAuthTransfer(targetUrl, {
+      returnContext: {
+        label: 'Back To Admin Dashboard',
+        targetUrl: buildAliasUrl('admin', '/dashboard'),
+      },
+      transferRedirectPath: normalizedPath,
+    });
+
+    const finalUrl = encoded
+      ? `${targetUrl}#${"__sm_auth_transfer__:"}${encoded}`
+      : targetUrl;
+
+    window.location.href = finalUrl;
+  };
+
   const handleAffiliateProAccess = () => {
     if (affiliateVerificationStatus === 'pending_verification') {
-      // Navigate to email verification page
-      navigate('/affiliate/verify-email');
+      openAffiliatePortal('/verify-email');
     } else if (affiliateVerificationStatus === 'active') {
-      // Navigate to affiliate dashboard
-      navigate('/affiliate/dashboard');
+      openAffiliatePortal('/dashboard');
     } else {
       // Show error or contact support
       toast({
@@ -1962,7 +1981,7 @@ export default function Dashboard() {
                   ) : (
                     <div className="space-y-2">
                       <div className="text-sm text-muted-foreground">Verify your affiliate access to get your referral link.</div>
-                      <Button onClick={() => navigate('/affiliate/verify-email')} variant="outline" className="w-full justify-start">
+                      <Button onClick={() => openAffiliatePortal('/verify-email')} variant="outline" className="w-full justify-start">
                         Verify Affiliate Access
                       </Button>
                     </div>

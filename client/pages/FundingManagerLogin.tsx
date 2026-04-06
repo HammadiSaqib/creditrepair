@@ -11,6 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { authApi, setAuthToken } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
+import { usePortalLoginRedirect } from "@/hooks/usePortalLoginRedirect";
+import { getPortalNavigationTarget } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/contexts/AuthContext";
 import {
@@ -39,18 +42,12 @@ export default function FundingManagerLogin() {
   const { toast } = useToast();
   const { refreshProfile } = useAuthContext();
 
+  usePortalLoginRedirect({ allowedRoles: ["funding_manager"] });
+
   const [loginData, setLoginData] = useState({
     email: "",
     password: "",
   });
-
-  useEffect(() => {
-    // Check if user is already authenticated
-    const token = localStorage.getItem("auth_token");
-    if (token) {
-      navigate("/funding-manager/dashboard");
-    }
-  }, []); // navigate is stable from react-router-dom, no need to include in deps
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -87,11 +84,17 @@ export default function FundingManagerLogin() {
         } catch (_) {
           // Non-blocking: even if refresh fails, proceed to navigation
         }
+        clearPortalReturnContext();
         toast({
           title: "Funding Manager Access Granted",
           description: "Welcome to the Funding Management Portal.",
         });
-        navigate("/funding-manager/dashboard");
+        const dashboardTarget = getPortalNavigationTarget("funding-manager", "/dashboard");
+        if (dashboardTarget.external) {
+          window.location.href = dashboardTarget.target;
+          return;
+        }
+        navigate(dashboardTarget.target);
       }
     } catch (error: any) {
       toast({

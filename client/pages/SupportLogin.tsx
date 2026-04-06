@@ -11,6 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { authApi, setAuthToken } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
+import { usePortalLoginRedirect } from "@/hooks/usePortalLoginRedirect";
+import { getPortalNavigationTarget } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import {
   HelpCircle,
@@ -33,6 +36,8 @@ export default function SupportLogin() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  usePortalLoginRedirect({ allowedRoles: ["support"] });
 
   const [loginData, setLoginData] = useState({
     email: "",
@@ -95,13 +100,19 @@ export default function SupportLogin() {
         localStorage.setItem("userRole", "support");
         localStorage.setItem("userId", response.data.user.id.toString());
         localStorage.setItem("userName", `${response.data.user.first_name} ${response.data.user.last_name}`);
+        clearPortalReturnContext();
         
         toast({
           title: "Welcome back!",
           description: "Successfully logged in to Support Dashboard.",
         });
         
-        navigate("/support/dashboard");
+        const dashboardTarget = getPortalNavigationTarget("support", "/dashboard");
+        if (dashboardTarget.external) {
+          window.location.href = dashboardTarget.target;
+          return;
+        }
+        navigate(dashboardTarget.target);
       } else {
         toast({
           title: "Login Failed",

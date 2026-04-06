@@ -11,6 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { authApi, setAuthToken } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
+import { usePortalLoginRedirect } from "@/hooks/usePortalLoginRedirect";
+import { getPortalNavigationTarget } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import {
   Shield,
@@ -35,6 +38,8 @@ export default function SuperAdminLogin() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  usePortalLoginRedirect({ allowedRoles: ["super_admin"] });
 
   const [loginData, setLoginData] = useState({
     email: "",
@@ -83,11 +88,17 @@ export default function SuperAdminLogin() {
 
       if (response.data?.token) {
         setAuthToken(response.data.token);
+        clearPortalReturnContext();
         toast({
           title: "Super Admin Access Granted",
           description: "Welcome to the Super Admin Portal.",
         });
-        navigate("/super-admin");
+        const dashboardTarget = getPortalNavigationTarget("super-admin", "/dashboard");
+        if (dashboardTarget.external) {
+          window.location.href = dashboardTarget.target;
+          return;
+        }
+        navigate(dashboardTarget.target);
       }
     } catch (error: any) {
       toast({

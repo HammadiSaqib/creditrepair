@@ -4,12 +4,27 @@ import path from "path";
 import { createServer } from "./server";
 import fs from "fs";
 
+const portalAliases = [
+  'admin',
+  'super-admin',
+  'support',
+  'affiliate',
+  'funding-manager',
+  'member',
+];
+
+const portalLocalhostOrigins = portalAliases.flatMap((alias) => [
+  `http://${alias}.localhost:3001`,
+  `http://${alias}.localhost:3000`,
+]);
+
 //1 https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
     // Bind to IPv4 to ensure external access over public IP on VPS
     host: "0.0.0.0",
     port: 3001,
+    allowedHosts: ['.localhost'],
   },
   publicDir: path.resolve(__dirname, "./client/public"),
   build: {
@@ -74,7 +89,8 @@ function expressPlugin(): Plugin {
               const devOrigins = [
                 'http://localhost:3001',
                 'http://localhost:3000',
-                'http://localhost:5173'
+                'http://localhost:5173',
+                ...portalLocalhostOrigins,
               ];
               if (process.env.CORS_ORIGIN) {
                 // Support comma-separated list

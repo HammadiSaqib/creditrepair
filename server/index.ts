@@ -169,6 +169,31 @@ import cardManagementRoutes from "./routes/cardManagement.js";
 import fundingDIYSubmissionsRoutes from "./routes/fundingDIYSubmissions.js";
 import affiliateTrialPlansRoutes from "./routes/affiliateTrialPlans.js";
 
+const portalAliases = [
+  'admin',
+  'super-admin',
+  'support',
+  'affiliate',
+  'funding-manager',
+  'member',
+] as const;
+
+const portalLocalhostOrigins = portalAliases.flatMap((alias) => [
+  `http://${alias}.localhost:3001`,
+  `http://${alias}.localhost:3000`,
+]);
+
+const defaultCorsOrigins = [
+  'http://localhost:3002',
+  'http://localhost:8080',
+  'http://localhost:3001',
+  'http://localhost:3000',
+  ...portalLocalhostOrigins,
+  'https://api.thescoremachine.com',
+  'https://thescoremachine.com',
+  'https://www.thescoremachine.com',
+];
+
 export async function createServer(vite?: ViteDevServer) {
   const app = express();
   const httpServer = createHttpServer(app);
@@ -200,17 +225,17 @@ export async function createServer(vite?: ViteDevServer) {
 
   // Middleware
   app.use(cors({
-    origin: [
-      'http://localhost:3002',
-      'http://localhost:8080',
-      'http://localhost:3001',
-      'https://api.thescoremachine.com',
-      'https://thescoremachine.com',
-      'https://www.thescoremachine.com'
-    ],
+    origin: (origin, callback) => {
+      if (!origin || defaultCorsOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin not allowed by CORS: ${origin}`));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Skip-Refresh-Token-Persist']
   }));
   // IMPORTANT: Use raw body for Stripe webhook BEFORE json/urlencoded parsers
   // This prevents express.json() from consuming and mutating the raw payload,
@@ -234,6 +259,22 @@ export async function createServer(vite?: ViteDevServer) {
       timestamp: new Date().toISOString(),
       status: "healthy",
     });
+  });
+
+  // Client-side auth transfer debug sink (terminal-visible)
+  app.post("/api/debug/transfer-log", (req, res) => {
+    const payload = req.body || {};
+    const event = payload.event || "unknown";
+    const origin = payload.origin || "unknown";
+    const pathname = payload.pathname || "unknown";
+    const timestamp = payload.timestamp || new Date().toISOString();
+    const details = payload.details || {};
+
+    console.log("\n[TRANSFER DEBUG]", timestamp, event);
+    console.log("  Origin:", origin, "Path:", pathname);
+    console.log("  Details:", details);
+
+    res.json({ ok: true });
   });
 
   // Simple user check endpoint

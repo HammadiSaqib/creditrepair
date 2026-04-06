@@ -6,7 +6,15 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as helmetPkg from "react-helmet-async";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  matchPath,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { BlogSsrProvider, BlogSsrData } from "./contexts/BlogSsrContext";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -18,6 +26,13 @@ import ClientProtectedRoute from "./components/ClientProtectedRoute";
 import ErrorBoundary from "./components/ErrorBoundary";
 import ReactGA from "react-ga4";
 import LoadingScreen from "./components/LoadingScreen";
+import { stageCrossSubdomainAuthTransfer } from "./lib/authStorage";
+import {
+  getCanonicalPortalRedirect,
+  getHostAlias,
+  getLegacyPortalTarget,
+  type PortalAlias,
+} from "./lib/hostRouting";
 import Index from "./pages/Index";
 const ReferralLandingPage = React.lazy(() => import("../src/components/ReferralLandingPage"));
 
@@ -96,6 +111,8 @@ const BlogTags = React.lazy(() => import("./pages/Support/Blog/BlogTags"));
 const SupportAdminManagement = React.lazy(() => import("./pages/SupportAdminManagement"));
 const EmailCampaign = React.lazy(() => import("./pages/EmailCampaign"));
 const AffiliateLogin = React.lazy(() => import("./pages/AffiliateLogin"));
+const AffiliateSessionTransfer = React.lazy(() => import("./pages/AffiliateSessionTransfer"));
+const AdminSessionTransfer = React.lazy(() => import("./pages/AdminSessionTransfer"));
 const AffiliateDashboard = React.lazy(() => import("./pages/AffiliateDashboard"));
 const AffiliateReferrals = React.lazy(() => import("./pages/AffiliateReferrals"));
 const AffiliateEarnings = React.lazy(() => import("./pages/AffiliateEarnings"));
@@ -189,8 +206,751 @@ type AppProps = {
 
 const { Helmet, HelmetProvider } = helmetPkg as typeof import("react-helmet-async");
 
+type NonAdminPortalAlias = Exclude<PortalAlias, "admin">;
+
+type PortalAliasRoute = {
+  path: string;
+  element: React.ReactElement;
+};
+
+function HostAliasCanonicalizer() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const redirect = getCanonicalPortalRedirect({
+      hostname: window.location.hostname,
+      pathname: location.pathname,
+      protocol: window.location.protocol,
+      port: window.location.port,
+      search: location.search,
+      hash: location.hash,
+    });
+
+    console.log("[DEBUG HostAliasCanonicalizer] hostname:", window.location.hostname, "pathname:", location.pathname, "redirect:", redirect);
+
+    if (!redirect) {
+      return;
+    }
+
+    if (redirect.type === "path" && redirect.targetPath) {
+      const target = `${redirect.targetPath}${location.search}${location.hash}`;
+      if (target !== `${location.pathname}${location.search}${location.hash}`) {
+        navigate(target, { replace: true });
+      }
+      return;
+    }
+
+    if (redirect.type === "host" && redirect.targetUrl) {
+      const encoded = stageCrossSubdomainAuthTransfer(redirect.targetUrl);
+      const finalUrl = encoded
+        ? `${redirect.targetUrl}#${"__sm_auth_transfer__:"}${encoded}`
+        : redirect.targetUrl;
+      window.location.replace(finalUrl);
+    }
+  }, [location.hash, location.pathname, location.search, navigate]);
+
+  return null;
+}
+
+function getPortalAliasRoutes(alias: NonAdminPortalAlias): PortalAliasRoute[] {
+  switch (alias) {
+    case "super-admin":
+      return [
+        { path: "/", element: <Navigate to="/dashboard" replace /> },
+        { path: "/login", element: <SuperAdminLogin /> },
+        {
+          path: "/dashboard",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminOverview />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/overview",
+          element: <Navigate to="/dashboard" replace />,
+        },
+        {
+          path: "/plans",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminPlans />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/admins",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminAdmins />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/admins/:id",
+          element: (
+            <SuperAdminProtectedRoute>
+              <AdminDetails />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/users",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminUsers />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/subscriptions",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminSubscriptions />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/settings",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminSettings />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/affiliates",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminAffiliates />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        { path: "/affiliate-management", element: <Navigate to="/affiliates" replace /> },
+        {
+          path: "/affiliates/:id",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminAffiliateProfile />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/clients/:userId/transactions",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminClientTransactions />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/contracts",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminContracts />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/reports",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminReports />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/reports/:clientId",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminReports />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/tasks",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminTasks />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/shop-management",
+          element: (
+            <SuperAdminProtectedRoute>
+              <ShopManagement />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/support-users",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminSupportUsers />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/school-management",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminSchoolManagement />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/admin-import",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminAdminImport />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/affiliate-import",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminAffiliateImport />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/client-import",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminClientImport />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/credit-report-upload",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminCreditReportUpload />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/email-campaign",
+          element: (
+            <SuperAdminProtectedRoute>
+              <EmailCampaign />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/affiliate-trial-plans",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminAffiliateTrialPlans />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+      ];
+    case "support":
+      return [
+        { path: "/", element: <Navigate to="/dashboard" replace /> },
+        { path: "/login", element: <SupportLogin /> },
+        {
+          path: "/dashboard",
+          element: (
+            <SupportProtectedRoute>
+              <SupportDashboard />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/tasks",
+          element: (
+            <SupportProtectedRoute>
+              <SupportTasks />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/affiliate-import",
+          element: (
+            <SupportProtectedRoute>
+              <SupportAffiliateCsvImport />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/tickets",
+          element: (
+            <SupportProtectedRoute>
+              <SupportTickets />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/live-chat",
+          element: (
+            <SupportProtectedRoute>
+              <SupportLiveChat />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/users",
+          element: (
+            <SupportProtectedRoute>
+              <SupportUsers />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/knowledge-base",
+          element: (
+            <SupportProtectedRoute>
+              <SupportKnowledgeBase />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/reports",
+          element: (
+            <SupportProtectedRoute>
+              <SupportReports />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/testimonials",
+          element: (
+            <SupportProtectedRoute>
+              <SupportTestimonials />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/escalations",
+          element: (
+            <SupportProtectedRoute>
+              <SupportEscalations />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/admin-management",
+          element: (
+            <SupportProtectedRoute>
+              <SupportAdminManagement />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/settings",
+          element: (
+            <SupportProtectedRoute>
+              <SupportSettings />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/blog",
+          element: (
+            <SupportProtectedRoute>
+              <BlogManagement />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/blog/new",
+          element: (
+            <SupportProtectedRoute>
+              <BlogEditor />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/blog/edit/:id",
+          element: (
+            <SupportProtectedRoute>
+              <BlogEditor />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/blog/categories",
+          element: (
+            <SupportProtectedRoute>
+              <BlogCategories />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/blog/tags",
+          element: (
+            <SupportProtectedRoute>
+              <BlogTags />
+            </SupportProtectedRoute>
+          ),
+        },
+        {
+          path: "/email-campaign",
+          element: (
+            <SupportProtectedRoute>
+              <EmailCampaign />
+            </SupportProtectedRoute>
+          ),
+        },
+      ];
+    case "affiliate":
+      return [
+        { path: "/", element: <Navigate to="/dashboard" replace /> },
+        { path: "/login", element: <AffiliateLogin /> },
+        { path: "/session-transfer", element: <AffiliateSessionTransfer /> },
+        {
+          path: "/dashboard",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateDashboard />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/referrals",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateReferrals />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/earnings",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateEarnings />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/analytics",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateAnalytics />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/marketing",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateMarketing />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/links",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateLinks />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/commissions",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateCommissions />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/performance",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateAnalytics />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/subscription",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateSubscription />
+            </AffiliateProtectedRoute>
+          ),
+        },
+        {
+          path: "/settings",
+          element: (
+            <AffiliateProtectedRoute>
+              <AffiliateSettings />
+            </AffiliateProtectedRoute>
+          ),
+        },
+      ];
+    case "funding-manager":
+      return [
+        { path: "/", element: <Navigate to="/dashboard" replace /> },
+        { path: "/login", element: <FundingManagerLogin /> },
+        {
+          path: "/dashboard",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingManagerDashboard />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/banks",
+          element: (
+            <FundingManagerProtectedRoute>
+              <BankManagement />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/banks/:id",
+          element: (
+            <FundingManagerProtectedRoute>
+              <BankDetails />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/clients",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingManagerClients />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/cards",
+          element: (
+            <FundingManagerProtectedRoute>
+              <CardManagement />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/funding-requests",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingRequests />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/funding-requests/:id",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingRequestDetails />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/settings",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingManagerSettings />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/overview",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingManagerOverview />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/analytics",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingManagerAnalytics />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/commissions",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingManagerCommissions />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/revenue",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingManagerRevenue />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+        {
+          path: "/credit-report/:userId",
+          element: (
+            <FundingManagerProtectedRoute>
+              <FundingManagerCreditReport />
+            </FundingManagerProtectedRoute>
+          ),
+        },
+      ];
+    case "member":
+      return [
+        { path: "/", element: <Navigate to="/dashboard" replace /> },
+        { path: "/login", element: <ClientLogin /> },
+        {
+          path: "/dashboard",
+          element: (
+            <ClientProtectedRoute>
+              <ClientDashboard />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/accounts",
+          element: (
+            <ClientProtectedRoute>
+              <ClientAccounts />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/payments",
+          element: (
+            <ClientProtectedRoute>
+              <ClientPayments />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/collections",
+          element: (
+            <ClientProtectedRoute>
+              <ClientCollections />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/inquiries",
+          element: (
+            <ClientProtectedRoute>
+              <ClientInquiries />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/personal",
+          element: (
+            <ClientProtectedRoute>
+              <ClientPersonal />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/underwriting",
+          element: (
+            <ClientProtectedRoute>
+              <ClientUnderwriting />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/progress-report",
+          element: (
+            <ClientProtectedRoute>
+              <ClientProgressReport />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/analysis",
+          element: (
+            <ClientProtectedRoute>
+              <ClientAnalysis />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/funding",
+          element: (
+            <ClientProtectedRoute>
+              <ClientFunding />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/public-records",
+          element: (
+            <ClientProtectedRoute>
+              <ClientPublicRecords />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/monitoring",
+          element: (
+            <ClientProtectedRoute>
+              <ClientMonitoring />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/score-history",
+          element: (
+            <ClientProtectedRoute>
+              <ClientScoreHistory />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/settings",
+          element: (
+            <ClientProtectedRoute>
+              <ClientSettings />
+            </ClientProtectedRoute>
+          ),
+        },
+        {
+          path: "/support",
+          element: (
+            <ClientProtectedRoute>
+              <ClientSupport />
+            </ClientProtectedRoute>
+          ),
+        },
+      ];
+  }
+}
+
+function PortalAliasRouter({ alias }: { alias: NonAdminPortalAlias }) {
+  const location = useLocation();
+  const aliasRoutes = getPortalAliasRoutes(alias);
+  const matchedRoute = aliasRoutes.find((route) =>
+    matchPath({ path: route.path, end: true }, location.pathname),
+  );
+
+  if (matchedRoute) {
+    return matchedRoute.element;
+  }
+
+  const legacyTarget = getLegacyPortalTarget(location.pathname, {
+    allowExactSupportAffiliate: true,
+  });
+  if (legacyTarget) {
+    return <LoadingScreen message="Redirecting to your portal..." />;
+  }
+
+  return <NotFound />;
+}
+
 const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
   const Router = router ?? BrowserRouter;
+  const hostAlias =
+    typeof window !== "undefined" ? getHostAlias(window.location.hostname) : null;
+  const shouldUsePortalAliasRouter = hostAlias !== null && hostAlias !== "admin";
   useEffect(() => {
     if (!gaMeasurementId) return;
     ReactGA.initialize([
@@ -249,8 +1009,13 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
                   </script>
                 </Helmet>
                 <PageViewTracker />
+                <HostAliasCanonicalizer />
                 <Suspense fallback={<LoadingScreen />}>
                   <Routes>
+          {shouldUsePortalAliasRouter ? (
+            <Route path="*" element={<PortalAliasRouter alias={hostAlias as NonAdminPortalAlias} />} />
+          ) : (
+            <>
           <Route path="/" element={<Index />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/pricing/embed" element={<Pricing embed />} />
@@ -281,8 +1046,10 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
           <Route path="/super-admin/login" element={<SuperAdminLogin />} />
           <Route path="/support/login" element={<SupportLogin />} />
           <Route path="/affiliate/login" element={<AffiliateLogin />} />
+          <Route path="/affiliate/session-transfer" element={<AffiliateSessionTransfer />} />
           <Route path="/funding-manager/login" element={<FundingManagerLogin />} />
           <Route path="/funding-manager" element={<Navigate to="/funding-manager/login" replace />} />
+          <Route path="/session-transfer" element={<AdminSessionTransfer />} />
           <Route
             path="/dashboard"
             element={
@@ -1169,6 +1936,8 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
           
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
+            </>
+          )}
                     </Routes>
                   </Suspense>
                 </Router>

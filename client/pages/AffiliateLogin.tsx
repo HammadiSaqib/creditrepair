@@ -11,6 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { authApi, setAuthToken } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
+import { usePortalLoginRedirect } from "@/hooks/usePortalLoginRedirect";
+import { getPortalNavigationTarget } from "@/lib/hostRouting";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -36,6 +39,8 @@ export default function AffiliateLogin() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { refreshProfile } = useAuthContext();
+
+  usePortalLoginRedirect({ allowedRoles: ["affiliate", "admin", "super_admin"] });
 
   const [loginData, setLoginData] = useState({
     email: "",
@@ -114,13 +119,19 @@ export default function AffiliateLogin() {
 
         // Ensure AuthContext has up-to-date profile
         await refreshProfile();
+        clearPortalReturnContext();
         
         toast({
           title: "Welcome back!",
           description: "Successfully logged in to Affiliate Dashboard.",
         });
         
-        navigate("/affiliate/dashboard");
+        const dashboardTarget = getPortalNavigationTarget("affiliate", "/dashboard");
+        if (dashboardTarget.external) {
+          window.location.href = dashboardTarget.target;
+          return;
+        }
+        navigate(dashboardTarget.target);
       } else {
         toast({
           title: "Login Failed",

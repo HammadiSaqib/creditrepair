@@ -36,6 +36,8 @@ import {
   TabsTrigger,
 } from '../ui/tabs';
 import { apiRequest, superAdminApi } from '../../lib/api';
+import { stageCrossSubdomainAuthTransfer } from '../../lib/authStorage';
+import { buildAliasUrl } from '../../lib/hostRouting';
 import {
   Users,
   DollarSign,
@@ -400,8 +402,56 @@ const AffiliateManagement: React.FC = () => {
     try {
       const response = await superAdminApi.loginAsAffiliate(affiliate.id);
       if (response.data?.token) {
-        localStorage.setItem('auth_token', response.data.token);
-        window.location.href = '/affiliate/dashboard';
+        const targetUrl = buildAliasUrl('affiliate', '/session-transfer');
+        const targetUser = response.data.user || affiliate;
+        const transferRedirectPath = '/dashboard';
+        const returnLabel = 'Back To Super Admin Dashboard';
+        const returnTargetUrl = buildAliasUrl('super-admin', '/affiliates');
+
+        const encoded = stageCrossSubdomainAuthTransfer(targetUrl, {
+          auth: {
+            auth_token: response.data.token,
+            token: response.data.token,
+            refresh_token: response.data.refresh_token,
+            userRole: targetUser.role || 'affiliate',
+            userId: String(targetUser.id),
+            userName: `${targetUser.first_name || affiliate.first_name} ${targetUser.last_name || affiliate.last_name}`.trim(),
+          },
+          returnContext: {
+            label: returnLabel,
+            targetUrl: returnTargetUrl,
+          },
+          transferRedirectPath,
+        });
+
+        const directParams = new URLSearchParams();
+        directParams.set('__sm_direct_token', response.data.token);
+        if (response.data.refresh_token) {
+          directParams.set('__sm_direct_refresh', response.data.refresh_token);
+        }
+        directParams.set('__sm_direct_role', targetUser.role || 'affiliate');
+        directParams.set('__sm_direct_user_id', String(targetUser.id));
+        directParams.set(
+          '__sm_direct_user_name',
+          `${targetUser.first_name || affiliate.first_name} ${targetUser.last_name || affiliate.last_name}`.trim(),
+        );
+        directParams.set('__sm_direct_redirect', transferRedirectPath);
+        directParams.set('__sm_direct_return_label', returnLabel);
+        directParams.set('__sm_direct_return_target', returnTargetUrl);
+
+        const hashParts: string[] = [];
+        if (encoded) {
+          hashParts.push(`${"__sm_auth_transfer__:"}${encoded}`);
+        }
+        if (directParams.toString()) {
+          hashParts.push(directParams.toString());
+        }
+
+        const finalUrl = hashParts.length > 0
+          ? `${targetUrl}#${hashParts.join('&')}`
+          : targetUrl;
+
+        window.location.href = finalUrl;
         toast({
           title: "Success",
           description: `Logged in as ${affiliate.first_name} ${affiliate.last_name}`

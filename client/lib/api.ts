@@ -1,4 +1,10 @@
 import axios from 'axios';
+import {
+  clearStoredAuth,
+  getStoredAuthValue,
+  setStoredAuthValue,
+  writeStoredAuthSnapshot,
+} from './authStorage';
 
 // Prefer env; otherwise default to current origin so dev auto-ports (e.g., 3002) work
 // This avoids hard-coding localhost:3001, ensuring Vite’s proxy catches /api on the same origin
@@ -15,10 +21,11 @@ const api = axios.create({
 });
 
 const apiDebug = import.meta.env.DEV && import.meta.env.VITE_API_DEBUG === 'true';
+const SKIP_REFRESH_TOKEN_PERSIST_HEADER = 'x-skip-refresh-token-persist';
 
 // Add auth token to requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token');
+  const token = getStoredAuthValue('auth_token');
   if (apiDebug) {
     console.log('🔗 API Interceptor: Request to', config.url);
     console.log('🔗 API Interceptor: Token found:', !!token);
@@ -39,8 +46,9 @@ api.interceptors.response.use(
     try {
       const data: any = response?.data;
       const rt = data?.refresh_token;
-      if (rt) {
-        try { localStorage.setItem('refresh_token', rt); } catch {}
+      const shouldSkipPersist = response?.config?.headers?.[SKIP_REFRESH_TOKEN_PERSIST_HEADER] === '1';
+      if (rt && !shouldSkipPersist) {
+        setStoredAuthValue('refresh_token', rt);
       }
     } catch {}
     return response;
@@ -51,14 +59,18 @@ api.interceptors.response.use(
     const errTag = error?.response?.data?.error;
     const originalConfig = error?.config || {};
     if (status === 401 && code === 'TOKEN_EXPIRED' && !originalConfig.__isRetry) {
-      const refreshToken = localStorage.getItem('refresh_token');
+      const refreshToken = getStoredAuthValue('refresh_token');
       if (refreshToken) {
         return api
           .post('/api/auth/refresh', {}, { headers: { 'x-refresh-token': refreshToken } })
           .then((resp) => {
             const newToken = resp?.data?.token;
             if (newToken) {
-              try { localStorage.setItem('auth_token', newToken); } catch {}
+              writeStoredAuthSnapshot({
+                auth_token: newToken,
+                token: newToken,
+                refresh_token: refreshToken,
+              });
               originalConfig.__isRetry = true;
               originalConfig.headers = originalConfig.headers || {};
               originalConfig.headers.Authorization = `Bearer ${newToken}`;
@@ -67,7 +79,7 @@ api.interceptors.response.use(
             return Promise.reject(error);
           })
           .catch(() => {
-            try { localStorage.removeItem('auth_token'); localStorage.removeItem('refresh_token'); } catch {}
+            clearStoredAuth();
             const current = typeof window !== 'undefined' ? window.location.pathname : '/';
             const loginPath = '/login';
             if (typeof window !== 'undefined') {
@@ -77,7 +89,7 @@ api.interceptors.response.use(
             return Promise.reject(error);
           });
       } else {
-        try { localStorage.removeItem('auth_token'); } catch {}
+        clearStoredAuth();
         const current = typeof window !== 'undefined' ? window.location.pathname : '/';
         const loginPath = '/login';
         if (typeof window !== 'undefined') {
@@ -100,7 +112,7 @@ api.interceptors.response.use(
 
 // Utility function to get auth token
 export const getAuthToken = (): string | null => {
-  return localStorage.getItem('auth_token');
+  return getStoredAuthValue('auth_token');
 };
 
 // Generic API request function
@@ -550,14 +562,14 @@ export { api };
 // Set auth token function
 export const setAuthToken = (token: string) => {
   console.log('🔧 setAuthToken: Called with token:', token?.substring(0, 50) + '...');
-  console.log('🔧 setAuthToken: localStorage before:', localStorage.getItem('auth_token')?.substring(0, 50) + '...');
+  console.log('🔧 setAuthToken: localStorage before:', getStoredAuthValue('auth_token')?.substring(0, 50) + '...');
   
   try {
-    localStorage.setItem('auth_token', token);
+    writeStoredAuthSnapshot({ auth_token: token, token });
     console.log('✅ setAuthToken: Token stored successfully');
     
     // Verify storage
-    const storedToken = localStorage.getItem('auth_token');
+    const storedToken = getStoredAuthValue('auth_token');
     console.log('🔍 setAuthToken: Verification - token stored:', !!storedToken);
     console.log('🔍 setAuthToken: Verification - tokens match:', storedToken === token);
     console.log('🔍 setAuthToken: Verification - stored token preview:', storedToken?.substring(0, 50) + '...');
@@ -660,8 +672,18 @@ export const superAdminApi = {
     api.get('/api/super-admin/analytics/stripe-revenue', { params }),
   getStripePayments: (params?: { from?: string; to?: string }) =>
     api.get('/api/super-admin/analytics/stripe-payments', { params }),
-  loginAsAdmin: (adminId: string) => api.post('/api/auth/login-as-admin', { adminId }),
-  loginAsAffiliate: (affiliateId: number) => api.post('/api/auth/login-as-affiliate', { affiliateId }),
+  loginAsAdmin: (adminId: string | number) =>
+    api.post('/api/auth/login-as-admin', { adminId }, {
+      headers: {
+        [SKIP_REFRESH_TOKEN_PERSIST_HEADER]: '1',
+      },
+    }),
+  loginAsAffiliate: (affiliateId: number) =>
+    api.post('/api/auth/login-as-affiliate', { affiliateId }, {
+      headers: {
+        [SKIP_REFRESH_TOKEN_PERSIST_HEADER]: '1',
+      },
+    }),
   // Support Users Management
   getSupportUsers: (params?: { page?: number; limit?: number; search?: string; is_active?: string }) =>
     api.get('/api/super-admin/support-users', { params }),
@@ -675,7 +697,12 @@ export const superAdminApi = {
   // Alias to match component usage
   changeSupportUserPassword: (id: number, password: string) =>
     api.put(`/api/super-admin/support-users/${id}/password`, { password }),
-  loginAsSupportUser: (id: number) => api.post(`/api/super-admin/support-users/${id}/login`),
+  loginAsSupportUser: (id: number) =>
+    api.post(`/api/super-admin/support-users/${id}/login`, undefined, {
+      headers: {
+        [SKIP_REFRESH_TOKEN_PERSIST_HEADER]: '1',
+      },
+    }),
   // Subscription Management
   getSubscriptions: (params?: { page?: number; limit?: number; search?: string; status?: string; admin?: string }) =>
     api.get('/api/super-admin/subscriptions', { params }),

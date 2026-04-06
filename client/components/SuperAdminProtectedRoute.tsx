@@ -30,14 +30,14 @@ export default function SuperAdminProtectedRoute({ children }: SuperAdminProtect
       try {
         const response = await authApi.verifyToken();
         if (response.data?.valid && response.data?.user) {
-          setIsAuthenticated(true);
-          
-          // Check if user has super admin or admin role
-          if (response.data.user.role === 'super_admin' || response.data.user.role === 'admin') {
+          // Only a real super admin session is valid on the super-admin portal.
+          if (response.data.user.role === 'super_admin') {
+            setIsAuthenticated(true);
             setIsSuperAdmin(true);
           } else {
+            setIsAuthenticated(false);
             setIsSuperAdmin(false);
-            setError(`Access denied: Your role is '${response.data.user.role}' but 'super_admin' or 'admin' is required.`);
+            setError(`Access denied: Your role is '${response.data.user.role}' but 'super_admin' is required.`);
           }
         } else {
           setIsAuthenticated(false);
