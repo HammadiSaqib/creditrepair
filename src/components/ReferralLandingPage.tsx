@@ -12,6 +12,12 @@ import { Helmet } from "react-helmet-async";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import {
+  buildReferralLandingUrl,
+  buildReferralPricingUrl,
+  buildReferralRegisterUrl,
+  getPublicAliasOrigin,
+} from "@/lib/hostRouting";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -117,7 +123,7 @@ const ReferralLandingPage: React.FC = () => {
   const [demoOpen, setDemoOpen] = useState(false);
   const ctaRef = React.useRef<HTMLDivElement>(null);
   const slugOrId = (affiliateId && affiliateId.trim().length > 0) ? affiliateId : (affiliate?.id ? String(affiliate.id) : '');
-  const referralLink = slugOrId ? `${window.location.origin}/ref/${slugOrId}` : `${window.location.origin}/ref`;
+  const referralLink = slugOrId ? buildReferralLandingUrl(slugOrId) : getPublicAliasOrigin('ref');
   const heroImageSrc = affiliate?.logoUrl && affiliate.logoUrl.trim().length > 0
     ? affiliate.logoUrl
     : "https://images.pexels.com/photos/7688336/pexels-photo-7688336.jpeg";
@@ -201,12 +207,12 @@ const ReferralLandingPage: React.FC = () => {
       localStorage.setItem('referralAffiliateName', affiliate.name);
       localStorage.setItem('referralCommissionRate', affiliate.commissionRate.toString());
     }
-    
-    if (planId) {
-      navigate(`/register?ref=${affiliate?.id}&plan=${planId}`);
-    } else {
-      navigate(`/pricing?ref=${affiliate?.id}`);
-    }
+
+    const targetUrl = planId
+      ? buildReferralRegisterUrl({ affiliateId: affiliate?.id, planId })
+      : buildReferralPricingUrl(affiliate?.id);
+
+    window.location.href = targetUrl;
   };
 
   const handleLearnMore = () => {

@@ -7,9 +7,13 @@ export const PORTAL_ALIASES = [
   "member",
 ] as const;
 
+export const PUBLIC_HOST_ALIASES = ["ref", "refadmin"] as const;
+
 export type PortalAlias = (typeof PORTAL_ALIASES)[number];
+export type PublicHostAlias = (typeof PUBLIC_HOST_ALIASES)[number];
 
 type NonAdminPortalAlias = Exclude<PortalAlias, "admin">;
+type KnownSubdomainAlias = PortalAlias | PublicHostAlias;
 
 interface RedirectInput {
   hostname: string;
@@ -103,7 +107,7 @@ function getBaseDomain(hostname: string) {
   return parts.slice(-2).join(".");
 }
 
-function getAliasHost(alias: PortalAlias, hostname: string) {
+function getAliasHost(alias: KnownSubdomainAlias, hostname: string) {
   const baseDomain = getBaseDomain(hostname);
   if (baseDomain === "127.0.0.1") {
     return hostname;
@@ -114,6 +118,10 @@ function getAliasHost(alias: PortalAlias, hostname: string) {
 
 function isPortalAlias(value: string): value is PortalAlias {
   return PORTAL_ALIASES.includes(value as PortalAlias);
+}
+
+function isPublicHostAlias(value: string): value is PublicHostAlias {
+  return PUBLIC_HOST_ALIASES.includes(value as PublicHostAlias);
 }
 
 function stripPortalPrefix(prefix: string, pathname: string, alias: PortalAlias) {
@@ -142,6 +150,19 @@ export function getHostAlias(hostname: string): PortalAlias | null {
   return isPortalAlias(subdomain) ? subdomain : null;
 }
 
+export function getPublicHostAlias(hostname: string): PublicHostAlias | null {
+  const normalized = hostname.toLowerCase();
+  const withoutPort = normalized.split(":")[0];
+  const parts = withoutPort.split(".").filter(Boolean);
+
+  if (parts.length < 2) {
+    return null;
+  }
+
+  const subdomain = parts[0];
+  return isPublicHostAlias(subdomain) ? subdomain : null;
+}
+
 export function buildAliasUrl(
   alias: PortalAlias,
   pathname: string,
@@ -155,6 +176,72 @@ export function buildAliasUrl(
   const portSegment = port ? `:${port}` : "";
 
   return `${protocol}//${getAliasHost(alias, hostname)}${portSegment}${normalizePath(pathname)}${search}${hash}`;
+}
+
+export function buildPublicAliasUrl(
+  alias: PublicHostAlias,
+  pathname: string,
+  options?: Pick<RedirectInput, "protocol" | "port" | "hostname" | "search" | "hash">,
+) {
+  const protocol = options?.protocol ?? (typeof window !== "undefined" ? window.location.protocol : "http:");
+  const hostname = options?.hostname ?? (typeof window !== "undefined" ? window.location.hostname : "localhost");
+  const port = options?.port ?? (typeof window !== "undefined" ? window.location.port : "3001");
+  const search = options?.search ?? "";
+  const hash = options?.hash ?? "";
+  const portSegment = port ? `:${port}` : "";
+
+  return `${protocol}//${getAliasHost(alias, hostname)}${portSegment}${normalizePath(pathname)}${search}${hash}`;
+}
+
+export function getPublicAliasOrigin(
+  alias: PublicHostAlias,
+  options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,
+) {
+  const url = new URL(buildPublicAliasUrl(alias, "/", options));
+  return url.origin;
+}
+
+export function buildReferralLandingUrl(
+  referralId: string,
+  options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,
+) {
+  return buildPublicAliasUrl("ref", `/${referralId}`, options);
+}
+
+export function buildReferralPricingUrl(
+  affiliateId?: string | number | null,
+  options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,
+) {
+  const searchParams = new URLSearchParams();
+  if (affiliateId !== undefined && affiliateId !== null && String(affiliateId).length > 0) {
+    searchParams.set("ref", String(affiliateId));
+  }
+
+  return buildPublicAliasUrl("ref", "/pricing", {
+    ...options,
+    search: searchParams.toString() ? `?${searchParams.toString()}` : "",
+  });
+}
+
+export function buildReferralRegisterUrl(
+  params?: {
+    affiliateId?: string | number | null;
+    planId?: string | number | null;
+  },
+  options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,
+) {
+  const searchParams = new URLSearchParams();
+  if (params?.affiliateId !== undefined && params.affiliateId !== null && String(params.affiliateId).length > 0) {
+    searchParams.set("ref", String(params.affiliateId));
+  }
+  if (params?.planId !== undefined && params.planId !== null && String(params.planId).length > 0) {
+    searchParams.set("plan", String(params.planId));
+  }
+
+  return buildPublicAliasUrl("ref", "/register", {
+    ...options,
+    search: searchParams.toString() ? `?${searchParams.toString()}` : "",
+  });
 }
 
 export function isAdminCanonicalPath(pathname: string) {
@@ -250,6 +337,66 @@ export function getLegacyPortalTarget(
 export function getCanonicalPortalRedirect(input: RedirectInput): PortalRedirectResult | null {
   const pathname = normalizePath(input.pathname);
   const currentAlias = getHostAlias(input.hostname);
+  const currentPublicAlias = getPublicHostAlias(input.hostname);
+  const searchParams = new URLSearchParams(input.search ?? "");
+
+  const referralLegacyMatch = pathname.match(/^\/ref\/([^/]+)$/);
+  if (referralLegacyMatch) {
+    const referralPath = `/${referralLegacyMatch[1]}`;
+
+    if (currentPublicAlias === "ref") {
+      return {
+        type: "path",
+        targetPath: referralPath,
+      };
+    }
+
+    return {
+      type: "host",
+      targetUrl: buildPublicAliasUrl("ref", referralPath, input),
+    };
+  }
+
+  if (currentPublicAlias === "refadmin") {
+    return {
+      type: "host",
+      targetUrl: buildPublicAliasUrl("ref", pathname === "/" ? "/register" : pathname, input),
+    };
+  }
+
+  const isReferralRegisterPath = pathname === "/register" && (searchParams.has("ref") || searchParams.has("plan"));
+  if (isReferralRegisterPath && currentPublicAlias !== "ref") {
+    return {
+      type: "host",
+      targetUrl: buildPublicAliasUrl("ref", pathname, input),
+    };
+  }
+
+  const isReferralPricingPath = pathname === "/pricing" && searchParams.has("ref");
+  if (isReferralPricingPath && currentPublicAlias !== "ref") {
+    return {
+      type: "host",
+      targetUrl: buildPublicAliasUrl("ref", pathname, input),
+    };
+  }
+
+  if (currentPublicAlias === "ref") {
+    if (pathname === "/") {
+      return {
+        type: "path",
+        targetPath: "/register",
+      };
+    }
+
+    if (pathname === "/register" || pathname === "/pricing") {
+      return null;
+    }
+
+    if (/^\/[^/]+$/.test(pathname) && pathname !== "/") {
+      return null;
+    }
+  }
+
   const prefixedPortalTarget = getLegacyPortalTarget(pathname, {
     allowExactSupportAffiliate: currentAlias === "support" || currentAlias === "affiliate",
   });

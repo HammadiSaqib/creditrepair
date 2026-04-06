@@ -25,7 +25,11 @@ interface VerificationData {
   code: string;
 }
 
-const JoinAffiliate: React.FC = () => {
+interface JoinAffiliateProps {
+  embed?: boolean;
+}
+
+const JoinAffiliate: React.FC<JoinAffiliateProps> = ({ embed = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const referralAffiliateId = new URLSearchParams(location.search).get('ref');
@@ -47,6 +51,64 @@ const JoinAffiliate: React.FC = () => {
   const [resendLoading, setResendLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const redirectToPath = (path: string) => {
+    if (!embed) {
+      navigate(path);
+      return;
+    }
+
+    const targetUrl = `${window.location.origin}${path}`;
+
+    try {
+      if (window.top && window.top !== window.self) {
+        window.top.location.href = targetUrl;
+        return;
+      }
+    } catch {}
+
+    const redirected = window.open(targetUrl, '_top');
+    if (!redirected) {
+      window.location.href = targetUrl;
+    }
+  };
+
+  React.useEffect(() => {
+    if (!embed || typeof window === 'undefined' || window.parent === window) {
+      return;
+    }
+
+    const postEmbedHeight = () => {
+      const height = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+      );
+
+      window.parent.postMessage(
+        {
+          type: 'scoremachine:join-affiliate-embed-resize',
+          height,
+        },
+        '*',
+      );
+    };
+
+    postEmbedHeight();
+
+    const frameId = window.requestAnimationFrame(postEmbedHeight);
+    const resizeObserver = new ResizeObserver(() => {
+      postEmbedHeight();
+    });
+
+    resizeObserver.observe(document.body);
+    window.addEventListener('resize', postEmbedHeight);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', postEmbedHeight);
+    };
+  }, [embed, error, loading, success, showVerification, resendLoading]);
 
 
 
@@ -161,7 +223,7 @@ const JoinAffiliate: React.FC = () => {
             if (loginData.user?.first_name || loginData.user?.last_name) {
               localStorage.setItem('userName', `${loginData.user?.first_name || ''} ${loginData.user?.last_name || ''}`.trim());
             }
-            navigate('/affiliate/dashboard');
+            redirectToPath('/affiliate/dashboard');
             return;
           } else {
             setError(loginData.error || 'Login failed');
@@ -261,7 +323,7 @@ const JoinAffiliate: React.FC = () => {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-emerald-50 flex items-center justify-center p-4">
+      <div className={`${embed ? 'min-h-[720px]' : 'min-h-screen'} bg-gradient-to-br from-blue-50 via-white to-emerald-50 flex items-center justify-center p-4`}>
         <div className="absolute inset-0 overflow-hidden">
           <div className="absolute top-20 left-10 w-72 h-72 bg-sea-green/10 rounded-full blur-3xl"></div>
           <div className="absolute bottom-20 right-10 w-96 h-96 bg-ocean-blue/10 rounded-full blur-3xl"></div>
@@ -286,14 +348,14 @@ const JoinAffiliate: React.FC = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <Button 
-              onClick={() => navigate('/')} 
+              onClick={() => redirectToPath('/')} 
               className="w-full bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 shadow-lg text-lg py-6"
             >
               Return to Home
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
             <Button 
-              onClick={() => navigate('/affiliate/login')} 
+              onClick={() => redirectToPath('/affiliate/login')} 
               variant="outline"
               className="w-full border-ocean-blue text-ocean-blue hover:bg-ocean-blue hover:text-white"
             >
@@ -306,14 +368,21 @@ const JoinAffiliate: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className={embed ? 'min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50/20 font-sans py-8' : 'min-h-screen bg-white'}>
       <Helmet>
-        <title>Affiliate Program - Score Machine | Partner & Earn</title>
+        <title>{embed ? 'Affiliate Registration Embed - Score Machine' : 'Affiliate Program - Score Machine | Partner & Earn'}</title>
         <meta name="description" content="Join Score Machine’s Affiliate and Partner Programs. Earn recurring commissions by promoting a professional, AI-based credit analysis platform. Access training, analytics, tracking tools, and compliance-ready marketing resources." />
-        <link rel="canonical" href="https://scoremachine.com/affiliate" />
+        {embed ? (
+          <>
+            <meta name="robots" content="noindex,nofollow" />
+            <link rel="canonical" href="https://thescoremachine.com/join-affiliate" />
+          </>
+        ) : (
+          <link rel="canonical" href="https://thescoremachine.com/affiliate" />
+        )}
       </Helmet>
-      <SiteHeader />
-      {/* Enhanced Hero Section */}
+      {!embed && <SiteHeader />}
+      {!embed && (
       <section className="relative overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50/30 to-emerald-50/30">
         {/* Multi-layer Background */}
         <div className="absolute inset-0">
@@ -449,8 +518,9 @@ const JoinAffiliate: React.FC = () => {
           </div>
         </div>
       </section>
+      )}
 
-      {/* Program Structure */}
+      {!embed && (
       <section id="programs" className="py-24 bg-gradient-to-br from-slate-50 via-white to-blue-50/30 relative overflow-hidden">
         {/* Background Elements */}
         <div className="absolute inset-0 bg-grid-slate-100 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] -z-10" />
@@ -615,8 +685,9 @@ const JoinAffiliate: React.FC = () => {
           </div>
         </div>
       </section>
+      )}
 
-      {/* White Label Pricing Tiers */}
+      {!embed && (
       <section className="hidden py-24 bg-gradient-to-br from-indigo-50 via-white to-purple-50/30 relative overflow-hidden">
         {/* Background Elements */}
         <div className="absolute inset-0 bg-grid-slate-100/50 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] -z-10" />
@@ -807,8 +878,9 @@ const JoinAffiliate: React.FC = () => {
           </div>
         </div>
       </section>
+      )}
 
-      {/* How It Works */}
+      {!embed && (
       <section className="py-24 bg-gradient-to-br from-slate-50 via-white to-blue-50/30 relative overflow-hidden">
         {/* Background Elements */}
         <div className="absolute inset-0 bg-grid-slate-100/50 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] -z-10" />
@@ -942,6 +1014,7 @@ const JoinAffiliate: React.FC = () => {
           </div>
         </div>
       </section>
+      )}
 
       {/* Registration Form */}
       <section id="apply" className="py-24 bg-gradient-to-br from-slate-50 via-white to-emerald-50/30 relative overflow-hidden">
@@ -1247,7 +1320,7 @@ const JoinAffiliate: React.FC = () => {
         </div>
       </section>
 
-      {/* FAQs */}
+      {!embed && (
       <section className="py-24 bg-gradient-to-br from-gray-50 via-white to-slate-50/30 relative overflow-hidden">
         {/* Background Elements */}
         <div className="absolute inset-0 bg-grid-slate-100/50 [mask-image:linear-gradient(0deg,white,rgba(255,255,255,0.6))] -z-10" />
@@ -1395,7 +1468,9 @@ const JoinAffiliate: React.FC = () => {
           </div>
         </div>
       </section>
+      )}
 
+      {!embed && (
       <div className="bg-white py-8 px-4 border-t border-gray-100">
         <div className="container mx-auto max-w-4xl text-center">
           <p className="text-xs text-gray-500 leading-relaxed">
@@ -1403,8 +1478,9 @@ const JoinAffiliate: React.FC = () => {
           </p>
         </div>
       </div>
+      )}
 
-      <Footer />
+      {!embed && <Footer />}
     </div>
   );
 };

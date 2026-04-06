@@ -37,7 +37,7 @@ import {
 } from '../ui/tabs';
 import { apiRequest, superAdminApi } from '../../lib/api';
 import { stageCrossSubdomainAuthTransfer } from '../../lib/authStorage';
-import { buildAliasUrl } from '../../lib/hostRouting';
+import { buildAliasUrl, buildReferralLandingUrl } from '../../lib/hostRouting';
 import {
   Users,
   DollarSign,
@@ -1008,7 +1008,7 @@ const AffiliateManagement: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {(() => { const refPart = affiliate.referral_slug && affiliate.referral_slug.length > 0 ? affiliate.referral_slug : String(affiliate.id); const link = `${window.location.origin}/ref/${refPart}`; return (
+                            {(() => { const refPart = affiliate.referral_slug && affiliate.referral_slug.length > 0 ? affiliate.referral_slug : String(affiliate.id); const link = buildReferralLandingUrl(refPart); return (
                               <>
                                 <Input
                                   value={link}
@@ -1020,7 +1020,7 @@ const AffiliateManagement: React.FC = () => {
                                   size="sm"
                                   onClick={() => {
                                     const refPart = affiliate.referral_slug && affiliate.referral_slug.length > 0 ? affiliate.referral_slug : String(affiliate.id);
-                                    const link = `${window.location.origin}/ref/${refPart}`;
+                                    const link = buildReferralLandingUrl(refPart);
                                     navigator.clipboard.writeText(link);
                                     toast({ title: 'Link Copied!', description: 'Referral link copied to clipboard' });
                                   }}

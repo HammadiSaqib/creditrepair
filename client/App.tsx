@@ -31,6 +31,7 @@ import {
   getCanonicalPortalRedirect,
   getHostAlias,
   getLegacyPortalTarget,
+  getPublicHostAlias,
   type PortalAlias,
 } from "./lib/hostRouting";
 import Index from "./pages/Index";
@@ -951,6 +952,14 @@ function PortalAliasRouter({ alias }: { alias: NonAdminPortalAlias }) {
   return <NotFound />;
 }
 
+function ReferralHostAliasRoute() {
+  if (typeof window === "undefined") {
+    return <NotFound />;
+  }
+
+  return getPublicHostAlias(window.location.hostname) === "ref" ? <ReferralLandingPage /> : <NotFound />;
+}
+
 const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
   const Router = router ?? BrowserRouter;
   const hostAlias =
@@ -1811,8 +1820,10 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
             }
           />
           <Route path="/join-affiliate" element={<JoinAffiliate />} />
+          <Route path="/join-affiliate/embed" element={<JoinAffiliate embed />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/ref/:affiliateId" element={<ReferralLandingPage />} />
+          <Route path="/:affiliateId" element={<ReferralHostAliasRoute />} />
           <Route path="/invoice/:token" element={<InvoiceView />} />
           
           {/* Member Routes */}

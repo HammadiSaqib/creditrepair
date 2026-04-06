@@ -1,3 +1,7 @@
+## Final HTTPS config.
+## Do not enable this file until the certificate paths below exist.
+## For first-time setup, start from deploy/nginx.http-bootstrap.conf.example, obtain the cert with certbot, then switch to this file.
+
 server {
     listen 80;
     listen [::]:80;

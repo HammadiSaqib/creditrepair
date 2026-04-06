@@ -18,6 +18,13 @@ const portalLocalhostOrigins = portalAliases.flatMap((alias) => [
   `http://${alias}.localhost:3000`,
 ]);
 
+const publicLocalhostOrigins = [
+  'http://ref.localhost:3001',
+  'http://ref.localhost:3000',
+  'http://refadmin.localhost:3001',
+  'http://refadmin.localhost:3000',
+];
+
 // Use the same JWT_SECRET as the rest of the application
 const JWT_SECRET = ENV_CONFIG.JWT_SECRET;
 
@@ -71,6 +78,7 @@ export class WebSocketService {
       'http://localhost:3000',
       'http://localhost:5173',
       ...portalLocalhostOrigins,
+      ...publicLocalhostOrigins,
     ];
     const envOrigins: string[] = [];
     if (process.env.CORS_ORIGIN) {

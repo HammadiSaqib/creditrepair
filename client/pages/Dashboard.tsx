@@ -81,7 +81,7 @@ import { useNavigate } from "react-router-dom";
 import { clientsApi, analyticsApi, apiRequest, api, creditReportScraperApi, authApi } from "@/lib/api";
 import axios from 'axios';
 import { stageCrossSubdomainAuthTransfer } from "@/lib/authStorage";
-import { buildAliasUrl } from "@/lib/hostRouting";
+import { buildAliasUrl, buildReferralLandingUrl } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
@@ -289,7 +289,7 @@ export default function Dashboard() {
           const refPart = referral_slug && typeof referral_slug === 'string' && referral_slug.length > 0 
             ? referral_slug 
             : String(affiliate_id);
-          setAffiliateLink(`${window.location.origin}/ref/${refPart}`);
+          setAffiliateLink(buildReferralLandingUrl(refPart));
           // Use the affiliate's own partner monitoring link if set
           if (typeof partner_monitoring_link === 'string' && partner_monitoring_link.trim().length > 0) {
             setPartnerMonitoringLink(partner_monitoring_link.trim());

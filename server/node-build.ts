@@ -24,7 +24,9 @@ async function startServer() {
       req.path === '/shop/embed' ||
       req.path === '/shop/embed/' ||
       req.path === '/pricing/embed' ||
-      req.path === '/pricing/embed/'
+      req.path === '/pricing/embed/' ||
+      req.path === '/join-affiliate/embed' ||
+      req.path === '/join-affiliate/embed/'
     ) {
       res.removeHeader('X-Frame-Options');
       res.setHeader('Content-Security-Policy', embedContentSecurityPolicy);

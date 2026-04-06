@@ -183,12 +183,20 @@ const portalLocalhostOrigins = portalAliases.flatMap((alias) => [
   `http://${alias}.localhost:3000`,
 ]);
 
+const publicLocalhostOrigins = [
+  'http://ref.localhost:3001',
+  'http://ref.localhost:3000',
+  'http://refadmin.localhost:3001',
+  'http://refadmin.localhost:3000',
+];
+
 const defaultCorsOrigins = [
   'http://localhost:3002',
   'http://localhost:8080',
   'http://localhost:3001',
   'http://localhost:3000',
   ...portalLocalhostOrigins,
+  ...publicLocalhostOrigins,
   'https://api.thescoremachine.com',
   'https://thescoremachine.com',
   'https://www.thescoremachine.com',

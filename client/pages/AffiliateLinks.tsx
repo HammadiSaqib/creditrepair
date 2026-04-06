@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Link2, Copy, Edit, Trash2, Eye, BarChart3, ExternalLink, Search, Filter, Calendar, TrendingUp, MousePointer, Users, Share2, Facebook, Twitter, Linkedin, MessageCircle, Check, X, AlertCircle, DollarSign } from "lucide-react";
 import { affiliateApi, authApi } from "@/lib/api";
+import { buildReferralLandingUrl } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -151,13 +152,13 @@ export default function AffiliateLinks() {
 
   const generatePersonalizedLink = () => {
     if (affiliateInfo && affiliateInfo.referral_slug) {
-      return `${window.location.origin}/ref/${affiliateInfo.referral_slug}`;
+      return buildReferralLandingUrl(affiliateInfo.referral_slug);
     }
     if (affiliateInfo && (affiliateInfo.id || affiliateInfo.affiliate_id)) {
       const id = String(affiliateInfo.id ?? affiliateInfo.affiliate_id);
-      return `${window.location.origin}/ref/${id}`;
+      return buildReferralLandingUrl(id);
     }
-    return `${window.location.origin}/ref/affiliate${Date.now()}`;
+    return buildReferralLandingUrl(`affiliate${Date.now()}`);
   };
 
   const generateAffiliateInviteLink = () => {

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Bell, User, CreditCard, Shield, Globe, Mail, Phone, MapPin, Camera, Save, Eye, EyeOff, Trash2, Loader2, Link as LinkIcon } from "lucide-react";
 import { affiliateApi, authApi } from "@/lib/api";
+import { getPublicAliasOrigin } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/contexts/AuthContext";
 
@@ -1176,7 +1177,7 @@ export default function AffiliateSettings() {
                   <Label htmlFor="referralSlug">Your referral URL</Label>
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground select-none">
-                      {typeof window !== 'undefined' ? window.location.origin : ''}/ref/
+                      {getPublicAliasOrigin('ref')}/
                     </span>
                     <Input
                       id="referralSlug"
@@ -1206,7 +1207,7 @@ export default function AffiliateSettings() {
                 <div>
                   <Label>Preview</Label>
                   <div className="mt-1 text-sm">
-                    {(typeof window !== 'undefined' ? window.location.origin : '') + '/ref/' + (referralSlug || 'your-code')}
+                    {`${getPublicAliasOrigin('ref')}/${referralSlug || 'your-code'}`}
                   </div>
                 </div>
               </CardContent>

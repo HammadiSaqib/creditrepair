@@ -194,9 +194,78 @@ sudo ln -s /etc/nginx/sites-available/scoremachine /etc/nginx/sites-enabled/scor
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+If the server already had an older site config for the same domain, disable the old symlink before reloading Nginx. One hostname should be owned by only one active site config.
+
+Example cleanup:
+```bash
+sudo ls -l /etc/nginx/sites-enabled
+sudo grep -R -n "server_name .*thescoremachine.com" /etc/nginx/sites-enabled /etc/nginx/conf.d
+sudo rm /etc/nginx/sites-enabled/thescoremachine.com
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+First-time TLS setup:
+- If you do not already have a certificate on the server, do not start with `deploy/nginx.conf.example` because it references certificate files that do not exist yet.
+- Start with `deploy/nginx.http-bootstrap.conf.example` so Nginx can run on port 80 without SSL.
+- After Certbot succeeds, switch `/etc/nginx/sites-available/scoremachine` to the final HTTPS config from `deploy/nginx.conf.example` if Certbot did not already update the file for you.
+
 ### 6) Obtain TLS Certificates (Let's Encrypt)
+Before requesting a certificate, verify which hostnames already resolve to this VPS:
+```bash
+for d in \
+   thescoremachine.com \
+   www.thescoremachine.com \
+   admin.thescoremachine.com \
+   super-admin.thescoremachine.com \
+   affiliate.thescoremachine.com \
+   support.thescoremachine.com \
+   funding-manager.thescoremachine.com \
+   member.thescoremachine.com \
+   api.thescoremachine.com
+do
+   echo "== $d =="
+   getent ahosts "$d" | awk '{print $1}' | sort -u
+done
+```
+
+Request the first certificate only for hostnames that already resolve. Start with the main site and active portal domains:
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx \
+   -d thescoremachine.com \
+   -d www.thescoremachine.com \
+   -d admin.thescoremachine.com \
+   -d super-admin.thescoremachine.com \
+   -d affiliate.thescoremachine.com
+sudo systemctl reload nginx
+```
+
+Only include domains that already resolve to this VPS. If one hostname is not pointed correctly yet, remove it from the `certbot` command for now and re-run later after DNS is fixed.
+
+After additional subdomains are created in DNS, expand the existing certificate:
+```bash
+sudo certbot --nginx --cert-name thescoremachine.com --expand \
+   -d thescoremachine.com \
+   -d www.thescoremachine.com \
+   -d admin.thescoremachine.com \
+   -d super-admin.thescoremachine.com \
+   -d affiliate.thescoremachine.com \
+   -d support.thescoremachine.com \
+   -d funding-manager.thescoremachine.com \
+   -d member.thescoremachine.com
+```
+
+Add `api.thescoremachine.com` in a later `--expand` run only if you actually create that DNS record.
+
+If Certbot says the nginx plugin is broken because of missing certificate files:
+```bash
+sudo grep -R "mywarmachine.com\|letsencrypt/live" /etc/nginx
+```
+
+Remove or replace every stale `mywarmachine.com` certificate path, switch to the bootstrap HTTP config, then run:
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
 sudo certbot --nginx \
    -d thescoremachine.com \
    -d www.thescoremachine.com \
@@ -207,10 +276,7 @@ sudo certbot --nginx \
    -d funding-manager.thescoremachine.com \
    -d member.thescoremachine.com \
    -d api.thescoremachine.com
-sudo systemctl reload nginx
 ```
-
-Only include domains that already resolve to this VPS. If one hostname is not pointed correctly yet, remove it from the `certbot` command for now and re-run later after DNS is fixed.
 
 ### 7) Verify
 - `curl -I https://thescoremachine.com`
