@@ -150,11 +150,11 @@ After deployment, test:
 
 ## Domain & SSL Deployment (Nginx + PM2)
 
-Follow these steps to run the app at `https://mywarmachine.com` with HTTPS and WebSocket support.
+Follow these steps to run the app at `https://thescoremachine.com` and secure the portal subdomains with HTTPS and WebSocket support.
 
 ### 1) DNS Setup
-- Create an `A` record for `mywarmachine.com` pointing to your VPS IPv4 (e.g., `72.61.2.28`).
-- Optionally create `AAAA` record for IPv6 if available.
+- Create `A` records for `thescoremachine.com`, `www`, `admin`, `super-admin`, `affiliate`, `support`, `funding-manager`, `member`, and `api` pointing to your VPS IPv4.
+- Optionally create `AAAA` records for IPv6 if available.
 - Propagation can take up to 30 minutes.
 
 ### 2) Server Prerequisites
@@ -165,9 +165,9 @@ Follow these steps to run the app at `https://mywarmachine.com` with HTTPS and W
 ### 3) Environment Configuration
 - Copy `.env.production.example` to `.env` in project root: `cp .env.production.example .env`.
 - Set values:
-  - `FRONTEND_URL=https://mywarmachine.com`
-  - `CORS_ORIGIN=https://mywarmachine.com`
-  - `VITE_API_URL=https://mywarmachine.com`
+   - `FRONTEND_URL=https://thescoremachine.com`
+   - `CORS_ORIGIN=https://thescoremachine.com,https://www.thescoremachine.com,https://admin.thescoremachine.com,https://super-admin.thescoremachine.com,https://affiliate.thescoremachine.com,https://support.thescoremachine.com,https://funding-manager.thescoremachine.com,https://member.thescoremachine.com,https://api.thescoremachine.com`
+   - `VITE_API_URL=https://thescoremachine.com`
   - Provide secure `JWT_SECRET` (64+ random hex) and MySQL credentials.
 
 ### 4) Build and Start with PM2
@@ -197,12 +197,25 @@ sudo nginx -t && sudo systemctl reload nginx
 ### 6) Obtain TLS Certificates (Let's Encrypt)
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d mywarmachine.com -d www.mywarmachine.com
+sudo certbot --nginx \
+   -d thescoremachine.com \
+   -d www.thescoremachine.com \
+   -d admin.thescoremachine.com \
+   -d super-admin.thescoremachine.com \
+   -d affiliate.thescoremachine.com \
+   -d support.thescoremachine.com \
+   -d funding-manager.thescoremachine.com \
+   -d member.thescoremachine.com \
+   -d api.thescoremachine.com
 sudo systemctl reload nginx
 ```
 
+Only include domains that already resolve to this VPS. If one hostname is not pointed correctly yet, remove it from the `certbot` command for now and re-run later after DNS is fixed.
+
 ### 7) Verify
-- `curl -I https://mywarmachine.com`
+- `curl -I https://thescoremachine.com`
+- `curl -I https://admin.thescoremachine.com/login`
+- `curl -I https://affiliate.thescoremachine.com/login`
 - Open site in browser; authenticate; check APIs and WebSocket features.
 - If `TokenExpiredError` appears, clear browser storage (localStorage/sessionStorage) and login again.
 
@@ -212,7 +225,7 @@ sudo systemctl reload nginx
 
 ### Common Pitfalls
 - `VITE_API_URL` must be set at build time for client to target your domain.
-- Ensure `FRONTEND_URL` and `CORS_ORIGIN` match your domain exactly, including `https`.
+- Ensure `FRONTEND_URL` and `CORS_ORIGIN` use `https` and include every production subdomain you actually serve.
 - WebSocket proxy requires `Upgrade`/`Connection` headers as in the example config.
 2. Verify database connection in logs
 3. Ensure all environment variables are set
