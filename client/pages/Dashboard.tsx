@@ -81,7 +81,7 @@ import { useNavigate } from "react-router-dom";
 import { clientsApi, analyticsApi, apiRequest, api, creditReportScraperApi, authApi } from "@/lib/api";
 import axios from 'axios';
 import { stageCrossSubdomainAuthTransfer } from "@/lib/authStorage";
-import { buildAliasUrl, buildReferralLandingUrl } from "@/lib/hostRouting";
+import { buildAliasUrl, buildOnboardingIntakeUrl, buildReferralLandingUrl } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
@@ -212,16 +212,17 @@ export default function Dashboard() {
   const [showDashboardPassword, setShowDashboardPassword] = useState(false);
   const defaultMonitoringLink = "https://www.myscoreiq.com/get-fico-preferred.aspx?offercode=432142UK";
   const [partnerMonitoringLink, setPartnerMonitoringLink] = useState<string | null>(null);
-  const clientLoginUrl = `${window.location.origin}/member/login`;
+  const clientLoginUrl = buildAliasUrl("member", "/login");
   const [clientIntakeLink, setClientIntakeLink] = useState("");
   const [isGeneratingIntakeLink, setIsGeneratingIntakeLink] = useState(false);
   const [isClientIntakeShareOpen, setIsClientIntakeShareOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const onboardingSlug = (userProfile?.onboarding_slug || "").trim();
+  const onboardingIdentifier = onboardingSlug || (userProfile?.id ? String(userProfile.id) : "");
   const onboardingIntakeLink = useMemo(() => {
-    if (!onboardingSlug) return "";
-    return `${window.location.origin}/client-intake/${encodeURIComponent(onboardingSlug)}`;
-  }, [onboardingSlug]);
+    if (!onboardingIdentifier) return "";
+    return buildOnboardingIntakeUrl({ slugOrId: onboardingIdentifier });
+  }, [onboardingIdentifier]);
   const clientIntakeEmbedCode = useMemo(() => {
     if (!clientIntakeLink) return "";
     return `<iframe src="${clientIntakeLink}" style="width:100%; height:900px; border:0;" title="Client Intake"></iframe>`;
@@ -722,7 +723,7 @@ export default function Dashboard() {
       if (!token) {
         throw new Error("Unable to generate onboarding link.");
       }
-      const link = `${window.location.origin}/client-intake?token=${encodeURIComponent(token)}`;
+      const link = buildOnboardingIntakeUrl({ token });
       setClientIntakeLink(link);
       toast({ title: "Onboarding link ready", description: "Share this link with your client." });
     } catch (e: any) {
@@ -1608,7 +1609,7 @@ export default function Dashboard() {
                   </Button>
                 </div>
               </div>
-              {!(clientIntakeLink || onboardingSlug) && (
+              {!clientIntakeLink && !onboardingIntakeLink && (
                 <div className="flex items-center gap-3">
                   <Button
                     onClick={handleGenerateClientIntakeLink}

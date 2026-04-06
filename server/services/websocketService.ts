@@ -23,6 +23,8 @@ const publicLocalhostOrigins = [
   'http://ref.localhost:3000',
   'http://refadmin.localhost:3001',
   'http://refadmin.localhost:3000',
+  'http://onboarding.localhost:3001',
+  'http://onboarding.localhost:3000',
 ];
 
 // Use the same JWT_SECRET as the rest of the application

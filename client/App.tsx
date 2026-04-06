@@ -952,12 +952,30 @@ function PortalAliasRouter({ alias }: { alias: NonAdminPortalAlias }) {
   return <NotFound />;
 }
 
-function ReferralHostAliasRoute() {
+function PublicHostRootRoute() {
+  if (typeof window === "undefined") {
+    return <Index />;
+  }
+
+  return getPublicHostAlias(window.location.hostname) === "onboarding" ? <ClientIntake /> : <Index />;
+}
+
+function DynamicPublicHostRoute() {
   if (typeof window === "undefined") {
     return <NotFound />;
   }
 
-  return getPublicHostAlias(window.location.hostname) === "ref" ? <ReferralLandingPage /> : <NotFound />;
+  const publicAlias = getPublicHostAlias(window.location.hostname);
+
+  if (publicAlias === "ref") {
+    return <ReferralLandingPage />;
+  }
+
+  if (publicAlias === "onboarding") {
+    return <ClientIntake />;
+  }
+
+  return <NotFound />;
 }
 
 const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
@@ -1030,7 +1048,7 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
             <Route path="*" element={<PortalAliasRouter alias={hostAlias as NonAdminPortalAlias} />} />
           ) : (
             <>
-          <Route path="/" element={<Index />} />
+          <Route path="/" element={<PublicHostRootRoute />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/pricing/embed" element={<Pricing embed />} />
           <Route path="/shop" element={<Shop />} />
@@ -1823,7 +1841,7 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
           <Route path="/join-affiliate/embed" element={<JoinAffiliate embed />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/ref/:affiliateId" element={<ReferralLandingPage />} />
-          <Route path="/:affiliateId" element={<ReferralHostAliasRoute />} />
+          <Route path="/:publicId" element={<DynamicPublicHostRoute />} />
           <Route path="/invoice/:token" element={<InvoiceView />} />
           
           {/* Member Routes */}

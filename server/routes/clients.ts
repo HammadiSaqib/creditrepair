@@ -119,10 +119,18 @@ async function resolveAdminIdFromIntake(tokenRaw: unknown, slugRaw: unknown): Pr
   }
 
   if (slug) {
-    const adminRecord = await getQuery(
+    let adminRecord = await getQuery(
       "SELECT id FROM users WHERE onboarding_slug = ? AND role IN ('admin','super_admin') LIMIT 1",
       [slug]
     );
+
+    if (!adminRecord?.id && /^\d+$/.test(rawSlug)) {
+      adminRecord = await getQuery(
+        "SELECT id FROM users WHERE id = ? AND role IN ('admin','super_admin') LIMIT 1",
+        [Number(rawSlug)]
+      );
+    }
+
     if (!adminRecord?.id) {
       throw new Error('Onboarding link not found');
     }

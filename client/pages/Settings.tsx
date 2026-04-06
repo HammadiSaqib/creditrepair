@@ -43,6 +43,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import AdminAgreementTab from "@/components/AdminAgreementTab";
 import { useState, useEffect, useMemo } from "react";
 import { authApi, integrationsApi } from "@/lib/api";
+import { buildOnboardingIntakeUrl } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { useAuthContext } from "@/contexts/AuthContext";
 import {
@@ -267,10 +268,10 @@ export default function Settings() {
 
   const onboardingLink = useMemo(() => {
     const profileSlug = (userProfile?.onboarding_slug || "").trim();
-    const candidate = normalizeSlug(onboardingSlug) || profileSlug;
+    const candidate = normalizeSlug(onboardingSlug) || profileSlug || (userProfile?.id ? String(userProfile.id) : "");
     if (!candidate) return "";
-    return `${window.location.origin}/client-intake/${encodeURIComponent(candidate)}`;
-  }, [onboardingSlug, userProfile?.onboarding_slug]);
+    return buildOnboardingIntakeUrl({ slugOrId: candidate });
+  }, [onboardingSlug, userProfile?.id, userProfile?.onboarding_slug]);
   const canEditOnboardingSlug = userProfile?.role === "admin" || userProfile?.role === "super_admin";
   const apiBaseUrl = import.meta.env.VITE_API_URL || (typeof window !== "undefined" ? window.location.origin : "");
 

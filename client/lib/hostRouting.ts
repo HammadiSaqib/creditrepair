@@ -7,7 +7,7 @@ export const PORTAL_ALIASES = [
   "member",
 ] as const;
 
-export const PUBLIC_HOST_ALIASES = ["ref", "refadmin"] as const;
+export const PUBLIC_HOST_ALIASES = ["ref", "refadmin", "onboarding"] as const;
 
 export type PortalAlias = (typeof PORTAL_ALIASES)[number];
 export type PublicHostAlias = (typeof PUBLIC_HOST_ALIASES)[number];
@@ -244,6 +244,29 @@ export function buildReferralRegisterUrl(
   });
 }
 
+export function buildOnboardingIntakeUrl(
+  params?: {
+    slugOrId?: string | number | null;
+    token?: string | null;
+  },
+  options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,
+) {
+  const searchParams = new URLSearchParams();
+  const slugOrId =
+    params?.slugOrId !== undefined && params.slugOrId !== null
+      ? String(params.slugOrId).trim()
+      : "";
+
+  if (params?.token !== undefined && params.token !== null && String(params.token).trim().length > 0) {
+    searchParams.set("token", String(params.token).trim());
+  }
+
+  return buildPublicAliasUrl("onboarding", slugOrId ? `/${slugOrId}` : "/", {
+    ...options,
+    search: searchParams.toString() ? `?${searchParams.toString()}` : "",
+  });
+}
+
 export function isAdminCanonicalPath(pathname: string) {
   const normalized = normalizePath(pathname);
   return ADMIN_CANONICAL_PATHS.some((pattern) => pattern.test(normalized));
@@ -364,6 +387,23 @@ export function getCanonicalPortalRedirect(input: RedirectInput): PortalRedirect
     };
   }
 
+  const onboardingLegacyMatch = pathname.match(/^\/client-intake(?:\/([^/]+))?$/);
+  if (onboardingLegacyMatch) {
+    const onboardingPath = onboardingLegacyMatch[1] ? `/${onboardingLegacyMatch[1]}` : "/";
+
+    if (currentPublicAlias === "onboarding") {
+      return {
+        type: "path",
+        targetPath: onboardingPath,
+      };
+    }
+
+    return {
+      type: "host",
+      targetUrl: buildPublicAliasUrl("onboarding", onboardingPath, input),
+    };
+  }
+
   const isReferralRegisterPath = pathname === "/register" && (searchParams.has("ref") || searchParams.has("plan"));
   if (isReferralRegisterPath && currentPublicAlias !== "ref") {
     return {
@@ -395,6 +435,17 @@ export function getCanonicalPortalRedirect(input: RedirectInput): PortalRedirect
     if (/^\/[^/]+$/.test(pathname) && pathname !== "/") {
       return null;
     }
+  }
+
+  if (currentPublicAlias === "onboarding") {
+    if (pathname === "/" || /^\/[^/]+$/.test(pathname)) {
+      return null;
+    }
+
+    return {
+      type: "host",
+      targetUrl: buildAliasUrl("admin", pathname, input),
+    };
   }
 
   const prefixedPortalTarget = getLegacyPortalTarget(pathname, {

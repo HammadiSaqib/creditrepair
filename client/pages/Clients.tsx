@@ -39,6 +39,7 @@ import AddClientDialog from "@/components/AddClientDialog";
 import React, { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { clientsApi, creditReportScraperApi } from "@/lib/api";
+import { buildAliasUrl } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import {
@@ -192,7 +193,7 @@ const getScoreChange = (current: number, previous: number) => {
   const [isAddingClient, setIsAddingClient] = useState<boolean>(false);
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [showInlinePassword, setShowInlinePassword] = useState(false);
-  const clientLoginUrl = `${window.location.origin}/member/login`;
+  const clientLoginUrl = buildAliasUrl("member", "/login");
 
   // Fetch clients from backend
   const fetchClients = async () => {

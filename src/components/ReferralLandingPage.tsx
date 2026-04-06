@@ -112,7 +112,8 @@ const ReferralFooter: React.FC<{ affiliate: AffiliateData }> = ({ affiliate }) =
 };
 
 const ReferralLandingPage: React.FC = () => {
-  const { affiliateId } = useParams<{ affiliateId: string }>();
+  const { affiliateId: routeAffiliateId, publicId } = useParams<{ affiliateId?: string; publicId?: string }>();
+  const affiliateId = routeAffiliateId || publicId;
   const navigate = useNavigate();
   const [affiliate, setAffiliate] = useState<AffiliateData | null>(null);
   const [plans, setPlans] = useState<PricingPlan[]>([]);

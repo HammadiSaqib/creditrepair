@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { buildOnboardingIntakeUrl } from "@/lib/hostRouting";
 import { clientsApi } from "@/lib/api";
 import { Eye, EyeOff, ArrowRight, CheckCircle2, Link as LinkIcon, User, ShieldCheck, FileText, Globe, Mail, Phone, Target, TrendingUp, Sparkles } from "lucide-react";
 
@@ -34,10 +35,10 @@ const normalizeHexColor = (value?: string | null) => {
 
 const ClientIntake = () => {
   const [searchParams] = useSearchParams();
-  const { slug } = useParams<{ slug?: string }>();
+  const { slug, publicId } = useParams<{ slug?: string; publicId?: string }>();
   const { toast } = useToast();
   const token = searchParams.get("token") || "";
-  const intakeSlug = normalizeSlug(slug || "");
+  const intakeSlug = normalizeSlug(slug || publicId || "");
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [intakeConfig, setIntakeConfig] = useState<{
     redirectUrl: string | null;
@@ -75,8 +76,8 @@ const ClientIntake = () => {
   );
 
   const intakeLink = useMemo(() => {
-    if (intakeSlug) return `${window.location.origin}/client-intake/${encodeURIComponent(intakeSlug)}`;
-    if (token) return `${window.location.origin}/client-intake?token=${encodeURIComponent(token)}`;
+    if (intakeSlug) return buildOnboardingIntakeUrl({ slugOrId: intakeSlug });
+    if (token) return buildOnboardingIntakeUrl({ token });
     return "";
   }, [intakeSlug, token]);
 
