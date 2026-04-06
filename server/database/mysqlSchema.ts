@@ -624,6 +624,10 @@ async function createMySQLTables(): Promise<void> {
     intake_redirect_url VARCHAR(1000) NULL,
     intake_logo_url VARCHAR(1000) NULL,
     intake_primary_color VARCHAR(7) NULL,
+    intake_company_name VARCHAR(255) NULL,
+    intake_website_url VARCHAR(1000) NULL,
+    intake_email VARCHAR(255) NULL,
+    intake_phone_number VARCHAR(50) NULL,
     nmi_merchant_id VARCHAR(255) NULL,
     nmi_public_key VARCHAR(500) NULL,
     nmi_api_key VARCHAR(500) NULL,
@@ -2305,6 +2309,58 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  intake_primary_color column already exists');
     } else {
       console.log('⚠️  Error adding intake_primary_color column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users
+      ADD COLUMN intake_company_name VARCHAR(255) NULL
+    `);
+    console.log('✅ Added intake_company_name column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  intake_company_name column already exists');
+    } else {
+      console.log('⚠️  Error adding intake_company_name column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users
+      ADD COLUMN intake_website_url VARCHAR(1000) NULL
+    `);
+    console.log('✅ Added intake_website_url column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  intake_website_url column already exists');
+    } else {
+      console.log('⚠️  Error adding intake_website_url column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users
+      ADD COLUMN intake_email VARCHAR(255) NULL
+    `);
+    console.log('✅ Added intake_email column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  intake_email column already exists');
+    } else {
+      console.log('⚠️  Error adding intake_email column:', error.message);
+    }
+  }
+  try {
+    await executeQuery(`
+      ALTER TABLE users
+      ADD COLUMN intake_phone_number VARCHAR(50) NULL
+    `);
+    console.log('✅ Added intake_phone_number column to users table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  intake_phone_number column already exists');
+    } else {
+      console.log('⚠️  Error adding intake_phone_number column:', error.message);
     }
   }
   try {

@@ -96,6 +96,28 @@ function normalizeSlug(value: string) {
     .replace(/^-|-$/g, '');
 }
 
+async function getExistingUserColumns(): Promise<Set<string>> {
+  const adapter = getDatabaseAdapter();
+
+  if (adapter.getType() === 'sqlite') {
+    const rows = await allQuery(`PRAGMA table_info(users)`);
+    return new Set(
+      (rows || []).map((row: any) => String(row?.name || row?.column_name || '').trim()).filter(Boolean)
+    );
+  }
+
+  const rows = await allQuery(
+    `SELECT COLUMN_NAME as column_name
+       FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'users'`
+  );
+
+  return new Set(
+    (rows || []).map((row: any) => String(row?.column_name || row?.COLUMN_NAME || '').trim()).filter(Boolean)
+  );
+}
+
 async function resolveAdminIdFromIntake(tokenRaw: unknown, slugRaw: unknown): Promise<number> {
   const token = String(tokenRaw || '');
   const rawSlug = String(slugRaw || '').trim();
@@ -598,17 +620,22 @@ export async function createClientIntakeToken(req: AuthRequest, res: Response) {
 export async function getClientIntakeConfig(req: Request, res: Response) {
   try {
     const adminId = await resolveAdminIdFromIntake((req.query as any)?.token, (req.query as any)?.slug);
+    const userColumns = await getExistingUserColumns();
+    const intakeSelect = [
+      userColumns.has('intake_redirect_url') ? 'u.intake_redirect_url' : 'NULL AS intake_redirect_url',
+      userColumns.has('intake_logo_url') ? 'u.intake_logo_url' : 'NULL AS intake_logo_url',
+      userColumns.has('intake_primary_color') ? 'u.intake_primary_color' : 'NULL AS intake_primary_color',
+      userColumns.has('intake_company_name') ? 'u.intake_company_name' : 'u.company_name AS intake_company_name',
+      userColumns.has('intake_website_url') ? 'u.intake_website_url' : 'NULL AS intake_website_url',
+      userColumns.has('intake_email') ? 'u.intake_email' : 'u.email AS intake_email',
+      userColumns.has('intake_phone_number') ? 'u.intake_phone_number' : 'u.phone AS intake_phone_number',
+      'u.onboarding_slug',
+      'a.partner_monitoring_link',
+    ].join(',\n         ');
+
     const admin = await getQuery(
       `SELECT
-         u.intake_redirect_url,
-         u.intake_logo_url,
-         u.intake_primary_color,
-         u.intake_company_name,
-         u.intake_website_url,
-         u.intake_email,
-         u.intake_phone_number,
-         u.onboarding_slug,
-         a.partner_monitoring_link
+         ${intakeSelect}
        FROM users u
        LEFT JOIN affiliate_referrals ar ON ar.referred_user_id = u.id
        LEFT JOIN affiliates a ON a.id = ar.affiliate_id

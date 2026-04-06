@@ -215,6 +215,10 @@ async function createTables() {
       intake_redirect_url TEXT,
       intake_logo_url TEXT,
       intake_primary_color TEXT,
+      intake_company_name TEXT,
+      intake_website_url TEXT,
+      intake_email TEXT,
+      intake_phone_number TEXT,
       funding_override_enabled BOOLEAN DEFAULT 0,
       funding_override_signature_text TEXT,
       funding_override_signed_at DATETIME,
@@ -250,6 +254,22 @@ async function createTables() {
   }
   try {
     await runQuery(`ALTER TABLE users ADD COLUMN intake_primary_color TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN intake_company_name TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN intake_website_url TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN intake_email TEXT`);
+  } catch (err) {
+  }
+  try {
+    await runQuery(`ALTER TABLE users ADD COLUMN intake_phone_number TEXT`);
   } catch (err) {
   }
   try {
