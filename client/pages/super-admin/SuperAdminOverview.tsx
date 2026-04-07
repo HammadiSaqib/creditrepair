@@ -488,6 +488,43 @@ export default function SuperAdminOverview() {
     }
   };
 
+  const syncSelectedAnalyticsRange = async ({
+    showStripeLoader = false,
+    showErrorToast = true,
+  }: {
+    showStripeLoader?: boolean;
+    showErrorToast?: boolean;
+  } = {}) => {
+    try {
+      if (showStripeLoader) {
+        setStripeLoading(true);
+      }
+
+      const from = dateRange?.from ? dateRange.from.toISOString() : startOfMonth(new Date()).toISOString();
+      const to = dateRange?.to ? dateRange.to.toISOString() : endOfMonth(new Date()).toISOString();
+
+      const [_, salesChatResp, reportPullingResp, errorAnalysisResp] = await Promise.all([
+        loadStripeRevenue(),
+        superAdminApi.getSalesChatAnalyticsRange({ from, to }),
+        superAdminApi.getReportPullingAnalyticsRange({ from, to }),
+        superAdminApi.getErrorAnalysisRange({ from, to })
+      ]);
+
+      setSalesChatData(salesChatResp?.data?.data || null);
+      setReportPullingData(reportPullingResp?.data?.data || null);
+      setErrorAnalysisData(errorAnalysisResp?.data?.data || null);
+    } catch (error) {
+      console.error("Failed to sync selected analytics range:", error);
+      if (showErrorToast) {
+        toast.error("Failed to load Stripe payments");
+      }
+    } finally {
+      if (showStripeLoader) {
+        setStripeLoading(false);
+      }
+    }
+  };
+
   // Load dashboard data on component mount
   useEffect(() => {
     loadDashboardData();
@@ -915,7 +952,7 @@ export default function SuperAdminOverview() {
     setLoading(true);
     try {
       // Load actual data from all endpoints
-      const [plansResponse, adminsResponse, usersResponse, subscriptionsResponse, transactionsResponse, clientsResponse, clientStatsResponse, salesChatResponse, reportPullingResponse, alertsResponse, errorAnalysisResponse] = await Promise.all([
+      const [plansResponse, adminsResponse, usersResponse, subscriptionsResponse, transactionsResponse, clientsResponse, clientStatsResponse, alertsResponse] = await Promise.all([
         superAdminApi.getPlans({ limit: 1000 }),
         superAdminApi.getAdminProfiles({ limit: 1000 }),
         superAdminApi.getUsers({ limit: 1000 }),
@@ -923,23 +960,11 @@ export default function SuperAdminOverview() {
         superAdminApi.getBillingTransactions({ limit: 1000 }),
         superAdminApi.getClients({ limit: 1000 }),
         superAdminApi.getClientStatistics(),
-        superAdminApi.getSalesChatAnalyticsRange({
-          from: (dateRange?.from || startOfMonth(new Date())).toISOString(),
-          to: (dateRange?.to || endOfMonth(new Date())).toISOString()
-        }),
-        superAdminApi.getReportPullingAnalyticsRange({
-          from: (dateRange?.from || startOfMonth(new Date())).toISOString(),
-          to: (dateRange?.to || endOfMonth(new Date())).toISOString()
-        }),
         superAdminApi.getRecentAlerts(),
-        superAdminApi.getErrorAnalysisRange({
-          from: (dateRange?.from || startOfMonth(new Date())).toISOString(),
-          to: (dateRange?.to || endOfMonth(new Date())).toISOString()
-        })
       ]);
 
-      // Load Stripe revenue silently (no full loading state)
-      loadStripeRevenue();
+      // Start Stripe/range analytics in the background so the dashboard can render first.
+      void syncSelectedAnalyticsRange({ showStripeLoader: true, showErrorToast: false });
 
       // Extract data from responses - APIs return nested data structure
         const plansData = plansResponse?.data?.data || [];
@@ -959,11 +984,8 @@ export default function SuperAdminOverview() {
       setClients(Array.isArray(clientsData) ? clientsData : []);
       setClientStats(clientStatsData);
       
-      // Process new analytics data
-      setSalesChatData(salesChatResponse?.data?.data || null);
-      setReportPullingData(reportPullingResponse?.data?.data || null);
+      // Process non-range analytics data
       setAlertsData(alertsResponse?.data?.data || null);
-      setErrorAnalysisData(errorAnalysisResponse?.data?.data || null);
 
       // Calculate statistics from actual data
       const totalPlans = Array.isArray(plansData) ? plansData.length : 0;
@@ -1752,25 +1774,7 @@ export default function SuperAdminOverview() {
                 size="sm"
                 className="flex items-center gap-2 shadow-sm font-semibold transition-all hover:scale-105 active:scale-95 bg-blue-600 hover:bg-blue-700 text-white w-full md:w-auto"
                 onClick={async () => {
-                  try {
-                    setStripeLoading(true);
-                    await loadStripeRevenue();
-                    // Also refresh analytics for the selected date range
-                    const from = dateRange?.from ? dateRange.from.toISOString() : startOfMonth(new Date()).toISOString();
-                    const to = dateRange?.to ? dateRange.to.toISOString() : endOfMonth(new Date()).toISOString();
-                    const [salesChatResp, reportPullingResp, errorAnalysisResp] = await Promise.all([
-                      superAdminApi.getSalesChatAnalyticsRange({ from, to }),
-                      superAdminApi.getReportPullingAnalyticsRange({ from, to }),
-                      superAdminApi.getErrorAnalysisRange({ from, to })
-                    ]);
-                    setSalesChatData(salesChatResp?.data?.data || null);
-                    setReportPullingData(reportPullingResp?.data?.data || null);
-                    setErrorAnalysisData(errorAnalysisResp?.data?.data || null);
-                  } catch (e) {
-                    toast.error("Failed to load Stripe payments");
-                  } finally {
-                    setStripeLoading(false);
-                  }
+                  await syncSelectedAnalyticsRange({ showStripeLoader: true, showErrorToast: true });
                 }}
               >
                 {stripeLoading ? (
