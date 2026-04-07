@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import SuperAdminLayout from "@/components/SuperAdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,8 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis } from "recharts";
+import { ChartContainer } from "@/components/ui/chart";
+import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis } from "recharts";
 import { format, startOfMonth, endOfMonth } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import {
@@ -161,6 +161,173 @@ interface ClientWithAdmin {
   admin_department?: string;
 }
 
+interface StripePaymentDetail {
+  id: string;
+  date: string;
+  amount: number;
+  currency: string;
+  email?: string | null;
+  customerName?: string | null;
+}
+
+interface StripeSeriesPoint {
+  date: string;
+  amount: number;
+  paymentCount: number;
+  payments: StripePaymentDetail[];
+}
+
+interface StripeTooltipState {
+  point: StripeSeriesPoint;
+  x: number;
+  y: number;
+}
+
+const formatStripeCurrency = (amount: number, currency = "USD") => {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount || 0);
+  } catch {
+    return `$${(amount || 0).toFixed(2)}`;
+  }
+};
+
+const StripeRevenueTooltip = ({
+  point,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  point: StripeSeriesPoint | null;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) => {
+  if (!point) {
+    return null;
+  }
+
+  const payments = Array.isArray(point.payments) ? point.payments : [];
+
+  return (
+    <div
+      className="w-[320px] rounded-2xl border border-ocean-blue/20 bg-gradient-to-br from-white via-sky-50 to-emerald-50 px-4 py-3 shadow-[0_24px_60px_-24px_rgba(14,165,233,0.45)] dark:from-slate-900 dark:via-slate-900 dark:to-slate-800"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onWheelCapture={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <div className="mb-3 flex items-start justify-between gap-3 border-b border-ocean-blue/10 pb-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-ocean-blue">
+            {format(new Date(point.date), "MMMM dd, yyyy")}
+          </div>
+          <div className="mt-1 text-lg font-bold text-foreground">
+            {formatStripeCurrency(point.amount)}
+          </div>
+        </div>
+        <Badge className="gradient-primary text-white shadow-sm hover:opacity-100">
+          {point.paymentCount} purchase{point.paymentCount === 1 ? "" : "s"}
+        </Badge>
+      </div>
+
+      <div
+        className="max-h-64 space-y-2 overflow-y-auto pr-1"
+        style={{ overscrollBehavior: "contain" }}
+        onWheelCapture={(event) => {
+          event.stopPropagation();
+        }}
+      >
+        {payments.length > 0 ? (
+          payments.map((payment) => (
+            <div
+              key={payment.id}
+              className="rounded-xl border border-ocean-blue/10 bg-white/75 px-3 py-2 shadow-sm dark:bg-slate-950/40"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-foreground">
+                    {payment.email || payment.customerName || "Stripe customer"}
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {payment.customerName && payment.email ? payment.customerName : payment.id}
+                  </div>
+                </div>
+                <div className="shrink-0 text-sm font-bold text-ocean-blue">
+                  {formatStripeCurrency(payment.amount, payment.currency || "USD")}
+                </div>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-xl border border-dashed border-ocean-blue/15 bg-white/60 px-3 py-4 text-center text-sm text-muted-foreground dark:bg-slate-950/30">
+            No payment details were available for this day.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const renderStripeRevenueDot = (props: any) => {
+  const { cx, cy, payload } = props;
+
+  if (typeof cx !== "number" || typeof cy !== "number" || !payload) {
+    return null;
+  }
+
+  const label = formatStripeCurrency(Number(payload.amount) || 0);
+  const labelWidth = Math.max(70, label.length * 8 + 16);
+
+  return (
+    <g pointerEvents="none">
+      <rect
+        x={cx - labelWidth / 2}
+        y={cy - 34}
+        rx={11}
+        ry={11}
+        width={labelWidth}
+        height={22}
+        fill="hsl(var(--background))"
+        stroke="hsl(var(--ocean-blue))"
+        strokeWidth={1.5}
+        style={{ filter: "drop-shadow(0px 12px 20px rgba(14, 165, 233, 0.18))" }}
+      />
+      <text
+        x={cx}
+        y={cy - 19}
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={700}
+        fill="hsl(var(--deep-blue))"
+      >
+        {label}
+      </text>
+      <circle cx={cx} cy={cy} r={4.5} fill="hsl(var(--background))" stroke="hsl(var(--ocean-blue))" strokeWidth={2.5} />
+      <circle cx={cx} cy={cy} r={1.5} fill="hsl(var(--sea-green))" />
+    </g>
+  );
+};
+
+const renderStripeActiveDot = (props: any) => {
+  const { cx, cy } = props;
+
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={10} fill="rgba(14, 165, 233, 0.14)" />
+      <circle cx={cx} cy={cy} r={5.5} fill="hsl(var(--background))" stroke="hsl(var(--ocean-blue))" strokeWidth={3} />
+      <circle cx={cx} cy={cy} r={2} fill="hsl(var(--sea-green))" />
+    </g>
+  );
+};
+
 export default function SuperAdminOverview() {
   const NEW_YORK_TIME_ZONE = "America/New_York";
   const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -191,8 +358,9 @@ export default function SuperAdminOverview() {
     totalClients: 0,
     clientsPerAdmin: 0,
   });
-  const [stripeSeries, setStripeSeries] = useState<Array<{ date: string; amount: number }>>([]);
+  const [stripeSeries, setStripeSeries] = useState<StripeSeriesPoint[]>([]);
   const [stripeLoading, setStripeLoading] = useState(false);
+  const [activeStripeTooltip, setActiveStripeTooltip] = useState<StripeTooltipState | null>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
@@ -238,6 +406,87 @@ export default function SuperAdminOverview() {
   const [subscriptions, setSubscriptions] = useState<SubscriptionManagement[]>([]);
   const [billingTransactions, setBillingTransactions] = useState<BillingTransaction[]>([]);
   const [clients, setClients] = useState<ClientWithAdmin[]>([]);
+  const stripeChartContainerRef = useRef<HTMLDivElement | null>(null);
+  const stripeTooltipCloseTimeoutRef = useRef<number | null>(null);
+
+  const clearStripeTooltipCloseTimer = () => {
+    if (stripeTooltipCloseTimeoutRef.current !== null) {
+      window.clearTimeout(stripeTooltipCloseTimeoutRef.current);
+      stripeTooltipCloseTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleStripeTooltipClose = () => {
+    clearStripeTooltipCloseTimer();
+    stripeTooltipCloseTimeoutRef.current = window.setTimeout(() => {
+      setActiveStripeTooltip(null);
+      stripeTooltipCloseTimeoutRef.current = null;
+    }, 220);
+  };
+
+  useEffect(() => {
+    return () => {
+      clearStripeTooltipCloseTimer();
+    };
+  }, []);
+
+  // Silently load/refresh only Stripe revenue (no full page reload)
+  const loadStripeRevenue = async () => {
+    try {
+      const from = dateRange?.from ? dateRange.from.toISOString() : startOfMonth(new Date()).toISOString();
+      const to = dateRange?.to ? dateRange.to.toISOString() : endOfMonth(new Date()).toISOString();
+      const [stripeRevenueResp, stripePaymentsResp] = await Promise.all([
+        superAdminApi.getStripeRevenue({ from, to, group_by: 'day' }),
+        superAdminApi.getStripePayments({ from, to })
+      ]);
+      const revenueData = stripeRevenueResp?.data?.data;
+      const stripePayments = Array.isArray(stripePaymentsResp?.data?.data)
+        ? stripePaymentsResp.data.data
+        : [];
+      const paymentsByDate = stripePayments.reduce((acc: Record<string, StripePaymentDetail[]>, payment: any) => {
+        const paymentDate = String(payment?.date || "");
+        if (!paymentDate) {
+          return acc;
+        }
+
+        if (!acc[paymentDate]) {
+          acc[paymentDate] = [];
+        }
+
+        acc[paymentDate].push({
+          id: String(payment?.id || ""),
+          date: paymentDate,
+          amount: Number(payment?.amount) || 0,
+          currency: String(payment?.currency || "USD").toUpperCase(),
+          email: payment?.email || null,
+          customerName: payment?.customerName || null,
+        });
+
+        return acc;
+      }, {});
+      const series = (Array.isArray(revenueData?.series) ? revenueData.series : []).map((item: any) => {
+        const date = String(item?.date || "");
+        const payments = paymentsByDate[date] || [];
+
+        return {
+          date,
+          amount: Number(item?.amount) || 0,
+          paymentCount: payments.length,
+          payments,
+        };
+      });
+      setStripeSeries(series);
+      const totalRevenue = Math.round(Number(revenueData?.totalRevenue || 0) * 100) / 100;
+      const revenueGrowth = Math.round(Number(revenueData?.revenueGrowth || 0) * 100) / 100;
+      setStats((prev) => ({
+        ...prev,
+        monthlyRevenue: totalRevenue,
+        revenueGrowth: revenueGrowth,
+      }));
+    } catch (e) {
+      console.error("Failed to load Stripe revenue:", e);
+    }
+  };
 
   // Load dashboard data on component mount
   useEffect(() => {
@@ -689,26 +938,8 @@ export default function SuperAdminOverview() {
         })
       ]);
 
-      // Load Stripe revenue for selected range
-      try {
-        setStripeLoading(true);
-        const from = dateRange?.from ? dateRange.from.toISOString() : startOfMonth(new Date()).toISOString();
-        const to = dateRange?.to ? dateRange.to.toISOString() : endOfMonth(new Date()).toISOString();
-        const stripeRevenueResp = await superAdminApi.getStripeRevenue({ from, to, group_by: 'day' });
-        const revenueData = stripeRevenueResp?.data?.data;
-        const series = Array.isArray(revenueData?.series) ? revenueData.series : [];
-        setStripeSeries(series);
-        // Use Stripe totals for monthly revenue and growth
-        const totalRevenue = Number(revenueData?.totalRevenue || 0);
-        const revenueGrowth = Number(revenueData?.revenueGrowth || 0);
-        // We'll set into stats after computing other metrics below
-        // Temporarily store for merge
-        var stripeTotals = { totalRevenue, revenueGrowth };
-      } catch (e) {
-        console.error("Failed to load Stripe revenue:", e);
-      } finally {
-        setStripeLoading(false);
-      }
+      // Load Stripe revenue silently (no full loading state)
+      loadStripeRevenue();
 
       // Extract data from responses - APIs return nested data structure
         const plansData = plansResponse?.data?.data || [];
@@ -749,29 +980,21 @@ export default function SuperAdminOverview() {
         transactionsData.filter((transaction: any) => transaction.status === 'succeeded') : [];
       
       const totalTransactions = successfulTransactions.length;
-      // Use Stripe totals for monthly revenue and growth if available
-      const currentMonthRevenue = typeof (stripeTotals?.totalRevenue) === 'number'
-        ? stripeTotals.totalRevenue
-        : 0;
-      const revenueGrowth = typeof (stripeTotals?.revenueGrowth) === 'number'
-        ? stripeTotals.revenueGrowth
-        : 0;
 
       // Calculate client statistics
       const totalClients = Array.isArray(clientsData) ? clientsData.length : 0;
       const clientsPerAdmin = activeAdmins > 0 ? Math.round((totalClients / activeAdmins) * 100) / 100 : 0;
 
-      setStats({
+      setStats((prev) => ({
+        ...prev,
         totalPlans,
         activeAdmins,
         totalUsers,
         activeSubscriptions,
-        monthlyRevenue: Math.round(currentMonthRevenue * 100) / 100, // Ensure proper number formatting
-        revenueGrowth: Math.round(revenueGrowth * 100) / 100, // Round to 2 decimal places
         totalTransactions,
         totalClients,
         clientsPerAdmin,
-      });
+      }));
 
     } catch (error) {
       console.error("Error loading dashboard data:", error);
@@ -833,6 +1056,27 @@ export default function SuperAdminOverview() {
       </SuperAdminLayout>
     );
   }
+
+  const stripeTooltipPosition = (() => {
+    if (!activeStripeTooltip || !stripeChartContainerRef.current) {
+      return { left: 16, top: 16 };
+    }
+
+    const panelWidth = 320;
+    const panelHeight = 300;
+    const containerWidth = stripeChartContainerRef.current.clientWidth;
+    const containerHeight = stripeChartContainerRef.current.clientHeight;
+    const preferLeft = activeStripeTooltip.x > containerWidth * 0.56;
+    const nextLeft = preferLeft
+      ? activeStripeTooltip.x - panelWidth - 20
+      : activeStripeTooltip.x + 18;
+    const nextTop = activeStripeTooltip.y - 40;
+
+    return {
+      left: Math.min(Math.max(nextLeft, 12), Math.max(12, containerWidth - panelWidth - 12)),
+      top: Math.min(Math.max(nextTop, 12), Math.max(12, containerHeight - panelHeight - 12)),
+    };
+  })();
 
   return (
     <SuperAdminLayout 
@@ -942,9 +1186,9 @@ export default function SuperAdminOverview() {
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <Calendar className="h-5 w-5 text-ocean-blue" />
-                  <span>Upcoming Events & Report Pulls</span>
+                  <span>Upcoming Events</span>
                 </CardTitle>
-                <CardDescription>View scheduled client events and report pulling dates</CardDescription>
+                <CardDescription>View scheduled client events</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -1461,25 +1705,35 @@ export default function SuperAdminOverview() {
         </div>
 
         {/* Stripe Payments */}
-        <Card className="gradient-border shadow-lg">
-          <CardHeader className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center space-x-2">
-                <DollarSign className="h-5 w-5 text-ocean-blue" />
-                <span>Stripe Payments</span>
+        <Card className="overflow-hidden border-0 shadow-xl bg-background relative isolate">
+          {/* Subtle background glow effect */}
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500/10 to-purple-500/10 opacity-50 blur-3xl rounded-xl -z-10"></div>
+          
+          <CardHeader className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-8 border-b border-border/50 bg-muted/20">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center space-x-2 text-2xl font-bold tracking-tight">
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/50">
+                  <DollarSign className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <span>Stripe Revenue Details</span>
               </CardTitle>
-              <CardDescription>Platform-wide revenue directly from Stripe</CardDescription>
+              <CardDescription className="text-sm font-medium text-muted-foreground ml-11">
+                Monitor platform-wide real-time revenue and growth
+              </CardDescription>
             </div>
-            <div className="flex items-center gap-3">
+            
+            <div className="flex items-center gap-3 w-full md:w-auto">
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-2">
+                  <Button variant="outline" className="flex items-center gap-2 hover:shadow-sm border-muted-foreground/20 w-full md:w-auto justify-start">
                     <Calendar className="h-4 w-4" />
-                    {dateRange?.from && dateRange?.to ? (
-                      `${format(dateRange.from, "MM/dd/yyyy")} - ${format(dateRange.to, "MM/dd/yyyy")}`
-                    ) : (
-                      "Select Date Range"
-                    )}
+                    <span className="font-medium">
+                      {dateRange?.from && dateRange?.to ? (
+                        `${format(dateRange.from, "MMM d, yyyy")} - ${format(dateRange.to, "MMM d, yyyy")}`
+                      ) : (
+                        "Select Date Range"
+                      )}
+                    </span>
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
@@ -1495,20 +1749,15 @@ export default function SuperAdminOverview() {
               </Popover>
               <Button
                 variant="default"
+                size="sm"
+                className="flex items-center gap-2 shadow-sm font-semibold transition-all hover:scale-105 active:scale-95 bg-blue-600 hover:bg-blue-700 text-white w-full md:w-auto"
                 onClick={async () => {
                   try {
                     setStripeLoading(true);
+                    await loadStripeRevenue();
+                    // Also refresh analytics for the selected date range
                     const from = dateRange?.from ? dateRange.from.toISOString() : startOfMonth(new Date()).toISOString();
                     const to = dateRange?.to ? dateRange.to.toISOString() : endOfMonth(new Date()).toISOString();
-                    const stripeRevenueResp = await superAdminApi.getStripeRevenue({ from, to, group_by: 'day' });
-                    const revenueData = stripeRevenueResp?.data?.data;
-                    const series = Array.isArray(revenueData?.series) ? revenueData.series : [];
-                    setStripeSeries(series);
-                    setStats((prev) => ({
-                      ...prev,
-                      monthlyRevenue: Math.round(Number(revenueData?.totalRevenue || 0) * 100) / 100,
-                      revenueGrowth: Math.round(Number(revenueData?.revenueGrowth || 0) * 100) / 100,
-                    }));
                     const [salesChatResp, reportPullingResp, errorAnalysisResp] = await Promise.all([
                       superAdminApi.getSalesChatAnalyticsRange({ from, to }),
                       superAdminApi.getReportPullingAnalyticsRange({ from, to }),
@@ -1524,43 +1773,136 @@ export default function SuperAdminOverview() {
                   }
                 }}
               >
-                Apply
+                {stripeLoading ? (
+                  <div className="flex items-center justify-center space-x-2 w-full">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent shadow-sm"></div>
+                  </div>
+                ) : (
+                  <>
+                    <Activity className="h-4 w-4" />
+                    <span>Analyze</span>
+                  </>
+                )}
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="h-72">
+          <CardContent className="pt-8 px-6 pb-6 relative z-10 w-full overflow-hidden flex flex-col items-center">
+            
+            <div className="flex flex-col md:flex-row w-full items-start md:items-center justify-between mb-8 gap-6 px-1">
+              <div className="flex flex-col space-y-1 p-5 bg-gradient-to-br from-blue-50/50 to-indigo-50/20 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-2xl border border-blue-100/50 dark:border-blue-800/30 flex-1 min-w-[200px]">
+                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-blue-500" /> Total Selected Target
+                </span>
+                <div className="flex items-baseline space-x-3 pt-1">
+                  <span className="text-4xl font-extrabold tracking-tight text-foreground">
+                    ${stats.monthlyRevenue?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                  </span>
+                  <Badge variant={stats.revenueGrowth >= 0 ? "default" : "destructive"} className={`shadow-sm font-bold ${stats.revenueGrowth >= 0 ? "bg-emerald-500 hover:bg-emerald-600 text-white" : ""}`}>
+                    {stats.revenueGrowth >= 0 ? '+' : ''}{stats.revenueGrowth || 0}% vs last month
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            <div
+              ref={stripeChartContainerRef}
+              className="relative h-[400px] w-full rounded-2xl border border-ocean-blue/10 bg-gradient-to-br from-sky-50/90 via-background to-emerald-50/40 p-6 pt-8 shadow-[0_24px_60px_-32px_rgba(14,165,233,0.35)] dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 group"
+            >
+              {stripeLoading && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-2xl transition-all duration-300">
+                  <div className="flex flex-col items-center space-y-4">
+                    <div className="w-12 h-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin shadow-lg"></div>
+                    <p className="font-medium text-lg text-blue-600 animate-pulse">Syncing Analytics...</p>
+                  </div>
+                </div>
+              )}
               <ChartContainer
                 config={{
                   revenue: {
                     label: "Revenue",
-                    color: "hsl(var(--chart-1))",
+                    color: "hsl(var(--ocean-blue))",
                   },
                 }}
                 className="h-full w-full"
               >
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={stripeSeries}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                  <AreaChart
+                    data={stripeSeries}
+                    margin={{ top: 38, right: 18, left: 12, bottom: 8 }}
+                    onMouseMove={(state: any) => {
+                      clearStripeTooltipCloseTimer();
+
+                      const point = state?.activePayload?.[0]?.payload as StripeSeriesPoint | undefined;
+                      const coordinate = state?.activeCoordinate;
+
+                      if (!point || !coordinate) {
+                        return;
+                      }
+
+                      setActiveStripeTooltip({
+                        point,
+                        x: Number(coordinate.x) || 0,
+                        y: Number(coordinate.y) || 0,
+                      });
+                    }}
+                    onMouseLeave={() => {
+                      scheduleStripeTooltipClose();
+                    }}
+                  >
+                    <defs>
+                      <linearGradient id="stripeRevenueFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--ocean-blue))" stopOpacity={0.30} />
+                        <stop offset="55%" stopColor="hsl(var(--cyan-blue))" stopOpacity={0.16} />
+                        <stop offset="100%" stopColor="hsl(var(--sea-green))" stopOpacity={0.04} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="hsl(var(--ocean-blue) / 0.16)" />
                     <XAxis
                       dataKey="date"
-                      tickFormatter={(value) => format(new Date(value), "MM/dd")}
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: 'hsl(var(--deep-blue))', fontSize: 12 }}
+                      tickFormatter={(value) => format(new Date(value), "MMM dd")}
+                      dy={10}
                     />
-                    <YAxis tickFormatter={(value) => `$${value}`} />
-                    <ChartTooltip content={<ChartTooltipContent />} formatter={(value, name) => [`$${value}`, name]} />
-                    <Line
+                    <YAxis 
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: 'hsl(var(--deep-blue))', fontSize: 12 }}
+                      tickFormatter={(value) => formatStripeCurrency(Number(value) || 0)} 
+                      dx={-10}
+                    />
+                    <Area
                       type="monotone"
                       dataKey="amount"
                       name="revenue"
-                      stroke="var(--color-revenue)"
-                      strokeWidth={2}
-                      dot={{ fill: "var(--color-revenue)" }}
+                      stroke="hsl(var(--ocean-blue))"
+                      fillOpacity={1}
+                      fill="url(#stripeRevenueFill)"
+                      strokeWidth={3}
+                      dot={renderStripeRevenueDot}
+                      activeDot={renderStripeActiveDot}
+                      connectNulls={true}
                     />
-                  </LineChart>
+                  </AreaChart>
                 </ResponsiveContainer>
               </ChartContainer>
-              {stripeLoading && (
-                <div className="mt-2 text-sm text-muted-foreground">Loading Stripe data…</div>
+              {activeStripeTooltip && (
+                <div className="pointer-events-none absolute inset-0 z-30">
+                  <div
+                    className="pointer-events-auto absolute"
+                    style={{
+                      left: `${stripeTooltipPosition.left}px`,
+                      top: `${stripeTooltipPosition.top}px`,
+                    }}
+                  >
+                    <StripeRevenueTooltip
+                      point={activeStripeTooltip.point}
+                      onMouseEnter={clearStripeTooltipCloseTimer}
+                      onMouseLeave={scheduleStripeTooltipClose}
+                    />
+                  </div>
+                </div>
               )}
             </div>
           </CardContent>

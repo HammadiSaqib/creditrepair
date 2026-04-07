@@ -3446,22 +3446,40 @@ router.get('/analytics/stripe-payments', authenticateToken, requireSuperAdmin, a
 
     let startingAfter: string | undefined = undefined;
     let hasMore = true;
-    const payments: Array<{ date: string; amount: number; currency: string; id: string }> = [];
+    const payments: Array<{
+      date: string;
+      amount: number;
+      currency: string;
+      id: string;
+      email: string | null;
+      customerName: string | null;
+    }> = [];
 
     while (hasMore) {
       const list = await stripe.paymentIntents.list({
         limit: 100,
         created: { gte: fromUnix, lte: toUnix },
+        expand: ['data.latest_charge', 'data.customer'],
         ...(startingAfter ? { starting_after: startingAfter } : {})
       });
       for (const pi of list.data) {
         if (pi.status === 'succeeded') {
           const amount = typeof pi.amount === 'number' ? Number(pi.amount) / 100 : 0;
+          const charge = pi.latest_charge && typeof pi.latest_charge !== 'string'
+            ? pi.latest_charge
+            : null;
+          const customer = pi.customer && typeof pi.customer !== 'string' && !('deleted' in pi.customer)
+            ? pi.customer
+            : null;
+          const email = pi.receipt_email || charge?.billing_details?.email || customer?.email || null;
+          const customerName = charge?.billing_details?.name || customer?.name || null;
           payments.push({
             date: new Date(pi.created * 1000).toISOString().slice(0, 10),
             amount,
             currency: (pi.currency || 'usd').toUpperCase(),
-            id: pi.id
+            id: pi.id,
+            email,
+            customerName,
           });
         }
       }
