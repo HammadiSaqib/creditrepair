@@ -11,6 +11,7 @@ import SiteHeader from '@/components/SiteHeader';
 import { pricingApi } from '@/lib/api';
 import Footer from '@/components/Footer';
 import { api } from '@/lib/api';
+import { normalizeTestimonialsResponse, type Testimonial } from '@/lib/testimonials';
 
 interface PricingPlan {
   id: number;
@@ -72,7 +73,7 @@ export default function Pricing({ embed = false }: PricingProps) {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [purchasing, setPurchasing] = useState<number | null>(null);
   const maxRetries = 3;
-  const [testimonials, setTestimonials] = useState<Array<{ id: number; video: string; client_name: string; client_role?: string | null }>>([]);
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [activeTestimonialVideo, setActiveTestimonialVideo] = useState<string | null>(null);
   const [testimonialPage, setTestimonialPage] = useState(0);
   const [pageSize, setPageSize] = useState<number>(4);
@@ -229,7 +230,7 @@ export default function Pricing({ embed = false }: PricingProps) {
 
       try {
         const resp = await api.get("/api/testimonials");
-        const rows = (resp?.data?.data ?? resp?.data ?? []) as Array<{ id: number; video: string; client_name: string; client_role?: string | null }>;
+        const rows = normalizeTestimonialsResponse(resp?.data);
         if (mounted) setTestimonials(rows);
       } catch {
         if (mounted) setTestimonials([]);

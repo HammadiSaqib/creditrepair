@@ -149,9 +149,18 @@ class CommissionController {
         `;
         const params: any[] = [];
         
-        if (affiliateId) {
+        if (affiliateId !== undefined) {
+          const affiliateIdNum = parseInt(String(affiliateId), 10);
+          if (!Number.isFinite(affiliateIdNum) || affiliateIdNum <= 0) {
+            res.status(400).json({
+              success: false,
+              error: 'Valid affiliateId query parameter is required'
+            });
+            return;
+          }
+
           query += ' WHERE ac.affiliate_id = ?';
-          params.push(parseInt(affiliateId as string));
+          params.push(affiliateIdNum);
         }
         
         query += ` ORDER BY ac.created_at DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;

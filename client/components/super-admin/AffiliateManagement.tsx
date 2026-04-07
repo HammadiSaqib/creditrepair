@@ -188,6 +188,20 @@ const AffiliateManagement: React.FC = () => {
     notes: '',
     proof_of_payment: undefined
   });
+
+  const openAffiliateProfile = (affiliate: Affiliate) => {
+    const affiliateId = Number.isFinite(Number(affiliate?.id)) ? String(affiliate.id) : '';
+    if (!affiliateId) {
+      toast({
+        title: 'Invalid affiliate',
+        description: 'This affiliate record is missing a valid ID.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    navigate(`/super-admin/affiliates/${affiliateId}`);
+  };
   const [commissionPayments, setCommissionPayments] = useState<CommissionPayment[]>([]);
   const [isPaymentHistoryDialogOpen, setIsPaymentHistoryDialogOpen] = useState(false);
   const [selectedAffiliatePayments, setSelectedAffiliatePayments] = useState<CommissionPayment[]>([]);
@@ -941,7 +955,7 @@ const AffiliateManagement: React.FC = () => {
                             <div>
                               <p
                                 className="font-medium cursor-pointer text-blue-600 hover:text-blue-800 hover:underline"
-                                onClick={() => navigate(`/super-admin/affiliates/${affiliate.id}`)}
+                                onClick={() => openAffiliateProfile(affiliate)}
                               >
                                 {affiliate.first_name} {affiliate.last_name}
                               </p>
@@ -1045,7 +1059,7 @@ const AffiliateManagement: React.FC = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => navigate(`/super-admin/affiliates/${affiliate.id}`)}
+                              onClick={() => openAffiliateProfile(affiliate)}
                             >
                               <Eye className="h-4 w-4 mr-1" />
                               View Profile

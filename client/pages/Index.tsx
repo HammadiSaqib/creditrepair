@@ -39,6 +39,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import { Helmet } from "react-helmet-async";
 import { api } from "@/lib/api";
+import { normalizeTestimonialsResponse, type Testimonial } from "@/lib/testimonials";
 
 if (typeof window !== "undefined") {
   gsap.registerPlugin(ScrollTrigger);
@@ -107,7 +108,7 @@ export default function Index() {
   const [loading, setLoading] = useState(true);
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [activeTestimonialVideo, setActiveTestimonialVideo] = useState<string | null>(null);
-  const [testimonials, setTestimonials] = useState<Array<{ id: number; video: string; client_name: string; client_role?: string | null }>>([]);
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
   const [testimonialPage, setTestimonialPage] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
@@ -129,7 +130,7 @@ export default function Index() {
     (async () => {
       try {
         const resp = await api.get("/api/testimonials");
-        const rows = (resp?.data?.data ?? resp?.data ?? []) as Array<{ id: number; video: string; client_name: string; client_role?: string | null }>;
+        const rows = normalizeTestimonialsResponse(resp?.data);
         if (mounted) setTestimonials(rows);
       } catch {
         if (mounted) setTestimonials([]);

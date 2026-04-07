@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import SuperAdminLayout from '@/components/SuperAdminLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -163,8 +163,23 @@ function formatChildStatusLabel(status: string) {
 }
 
 const SuperAdminAffiliateProfile: React.FC = () => {
-  const { id } = useParams();
+  const { id: routeId, affiliateId: routeAffiliateId } = useParams<{ id?: string; affiliateId?: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
+  const affiliateId = useMemo(() => {
+    const pathMatch = location.pathname.match(/\/affiliates\/([^/?#]+)/i);
+    const rawValue = (routeId ?? routeAffiliateId ?? pathMatch?.[1] ?? '').trim();
+    if (!rawValue) {
+      return '';
+    }
+
+    const cleanedValue = rawValue.replace(/^AFF-/i, '').trim();
+    if (!/^\d+$/.test(cleanedValue)) {
+      return '';
+    }
+
+    return cleanedValue;
+  }, [location.pathname, routeAffiliateId, routeId]);
   const [affiliate, setAffiliate] = useState<Affiliate | null>(null);
   const [referrals, setReferrals] = useState<ReferralItem[]>([]);
   const [commissions, setCommissions] = useState<CommissionItem[]>([]);
@@ -190,6 +205,21 @@ const SuperAdminAffiliateProfile: React.FC = () => {
   const [deletingPaymentId, setDeletingPaymentId] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!affiliateId) {
+      setAffiliate(null);
+      setReferrals([]);
+      setCommissions([]);
+      setProfileReferrals([]);
+      setAffiliateStats(null);
+      setChildReferrals([]);
+      setChildSummary({ totalReferrals: 0, totalCommission: 0 });
+      setLastPayout(null);
+      setPaymentHistory([]);
+      setError('Invalid affiliate ID');
+      setLoading(false);
+      return;
+    }
+
     let mounted = true;
     const load = async () => {
       try {
@@ -198,17 +228,17 @@ const SuperAdminAffiliateProfile: React.FC = () => {
 
         const [affResp, refs, earnResp, commResp, statsResp, dashboardRefsResp, childResp, payHistResp] = await Promise.all([
           superAdminApi.getAffiliates(),
-          api.get(`/api/affiliate-management/${id}/referrals`),
-          api.get(`/api/affiliate-management/${id}/earnings/monthly`),
-          superAdminApi.getCommissionHistory({ affiliate_id: String(id) }),
-          api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
-          api.get(`/api/affiliate-management/${id}/dashboard-referrals`).catch(() => ({ data: null })),
-          api.get(`/api/affiliate-management/${id}/referrals/child`).catch(() => ({ data: null })),
-          api.get(`/api/commission-payments/affiliate/${id}`).catch(() => ({ data: null })),
+          api.get(`/api/affiliate-management/${affiliateId}/referrals`),
+          api.get(`/api/affiliate-management/${affiliateId}/earnings/monthly`),
+          superAdminApi.getCommissionHistory({ affiliate_id: affiliateId }),
+          api.get(`/api/affiliate-management/${affiliateId}/dashboard-summary`).catch(() => ({ data: null })),
+          api.get(`/api/affiliate-management/${affiliateId}/dashboard-referrals`).catch(() => ({ data: null })),
+          api.get(`/api/affiliate-management/${affiliateId}/referrals/child`).catch(() => ({ data: null })),
+          api.get(`/api/commission-payments/affiliate/${affiliateId}`).catch(() => ({ data: null })),
         ]);
 
         const list: Affiliate[] = affResp.data?.data || affResp.data || [];
-        const found = list.find((a) => String(a.id) === String(id));
+        const found = list.find((a) => String(a.id) === affiliateId);
         if (mounted) setAffiliate(found || null);
 
         const refData: ReferralItem[] = refs.data?.data || refs.data || [];
@@ -306,7 +336,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
         const gross = grossFromCommissions > 0 ? grossFromCommissions : grossFromReferrals;
 
         try {
-          const payoutResp = await api.get(`/api/commissions/payout-status/${id}`, { params: { strict: true } });
+          const payoutResp = await api.get(`/api/commissions/payout-status/${affiliateId}`, { params: { strict: true } });
           const d = payoutResp.data?.data || payoutResp.data || null;
           if (mounted) {
             if (d) {
@@ -348,7 +378,7 @@ const SuperAdminAffiliateProfile: React.FC = () => {
       mounted = false;
       clearInterval(interval);
     };
-  }, [id]);
+  }, [affiliateId]);
 
   const mergedReferrals = useMemo(
     () => mergeReferralsWithCommissions(referrals, commissions),
@@ -383,14 +413,14 @@ const SuperAdminAffiliateProfile: React.FC = () => {
 
   const exportEarnings = () => {
     toCsv(
-      `affiliate_${id}_earnings.csv`,
+      `affiliate_${affiliateId}_earnings.csv`,
       monthly.map((m) => ({ month: m.month, amount: m.amount }))
     );
   };
 
   const exportReferralBreakdown = () => {
     toCsv(
-      `affiliate_${id}_referrals.csv`,
+      `affiliate_${affiliateId}_referrals.csv`,
       referralRowsForProfile.map((r: any) => ({
         email: r.referred_user_email || '',
         name: `${r.referred_user_first_name || ''} ${r.referred_user_last_name || ''}`.trim(),
@@ -556,9 +586,9 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                         if (payAmount <= 0) return;
                         try {
                           setPaying(true);
-                          const txn = `AFF-${id}-${Date.now()}`;
+                          const txn = `AFF-${affiliateId}-${Date.now()}`;
                           const fd = new FormData();
-                          fd.append('affiliate_id', String(id));
+                          fd.append('affiliate_id', affiliateId);
                           fd.append('amount', String(payAmount));
                           fd.append('transaction_id', txn);
                           fd.append('payment_method', 'manual');
@@ -566,9 +596,9 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                           await api.post('/api/commission-payments', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
                           // Refresh payment history and stats
                           const [payHistResp2, statsResp2, payoutResp2] = await Promise.all([
-                            api.get(`/api/commission-payments/affiliate/${id}`).catch(() => ({ data: null })),
-                            api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
-                            api.get(`/api/commissions/payout-status/${id}`, { params: { strict: true } }).catch(() => ({ data: null })),
+                            api.get(`/api/commission-payments/affiliate/${affiliateId}`).catch(() => ({ data: null })),
+                            api.get(`/api/affiliate-management/${affiliateId}/dashboard-summary`).catch(() => ({ data: null })),
+                            api.get(`/api/commissions/payout-status/${affiliateId}`, { params: { strict: true } }).catch(() => ({ data: null })),
                           ]);
                           if (payHistResp2.data?.success) setPaymentHistory(payHistResp2.data.data || []);
                           if (statsResp2.data?.data) setAffiliateStats(statsResp2.data.data);
@@ -643,8 +673,8 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                                         await api.put(`/api/commission-payments/${p.id}`, { amount: Number(editPaymentAmount), notes: editPaymentNotes });
                                         setEditingPaymentId(null);
                                         const [payHistResp, statsResp2] = await Promise.all([
-                                          api.get(`/api/commission-payments/affiliate/${id}`).catch(() => ({ data: null })),
-                                          api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
+                                          api.get(`/api/commission-payments/affiliate/${affiliateId}`).catch(() => ({ data: null })),
+                                          api.get(`/api/affiliate-management/${affiliateId}/dashboard-summary`).catch(() => ({ data: null })),
                                         ]);
                                         if (payHistResp.data?.success) setPaymentHistory(payHistResp.data.data || []);
                                         if (statsResp2.data?.data) setAffiliateStats(statsResp2.data.data);
@@ -689,8 +719,8 @@ const SuperAdminAffiliateProfile: React.FC = () => {
                                         setDeletingPaymentId(p.id);
                                         await api.delete(`/api/commission-payments/${p.id}`);
                                         const [payHistResp, statsResp2] = await Promise.all([
-                                          api.get(`/api/commission-payments/affiliate/${id}`).catch(() => ({ data: null })),
-                                          api.get(`/api/affiliate-management/${id}/dashboard-summary`).catch(() => ({ data: null })),
+                                          api.get(`/api/commission-payments/affiliate/${affiliateId}`).catch(() => ({ data: null })),
+                                          api.get(`/api/affiliate-management/${affiliateId}/dashboard-summary`).catch(() => ({ data: null })),
                                         ]);
                                         if (payHistResp.data?.success) setPaymentHistory(payHistResp.data.data || []);
                                         if (statsResp2.data?.data) setAffiliateStats(statsResp2.data.data);
