@@ -882,8 +882,8 @@ router.post('/create-subscription-checkout', authenticateToken, async (req, res)
     }
 
     // Create Checkout Session
-    const successUrl = `https://thescoremachine.com/billing/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `https://thescoremachine.com/billing/cancel`;
+    const successUrl = `https://admin.thescoremachine.com/billing/success?session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `https://admin.thescoremachine.com/billing/cancel`;
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: String(priceId), quantity: 1 }],
