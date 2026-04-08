@@ -11,7 +11,11 @@ import { toast } from 'sonner';
 import { Eye, EyeOff, Shield, Zap, Star, User, Users, Home, CreditCard, Phone, DollarSign, Menu, X } from 'lucide-react';
 import SiteHeader from '@/components/SiteHeader';
 
-export default function Register() {
+interface RegisterProps {
+  embed?: boolean;
+}
+
+export default function Register({ embed = false }: RegisterProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { refreshProfile } = useAuthContext();
@@ -49,6 +53,69 @@ export default function Register() {
       setReferralInfo({ affiliateId: finalAffiliateId });
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!embed || typeof window === 'undefined' || window.parent === window) {
+      return;
+    }
+
+    const postEmbedHeight = () => {
+      const height = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+      );
+
+      window.parent.postMessage(
+        {
+          type: 'scoremachine:register-embed-resize',
+          height,
+        },
+        '*',
+      );
+    };
+
+    postEmbedHeight();
+
+    const frameId = window.requestAnimationFrame(postEmbedHeight);
+    const resizeObserver = new ResizeObserver(() => {
+      postEmbedHeight();
+    });
+
+    resizeObserver.observe(document.body);
+    window.addEventListener('resize', postEmbedHeight);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', postEmbedHeight);
+    };
+  }, [embed, showVerification, loading, verificationLoading, formData.terms]);
+
+  const resolveAppUrl = (path: string) => {
+    if (typeof window === 'undefined') {
+      return path;
+    }
+
+    return new URL(path, window.location.origin).toString();
+  };
+
+  const navigateToAppPath = (path: string) => {
+    if (!embed) {
+      navigate(path);
+      return;
+    }
+
+    const targetUrl = resolveAppUrl(path);
+
+    try {
+      if (window.top && window.top !== window.self) {
+        window.top.location.href = targetUrl;
+        return;
+      }
+    } catch {}
+
+    window.location.href = targetUrl;
+  };
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({
@@ -132,7 +199,7 @@ export default function Register() {
             // ignore
           }
           toast.success('Registration successful! Welcome! Please verify your email address in the dashboard.');
-          navigate('/dashboard');
+          navigateToAppPath('/dashboard');
         } else {
           toast.error('Registration successful but no token received. Please try logging in.');
         }
@@ -176,7 +243,7 @@ export default function Register() {
         
         // Navigate to admin dashboard after successful verification and auto-login
         setTimeout(() => {
-          navigate('/dashboard');
+          navigateToAppPath('/dashboard');
           // Refresh the dashboard after navigation to ensure fresh data
           setTimeout(() => {
             window.location.reload();
@@ -195,16 +262,18 @@ export default function Register() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-teal-50/30 relative overflow-hidden">
-      <SiteHeader />
+    <div className={embed ? 'relative overflow-hidden bg-transparent py-4' : 'min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-teal-50/30 relative overflow-hidden'}>
+      {!embed && <SiteHeader />}
       
+      {!embed && (
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-ocean-blue/20 to-sea-green/20 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-tr from-sea-green/20 to-ocean-blue/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-gradient-to-r from-ocean-blue/10 to-sea-green/10 rounded-full blur-3xl animate-pulse delay-500"></div>
       </div>
+      )}
 
-      <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
+      <div className={embed ? 'relative z-10 flex items-center justify-center p-4' : 'relative z-10 flex items-center justify-center min-h-screen p-4'}>
         <div className="w-full max-w-md">
           {!showVerification ? (
             <Card className="backdrop-blur-sm bg-white/90 shadow-2xl border-0">
@@ -337,11 +406,11 @@ export default function Register() {
                     />
                     <Label htmlFor="terms" className="text-sm text-gray-600">
                       I agree to the{" "}
-                      <Link to="/terms" className="text-ocean-blue hover:text-sea-green font-medium hover:underline">
+                      <Link to="/terms" target={embed ? '_blank' : undefined} rel={embed ? 'noopener noreferrer' : undefined} className="text-ocean-blue hover:text-sea-green font-medium hover:underline">
                         Terms of Service
                       </Link>{" "}
                       and{" "}
-                      <Link to="/privacy" className="text-ocean-blue hover:text-sea-green font-medium hover:underline">
+                      <Link to="/privacy" target={embed ? '_blank' : undefined} rel={embed ? 'noopener noreferrer' : undefined} className="text-ocean-blue hover:text-sea-green font-medium hover:underline">
                         Privacy Policy
                       </Link>
                     </Label>
@@ -364,7 +433,7 @@ export default function Register() {
 
                   <div className="text-center text-gray-600">
                     Already have an account?{" "}
-                    <Link to="/login" className="text-ocean-blue hover:text-sea-green font-medium hover:underline">
+                    <Link to="/login" target={embed ? '_top' : undefined} className="text-ocean-blue hover:text-sea-green font-medium hover:underline">
                       Sign in here
                     </Link>
                   </div>

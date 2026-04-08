@@ -1073,6 +1073,7 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
           <Route path="/sitemap" element={<Sitemap />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/register/embed" element={<Register embed />} />
           <Route path="/client-intake/:slug" element={<ClientIntake />} />
           <Route path="/client-intake" element={<ClientIntake />} />
           <Route path="/super-admin/login" element={<SuperAdminLogin />} />
