@@ -9,6 +9,16 @@ import { Separator } from '../components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Checkbox } from '../components/ui/checkbox';
 import { Label } from '../components/ui/label';
+import { Textarea } from '../components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 import { useToast } from '../hooks/use-toast';
 import { billingApi, getAuthToken, pricingApi, superAdminApi } from '../lib/api';
 import DashboardLayout from '../components/DashboardLayout';
@@ -62,6 +72,17 @@ interface UserSubscription {
   plan: SubscriptionPlan;
 }
 
+type CancellationReason = 'affordability' | 'guidance' | 'other';
+
+const SUPPORT_PHONE = '(475) 259-8768';
+const SUPPORT_PHONE_LINK = 'tel:4752598768';
+const CONSULTATION_ROUTE = '/contact';
+const CANCELLATION_REASON_LABELS: Record<CancellationReason, string> = {
+  affordability: "Can't afford it right now",
+  guidance: "Don't know how to use it for the business",
+  other: 'Other',
+};
+
 // Initialize Stripe with dynamic configuration
 let stripePromise: Promise<any> | null = null;
 
@@ -104,6 +125,9 @@ const SubscriptionContent: React.FC = () => {
   } | null>(null);
   const [billingFilter, setBillingFilter] = useState<'monthly' | 'yearly'>('monthly');
   const [recurringConsent, setRecurringConsent] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState<CancellationReason | ''>('');
+  const [otherCancellationReason, setOtherCancellationReason] = useState('');
 
   // Enhanced plan data with better descriptions and icons
   const enhancedPlans: SubscriptionPlan[] = [
@@ -404,7 +428,19 @@ const SubscriptionContent: React.FC = () => {
     setPaymentData(null);
   };
 
-  const handleCancelSubscription = async () => {
+  const resetCancelDialog = () => {
+    setCancelReason('');
+    setOtherCancellationReason('');
+  };
+
+  const handleCancelDialogChange = (open: boolean) => {
+    setCancelDialogOpen(open);
+    if (!open) {
+      resetCancelDialog();
+    }
+  };
+
+  const handleOpenCancelDialog = () => {
     if (!subscription || subscription.status !== 'active') {
       toast({
         title: 'Cannot Cancel',
@@ -414,9 +450,33 @@ const SubscriptionContent: React.FC = () => {
       return;
     }
 
-    // Show confirmation dialog
-    const confirmed = window.confirm('Are you sure you want to cancel your subscription? You can continue using the service until the end of your billing period.');
-    if (!confirmed) return;
+    setCancelDialogOpen(true);
+  };
+
+  const handleBookConsultation = () => {
+    setCancelDialogOpen(false);
+    resetCancelDialog();
+    navigate(CONSULTATION_ROUTE);
+  };
+
+  const handleCallSupport = () => {
+    if (typeof window !== 'undefined') {
+      window.location.href = SUPPORT_PHONE_LINK;
+    }
+  };
+
+  const canContinueCancellation =
+    !!cancelReason && (cancelReason !== 'other' || otherCancellationReason.trim().length > 0);
+
+  const handleCancelSubscription = async () => {
+    if (!canContinueCancellation) {
+      toast({
+        title: 'Reason Required',
+        description: 'Please tell us why you are leaving before continuing.',
+        variant: 'destructive'
+      });
+      return;
+    }
 
     try {
       setUpgrading(true);
@@ -427,7 +487,13 @@ const SubscriptionContent: React.FC = () => {
         description: 'Cancelling your subscription...',
       });
 
-      const response = await billingApi.cancelSubscription();
+      const response = await billingApi.cancelSubscription({
+        reasonCode: cancelReason,
+        reasonText:
+          cancelReason === 'other'
+            ? otherCancellationReason.trim()
+            : CANCELLATION_REASON_LABELS[cancelReason],
+      });
       
       // Fix: Check response.data.success instead of response.success (Axios wraps response in data)
       if (response.data && response.data.success) {
@@ -444,6 +510,8 @@ const SubscriptionContent: React.FC = () => {
           title: 'Subscription Cancellation Scheduled',
           description: `Your ${response.data.subscription?.plan_name || 'subscription'} will end on ${endDate ? endDate.toLocaleDateString() : 'the end of your billing period'}.`
         });
+        setCancelDialogOpen(false);
+        resetCancelDialog();
         setTimeout(() => {
           fetchSubscriptionData();
         }, 500);
@@ -573,6 +641,166 @@ const SubscriptionContent: React.FC = () => {
           </div>
         )}
 
+        <Dialog open={cancelDialogOpen} onOpenChange={handleCancelDialogChange}>
+          <DialogContent className="max-w-2xl border-0 bg-white p-0 shadow-2xl sm:rounded-2xl">
+            <div className="overflow-hidden rounded-2xl">
+              <div className="bg-gradient-to-r from-slate-900 via-ocean-blue to-sea-green px-6 py-6 text-white">
+                <DialogHeader className="space-y-2 text-left">
+                  <DialogTitle className="text-2xl font-bold text-white">
+                    We&apos;ll miss you
+                  </DialogTitle>
+                  <DialogDescription className="text-sm text-white/80">
+                    Before you cancel, tell us what&apos;s getting in the way. We may have a better option for you.
+                  </DialogDescription>
+                </DialogHeader>
+              </div>
+
+              <div className="space-y-6 px-6 py-6">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-medium text-slate-900">Why are you thinking about canceling?</p>
+                  <RadioGroup
+                    value={cancelReason}
+                    onValueChange={(value) => setCancelReason(value as CancellationReason)}
+                    className="mt-4 space-y-3"
+                  >
+                    <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-ocean-blue/40 hover:bg-blue-50/40">
+                      <RadioGroupItem value="affordability" id="cancel-reason-affordability" className="mt-1" />
+                      <div className="flex-1">
+                        <Label htmlFor="cancel-reason-affordability" className="cursor-pointer text-sm font-semibold text-slate-900">
+                          I can&apos;t afford it right now
+                        </Label>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Show me a lower-cost option so I can keep my access and benefits.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-ocean-blue/40 hover:bg-blue-50/40">
+                      <RadioGroupItem value="guidance" id="cancel-reason-guidance" className="mt-1" />
+                      <div className="flex-1">
+                        <Label htmlFor="cancel-reason-guidance" className="cursor-pointer text-sm font-semibold text-slate-900">
+                          I don&apos;t know how to use it for my business
+                        </Label>
+                        <p className="mt-1 text-sm text-slate-600">
+                          I need help getting value from the platform and want guidance.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-ocean-blue/40 hover:bg-blue-50/40">
+                      <RadioGroupItem value="other" id="cancel-reason-other" className="mt-1" />
+                      <div className="flex-1">
+                        <Label htmlFor="cancel-reason-other" className="cursor-pointer text-sm font-semibold text-slate-900">
+                          Other
+                        </Label>
+                        <p className="mt-1 text-sm text-slate-600">
+                          Share anything else you want us to know before you leave.
+                        </p>
+                      </div>
+                    </div>
+                  </RadioGroup>
+                </div>
+
+                {cancelReason === 'affordability' && (
+                  <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-blue-50 p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Save your benefits</p>
+                        <h3 className="mt-1 text-xl font-bold text-slate-900">Switch to a $25/month retention option</h3>
+                        <p className="mt-2 text-sm text-slate-600">
+                          If budget is the issue, contact us and we&apos;ll help you move to a $25/month option so you can keep your benefits and lock in your future pricing.
+                        </p>
+                      </div>
+                      <div className="rounded-2xl bg-white px-4 py-3 text-center shadow-sm">
+                        <div className="text-2xl font-bold text-emerald-600">$25</div>
+                        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">per month</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <Button
+                        type="button"
+                        onClick={handleCallSupport}
+                        className="bg-emerald-600 text-white hover:bg-emerald-700"
+                      >
+                        Call {SUPPORT_PHONE}
+                      </Button>
+                      <Button type="button" variant="outline" onClick={handleBookConsultation}>
+                        Talk to our team first
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {cancelReason === 'guidance' && (
+                  <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5">
+                    <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Free consultation</p>
+                    <h3 className="mt-1 text-xl font-bold text-slate-900">Let us help you use it for your business</h3>
+                    <p className="mt-2 text-sm text-slate-600">
+                      Book a free consultation and we&apos;ll walk you through the platform, show you how to use it in your workflow, and help you get results faster.
+                    </p>
+
+                    <div className="mt-4 rounded-xl border border-blue-200 bg-white p-4">
+                      <p className="text-sm text-slate-500">Call us directly</p>
+                      <p className="text-lg font-bold text-slate-900">{SUPPORT_PHONE}</p>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <Button type="button" onClick={handleCallSupport} className="bg-ocean-blue text-white hover:bg-ocean-blue/90">
+                        Call now
+                      </Button>
+                      <Button type="button" variant="outline" onClick={handleBookConsultation}>
+                        Book free consultation
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {cancelReason === 'other' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="other-cancellation-reason" className="text-sm font-medium text-slate-900">
+                      Tell us more
+                    </Label>
+                    <Textarea
+                      id="other-cancellation-reason"
+                      value={otherCancellationReason}
+                      onChange={(event) => setOtherCancellationReason(event.target.value)}
+                      placeholder="What made you decide to cancel?"
+                      rows={4}
+                      className="resize-none border-slate-200"
+                    />
+                  </div>
+                )}
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  If you still cancel, your access stays active until the end of your current billing period.
+                </div>
+              </div>
+
+              <DialogFooter className="border-t border-slate-200 px-6 py-4 sm:justify-between sm:space-x-0">
+                <Button type="button" variant="ghost" onClick={() => handleCancelDialogChange(false)}>
+                  Keep my plan
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleCancelSubscription}
+                  disabled={upgrading || !canContinueCancellation}
+                  className="bg-red-600 text-white hover:bg-red-700"
+                >
+                  {upgrading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    'Continue cancellation'
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Current Subscription Card */}
         {subscription && (
           <Card className="border-0 shadow-2xl bg-gradient-to-br from-white to-blue-50/30 dark:from-slate-800 dark:to-slate-700 overflow-hidden">
@@ -657,7 +885,7 @@ const SubscriptionContent: React.FC = () => {
                 
                 {subscription.status === 'active' && !subscription.cancel_at_period_end && (
                   <Button 
-                    onClick={handleCancelSubscription}
+                    onClick={handleOpenCancelDialog}
                     disabled={upgrading}
                     size="lg"
                     className="bg-red-600 hover:bg-red-700 text-white border border-red-700 shadow-lg px-6 py-3 text-base font-semibold"

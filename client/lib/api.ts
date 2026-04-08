@@ -422,7 +422,8 @@ export const billingApi = {
   finalizeCheckoutSession: (sessionId: string) =>
     api.post('/api/billing/finalize-checkout-session', { sessionId }),
   
-  cancelSubscription: () => api.post('/api/billing/cancel-subscription'),
+  cancelSubscription: (data?: { reasonCode?: string; reasonText?: string }) =>
+    api.post('/api/billing/cancel-subscription', data),
 };
 
 // Credit Report Scraper API
@@ -725,7 +726,7 @@ export const superAdminApi = {
   getSubscriptionAnalytics: () => api.get('/api/super-admin/analytics/subscriptions'),
   getUpcomingRenewals: (params?: { page?: number; limit?: number; days?: number }) =>
     api.get('/api/super-admin/subscriptions/upcoming-renewals', { params }),
-  getRecentCancellations: (params?: { page?: number; limit?: number; days?: number }) =>
+  getRecentCancellations: (params?: { page?: number; limit?: number; days?: number; search?: string }) =>
     api.get('/api/super-admin/subscriptions/recent-cancellations', { params }),
   updateSubscription: (id: number, data: any) => api.put(`/api/super-admin/subscriptions/${id}`, data),
   cancelSubscription: (id: number) => api.post(`/api/super-admin/subscriptions/${id}/cancel`),

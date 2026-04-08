@@ -2953,13 +2953,28 @@ router.get('/subscriptions/upcoming-renewals', authenticateToken, requireSuperAd
 });
 
 // Get recent cancellations (must be before /subscriptions/:id to avoid route conflict)
-router.get('/subscriptions/recent-cancellations', authenticateToken, requireAdmin, async (req: Request, res: Response) => {
+router.get('/subscriptions/recent-cancellations', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
-    const { page = 1, limit = 10, days = 30 } = req.query;
+    const { page = 1, limit = 10, days = 30, search } = req.query;
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
     const limitNum = Math.max(1, Math.min(500, parseInt(String(limit), 10) || 10));
     const safeDays = Math.max(0, parseInt(String(days), 10) || 30);
     const safeOffset = (pageNum - 1) * limitNum;
+    const params: any[] = [safeDays];
+    let searchClause = '';
+    if (search) {
+      const searchTerm = `%${String(search).trim()}%`;
+      searchClause = `
+           AND (
+             u.first_name LIKE ?
+             OR u.last_name LIKE ?
+             OR u.email LIKE ?
+             OR COALESCE(u.phone, '') LIKE ?
+             OR COALESCE(s.cancellation_reason_text, '') LIKE ?
+             OR COALESCE(s.cancellation_reason_code, '') LIKE ?
+           )`;
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
     
     console.log('Fetching recent cancellations with params:', { page: pageNum, limit: limitNum, days: safeDays, offset: safeOffset });
     
@@ -2968,15 +2983,17 @@ router.get('/subscriptions/recent-cancellations', authenticateToken, requireAdmi
     try {
       // Get recently cancelled subscriptions within the specified days
       const cancellations = await db.allQuery(
-        `SELECT s.*, u.first_name, u.last_name, u.email,
-                DATEDIFF(NOW(), s.updated_at) as days_since_cancellation
+        `SELECT s.*, u.first_name, u.last_name, u.email, u.phone,
+                COALESCE(s.cancellation_requested_at, s.updated_at) as cancellation_date,
+                DATEDIFF(NOW(), COALESCE(s.cancellation_requested_at, s.updated_at)) as days_since_cancellation
          FROM subscriptions s
          JOIN users u ON s.user_id = u.id
-         WHERE s.status = ? 
-           AND s.updated_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-         ORDER BY s.updated_at DESC
+         WHERE s.cancel_at_period_end = 1
+           AND COALESCE(s.cancellation_requested_at, s.updated_at) >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           ${searchClause}
+         ORDER BY COALESCE(s.cancellation_requested_at, s.updated_at) DESC
          LIMIT ${limitNum} OFFSET ${safeOffset}`,
-        ['canceled', safeDays]
+        params
       );
 
       console.log('Found cancellations:', cancellations ? cancellations.length : 'null/undefined');
@@ -2985,9 +3002,11 @@ router.get('/subscriptions/recent-cancellations', authenticateToken, requireAdmi
       // Get total count for pagination
       const countResult = await db.getQuery(
         `SELECT COUNT(*) as total FROM subscriptions s
-         WHERE s.status = ? 
-           AND s.updated_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
-        ['canceled', safeDays]
+         JOIN users u ON s.user_id = u.id
+         WHERE s.cancel_at_period_end = 1
+           AND COALESCE(s.cancellation_requested_at, s.updated_at) >= DATE_SUB(NOW(), INTERVAL ? DAY)
+           ${searchClause}`,
+        params
       );
 
       console.log('Count result:', JSON.stringify(countResult, null, 2));

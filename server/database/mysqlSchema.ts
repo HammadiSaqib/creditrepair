@@ -184,6 +184,9 @@ export interface Subscription {
   current_period_start?: string;
   current_period_end?: string;
   cancel_at_period_end: boolean;
+  cancellation_reason_code?: 'affordability' | 'guidance' | 'other' | null;
+  cancellation_reason_text?: string | null;
+  cancellation_requested_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -533,6 +536,18 @@ export async function initializeMySQLDatabase(): Promise<void> {
       if (!existing.has('last_payment_reminder_sent_at')) {
         await executeQuery(`ALTER TABLE subscriptions ADD COLUMN last_payment_reminder_sent_at DATETIME NULL`);
         console.log('✅ Added last_payment_reminder_sent_at to subscriptions');
+      }
+      if (!existing.has('cancellation_reason_code')) {
+        await executeQuery(`ALTER TABLE subscriptions ADD COLUMN cancellation_reason_code VARCHAR(32) NULL`);
+        console.log('✅ Added cancellation_reason_code to subscriptions');
+      }
+      if (!existing.has('cancellation_reason_text')) {
+        await executeQuery(`ALTER TABLE subscriptions ADD COLUMN cancellation_reason_text TEXT NULL`);
+        console.log('✅ Added cancellation_reason_text to subscriptions');
+      }
+      if (!existing.has('cancellation_requested_at')) {
+        await executeQuery(`ALTER TABLE subscriptions ADD COLUMN cancellation_requested_at DATETIME NULL`);
+        console.log('✅ Added cancellation_requested_at to subscriptions');
       }
     } catch (e) {
       console.error('Failed to update subscriptions schema:', e);
@@ -1387,11 +1402,15 @@ async function createMySQLTables(): Promise<void> {
       current_period_start DATETIME,
       current_period_end DATETIME,
       cancel_at_period_end BOOLEAN NOT NULL DEFAULT FALSE,
+      cancellation_reason_code VARCHAR(32) NULL,
+      cancellation_reason_text TEXT NULL,
+      cancellation_requested_at DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_user_id (user_id),
       INDEX idx_stripe_subscription (stripe_subscription_id),
       INDEX idx_status (status),
+      INDEX idx_cancellation_requested_at (cancellation_requested_at),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 

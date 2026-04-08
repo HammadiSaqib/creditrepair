@@ -27,6 +27,7 @@ import {
   ClipboardList,
   Mail,
   CalendarClock,
+  AlertTriangle,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -117,6 +118,12 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       name: "Subscriptions",
       href: "/super-admin/subscriptions",
       icon: Receipt,
+      badge: null,
+    },
+    {
+      name: "Cancellation Reports",
+      href: "/super-admin/cancellation-reports",
+      icon: AlertTriangle,
       badge: null,
     },
     {

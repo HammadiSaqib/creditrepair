@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Loader2, CreditCard, Calendar, DollarSign, Download, RefreshCw } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { useToast } from '../hooks/use-toast';
 import { api } from '../lib/api';
 
@@ -42,6 +43,7 @@ const BillingHistory: React.FC = () => {
   const [portalLoading, setPortalLoading] = useState(false);
   const [retryLoading, setRetryLoading] = useState(false);
   const { toast } = useToast();
+  const location = useLocation();
 
   const fetchBillingData = async () => {
     try {
@@ -192,33 +194,18 @@ const BillingHistory: React.FC = () => {
     });
   };
 
-  const handleCancelSubscription = async () => {
-    if (!subscription) return;
-
-    try {
-      const response = await api.post('/api/billing/cancel-subscription');
-      if (response.data && response.data.success) {
-        const end = response.data.subscription?.current_period_end || subscription.current_period_end;
-        toast({
-          title: 'Subscription Cancellation Scheduled',
-          description: `Your subscription will end on ${formatDate(end)}`
-        });
-        await fetchBillingData();
-      } else {
-        toast({
-          title: 'Error',
-          description: 'Failed to cancel subscription',
-          variant: 'destructive'
-        });
-      }
-    } catch (error) {
-      console.error('Error canceling subscription:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to cancel subscription',
-        variant: 'destructive'
-      });
+  const handleManageCancellation = () => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
+    toast({
+      title: 'Use the cancellation options above',
+      description:
+        location.pathname.includes('/affiliate/')
+          ? 'Use the main subscription section to choose your cancellation reason first.'
+          : 'Use the main subscription section to choose your cancellation reason first.'
+    });
   };
 
   if (loading) {
@@ -305,11 +292,11 @@ const BillingHistory: React.FC = () => {
               )}
               {subscription.status === 'active' && !subscription.cancel_at_period_end && (
                 <Button
-                  onClick={handleCancelSubscription}
+                  onClick={handleManageCancellation}
                   variant="outline"
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
-                  Cancel Subscription
+                  Manage Cancellation
                 </Button>
               )}
             </div>

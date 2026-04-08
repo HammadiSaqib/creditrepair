@@ -76,6 +76,7 @@ const BlogIndex = React.lazy(() => import("./pages/Blog/BlogIndex"));
 const BlogPost = React.lazy(() => import("./pages/Blog/BlogPost"));
 const SuperAdminUsers = React.lazy(() => import("./pages/super-admin/SuperAdminUsers"));
 const SuperAdminSubscriptions = React.lazy(() => import("./pages/super-admin/SuperAdminSubscriptions"));
+const SuperAdminCancellationReports = React.lazy(() => import("./pages/super-admin/SuperAdminCancellationReports"));
 const SuperAdminSettings = React.lazy(() => import("./pages/super-admin/SuperAdminSettings"));
 const SuperAdminAffiliates = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliates"));
 const SuperAdminAffiliateProfile = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliateProfile"));
@@ -319,6 +320,14 @@ function getPortalAliasRoutes(alias: NonAdminPortalAlias): PortalAliasRoute[] {
           element: (
             <SuperAdminProtectedRoute>
               <SuperAdminSubscriptions />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/cancellation-reports",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminCancellationReports />
             </SuperAdminProtectedRoute>
           ),
         },
@@ -1376,6 +1385,14 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
             element={
               <SuperAdminProtectedRoute>
                 <SuperAdminSubscriptions />
+              </SuperAdminProtectedRoute>
+            }
+          />
+          <Route
+            path="/super-admin/cancellation-reports"
+            element={
+              <SuperAdminProtectedRoute>
+                <SuperAdminCancellationReports />
               </SuperAdminProtectedRoute>
             }
           />

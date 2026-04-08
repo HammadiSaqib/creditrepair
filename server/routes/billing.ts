@@ -1715,6 +1715,14 @@ router.post('/finalize-checkout-session', authenticateToken, async (req, res) =>
 router.post('/cancel-subscription', authenticateToken, async (req, res) => {
   try {
     const userId = (req as any).user.id;
+    const { reasonCode, reasonText } = req.body as {
+      reasonCode?: string;
+      reasonText?: string;
+    };
+    const normalizedReasonCode = ['affordability', 'guidance', 'other'].includes(String(reasonCode))
+      ? String(reasonCode)
+      : 'other';
+    const normalizedReasonText = String(reasonText || '').trim().slice(0, 1000) || null;
     console.log(`🔄 Attempting to cancel subscription for user ${userId}`);
     const rows = await executeQuery(
       'SELECT id, status, plan_name, stripe_subscription_id FROM subscriptions WHERE user_id = ? AND status = ? LIMIT 1',
@@ -1740,8 +1748,15 @@ router.post('/cancel-subscription', authenticateToken, async (req, res) => {
       }
     } catch (err) {}
     await executeQuery(
-      'UPDATE subscriptions SET cancel_at_period_end = TRUE, current_period_end = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND status = ?',
-      [periodEnd ? new Date(periodEnd) : null, userId, 'active']
+      `UPDATE subscriptions
+       SET cancel_at_period_end = TRUE,
+           current_period_end = ?,
+           cancellation_reason_code = ?,
+           cancellation_reason_text = ?,
+           cancellation_requested_at = COALESCE(cancellation_requested_at, CURRENT_TIMESTAMP),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ? AND status = ?`,
+      [periodEnd ? new Date(periodEnd) : null, normalizedReasonCode, normalizedReasonText, userId, 'active']
     );
     try {
       const userRows = await executeQuery(
@@ -1769,7 +1784,10 @@ router.post('/cancel-subscription', authenticateToken, async (req, res) => {
         status: 'active',
         plan_name: sub.plan_name,
         current_period_end: periodEnd || null,
-        cancel_at_period_end: true
+        cancel_at_period_end: true,
+        cancellation_reason_code: normalizedReasonCode,
+        cancellation_reason_text: normalizedReasonText,
+        cancellation_requested_at: new Date()
       }
     });
   } catch (error: any) {
