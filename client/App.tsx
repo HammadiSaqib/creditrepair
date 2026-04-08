@@ -1841,6 +1841,7 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
           <Route path="/join-affiliate" element={<JoinAffiliate />} />
           <Route path="/join-affiliate/embed" element={<JoinAffiliate embed />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/contact/embed" element={<Contact embed />} />
           <Route path="/ref/:affiliateId" element={<ReferralLandingPage />} />
           <Route path="/:publicId" element={<DynamicPublicHostRoute />} />
           <Route path="/invoice/:token" element={<InvoiceView />} />

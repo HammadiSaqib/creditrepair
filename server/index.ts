@@ -480,17 +480,19 @@ export async function createServer(vite?: ViteDevServer) {
   app.use("/api/newsletter", newsletterRoutes);
   app.post("/api/contact", async (req, res) => {
     try {
-      const { name, email, phone, message } = req.body || {};
+      const { name, email, phone, message, topic } = req.body || {};
       const safeName = String(name || "").trim();
       const safeEmail = String(email || "").trim();
       const safePhone = String(phone || "").trim();
       const safeMessage = String(message || "").trim();
+      const safeTopic = String(topic || "General").trim();
       if (!safeName || !safeEmail || !safePhone || !safeMessage) {
         return res.status(400).json({ error: "Missing required fields" });
       }
 
       const html = `
         <h2>New Contact Request</h2>
+        <p><strong>Topic:</strong> ${safeTopic}</p>
         <p><strong>Name:</strong> ${safeName}</p>
         <p><strong>Email:</strong> ${safeEmail}</p>
         <p><strong>Phone:</strong> ${safePhone}</p>
@@ -499,6 +501,7 @@ export async function createServer(vite?: ViteDevServer) {
       `;
       const text = [
         "New Contact Request",
+        `Topic: ${safeTopic}`,
         `Name: ${safeName}`,
         `Email: ${safeEmail}`,
         `Phone: ${safePhone}`,
@@ -508,7 +511,7 @@ export async function createServer(vite?: ViteDevServer) {
 
       const sent = await emailService.sendEmail({
         to: "support@thescoremachine.com",
-        subject: "New Contact Request",
+        subject: `New Contact Request - ${safeTopic}`,
         html,
         text
       });

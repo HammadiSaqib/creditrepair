@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SiteHeader from "@/components/SiteHeader";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,48 +12,165 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { Helmet } from 'react-helmet-async';
 import Footer from '@/components/Footer';
 
-export default function Contact() {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-  const [message, setMessage] = useState("");
+type ContactTopic = "support" | "sales" | "partnerships";
+
+interface ContactProps {
+  embed?: boolean;
+}
+
+const initialSupportForm = {
+  name: "",
+  email: "",
+  phone: "",
+  message: "",
+  urgency: "",
+  workspace: "",
+};
+
+const initialSalesForm = {
+  name: "",
+  email: "",
+  phone: "",
+  company: "",
+  teamSize: "",
+  goals: "",
+};
+
+const initialPartnershipForm = {
+  name: "",
+  email: "",
+  phone: "",
+  company: "",
+  partnershipType: "",
+  website: "",
+  message: "",
+};
+
+const buildStructuredMessage = (
+  sectionTitle: string,
+  lines: Array<string | null | undefined>,
+  bodyLabel: string,
+  body: string,
+) => {
+  return [
+    `Topic: ${sectionTitle}`,
+    ...lines.filter(Boolean),
+    "",
+    `${bodyLabel}:`,
+    body.trim(),
+  ].join("\n");
+};
+
+export default function Contact({ embed = false }: ContactProps) {
+  const [activeTab, setActiveTab] = useState<ContactTopic>("support");
+  const [supportForm, setSupportForm] = useState({ ...initialSupportForm });
+  const [salesForm, setSalesForm] = useState({ ...initialSalesForm });
+  const [partnershipForm, setPartnershipForm] = useState({ ...initialPartnershipForm });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  useEffect(() => {
+    if (!embed || typeof window === "undefined" || window.parent === window) {
+      return;
+    }
+
+    const postEmbedHeight = () => {
+      const height = Math.max(
+        document.documentElement.scrollHeight,
+        document.body.scrollHeight,
+      );
+
+      window.parent.postMessage(
+        {
+          type: "scoremachine:contact-embed-resize",
+          height,
+        },
+        "*",
+      );
+    };
+
+    postEmbedHeight();
+
+    const frameId = window.requestAnimationFrame(postEmbedHeight);
+    const resizeObserver = new ResizeObserver(() => {
+      postEmbedHeight();
+    });
+
+    resizeObserver.observe(document.body);
+    window.addEventListener("resize", postEmbedHeight);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", postEmbedHeight);
+    };
+  }, [embed, activeTab, error, success, loading]);
+
   const handleScrollToForm = () => {
+    if (embed) {
+      return;
+    }
+
     const target = document.getElementById("contact-form");
     if (target) {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const resetFeedback = () => {
     setError("");
     setSuccess(false);
-    if (!name.trim() || !email.trim() || !message.trim() || !phone.trim()) {
+  };
+
+  const submitContactRequest = async (payload: {
+    name: string;
+    email: string;
+    phone: string;
+    message: string;
+    topic: ContactTopic;
+  }) => {
+    const response = await fetch("/api/contact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to send message");
+    }
+  };
+
+  const handleSupportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    resetFeedback();
+
+    if (!supportForm.name.trim() || !supportForm.email.trim() || !supportForm.phone.trim() || !supportForm.message.trim()) {
       setError("Please fill out all required fields.");
       return;
     }
+
     setLoading(true);
 
     try {
-      const response = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, phone, message }),
+      await submitContactRequest({
+        name: supportForm.name,
+        email: supportForm.email,
+        phone: supportForm.phone,
+        topic: "support",
+        message: buildStructuredMessage(
+          "Support",
+          [
+            supportForm.urgency.trim() ? `Urgency: ${supportForm.urgency.trim()}` : null,
+            supportForm.workspace.trim() ? `Workspace: ${supportForm.workspace.trim()}` : null,
+          ],
+          "Request",
+          supportForm.message,
+        ),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to send message");
-      }
-
       setSuccess(true);
-      setName("");
-      setEmail("");
-      setPhone("");
-      setMessage("");
+      setSupportForm({ ...initialSupportForm });
     } catch (err) {
       setError("Failed to send message. Please try again.");
     } finally {
@@ -61,15 +178,110 @@ export default function Contact() {
     }
   };
 
+  const handleSalesSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    resetFeedback();
+
+    if (!salesForm.name.trim() || !salesForm.email.trim() || !salesForm.phone.trim() || !salesForm.goals.trim()) {
+      setError("Please fill out all required fields.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await submitContactRequest({
+        name: salesForm.name,
+        email: salesForm.email,
+        phone: salesForm.phone,
+        topic: "sales",
+        message: buildStructuredMessage(
+          "Sales",
+          [
+            salesForm.company.trim() ? `Company: ${salesForm.company.trim()}` : null,
+            salesForm.teamSize.trim() ? `Team Size: ${salesForm.teamSize.trim()}` : null,
+          ],
+          "Goals",
+          salesForm.goals,
+        ),
+      });
+
+      setSuccess(true);
+      setSalesForm({ ...initialSalesForm });
+    } catch (err) {
+      setError("Failed to send message. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePartnershipSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    resetFeedback();
+
+    if (!partnershipForm.name.trim() || !partnershipForm.email.trim() || !partnershipForm.phone.trim() || !partnershipForm.message.trim()) {
+      setError("Please fill out all required fields.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await submitContactRequest({
+        name: partnershipForm.name,
+        email: partnershipForm.email,
+        phone: partnershipForm.phone,
+        topic: "partnerships",
+        message: buildStructuredMessage(
+          "Partnerships",
+          [
+            partnershipForm.company.trim() ? `Company: ${partnershipForm.company.trim()}` : null,
+            partnershipForm.partnershipType.trim() ? `Partnership Type: ${partnershipForm.partnershipType.trim()}` : null,
+            partnershipForm.website.trim() ? `Website: ${partnershipForm.website.trim()}` : null,
+          ],
+          "Proposal",
+          partnershipForm.message,
+        ),
+      });
+
+      setSuccess(true);
+      setPartnershipForm({ ...initialPartnershipForm });
+    } catch (err) {
+      setError("Failed to send message. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateSupportForm = (field: keyof typeof initialSupportForm, value: string) => {
+    setSupportForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updateSalesForm = (field: keyof typeof initialSalesForm, value: string) => {
+    setSalesForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const updatePartnershipForm = (field: keyof typeof initialPartnershipForm, value: string) => {
+    setPartnershipForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleTabChange = (value: string) => {
+    resetFeedback();
+    setActiveTab(value as ContactTopic);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20">
+    <div className={embed ? "relative overflow-hidden bg-transparent py-4" : "min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/20"}>
       <Helmet>
-        <title>Contact Us - Score Machine | Support & Inquiries</title>
+        <title>{embed ? "Contact Embed - Score Machine" : "Contact Us - Score Machine | Support & Inquiries"}</title>
         <meta name="description" content="Contact Score Machine for support, account assistance, or platform guidance. Our team provides help with onboarding, technical questions, and feature navigation. Typical responses within business hours." />
         <link rel="canonical" href="https://scoremachine.com/contact" />
+        {embed && <meta name="robots" content="noindex,nofollow" />}
       </Helmet>
-      <SiteHeader />
+      {!embed && <SiteHeader />}
       
+      {!embed && (
+      <>
       {/* Enhanced Hero Section */}
       <section className="relative py-20 overflow-hidden">
         {/* Multi-layer Background */}
@@ -121,11 +333,15 @@ export default function Contact() {
           </div>
         </div>
       </section>
+      </>
+      )}
 
       {/* Contact Section */}
-      <section id="contact-form" className="py-20 relative">
-        <div className="container mx-auto px-4">
-          <div className="grid lg:grid-cols-3 gap-12">
+      <section id="contact-form" className={embed ? "py-0 relative" : "py-20 relative"}>
+        <div className={embed ? "mx-auto max-w-4xl px-4" : "container mx-auto px-4"}>
+          <div className={embed ? "" : "grid lg:grid-cols-3 gap-12"}>
+            {!embed && (
+            <>
             {/* Left: Enhanced Quick Contact */}
             <div className="space-y-6">
               {/* Contact Methods */}
@@ -194,9 +410,11 @@ export default function Contact() {
                 <p className="text-xs text-gray-400 mt-4">*Based on internal post-support surveys.</p>
               </div>
             </div>
+            </>
+            )}
 
             {/* Right: Contact Tabs and Form */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className={embed ? "space-y-6" : "lg:col-span-2 space-y-6"}>
               <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
                 <CardHeader className="pb-6">
                   <div className="flex items-center gap-3 mb-2">
@@ -223,19 +441,31 @@ export default function Contact() {
                     </Alert>
                   )}
 
-                  <Tabs defaultValue="support" className="space-y-6">
+                  <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+                    <TabsList className="grid h-auto w-full grid-cols-3 rounded-xl bg-slate-100/80 p-1">
+                      <TabsTrigger value="support" className="rounded-lg px-3 py-2 text-sm data-[state=active]:bg-white data-[state=active]:text-ocean-blue data-[state=active]:shadow-sm">
+                        Support
+                      </TabsTrigger>
+                      <TabsTrigger value="sales" className="rounded-lg px-3 py-2 text-sm data-[state=active]:bg-white data-[state=active]:text-ocean-blue data-[state=active]:shadow-sm">
+                        Sales
+                      </TabsTrigger>
+                      <TabsTrigger value="partnerships" className="rounded-lg px-3 py-2 text-sm data-[state=active]:bg-white data-[state=active]:text-ocean-blue data-[state=active]:shadow-sm">
+                        Partnerships
+                      </TabsTrigger>
+                    </TabsList>
 
                     <TabsContent value="support" className="space-y-6">
-                      <form onSubmit={handleSubmit} className="space-y-6">
+                      <form onSubmit={handleSupportSubmit} className="space-y-6">
                         <div className="grid md:grid-cols-2 gap-6">
                           <div className="space-y-2">
                             <Label htmlFor="name" className="text-sm font-medium text-gray-700">Name</Label>
                             <Input 
                               id="name" 
-                              value={name} 
-                              onChange={(e) => setName(e.target.value)} 
+                              value={supportForm.name} 
+                              onChange={(e) => updateSupportForm("name", e.target.value)} 
                               placeholder="Your name" 
                               className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11"
+                              required
                             />
                           </div>
                           <div className="space-y-2">
@@ -243,10 +473,11 @@ export default function Contact() {
                             <Input 
                               id="email" 
                               type="email" 
-                              value={email} 
-                              onChange={(e) => setEmail(e.target.value)} 
+                              value={supportForm.email} 
+                              onChange={(e) => updateSupportForm("email", e.target.value)} 
                               placeholder="you@example.com" 
                               className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11"
+                              required
                             />
                           </div>
                         </div>
@@ -254,28 +485,29 @@ export default function Contact() {
                           <Label htmlFor="message" className="text-sm font-medium text-gray-700">Describe your request</Label>
                           <Textarea 
                             id="message" 
-                            value={message} 
-                            onChange={(e) => setMessage(e.target.value)} 
+                            value={supportForm.message} 
+                            onChange={(e) => updateSupportForm("message", e.target.value)} 
                             placeholder="Include goals, steps, screenshots, or URLs" 
                             rows={6} 
                             className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg resize-none"
+                            required
                           />
                         </div>
                         <div className="grid md:grid-cols-3 gap-4">
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Urgency</Label>
-                            <Input placeholder="Low / Medium / High" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={supportForm.urgency} onChange={(e) => updateSupportForm("urgency", e.target.value)} placeholder="Low / Medium / High" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Workspace</Label>
-                            <Input placeholder="Company or team name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={supportForm.workspace} onChange={(e) => updateSupportForm("workspace", e.target.value)} placeholder="Company or team name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Phone</Label>
                             <Input
                               type="tel"
-                              value={phone}
-                              onChange={(e) => setPhone(e.target.value)}
+                              value={supportForm.phone}
+                              onChange={(e) => updateSupportForm("phone", e.target.value)}
                               placeholder="+1 (555) 000-0000"
                               className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11"
                               required
@@ -297,40 +529,40 @@ export default function Contact() {
                     </TabsContent>
 
                     <TabsContent value="sales" className="space-y-6">
-                      <form onSubmit={handleSubmit} className="space-y-6">
+                      <form onSubmit={handleSalesSubmit} className="space-y-6">
                         <div className="grid md:grid-cols-2 gap-6">
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Full Name</Label>
-                            <Input placeholder="Your name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={salesForm.name} onChange={(e) => updateSalesForm("name", e.target.value)} placeholder="Your name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" required />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Work Email</Label>
-                            <Input type="email" placeholder="you@company.com" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input type="email" value={salesForm.email} onChange={(e) => updateSalesForm("email", e.target.value)} placeholder="you@company.com" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" required />
                           </div>
                         </div>
                         <div className="grid md:grid-cols-3 gap-4">
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Company</Label>
-                            <Input placeholder="Company name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={salesForm.company} onChange={(e) => updateSalesForm("company", e.target.value)} placeholder="Company name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Team Size</Label>
-                            <Input placeholder="e.g., 10-50" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={salesForm.teamSize} onChange={(e) => updateSalesForm("teamSize", e.target.value)} placeholder="e.g., 10-50" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Phone</Label>
-                            <Input placeholder="+1 (555) 000-0000" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input type="tel" value={salesForm.phone} onChange={(e) => updateSalesForm("phone", e.target.value)} placeholder="+1 (555) 000-0000" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" required />
                           </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-sm font-medium text-gray-700">What are you looking to achieve?</Label>
-                          <Textarea placeholder="Share your goals, team size, and timeline" rows={5} className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg resize-none" />
+                          <Textarea value={salesForm.goals} onChange={(e) => updateSalesForm("goals", e.target.value)} placeholder="Share your goals, team size, and timeline" rows={5} className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg resize-none" required />
                         </div>
                         <div className="flex gap-4">
                           <Button asChild variant="outline" className="border-ocean-blue text-ocean-blue hover:bg-ocean-blue/5 rounded-lg px-6 py-3 h-12">
-                            <a href="/pricing">View Pricing</a>
+                            <a href="/pricing" target={embed ? "_top" : undefined} rel={embed ? "noopener noreferrer" : undefined}>View Pricing</a>
                           </Button>
-                          <Button className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-medium px-8 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 h-12">
+                          <Button type="submit" className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-medium px-8 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 h-12">
                             Request Demo
                           </Button>
                         </div>
@@ -338,36 +570,42 @@ export default function Contact() {
                     </TabsContent>
 
                     <TabsContent value="partnerships" className="space-y-6">
-                      <form onSubmit={handleSubmit} className="space-y-6">
+                      <form onSubmit={handlePartnershipSubmit} className="space-y-6">
                         <div className="grid md:grid-cols-2 gap-6">
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Contact Name</Label>
-                            <Input placeholder="Your name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={partnershipForm.name} onChange={(e) => updatePartnershipForm("name", e.target.value)} placeholder="Your name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" required />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Business Email</Label>
-                            <Input type="email" placeholder="you@company.com" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input type="email" value={partnershipForm.email} onChange={(e) => updatePartnershipForm("email", e.target.value)} placeholder="you@company.com" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" required />
                           </div>
                         </div>
-                        <div className="grid md:grid-cols-3 gap-4">
+                        <div className="grid md:grid-cols-2 gap-6">
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Company</Label>
-                            <Input placeholder="Company name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={partnershipForm.company} onChange={(e) => updatePartnershipForm("company", e.target.value)} placeholder="Company name" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Partnership Type</Label>
-                            <Input placeholder="Affiliate / Reseller / White Label" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={partnershipForm.partnershipType} onChange={(e) => updatePartnershipForm("partnershipType", e.target.value)} placeholder="Affiliate / Reseller / White Label" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
                           </div>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-6">
                           <div className="space-y-2">
                             <Label className="text-sm font-medium text-gray-700">Website</Label>
-                            <Input placeholder="https://" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                            <Input value={partnershipForm.website} onChange={(e) => updatePartnershipForm("website", e.target.value)} placeholder="https://" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-gray-700">Phone</Label>
+                            <Input type="tel" value={partnershipForm.phone} onChange={(e) => updatePartnershipForm("phone", e.target.value)} placeholder="+1 (555) 000-0000" className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg h-11" required />
                           </div>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-sm font-medium text-gray-700">Describe your partnership proposal</Label>
-                          <Textarea placeholder="Share your audience, goals, and how you'd like to partner" rows={5} className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg resize-none" />
+                          <Textarea value={partnershipForm.message} onChange={(e) => updatePartnershipForm("message", e.target.value)} placeholder="Share your audience, goals, and how you'd like to partner" rows={5} className="border-gray-200 focus:border-ocean-blue focus:ring-ocean-blue/20 rounded-lg resize-none" required />
                         </div>
-                        <Button className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-medium px-8 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 h-12">
+                        <Button type="submit" className="bg-gradient-to-r from-ocean-blue to-sea-green hover:from-ocean-blue/90 hover:to-sea-green/90 text-white font-medium px-8 py-3 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 h-12">
                           Submit Proposal
                         </Button>
                       </form>
@@ -380,6 +618,8 @@ export default function Contact() {
         </div>
       </section>
 
+      {!embed && (
+      <>
       {/* FAQs */}
       <section className="py-20 bg-gradient-to-br from-gray-50 via-white to-blue-50/30 relative overflow-hidden">
         {/* Background Elements */}
@@ -503,6 +743,8 @@ export default function Contact() {
         </div>
       </div>
       <Footer />
+      </>
+      )}
     </div>
   );
 }

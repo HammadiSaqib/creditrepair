@@ -25,6 +25,8 @@ async function startServer() {
       req.path === '/shop/embed/' ||
       req.path === '/pricing/embed' ||
       req.path === '/pricing/embed/' ||
+      req.path === '/contact/embed' ||
+      req.path === '/contact/embed/' ||
       req.path === '/register/embed' ||
       req.path === '/register/embed/' ||
       req.path === '/join-affiliate/embed' ||
