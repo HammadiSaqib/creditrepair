@@ -183,6 +183,126 @@ interface StripeTooltipState {
   y: number;
 }
 
+interface StripeTopCustomer {
+  customerKey: string;
+  email?: string | null;
+  customerName?: string | null;
+  totalSpend: number;
+  paymentCount: number;
+  currency: string;
+}
+
+interface StripeRevenueSummary {
+  grossVolume: number;
+  mrr: number;
+  netVolume: number;
+  failedPayments: number;
+  newCustomers: number;
+  activeSubscribers: number;
+  summarySeries: Array<{
+    date: string;
+    grossVolume: number;
+    netVolume: number;
+    newCustomers: number;
+    activeSubscribers: number;
+    mrr: number;
+    failedPayments: number;
+  }>;
+  failedPaymentList: Array<{
+    id: string;
+    date: string;
+    amount: number;
+    currency: string;
+    email?: string | null;
+    customerName?: string | null;
+    status: string;
+  }>;
+  topCustomers: StripeTopCustomer[];
+}
+
+const formatStripeSeriesLabel = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return format(parsed, "MMM d");
+};
+
+const StripeMetricGraphCard = ({
+  title,
+  value,
+  color,
+  data,
+  dataKey,
+  formatValue,
+}: {
+  title: string;
+  value: string;
+  color: string;
+  data: StripeRevenueSummary["summarySeries"];
+  dataKey: "grossVolume" | "mrr" | "netVolume" | "newCustomers" | "activeSubscribers";
+  formatValue?: (value: number) => string;
+}) => (
+  <Card className="overflow-hidden border-slate-200/70 bg-white/90 shadow-sm dark:border-slate-800 dark:bg-slate-950/50">
+    <CardHeader className="space-y-1 pb-2">
+      <CardDescription className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        {title}
+      </CardDescription>
+      <CardTitle className="text-3xl font-bold text-foreground">{value}</CardTitle>
+    </CardHeader>
+    <CardContent className="pt-2">
+      <div className="h-40 w-full">
+        <ChartContainer
+          config={{
+            metric: {
+              label: title,
+              color,
+            },
+          }}
+          className="h-full w-full"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id={`metric-fill-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity={0.32} />
+                  <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.4)" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatStripeSeriesLabel}
+                tickLine={false}
+                axisLine={false}
+                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                minTickGap={24}
+              />
+              <YAxis
+                tickFormatter={(raw) => formatValue ? formatValue(Number(raw) || 0) : String(raw)}
+                tickLine={false}
+                axisLine={false}
+                tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
+                width={56}
+              />
+              <Area
+                type="monotone"
+                dataKey={dataKey}
+                stroke={color}
+                fill={`url(#metric-fill-${dataKey})`}
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{ r: 4, strokeWidth: 2 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+      </div>
+    </CardContent>
+  </Card>
+);
+
 const formatStripeCurrency = (amount: number, currency = "USD") => {
   try {
     return new Intl.NumberFormat("en-US", {
@@ -359,6 +479,17 @@ export default function SuperAdminOverview() {
     clientsPerAdmin: 0,
   });
   const [stripeSeries, setStripeSeries] = useState<StripeSeriesPoint[]>([]);
+  const [stripeSummary, setStripeSummary] = useState<StripeRevenueSummary>({
+    grossVolume: 0,
+    mrr: 0,
+    netVolume: 0,
+    failedPayments: 0,
+    newCustomers: 0,
+    activeSubscribers: 0,
+    summarySeries: [],
+    failedPaymentList: [],
+    topCustomers: [],
+  });
   const [stripeLoading, setStripeLoading] = useState(false);
   const [activeStripeTooltip, setActiveStripeTooltip] = useState<StripeTooltipState | null>(null);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -476,6 +607,17 @@ export default function SuperAdminOverview() {
         };
       });
       setStripeSeries(series);
+      setStripeSummary({
+        grossVolume: Number(revenueData?.summary?.grossVolume) || 0,
+        mrr: Number(revenueData?.summary?.mrr) || 0,
+        netVolume: Number(revenueData?.summary?.netVolume) || 0,
+        failedPayments: Number(revenueData?.summary?.failedPayments) || 0,
+        newCustomers: Number(revenueData?.summary?.newCustomers) || 0,
+        activeSubscribers: Number(revenueData?.summary?.activeSubscribers) || 0,
+        summarySeries: Array.isArray(revenueData?.summary?.summarySeries) ? revenueData.summary.summarySeries : [],
+        failedPaymentList: Array.isArray(revenueData?.summary?.failedPaymentList) ? revenueData.summary.failedPaymentList : [],
+        topCustomers: Array.isArray(revenueData?.summary?.topCustomers) ? revenueData.summary.topCustomers : [],
+      });
       const totalRevenue = Math.round(Number(revenueData?.totalRevenue || 0) * 100) / 100;
       const revenueGrowth = Math.round(Number(revenueData?.revenueGrowth || 0) * 100) / 100;
       setStats((prev) => ({
@@ -1806,6 +1948,141 @@ export default function SuperAdminOverview() {
                   </Badge>
                 </div>
               </div>
+            </div>
+
+            <div className="mb-8 grid w-full grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <StripeMetricGraphCard
+                title="Gross volume"
+                value={formatStripeCurrency(stripeSummary.grossVolume)}
+                color="hsl(var(--ocean-blue))"
+                data={stripeSummary.summarySeries}
+                dataKey="grossVolume"
+                formatValue={(raw) => `$${Math.round(raw)}`}
+              />
+              <StripeMetricGraphCard
+                title="MRR"
+                value={formatStripeCurrency(stripeSummary.mrr)}
+                color="#8b5cf6"
+                data={stripeSummary.summarySeries}
+                dataKey="mrr"
+                formatValue={(raw) => `$${Math.round(raw)}`}
+              />
+              <StripeMetricGraphCard
+                title="Net volume"
+                value={formatStripeCurrency(stripeSummary.netVolume)}
+                color="hsl(var(--sea-green))"
+                data={stripeSummary.summarySeries}
+                dataKey="netVolume"
+                formatValue={(raw) => `$${Math.round(raw)}`}
+              />
+              <StripeMetricGraphCard
+                title="New customers"
+                value={stripeSummary.newCustomers.toLocaleString('en-US')}
+                color="hsl(var(--cyan-blue))"
+                data={stripeSummary.summarySeries}
+                dataKey="newCustomers"
+              />
+              <StripeMetricGraphCard
+                title="Active subscribers"
+                value={stripeSummary.activeSubscribers.toLocaleString('en-US')}
+                color="#f59e0b"
+                data={stripeSummary.summarySeries}
+                dataKey="activeSubscribers"
+              />
+            </div>
+
+            <div className="mb-8 grid w-full grid-cols-1 gap-4 xl:grid-cols-2">
+              <Card className="w-full border-red-200/60 bg-white/80 shadow-sm dark:border-red-900/30 dark:bg-slate-950/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold">Failed payments</CardTitle>
+                  <CardDescription>
+                    Latest failed Stripe attempts with customer name and email
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stripeSummary.failedPaymentList.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-red-200/80 bg-red-50/50 px-4 py-6 text-sm text-muted-foreground dark:border-red-900/30 dark:bg-red-950/10">
+                      No failed payments were found for this date range.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {stripeSummary.failedPaymentList.map((payment) => (
+                        <div
+                          key={payment.id}
+                          className="flex flex-col gap-2 rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50 px-4 py-4 shadow-sm dark:border-slate-800 dark:from-slate-950/70 dark:to-slate-900/60"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <div className="font-semibold text-foreground">
+                                {payment.customerName || payment.email || 'Stripe customer'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {payment.email || 'No email available'}
+                              </div>
+                            </div>
+                            <Badge variant="destructive" className="capitalize">
+                              {payment.status}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">{format(new Date(payment.date), 'MMM d, yyyy')}</span>
+                            <span className="font-semibold text-foreground">
+                              {formatStripeCurrency(payment.amount, payment.currency || 'USD')}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="w-full border-ocean-blue/10 bg-white/80 shadow-sm dark:bg-slate-950/40">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold">Top customers by spend</CardTitle>
+                  <CardDescription>Highest Stripe spenders for the selected date range</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {stripeSummary.topCustomers.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-ocean-blue/15 bg-slate-50/70 px-4 py-6 text-sm text-muted-foreground dark:bg-slate-900/30">
+                      No Stripe customers were found for this date range.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {stripeSummary.topCustomers.map((customer, index) => (
+                        <div
+                          key={customer.customerKey}
+                          className="flex flex-col gap-3 rounded-2xl border border-slate-200/70 bg-gradient-to-r from-white to-slate-50 px-4 py-4 shadow-sm dark:border-slate-800 dark:from-slate-950/70 dark:to-slate-900/60 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ocean-blue/10 text-sm font-bold text-ocean-blue">
+                              {index + 1}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-foreground">
+                                {customer.customerName || customer.email || 'Stripe customer'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {customer.email || customer.customerKey}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-6 md:justify-end">
+                            <div>
+                              <div className="text-xs uppercase tracking-wide text-muted-foreground">Spend</div>
+                              <div className="font-bold text-foreground">{formatStripeCurrency(customer.totalSpend, customer.currency || 'USD')}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs uppercase tracking-wide text-muted-foreground">Payments</div>
+                              <div className="font-bold text-foreground">{customer.paymentCount}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
             <div

@@ -3367,26 +3367,149 @@ router.get('/analytics/stripe-revenue', authenticateToken, requireSuperAdmin, as
     const fromUnix = Math.floor(fromDate.getTime() / 1000);
     const toUnix = Math.floor(toDate.getTime() / 1000);
 
+    const getBucketKey = (date: Date) => (
+      groupBy === 'month'
+        ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        : date.toISOString().slice(0, 10)
+    );
+
+    const bucketDates: Array<{ key: string; start: Date; end: Date }> = [];
+    const cursor = new Date(fromDate);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor <= toDate) {
+      const start = new Date(cursor);
+      const end = new Date(cursor);
+      if (groupBy === 'month') {
+        start.setDate(1);
+        start.setHours(0, 0, 0, 0);
+        end.setMonth(end.getMonth() + 1, 0);
+        end.setHours(23, 59, 59, 999);
+      } else {
+        end.setHours(23, 59, 59, 999);
+      }
+
+      bucketDates.push({ key: getBucketKey(start), start, end });
+
+      if (groupBy === 'month') {
+        cursor.setMonth(cursor.getMonth() + 1, 1);
+      } else {
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
+    const metricSeriesMap = new Map<string, {
+      date: string;
+      grossVolume: number;
+      netVolume: number;
+      newCustomers: number;
+      activeSubscribers: number;
+      mrr: number;
+      failedPayments: number;
+      refundedVolume: number;
+    }>();
+
+    const getMetricPoint = (key: string) => {
+      const existing = metricSeriesMap.get(key);
+      if (existing) {
+        return existing;
+      }
+
+      const next = {
+        date: key,
+        grossVolume: 0,
+        netVolume: 0,
+        newCustomers: 0,
+        activeSubscribers: 0,
+        mrr: 0,
+        failedPayments: 0,
+        refundedVolume: 0,
+      };
+      metricSeriesMap.set(key, next);
+      return next;
+    };
+
+    bucketDates.forEach(({ key }) => {
+      getMetricPoint(key);
+    });
+
     let startingAfter: string | undefined = undefined;
     let hasMore = true;
     let totalRevenue = 0;
+    let grossVolume = 0;
+    let failedPayments = 0;
     const seriesMap = new Map<string, number>();
+    const failedPaymentList: Array<{
+      id: string;
+      date: string;
+      amount: number;
+      currency: string;
+      email: string | null;
+      customerName: string | null;
+      status: string;
+    }> = [];
+    const customerSpendMap = new Map<string, {
+      customerKey: string;
+      email: string | null;
+      customerName: string | null;
+      totalSpend: number;
+      paymentCount: number;
+      currency: string;
+    }>();
 
     while (hasMore) {
       const list = await stripe.paymentIntents.list({
         limit: 100,
         created: { gte: fromUnix, lte: toUnix },
+        expand: ['data.latest_charge', 'data.customer'],
         ...(startingAfter ? { starting_after: startingAfter } : {})
       });
       for (const pi of list.data) {
+        const charge = pi.latest_charge && typeof pi.latest_charge !== 'string'
+          ? pi.latest_charge
+          : null;
+        const customer = pi.customer && typeof pi.customer !== 'string' && !('deleted' in pi.customer)
+          ? pi.customer
+          : null;
+        const email = pi.receipt_email || charge?.billing_details?.email || customer?.email || null;
+        const customerName = charge?.billing_details?.name || customer?.name || null;
+        const customerKey = String(customer?.id || email || pi.id);
+
         if (pi.status === 'succeeded') {
           const amount = typeof pi.amount === 'number' ? Number(pi.amount) / 100 : 0;
           totalRevenue += amount;
+          grossVolume += amount;
           const dt = new Date(pi.created * 1000);
-          const key = groupBy === 'month'
-            ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
-            : dt.toISOString().slice(0, 10);
+          const key = getBucketKey(dt);
           seriesMap.set(key, (seriesMap.get(key) || 0) + amount);
+          getMetricPoint(key).grossVolume += amount;
+
+          const existingCustomer = customerSpendMap.get(customerKey) || {
+            customerKey,
+            email,
+            customerName,
+            totalSpend: 0,
+            paymentCount: 0,
+            currency: String(pi.currency || 'usd').toUpperCase(),
+          };
+          existingCustomer.totalSpend += amount;
+          existingCustomer.paymentCount += 1;
+          existingCustomer.email = existingCustomer.email || email;
+          existingCustomer.customerName = existingCustomer.customerName || customerName;
+          customerSpendMap.set(customerKey, existingCustomer);
+        } else if (pi.last_payment_error || pi.status === 'canceled') {
+          failedPayments += 1;
+          const failedDate = new Date(pi.created * 1000);
+          const failedKey = getBucketKey(failedDate);
+          getMetricPoint(failedKey).failedPayments += 1;
+          failedPaymentList.push({
+            id: pi.id,
+            date: failedDate.toISOString(),
+            amount: typeof pi.amount === 'number' ? Number(pi.amount) / 100 : 0,
+            currency: String(pi.currency || 'usd').toUpperCase(),
+            email,
+            customerName,
+            status: String(pi.status || 'failed'),
+          });
         }
       }
       hasMore = list.has_more;
@@ -3429,11 +3552,213 @@ router.get('/analytics/stripe-revenue', authenticateToken, requireSuperAdmin, as
 
     const revenueGrowth = previousRevenue > 0 ? ((totalRevenue - previousRevenue) / previousRevenue) * 100 : 0;
 
+    let refundedVolume = 0;
+    let refundStartingAfter: string | undefined = undefined;
+    let refundsHasMore = true;
+
+    while (refundsHasMore) {
+      const refunds = await stripe.refunds.list({
+        limit: 100,
+        created: { gte: fromUnix, lte: toUnix },
+        ...(refundStartingAfter ? { starting_after: refundStartingAfter } : {}),
+      });
+
+      for (const refund of refunds.data) {
+        const amount = typeof refund.amount === 'number' ? Number(refund.amount) / 100 : 0;
+        refundedVolume += amount;
+        const refundDate = new Date(refund.created * 1000);
+        const refundKey = getBucketKey(refundDate);
+        getMetricPoint(refundKey).refundedVolume += amount;
+      }
+
+      refundsHasMore = refunds.has_more;
+      if (refundsHasMore && refunds.data.length > 0) {
+        refundStartingAfter = refunds.data[refunds.data.length - 1].id;
+      }
+    }
+
+    let newCustomers = 0;
+    let customerStartingAfter: string | undefined = undefined;
+    let customersHasMore = true;
+
+    while (customersHasMore) {
+      const customers = await stripe.customers.list({
+        limit: 100,
+        created: { gte: fromUnix, lte: toUnix },
+        ...(customerStartingAfter ? { starting_after: customerStartingAfter } : {}),
+      });
+
+      for (const customer of customers.data) {
+        if ((customer as any).deleted) {
+          continue;
+        }
+        newCustomers += 1;
+        const customerDate = new Date(customer.created * 1000);
+        const customerKey = getBucketKey(customerDate);
+        getMetricPoint(customerKey).newCustomers += 1;
+      }
+
+      customersHasMore = customers.has_more;
+      if (customersHasMore && customers.data.length > 0) {
+        customerStartingAfter = customers.data[customers.data.length - 1].id;
+      }
+    }
+
+    let activeSubscribers = 0;
+    let mrr = 0;
+    let subscriptionStartingAfter: string | undefined = undefined;
+    let subscriptionsHasMore = true;
+    const allSubscriptions: any[] = [];
+
+    while (subscriptionsHasMore) {
+      const subscriptions = await stripe.subscriptions.list({
+        limit: 100,
+        status: 'all',
+        expand: ['data.items.data.price'],
+        ...(subscriptionStartingAfter ? { starting_after: subscriptionStartingAfter } : {}),
+      });
+
+      allSubscriptions.push(...subscriptions.data);
+
+      for (const subscription of subscriptions.data) {
+        if (subscription.status !== 'active' && subscription.status !== 'trialing') {
+          continue;
+        }
+
+        activeSubscribers += 1;
+
+        for (const item of subscription.items.data) {
+          const quantity = Number(item.quantity || 1);
+          const unitAmount = typeof item.price?.unit_amount === 'number' ? Number(item.price.unit_amount) / 100 : 0;
+          const recurring = item.price?.recurring;
+
+          if (!recurring || !unitAmount) {
+            continue;
+          }
+
+          const intervalCount = Number(recurring.interval_count || 1);
+          let monthlyAmount = unitAmount * quantity;
+
+          if (recurring.interval === 'year') {
+            monthlyAmount = (unitAmount * quantity) / (12 * intervalCount);
+          } else if (recurring.interval === 'week') {
+            monthlyAmount = ((unitAmount * quantity) * 52) / (12 * intervalCount);
+          } else if (recurring.interval === 'day') {
+            monthlyAmount = ((unitAmount * quantity) * 365) / (12 * intervalCount);
+          } else {
+            monthlyAmount = (unitAmount * quantity) / intervalCount;
+          }
+
+          mrr += monthlyAmount;
+        }
+      }
+
+      subscriptionsHasMore = subscriptions.has_more;
+      if (subscriptionsHasMore && subscriptions.data.length > 0) {
+        subscriptionStartingAfter = subscriptions.data[subscriptions.data.length - 1].id;
+      }
+    }
+
+    for (const subscription of allSubscriptions) {
+      const subscriptionAny = subscription as any;
+      const createdAt = typeof subscriptionAny.created === 'number'
+        ? subscriptionAny.created * 1000
+        : null;
+      const endedAt = typeof subscriptionAny.ended_at === 'number'
+        ? subscriptionAny.ended_at * 1000
+        : typeof subscriptionAny.canceled_at === 'number'
+          ? subscriptionAny.canceled_at * 1000
+          : typeof subscriptionAny.current_period_end === 'number' && subscriptionAny.status === 'canceled'
+            ? subscriptionAny.current_period_end * 1000
+            : null;
+
+      let monthlyAmount = 0;
+      for (const item of subscription.items?.data || []) {
+        const quantity = Number(item.quantity || 1);
+        const unitAmount = typeof item.price?.unit_amount === 'number' ? Number(item.price.unit_amount) / 100 : 0;
+        const recurring = item.price?.recurring;
+
+        if (!recurring || !unitAmount) {
+          continue;
+        }
+
+        const intervalCount = Number(recurring.interval_count || 1);
+        if (recurring.interval === 'year') {
+          monthlyAmount += (unitAmount * quantity) / (12 * intervalCount);
+        } else if (recurring.interval === 'week') {
+          monthlyAmount += ((unitAmount * quantity) * 52) / (12 * intervalCount);
+        } else if (recurring.interval === 'day') {
+          monthlyAmount += ((unitAmount * quantity) * 365) / (12 * intervalCount);
+        } else {
+          monthlyAmount += (unitAmount * quantity) / intervalCount;
+        }
+      }
+
+      if (!createdAt || !monthlyAmount) {
+        continue;
+      }
+
+      for (const bucket of bucketDates) {
+        const bucketStart = bucket.start.getTime();
+        const bucketEnd = bucket.end.getTime();
+        const isActiveInBucket = createdAt <= bucketEnd && (!endedAt || endedAt >= bucketStart);
+
+        if (!isActiveInBucket) {
+          continue;
+        }
+
+        const metricPoint = getMetricPoint(bucket.key);
+        metricPoint.activeSubscribers += 1;
+        metricPoint.mrr += monthlyAmount;
+      }
+    }
+
+    const topCustomers = Array.from(customerSpendMap.values())
+      .sort((a, b) => b.totalSpend - a.totalSpend)
+      .slice(0, 5)
+      .map((customer) => ({
+        customerKey: customer.customerKey,
+        email: customer.email,
+        customerName: customer.customerName,
+        totalSpend: Math.round(customer.totalSpend * 100) / 100,
+        paymentCount: customer.paymentCount,
+        currency: customer.currency,
+      }));
+
+    const netVolume = grossVolume - refundedVolume;
+    const summarySeries = bucketDates
+      .map(({ key }) => {
+        const point = getMetricPoint(key);
+        return {
+          date: key,
+          grossVolume: Math.round(point.grossVolume * 100) / 100,
+          netVolume: Math.round((point.grossVolume - point.refundedVolume) * 100) / 100,
+          newCustomers: point.newCustomers,
+          activeSubscribers: point.activeSubscribers,
+          mrr: Math.round(point.mrr * 100) / 100,
+          failedPayments: point.failedPayments,
+        };
+      })
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    failedPaymentList.sort((a, b) => b.date.localeCompare(a.date));
+
     return res.json({
       success: true,
       data: {
         totalRevenue,
         revenueGrowth,
+        summary: {
+          grossVolume: Math.round(grossVolume * 100) / 100,
+          mrr: Math.round(mrr * 100) / 100,
+          netVolume: Math.round(netVolume * 100) / 100,
+          failedPayments,
+          newCustomers,
+          activeSubscribers,
+          summarySeries,
+          failedPaymentList: failedPaymentList.slice(0, 10),
+          topCustomers,
+        },
         series,
         group_by: groupBy,
         from: fromDate.toISOString(),
