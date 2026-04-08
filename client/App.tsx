@@ -36,6 +36,7 @@ import {
 } from "./lib/hostRouting";
 import Index from "./pages/Index";
 const ReferralLandingPage = React.lazy(() => import("../src/components/ReferralLandingPage"));
+const AffiliateReferralIframe = React.lazy(() => import("./pages/AffiliateReferralIframe"));
 
 const Dashboard = React.lazy(() => import("./pages/Dashboard"));
 const Clients = React.lazy(() => import("./pages/Clients"));
@@ -613,6 +614,7 @@ function getPortalAliasRoutes(alias: NonAdminPortalAlias): PortalAliasRoute[] {
         { path: "/", element: <Navigate to="/dashboard" replace /> },
         { path: "/login", element: <AffiliateLogin /> },
         { path: "/session-transfer", element: <AffiliateSessionTransfer /> },
+        { path: "/ref/:affiliateId", element: <AffiliateReferralIframe /> },
         {
           path: "/dashboard",
           element: (

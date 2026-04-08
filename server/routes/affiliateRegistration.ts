@@ -7,6 +7,78 @@ import { emailService } from '../services/emailService.js';
 
 const router = express.Router();
 
+const AFFILIATE_REFERRAL_COOKIE = 'scoremachine_affiliate_ref';
+
+function normalizeReferralId(value: unknown) {
+  const normalized = String(value || '').trim();
+  return normalized.length > 0 ? normalized : '';
+}
+
+function getCookieValue(cookieHeader: string | undefined, cookieName: string) {
+  if (!cookieHeader) {
+    return '';
+  }
+
+  const cookies = cookieHeader.split(';');
+  for (const cookie of cookies) {
+    const [rawName, ...rawValueParts] = cookie.trim().split('=');
+    if (rawName !== cookieName) {
+      continue;
+    }
+
+    const rawValue = rawValueParts.join('=');
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+
+  return '';
+}
+
+function getReferralIdFromReferrer(referrerHeader: string | undefined) {
+  if (!referrerHeader) {
+    return '';
+  }
+
+  try {
+    const referrerUrl = new URL(referrerHeader);
+    const queryReferralId = normalizeReferralId(referrerUrl.searchParams.get('ref'));
+    if (queryReferralId) {
+      return queryReferralId;
+    }
+
+    const pathMatch = referrerUrl.pathname.match(/\/ref\/([^/?#]+)/i);
+    if (!pathMatch) {
+      return '';
+    }
+
+    return normalizeReferralId(decodeURIComponent(pathMatch[1]));
+  } catch {
+    return '';
+  }
+}
+
+function getReferralCandidate(req: express.Request) {
+  const bodyReferralId = normalizeReferralId(req.body?.referrerAffiliateId);
+  if (bodyReferralId) {
+    return bodyReferralId;
+  }
+
+  const queryReferralId = normalizeReferralId(req.query?.ref);
+  if (queryReferralId) {
+    return queryReferralId;
+  }
+
+  const cookieReferralId = normalizeReferralId(getCookieValue(req.headers.cookie, AFFILIATE_REFERRAL_COOKIE));
+  if (cookieReferralId) {
+    return cookieReferralId;
+  }
+
+  return getReferralIdFromReferrer(req.get('referer') || req.get('referrer') || '');
+}
+
 // POST /api/affiliate/register - Public affiliate registration
 router.post('/register', async (req, res) => {
   try {
@@ -68,7 +140,7 @@ router.post('/register', async (req, res) => {
     // Resolve parent affiliate from referral param if provided
     let parentAffiliateId: number | null = null;
     try {
-      const refRaw = (req.query.ref || (req.body?.referrerAffiliateId as any) || '').toString().trim();
+      const refRaw = getReferralCandidate(req);
       if (refRaw) {
         const parsed = parseInt(refRaw, 10);
         if (!Number.isNaN(parsed)) {

@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Loader2, Users, DollarSign, TrendingUp, CheckCircle, ArrowRight, Sparkles, CreditCard, Shield, Award, Star, Building2, Handshake, Layers, Info, HelpCircle, BarChart3, Eye, EyeOff } from 'lucide-react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { clearStoredAffiliateReferralId, getStoredAffiliateReferralId, persistAffiliateReferralId } from '@/lib/affiliateReferral';
 import SiteHeader from '@/components/SiteHeader';
 import Footer from '@/components/Footer';
 
@@ -27,12 +28,25 @@ interface VerificationData {
 
 interface JoinAffiliateProps {
   embed?: boolean;
+  forcedReferralAffiliateId?: string;
 }
 
-const JoinAffiliate: React.FC<JoinAffiliateProps> = ({ embed = false }) => {
+const JoinAffiliate: React.FC<JoinAffiliateProps> = ({
+  embed = false,
+  forcedReferralAffiliateId,
+}) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const referralAffiliateId = new URLSearchParams(location.search).get('ref');
+  const referralAffiliateId = React.useMemo(() => {
+    const normalizedForcedReferralId = String(forcedReferralAffiliateId || '').trim();
+
+    if (normalizedForcedReferralId) {
+      return normalizedForcedReferralId;
+    }
+
+    const queryReferralId = new URLSearchParams(location.search).get('ref');
+    return String(queryReferralId || '').trim() || getStoredAffiliateReferralId();
+  }, [forcedReferralAffiliateId, location.search]);
   const [formData, setFormData] = useState<FormData>({
     email: '',
     firstName: '',
@@ -53,10 +67,22 @@ const JoinAffiliate: React.FC<JoinAffiliateProps> = ({ embed = false }) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const redirectToPath = (path: string) => {
+    if (typeof window === 'undefined') {
+      navigate(path);
+      return;
+    }
+
     if (!embed) {
       navigate(path);
       return;
     }
+
+    try {
+      if (window.top === window.self) {
+        navigate(path);
+        return;
+      }
+    } catch {}
 
     const targetUrl = `${window.location.origin}${path}`;
 
@@ -109,6 +135,17 @@ const JoinAffiliate: React.FC<JoinAffiliateProps> = ({ embed = false }) => {
       window.removeEventListener('resize', postEmbedHeight);
     };
   }, [embed, error, loading, success, showVerification, resendLoading]);
+
+  React.useEffect(() => {
+    const queryReferralId = new URLSearchParams(location.search).get('ref');
+    const referralIdToPersist = String(forcedReferralAffiliateId || queryReferralId || '').trim();
+
+    if (!referralIdToPersist) {
+      return;
+    }
+
+    persistAffiliateReferralId(referralIdToPersist);
+  }, [forcedReferralAffiliateId, location.search]);
 
 
 
@@ -217,6 +254,7 @@ const JoinAffiliate: React.FC<JoinAffiliateProps> = ({ embed = false }) => {
           });
           const loginData = await loginRes.json();
           if (loginRes.ok && loginData.token) {
+            clearStoredAffiliateReferralId();
             localStorage.setItem('auth_token', loginData.token);
             localStorage.setItem('userRole', 'affiliate');
             if (loginData.user?.id) localStorage.setItem('userId', String(loginData.user.id));
@@ -1055,7 +1093,7 @@ const JoinAffiliate: React.FC<JoinAffiliateProps> = ({ embed = false }) => {
                   Affiliate & Partner Registration
                 </CardTitle>
                 <CardDescription className="text-center text-lg text-gray-600 max-w-2xl mx-auto leading-relaxed">
-                  Join thousands earning with Score Machine by promoting a comprehensive credit analysis platform with verified results.
+                  Join thousands earning with Score Machine by promoting a comprehensive credit analysis platform with verified results 69.
                 </CardDescription>
               </CardHeader>
               
