@@ -41,6 +41,17 @@ interface AdminInputs {
   description?: string;
 }
 
+interface BankOption {
+  id: number;
+  name: string;
+  logo?: string;
+  state?: string | string[];
+  credit_bureaus?: string[];
+  primary_bureau?: string;
+  recommended?: boolean;
+  priority_rank?: number;
+}
+
 function formatCurrency(n: number): string {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(n || 0);
@@ -235,15 +246,62 @@ export default function FundingDIY() {
     emergencyNotes?: string;
     altContact?: string;
     limitOverride?: number;
+    slotMode?: "auto" | "manual" | "locked";
   };
   const [slotForms, setSlotForms] = useState<SlotForm[]>([{}]);
   const [bankSearchMap, setBankSearchMap] = useState<Record<number, string>>({});
   const [selectedSlots, setSelectedSlots] = useState<Array<{ bankId: number; cardId: number }>>([]);
 
-  const [banks, setBanks] = useState<Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; primary_bureau?: string; recommended?: boolean; priority_rank?: number }>>([]);
+  const isProtectedSlot = (slot?: SlotForm) => slot?.slotMode === "manual" || slot?.slotMode === "locked";
+
+  const mergeRecommendedSlots = (prev: SlotForm[], recommended: Array<Omit<SlotForm, "slotMode">>) => {
+    const autoSlots = recommended.map((slot) => ({ ...slot, slotMode: "auto" as const }));
+    const next: SlotForm[] = [];
+    let autoIndex = 0;
+
+    for (const slot of prev) {
+      if (isProtectedSlot(slot)) {
+        next.push(slot);
+        continue;
+      }
+
+      if (autoIndex < autoSlots.length) {
+        next.push(autoSlots[autoIndex]);
+        autoIndex += 1;
+      }
+    }
+
+    while (autoIndex < autoSlots.length) {
+      next.push(autoSlots[autoIndex]);
+      autoIndex += 1;
+    }
+
+    return next;
+  };
+
+  const getSlotModeMeta = (slot?: SlotForm) => {
+    if (slot?.slotMode === "locked") {
+      return {
+        label: "Locked approval",
+        className: "bg-slate-100 text-slate-700 border-slate-200",
+      };
+    }
+    if (slot?.slotMode === "manual") {
+      return {
+        label: "Manual selection",
+        className: "bg-emerald-100 text-emerald-700 border-emerald-200",
+      };
+    }
+    return {
+      label: "Recommended",
+      className: "bg-blue-100 text-blue-700 border-blue-200",
+    };
+  };
+
+  const [banks, setBanks] = useState<BankOption[]>([]);
 
   const banksFromCards = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; logo?: string }>();
+    const map = new Map<number, BankOption>();
     for (const c of cards) {
       if (c.bank_id && !map.has(c.bank_id)) {
         map.set(c.bank_id, { id: c.bank_id, name: c.bank_name || `Bank #${c.bank_id}`, logo: c.bank_logo });
@@ -580,7 +638,7 @@ export default function FundingDIY() {
     const fetchBanks = async () => {
       try {
         const token = localStorage.getItem("auth_token");
-        const all: Array<{ id: number; name: string; logo?: string; state?: string | string[]; credit_bureaus?: string[]; primary_bureau?: string }> = [];
+        const all: BankOption[] = [];
         let page = 1;
         const limit = 1000;
         while (true) {
@@ -681,7 +739,7 @@ export default function FundingDIY() {
       const existing = new Set(prev.map((p) => p.cardId).filter(Boolean) as number[]);
       const newSlots = lockedCards
         .filter((c) => !existing.has(c.id))
-        .map((c) => ({ bankId: c.bank_id, cardId: c.id, fundingType: c.funding_type }));
+        .map((c) => ({ bankId: c.bank_id, cardId: c.id, fundingType: c.funding_type, slotMode: "locked" as const }));
       if (newSlots.length === 0) return prev;
       const merged = [...newSlots, ...prev];
       return merged;
@@ -801,7 +859,7 @@ export default function FundingDIY() {
       }
     }
     const nextSlots = chosen.map((c) => ({ bankId: c.bank_id, cardId: c.id, fundingType: c.funding_type }));
-    setSlotForms(nextSlots);
+    setSlotForms((prev) => mergeRecommendedSlots(prev, nextSlots));
     setSelectedSlots([]); 
   }, [selectedFundingType, selectedBureau, filteredCards, resolvedType, isBoth, lockedMap, sortedBanks, bureauPullCounts]);
 
@@ -830,7 +888,6 @@ export default function FundingDIY() {
     if (!(resolvedType || isBoth)) return;
     if (hydratedLockedSlots) return;
     if (selectedFundingType !== 'all' || selectedBureau !== 'all') return;
-    if (slotForms.some((s) => s.bankId || s.cardId)) return;
     const sourceCards: FundingCard[] = (cards && cards.length > 0) ? cards : allCards;
     if (!sourceCards || sourceCards.length === 0) return;
     const priorityBankIds = sortedBanks.filter((b) => b.recommended).map((b) => b.id);
@@ -896,9 +953,14 @@ export default function FundingDIY() {
       return { bankId: chosen.bank_id, cardId: chosen.id, fundingType: chosen.funding_type };
     }).filter(Boolean) as Array<{ bankId: number; cardId: number; fundingType: string }>;
     if (newSlots.length > 0) {
-      setSlotForms(newSlots);
+      setSlotForms((prev) => {
+        const hasProtectedSlots = prev.some((slot) => isProtectedSlot(slot));
+        const hasSelectedSlots = prev.some((slot) => slot.bankId || slot.cardId);
+        if (hasProtectedSlots || hasSelectedSlots) return prev;
+        return newSlots.map((slot) => ({ ...slot, slotMode: "auto" as const }));
+      });
     }
-  }, [resolvedType, isBoth, hydratedLockedSlots, slotForms, cards, allCards, sortedBanks, allowedFundingTypeSet, location.state, selectedFundingType, selectedBureau]);
+  }, [resolvedType, isBoth, hydratedLockedSlots, cards, allCards, sortedBanks, allowedFundingTypeSet, location.state, selectedFundingType, selectedBureau]);
 
   const updateAdmin = (cardId: number, patch: Partial<AdminInputs>) => {
     setAdminData((prev) => ({ ...prev, [cardId]: { ...prev[cardId], ...patch } }));
@@ -1401,7 +1463,12 @@ export default function FundingDIY() {
                     <div key={idx} className="p-4 rounded-lg border bg-white">
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <Label>Bank</Label>
+                          <div className="space-y-1">
+                            <Label>Bank</Label>
+                            <Badge variant="outline" className={cn("text-[10px] uppercase tracking-wide", getSlotModeMeta(slot).className)}>
+                              {getSlotModeMeta(slot).label}
+                            </Badge>
+                          </div>
                           {slotForms.length > 1 && (
                             <Button variant="ghost" onClick={() => setSlotForms((prev) => prev.filter((_, i) => i !== idx))}>Remove</Button>
                           )}
@@ -1412,7 +1479,7 @@ export default function FundingDIY() {
                           const id = parseInt(v);
                           setSlotForms((prev) => {
                             const next = [...prev];
-                            next[idx] = { bankId: id, fundingType: next[idx]?.fundingType, cardId: undefined };
+                            next[idx] = { ...next[idx], bankId: id, fundingType: next[idx]?.fundingType, cardId: undefined, slotMode: "manual" };
                             return next;
                           });
                         }}
@@ -1470,7 +1537,7 @@ export default function FundingDIY() {
                             onValueChange={(v) => {
                               setSlotForms((prev) => {
                                 const next = [...prev];
-                                next[idx] = { ...next[idx], fundingType: v, cardId: undefined };
+                                next[idx] = { ...next[idx], fundingType: v, cardId: undefined, slotMode: "manual" };
                                 return next;
                               });
                             }}
@@ -1495,7 +1562,7 @@ export default function FundingDIY() {
                           const id = parseInt(v);
                           setSlotForms((prev) => {
                             const next = [...prev];
-                            next[idx] = { ...next[idx], cardId: id };
+                            next[idx] = { ...next[idx], cardId: id, slotMode: "manual" };
                             return next;
                           });
                         }}
@@ -1715,7 +1782,7 @@ export default function FundingDIY() {
                   ))}
                   {((selectedFundingType === 'all' && selectedBureau === 'all') || filteredCards.length > 0) && (
                     <div className="p-4 rounded-lg border-2 border-dashed bg-white flex items-center justify-center">
-                      <Button variant="outline" onClick={() => setSlotForms((prev) => [...prev, {}])}>+</Button>
+                      <Button variant="outline" onClick={() => setSlotForms((prev) => [...prev, { slotMode: "manual" }])}>+</Button>
                     </div>
                   )}
                 </div>
