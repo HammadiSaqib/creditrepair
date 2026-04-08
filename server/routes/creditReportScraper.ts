@@ -376,19 +376,56 @@ router.get('/client/:clientId', authenticateToken, async (req, res) => {
     const clientId = req.params.clientId;
     const userId = req.user.id;
     const userRole = req.user.role;
+    const numericClientId = Number(clientId);
     
     console.log('🔍 DEBUG: Fetching credit report for client', clientId, 'user', userId, 'role', userRole);
+
+    if (!Number.isFinite(numericClientId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid client ID'
+      });
+    }
     
-    // Check access permissions:
-    // - Admins and super_admins can view any client's reports
-    // - Regular users can only view their own reports
-    const isAdmin = userRole === 'admin' || userRole === 'super_admin';
-    const isOwnReport = parseInt(clientId) === userId;
-    
-    if (!isAdmin && !isOwnReport) {
+    // Match the client workspace ownership rules used elsewhere in the app.
+    const db = getDatabaseAdapter();
+    const normalizedRole = String(userRole || '').toLowerCase();
+    const isFundingManager = normalizedRole === 'funding_manager';
+    const isSuperAdmin = normalizedRole === 'super_admin';
+    let hasClientAccess = false;
+
+    if (isFundingManager || isSuperAdmin) {
+      hasClientAccess = true;
+    } else {
+      let baseUserId = Number(userId);
+
+      if (normalizedRole !== 'admin') {
+        const employeeLinks = await db.executeQuery(
+          'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+          [userId, 'active']
+        );
+        if (Array.isArray(employeeLinks) && (employeeLinks[0] as any)?.admin_id) {
+          baseUserId = Number((employeeLinks[0] as any).admin_id);
+        }
+      }
+
+      const accessibleClients = await db.executeQuery(
+        `SELECT id
+         FROM clients
+         WHERE id = ?
+           AND (user_id = ? OR user_id IN (
+             SELECT user_id FROM employees WHERE admin_id = ? AND status = ?
+           ))
+         LIMIT 1`,
+        [numericClientId, baseUserId, baseUserId, 'active']
+      );
+      hasClientAccess = Array.isArray(accessibleClients) && accessibleClients.length > 0;
+    }
+
+    if (!hasClientAccess) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied: You can only view your own credit reports'
+        message: 'Access denied - insufficient permissions'
       });
     }
     
@@ -417,7 +454,7 @@ router.get('/client/:clientId', authenticateToken, async (req, res) => {
       WHERE crh.client_id = ?
       ORDER BY crh.created_at DESC
       LIMIT 1`,
-      [clientId]
+      [numericClientId]
     );
     
     await connection.end();

@@ -15,6 +15,7 @@ import { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { authApi, affiliateApi } from "@/lib/api";
+import { clearPortalReturnContext } from "@/lib/authStorage";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
 
@@ -98,10 +99,25 @@ export default function AffiliateLayout({
 
   const handleLogout = async () => {
     try {
+      clearPortalReturnContext();
+      localStorage.removeItem("token");
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("userRole");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userName");
+
       await authApi.logout();
       navigate("/affiliate/login");
     } catch (error) {
       console.error("Logout error:", error);
+
+      clearPortalReturnContext();
+      localStorage.removeItem("token");
+      localStorage.removeItem("auth_token");
+      localStorage.removeItem("userRole");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("userName");
+      navigate("/affiliate/login");
     }
   };
 
@@ -332,7 +348,7 @@ export default function AffiliateLayout({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="cursor-pointer"
-                    onSelect={handleLogout}
+                    onClick={handleLogout}
                   >
                     Sign out
                   </DropdownMenuItem>

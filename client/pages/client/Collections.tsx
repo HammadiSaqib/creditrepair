@@ -2117,7 +2117,9 @@ const CREDIT_REPAIR_URL = (userProfile?.credit_repair_url?.trim())
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch credit report: ${response.statusText}`);
+          if (response.status !== 404) {
+            throw new Error(`Failed to fetch credit report: ${response.statusText}`);
+          }
         }
 
         const data = await response.json();

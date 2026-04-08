@@ -1717,7 +1717,9 @@ export default function ClientDashboard() {
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch credit report: ${response.statusText}`);
+          if (response.status !== 404) {
+            throw new Error(`Failed to fetch credit report: ${response.statusText}`);
+          }
         }
 
         const data = await response.json();

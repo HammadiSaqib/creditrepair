@@ -2234,31 +2234,80 @@ router.get('/client/:clientId', authenticateToken, async (req, res) => {
   try {
     const { clientId } = req.params;
     const user = req.user;
+    const numericClientId = Number(clientId);
 
-    console.log(`🔍 DEBUG: Fetching credit report for client ${clientId}, user ${user.id}`);
+    console.log(`🔍 CR-AUTH: Fetching credit report for client ${clientId}, user.id=${user.id}, user.role='${user.role}'`);
 
-    // Authorization logic:
-    // - Clients can only access their own reports
-    // - Admins can access any client's reports
-    // - Super admins can access any client's reports
-    if (user.role === 'client' && user.id !== parseInt(clientId)) {
-      return res.status(403).json({
+    if (!Number.isFinite(numericClientId)) {
+      return res.status(400).json({
         success: false,
-        message: 'Access denied'
-      });
-    }
-    
-    // Allow admin and super_admin roles to access any client's reports
-    const allowedRoles = ['admin', 'super_admin'];
-    if (!allowedRoles.includes(user.role) && user.role !== 'client') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied - insufficient permissions'
+        message: 'Invalid client ID'
       });
     }
 
-    // Use the database adapter instead of direct MySQL connection
+    // Use the database adapter instead of direct MySQL connection.
     const db = getDatabaseAdapter();
+
+    // Authorization logic aligned with clients routes:
+    // - funding_manager and super_admin can access any client's reports
+    // - admin can access clients in their workspace
+    // - non-admin roles (employee/user/client legacy) resolve employee -> admin mapping,
+    //   and fall back to their own user scope if no mapping exists
+    const role = String(user.role || '').toLowerCase();
+    const isFundingManager = role === 'funding_manager';
+    const isSuperAdmin = role === 'super_admin';
+    let hasClientAccess = false;
+
+    console.log(`🔍 CR-AUTH: normalizedRole='${role}', isFundingManager=${isFundingManager}, isSuperAdmin=${isSuperAdmin}`);
+
+    if (isFundingManager || isSuperAdmin) {
+      hasClientAccess = true;
+      console.log(`🔍 CR-AUTH: Granted (privileged role)`);
+    } else {
+      let baseUserId = Number(user.id);
+
+      if (role !== 'admin') {
+        console.log(`🔍 CR-AUTH: Non-admin role, resolving employee->admin mapping for user_id=${user.id}`);
+        const employeeLinks = await db.executeQuery(
+          'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+          [user.id, 'active']
+        );
+        console.log(`🔍 CR-AUTH: employeeLinks result:`, JSON.stringify(employeeLinks));
+
+        if (Array.isArray(employeeLinks) && employeeLinks[0]?.admin_id) {
+          baseUserId = Number(employeeLinks[0].admin_id);
+          console.log(`🔍 CR-AUTH: Resolved baseUserId=${baseUserId} from employee mapping`);
+        } else {
+          console.log(`🔍 CR-AUTH: No employee mapping found, using own user.id=${baseUserId} as baseUserId`);
+        }
+      } else {
+        console.log(`🔍 CR-AUTH: Admin role, using own user.id=${baseUserId} as baseUserId`);
+      }
+
+      console.log(`🔍 CR-AUTH: Checking client access: clientId=${numericClientId}, baseUserId=${baseUserId}`);
+      const accessibleClients = await db.executeQuery(
+        `SELECT id
+         FROM clients
+         WHERE id = ?
+           AND (user_id = ? OR user_id IN (
+             SELECT user_id FROM employees WHERE admin_id = ? AND status = ?
+           ))
+         LIMIT 1`,
+        [numericClientId, baseUserId, baseUserId, 'active']
+      );
+      console.log(`🔍 CR-AUTH: accessibleClients result:`, JSON.stringify(accessibleClients));
+
+      hasClientAccess = Array.isArray(accessibleClients) && accessibleClients.length > 0;
+    }
+
+    console.log(`🔍 CR-AUTH: Final hasClientAccess=${hasClientAccess} for user.id=${user.id}, role='${role}', clientId=${numericClientId}`);
+
+    if (!hasClientAccess) {
+      return res.status(403).json({
+        success: false,
+        message: `Access denied - insufficient permissions (debug: role=${role}, userId=${user.id}, clientId=${numericClientId})`
+      });
+    }
     
     const rows = await db.executeQuery(
       `SELECT 
@@ -2276,11 +2325,10 @@ router.get('/client/:clientId', authenticateToken, async (req, res) => {
       WHERE crh.client_id = ?
       ORDER BY crh.created_at DESC
       LIMIT 1`,
-      [clientId]
+      [numericClientId]
     );
     
     console.log('🔍 DEBUG: Database adapter query returned', rows?.length || 0, 'rows');
-    
     if (!rows || rows.length === 0) {
       return res.status(404).json({
         success: false,

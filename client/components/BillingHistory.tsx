@@ -405,7 +405,7 @@ const BillingHistory: React.FC = () => {
                 variant="outline"
                 size="sm"
                 className="text-blue-600 border-blue-300"
-                onClick={() => window.open('/support#contact', '_self')}
+                onClick={() => window.open('https://thescoremachine.com/contact')}
               >
                 Contact Support
               </Button>
