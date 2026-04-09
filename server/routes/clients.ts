@@ -96,6 +96,92 @@ function normalizeSlug(value: string) {
     .replace(/^-|-$/g, '');
 }
 
+function normalizeComparableValue(value?: string | null) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function shouldReuseExistingScrapedClient(clientData: z.infer<typeof clientSchema>) {
+  const normalizedEmail = normalizeComparableValue(clientData.platform_email || clientData.email);
+  const normalizedPlatform = normalizeComparableValue(clientData.platform);
+  const normalizedNotes = normalizeComparableValue(clientData.notes);
+  return Boolean(
+    normalizedEmail &&
+    normalizedPlatform &&
+    normalizedNotes.includes('credit report scraping')
+  );
+}
+
+async function findExistingClientForAdminByPlatformEmail(adminId: number, options: { email?: string | null; platform?: string | null; }) {
+  const normalizedEmail = normalizeComparableValue(options.email);
+  const normalizedPlatform = normalizeComparableValue(options.platform);
+
+  if (!adminId || !normalizedEmail || !normalizedPlatform) {
+    return null;
+  }
+
+  return getQuery(
+    `SELECT *
+       FROM clients
+      WHERE user_id = ?
+        AND LOWER(TRIM(COALESCE(platform, ''))) = ?
+        AND LOWER(TRIM(COALESCE(NULLIF(platform_email, ''), email, ''))) = ?
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1`,
+    [adminId, normalizedPlatform, normalizedEmail]
+  );
+}
+
+function buildReusedClientUpdates(existingClient: any, clientData: z.infer<typeof clientSchema>, actorUserId: number) {
+  const updates: Record<string, any> = {
+    updated_by: actorUserId,
+  };
+
+  const normalizedDateOfBirth = normalizeDateInput(clientData.date_of_birth);
+  const mergedNotes = [existingClient?.notes, clientData.notes]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(' | ');
+
+  const overwriteIfProvided: Array<[string, any]> = [
+    ['first_name', clientData.first_name],
+    ['last_name', clientData.last_name],
+    ['email', clientData.email],
+    ['phone', clientData.phone],
+    ['address', clientData.address],
+    ['city', clientData.city],
+    ['state', clientData.state],
+    ['zip_code', clientData.zip_code],
+    ['ssn_last_four', clientData.ssn_last_four],
+    ['date_of_birth', normalizedDateOfBirth],
+    ['employment_status', clientData.employment_status],
+    ['annual_income', clientData.annual_income],
+    ['credit_score', clientData.credit_score],
+    ['experian_score', clientData.experian_score],
+    ['equifax_score', clientData.equifax_score],
+    ['transunion_score', clientData.transunion_score],
+    ['previous_credit_score', clientData.previous_credit_score],
+    ['platform', clientData.platform],
+    ['platform_email', clientData.platform_email || clientData.email],
+    ['platform_password', clientData.platform_password],
+    ['fundable_status', clientData.fundable_status],
+    ['fundable_in_tu', clientData.fundable_in_tu],
+    ['fundable_in_ex', clientData.fundable_in_ex],
+    ['fundable_in_eq', clientData.fundable_in_eq],
+  ];
+
+  for (const [field, value] of overwriteIfProvided) {
+    if (value !== undefined && value !== null && value !== '') {
+      updates[field] = value;
+    }
+  }
+
+  if (mergedNotes && mergedNotes !== String(existingClient?.notes || '').trim()) {
+    updates.notes = mergedNotes;
+  }
+
+  return updates;
+}
+
 async function getExistingUserColumns(): Promise<Set<string>> {
   const adapter = getDatabaseAdapter();
 
@@ -471,6 +557,60 @@ export async function createClient(req: AuthRequest, res: Response) {
         baseUserId = employeeLink.admin_id;
       }
     }
+
+    if (shouldReuseExistingScrapedClient(clientData)) {
+      const existingClient = await findExistingClientForAdminByPlatformEmail(baseUserId, {
+        email: clientData.platform_email || clientData.email,
+        platform: clientData.platform,
+      });
+
+      if (existingClient?.id) {
+        const updates = buildReusedClientUpdates(existingClient, clientData, req.user!.id);
+        const fields = Object.keys(updates);
+
+        if (fields.length > 0) {
+          const setClause = fields.map((field) => `${field} = ?`).join(', ');
+          const values = fields.map((field) => updates[field]);
+          await runQuery(
+            `UPDATE clients SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
+            [...values, existingClient.id, baseUserId]
+          );
+        }
+
+        const refreshedClient = await getQuery(
+          'SELECT * FROM clients WHERE id = ?',
+          [existingClient.id]
+        );
+
+        await runQuery(`
+          INSERT INTO activities (user_id, client_id, type, description)
+          VALUES (?, ?, ?, ?)
+        `, [
+          baseUserId,
+          existingClient.id,
+          'score_updated',
+          `Existing client reused for fresh credit report: ${clientData.first_name} ${clientData.last_name}${clientData.platform ? ` (via ${clientData.platform})` : ''}`
+        ]);
+
+        await runQuery(`
+          INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description, ip_address, user_agent, session_id)
+          VALUES (?, 'update', 'client', ?, ?, ?, ?, ?)
+        `, [
+          baseUserId,
+          existingClient.id,
+          `Existing client reused for fresh credit report: ${clientData.first_name} ${clientData.last_name}${clientData.platform ? ` (via ${clientData.platform})` : ''}`,
+          req.ip,
+          req.get('User-Agent') || null,
+          null
+        ]);
+
+        return res.status(200).json({
+          ...refreshedClient,
+          reusedExisting: true,
+          created: false,
+        });
+      }
+    }
     
     // Use transaction to prevent race conditions in quota validation
     const result = await executeTransaction(async (connection) => {
@@ -570,7 +710,11 @@ export async function createClient(req: AuthRequest, res: Response) {
       null
     ]);
     
-    res.status(201).json(newClient);
+    res.status(201).json({
+      ...newClient,
+      reusedExisting: false,
+      created: true,
+    });
   } catch (error) {
     // Handle quota exceeded errors from transaction
     if (error instanceof Error && error.message.startsWith('{')) {

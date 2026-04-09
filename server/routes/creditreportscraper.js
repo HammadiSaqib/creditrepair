@@ -26,6 +26,58 @@ const updateJob = (jobId, changes) => {
   return updated;
 };
 
+const normalizeLookupValue = (value) => String(value || '').trim().toLowerCase();
+
+const resolveBaseUserId = async (req) => {
+  const user = req.user;
+  if (!user || !user.id) return null;
+  if (user.role === 'funding_manager' || user.role === 'admin' || user.role === 'super_admin') {
+    return Number(user.id);
+  }
+
+  try {
+    const db = getDatabaseAdapter();
+    const rows = await db.executeQuery(
+      'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+      [user.id, 'active']
+    );
+    if (Array.isArray(rows) && rows.length > 0 && rows[0]?.admin_id) {
+      return Number(rows[0].admin_id);
+    }
+  } catch (error) {
+    console.error('Failed resolving base user for scrape match:', error);
+  }
+
+  return Number(user.id);
+};
+
+const findExistingClientIdForScrape = async (req, platform, username) => {
+  const normalizedPlatform = normalizeLookupValue(platform);
+  const normalizedUsername = normalizeLookupValue(username);
+  if (!normalizedPlatform || !normalizedUsername) return null;
+
+  const baseUserId = await resolveBaseUserId(req);
+  if (!baseUserId) return null;
+
+  const db = getDatabaseAdapter();
+  const rows = await db.executeQuery(
+    `SELECT id
+       FROM clients
+      WHERE user_id = ?
+        AND LOWER(TRIM(COALESCE(platform, ''))) = ?
+        AND LOWER(TRIM(COALESCE(NULLIF(platform_email, ''), email, ''))) = ?
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1`,
+    [baseUserId, normalizedPlatform, normalizedUsername]
+  );
+
+  if (Array.isArray(rows) && rows.length > 0 && rows[0]?.id) {
+    return Number(rows[0].id);
+  }
+
+  return null;
+};
+
 // Validation schema for scraper requests
 const scraperRequestSchema = z.object({
   platform: z.string().min(1).refine(val => {
@@ -78,7 +130,20 @@ router.post('/scrape', authenticateToken, async (req, res) => {
     }
     
     const { platform, credentials, options } = validationResult.data;
-    const clientId = req.query.clientId || req.body.clientId || 'unknown';
+    const requestedClientId = req.query.clientId || req.body.clientId || 'unknown';
+    let clientId = requestedClientId;
+
+    if (!clientId || String(clientId) === 'unknown') {
+      try {
+        const matchedClientId = await findExistingClientIdForScrape(req, platform, credentials.username);
+        if (matchedClientId) {
+          clientId = String(matchedClientId);
+          console.log(`Matched existing client ${clientId} for ${platform} / ${credentials.username}`);
+        }
+      } catch (matchError) {
+        console.error('Failed to match existing client for scrape:', matchError);
+      }
+    }
     
     // Set default options
     const scraperOptions = {

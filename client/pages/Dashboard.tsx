@@ -1053,10 +1053,13 @@ export default function Dashboard() {
       console.log("Creating client with extracted data:", clientData);
       const response = await clientsApi.createClient(clientData);
       console.log("Create client response:", response);
+      const responseData = response?.data ?? response;
 
-      if (response.error) {
-        throw new Error(response.error);
+      if (responseData?.error) {
+        throw new Error(responseData.error);
       }
+
+      const reusedExisting = responseData?.reusedExisting === true || responseData?.created === false;
 
       // Reset form and close modal
       setNewClient({
@@ -1073,11 +1076,13 @@ export default function Dashboard() {
 
       toast({
         title: "Success!",
-        description: `Client ${firstName} ${lastName} has been added successfully with information from their credit report.`,
+        description: reusedExisting
+          ? `Client ${firstName} ${lastName} already existed. A fresh credit report was added to the existing profile.`
+          : `Client ${firstName} ${lastName} has been added successfully with information from their credit report.`,
       });
 
       // Redirect post-add: paid admins → credit report; unpaid → client profile
-      const clientId = response.data?.id || response.id;
+      const clientId = responseData?.id;
       const clientName = `${firstName} ${lastName}`;
       if (clientId) {
         if (subscriptionStatus.hasActiveSubscription) {

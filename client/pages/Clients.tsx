@@ -712,9 +712,12 @@ const getScoreChange = (current: number, previous: number) => {
       };
 
       const createResponse = await clientsApi.createClient(clientData);
-      if (createResponse.error) {
-        throw new Error(createResponse.error);
+      const createResponseData = createResponse?.data ?? createResponse;
+      if (createResponseData?.error) {
+        throw new Error(createResponseData.error);
       }
+
+      const reusedExisting = createResponseData?.reusedExisting === true || createResponseData?.created === false;
 
       // Reset inline form
       setAddPlatform("");
@@ -728,10 +731,12 @@ const getScoreChange = (current: number, previous: number) => {
 
       toast({
         title: "Success!",
-        description: `Client ${firstName} ${lastName} has been added successfully.`,
+        description: reusedExisting
+          ? `Client ${firstName} ${lastName} already existed. A fresh credit report was added to the existing profile.`
+          : `Client ${firstName} ${lastName} has been added successfully.`,
       });
 
-      const clientId = createResponse.data?.id || createResponse.id;
+      const clientId = createResponseData?.id;
       const clientName = `${firstName} ${lastName}`;
       if (clientId) {
         if (subscriptionStatus.hasActiveSubscription) {

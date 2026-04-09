@@ -472,10 +472,13 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
       console.log("Creating client with extracted data:", clientData);
       const response = await clientsApi.createClient(clientData);
       console.log("Create client response:", response);
+      const responseData = response?.data ?? response;
 
-      if (response.error) {
-        throw new Error(response.error);
+      if (responseData?.error) {
+        throw new Error(responseData.error);
       }
+
+      const reusedExisting = responseData?.reusedExisting === true || responseData?.created === false;
 
       // Reset form and close modal
       setNewClient({
@@ -494,12 +497,16 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
       toast({
         title: "Success!",
         description: hadReportInfo
-          ? `Client ${firstName} ${lastName} has been added with credit report details.`
-          : `Client ${firstName} ${lastName} has been added without report; you can retry scraping from the client profile.`,
+          ? reusedExisting
+            ? `Client ${firstName} ${lastName} already existed. A fresh credit report was added to the existing profile.`
+            : `Client ${firstName} ${lastName} has been added with credit report details.`
+          : reusedExisting
+            ? `Client ${firstName} ${lastName} already existed. You can retry scraping from the client profile.`
+            : `Client ${firstName} ${lastName} has been added without report; you can retry scraping from the client profile.`,
       });
 
       // Redirect to the client's credit report page
-      const clientId = response.data?.id || response.id;
+      const clientId = responseData?.id;
       const clientName = `${firstName} ${lastName}`;
       if (clientId) {
         navigate(`/credit-report?clientId=${clientId}&clientName=${encodeURIComponent(clientName)}`);
@@ -586,8 +593,9 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
       };
 
       const response = await clientsApi.createClient(data);
-      if (response.error) {
-        throw new Error(response.error);
+      const responseData = response?.data ?? response;
+      if (responseData?.error) {
+        throw new Error(responseData.error);
       }
 
       setManualClient({
@@ -649,6 +657,9 @@ export default function AddClientDialog({ isOpen, onClose, onSuccess, mode = "sc
       state: "",
       zip_code: "",
       notes: "",
+      platform: "",
+      platform_email: "",
+      platform_password: "",
     });
     setManualAuthorization(false);
     onClose();

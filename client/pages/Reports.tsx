@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -51,6 +52,7 @@ import {
   Users,
   Filter,
   Eye,
+  EyeOff,
   BarChart3,
   Target,
   Award,
@@ -1127,6 +1129,8 @@ export default function Reports() {
   const [addEmail, setAddEmail] = useState<string>("");
   const [addPassword, setAddPassword] = useState<string>("");
   const [addSsnLast4, setAddSsnLast4] = useState<string>("");
+  const [addAuthorization, setAddAuthorization] = useState(false);
+  const [showInlinePassword, setShowInlinePassword] = useState(false);
   const [isAddingClient, setIsAddingClient] = useState<boolean>(false);
   
   // Fetch clients and platforms on component mount
@@ -1184,6 +1188,14 @@ export default function Reports() {
         toast({
           title: "Missing Information",
           description: "Platform, email and password are required.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!addAuthorization) {
+        toast({
+          title: "Authorization Required",
+          description: "Please confirm authorization to use the credit report for educational analysis.",
           variant: "destructive",
         });
         return;
@@ -1303,15 +1315,19 @@ export default function Reports() {
       };
 
       const createResponse = await clientsApi.createClient(clientData);
-      if (createResponse.error) {
-        throw new Error(createResponse.error);
+      const createResponseData = createResponse?.data ?? createResponse;
+      if (createResponseData?.error) {
+        throw new Error(createResponseData.error);
       }
+
+      const reusedExisting = createResponseData?.reusedExisting === true || createResponseData?.created === false;
 
       // Reset inline form
       setAddPlatform("");
       setAddEmail("");
       setAddPassword("");
       setAddSsnLast4("");
+      setAddAuthorization(false);
 
       // Optionally refresh clients and reports
       try {
@@ -1321,10 +1337,12 @@ export default function Reports() {
 
       toast({
         title: "Success!",
-        description: `Client ${firstName} ${lastName} has been added successfully.`,
+        description: reusedExisting
+          ? `Client ${firstName} ${lastName} already existed. A fresh credit report was added to the existing profile.`
+          : `Client ${firstName} ${lastName} has been added successfully.`,
       });
 
-      const clientId = createResponse.data?.id || createResponse.id;
+      const clientId = createResponseData?.id;
       const clientName = `${firstName} ${lastName}`;
       if (clientId) {
         if (subscriptionStatus.hasActiveSubscription) {
@@ -1811,13 +1829,29 @@ export default function Reports() {
                 value={addEmail}
                 onChange={(e) => setAddEmail(e.target.value)}
               />
-              <Input
-                className="w-full sm:w-44"
-                type="password"
-                placeholder="Platform Password"
-                value={addPassword}
-                onChange={(e) => setAddPassword(e.target.value)}
-              />
+              <div className="relative w-full sm:w-44">
+                <Input
+                  className="w-full pr-10"
+                  type={showInlinePassword ? "text" : "password"}
+                  placeholder="Platform Password"
+                  value={addPassword}
+                  onChange={(e) => setAddPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowInlinePassword(!showInlinePassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showInlinePassword ? "Hide password" : "Show password"}
+                  aria-pressed={showInlinePassword}
+                  title={showInlinePassword ? "Hide password" : "Show password"}
+                >
+                  {showInlinePassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
               {(addPlatform === "identityiq" || addPlatform === "myscoreiq") && (
                 <Input
                   className="w-full sm:w-28"
@@ -1830,6 +1864,16 @@ export default function Reports() {
                   onChange={(e) => setAddSsnLast4(e.target.value.replace(/[^0-9]/g, ''))}
                 />
               )}
+              <div className="flex items-start space-x-2 w-full sm:w-auto">
+                <Checkbox
+                  id="reports-inline-authorization"
+                  checked={addAuthorization}
+                  onCheckedChange={(checked) => setAddAuthorization(checked === true)}
+                />
+                <Label htmlFor="reports-inline-authorization" className="text-sm text-slate-600">
+                  I confirm this is my client credit report and I am authorized to use for educational analysis.
+                </Label>
+              </div>
               <Button type="submit" disabled={isAddingClient} className="w-full sm:w-auto">
                 {isAddingClient ? (
                   <>
