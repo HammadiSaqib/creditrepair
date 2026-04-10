@@ -1093,7 +1093,7 @@ const JoinAffiliate: React.FC<JoinAffiliateProps> = ({
                   Affiliate & Partner Registration
                 </CardTitle>
                 <CardDescription className="text-center text-lg text-gray-600 max-w-2xl mx-auto leading-relaxed">
-                  Join thousands earning with Score Machine by promoting a comprehensive credit analysis platform with verified results 69222.
+                  Join thousands earning with Score Machine by promoting a comprehensive credit analysis platform with verified results.
                 </CardDescription>
               </CardHeader>
               
