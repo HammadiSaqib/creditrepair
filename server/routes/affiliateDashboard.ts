@@ -2427,9 +2427,16 @@ router.get('/referrals/child', authenticateToken, requireAffiliateRole, async (r
     const safePage = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
     const safeOffset = (safePage - 1) * safeLimit;
 
-    const summaryQuery = `
+    const childCountQuery = `
       SELECT 
-        COUNT(*) as total_referrals,
+        COUNT(*) as total_referrals
+      FROM affiliates child
+      WHERE child.parent_affiliate_id = ?
+        AND child.status = 'active'
+    `;
+
+    const commissionSummaryQuery = `
+      SELECT 
         COALESCE(SUM(ac.commission_amount), 0) +
         COALESCE(SUM(CASE 
           WHEN ac.id IS NULL AND child.parent_commission_rate > 0 AND ar.commission_rate > 0
@@ -2440,9 +2447,10 @@ router.get('/referrals/child', authenticateToken, requireAffiliateRole, async (r
       JOIN affiliates child ON child.id = ar.affiliate_id
       LEFT JOIN affiliate_commissions ac ON ac.referral_id = ar.id AND ac.affiliate_id = ?
       WHERE child.parent_affiliate_id = ?
+        AND child.status = 'active'
     `;
 
-    const query = `
+    const referralRowsQuery = `
       SELECT 
         ar.id as referral_id,
         ar.referred_user_id,
@@ -2470,24 +2478,43 @@ router.get('/referrals/child', authenticateToken, requireAffiliateRole, async (r
         ac.payment_date as commission_payment_date
       FROM affiliate_referrals ar
       JOIN affiliates child ON child.id = ar.affiliate_id
-      JOIN users u ON u.id = ar.referred_user_id
+      LEFT JOIN users u ON u.id = ar.referred_user_id
       LEFT JOIN affiliate_commissions ac ON ac.referral_id = ar.id AND ac.affiliate_id = ?
       WHERE child.parent_affiliate_id = ?
-      ORDER BY COALESCE(ac.order_date, ar.referral_date) DESC
-      LIMIT ${safeLimit} OFFSET ${safeOffset}
+        AND child.status = 'active'
     `;
 
-    const [summaryRows, rows] = await Promise.all([
-      executeQuery(summaryQuery, [affiliateId, affiliateId]),
-      executeQuery(query, [affiliateId, affiliateId])
+    const directChildrenQuery = `
+      SELECT 
+        child.id as child_affiliate_id,
+        child.first_name as child_first_name,
+        child.last_name as child_last_name,
+        child.email as child_email,
+        child.parent_commission_rate as child_parent_commission_rate,
+        child.created_at as child_created_at
+      FROM affiliates child
+      WHERE child.parent_affiliate_id = ?
+        AND child.status = 'active'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM affiliate_referrals ar
+          WHERE ar.affiliate_id = child.id
+        )
+    `;
+
+    const [countRows, commissionSummaryRows, referralRows, directChildRows] = await Promise.all([
+      executeQuery(childCountQuery, [affiliateId]),
+      executeQuery(commissionSummaryQuery, [affiliateId, affiliateId]),
+      executeQuery(referralRowsQuery, [affiliateId, affiliateId]),
+      executeQuery(directChildrenQuery, [affiliateId])
     ]);
 
     const summary = {
-      totalReferrals: summaryRows[0]?.total_referrals || 0,
-      totalCommission: parseFloat(summaryRows[0]?.total_commission) || 0
+      totalReferrals: countRows[0]?.total_referrals || 0,
+      totalCommission: parseFloat(commissionSummaryRows[0]?.total_commission) || 0
     };
 
-      const transformed = rows.map((row: any) => {
+    const transformedReferralRows = referralRows.map((row: any) => {
       const childCommissionRate = parseFloat(row.referral_commission_rate) || 0;
       const childCommissionAmount = parseFloat(row.referral_commission_amount) || 0;
       const childOrderValue = childCommissionRate > 0 ? (childCommissionAmount * 100) / childCommissionRate : 0;
@@ -2504,24 +2531,51 @@ router.get('/referrals/child', authenticateToken, requireAffiliateRole, async (r
           : (row.commission_status || row.referral_status);
 
       return {
-        id: row.commission_id || row.referral_id,
+        id: row.commission_id || row.referral_id || `child-affiliate-${row.child_affiliate_id}`,
         childAffiliateId: row.child_affiliate_id,
         childAffiliateName: `${row.child_first_name || ''} ${row.child_last_name || ''}`.trim() || row.child_email || 'Unknown',
-        customerName: `${row.customer_first_name || ''} ${row.customer_last_name || ''}`.trim() || 'Unknown',
-        customerEmail: row.customer_email || '',
-        product: row.product || 'Referral',
+        customerName: `${row.customer_first_name || ''} ${row.customer_last_name || ''}`.trim() || 'Direct sub-affiliate signup',
+        customerEmail: row.customer_email || row.child_email || '',
+        product: row.product || 'Sub-affiliate registration',
         orderValue: parentOrderValue,
         commissionRate: parentCommissionRate,
         commissionAmount: parentCommissionAmount,
         childCommissionRate,
         childCommissionAmount,
         childOrderValue,
-        status,
+        status: status || 'pending',
         orderDate: row.order_date || row.referral_date,
         paymentDate: row.commission_payment_date || row.payment_date,
         level: 2
       };
     });
+
+    const transformedDirectChildren = directChildRows.map((row: any) => ({
+      id: `child-affiliate-${row.child_affiliate_id}`,
+      childAffiliateId: row.child_affiliate_id,
+      childAffiliateName: `${row.child_first_name || ''} ${row.child_last_name || ''}`.trim() || row.child_email || 'Unknown',
+      customerName: 'Direct sub-affiliate signup',
+      customerEmail: row.child_email || '',
+      product: 'Sub-affiliate registration',
+      orderValue: 0,
+      commissionRate: parseFloat(row.child_parent_commission_rate) || 0,
+      commissionAmount: 0,
+      childCommissionRate: 0,
+      childCommissionAmount: 0,
+      childOrderValue: 0,
+      status: 'pending',
+      orderDate: row.child_created_at,
+      paymentDate: null,
+      level: 2
+    }));
+
+    const transformed = [...transformedReferralRows, ...transformedDirectChildren]
+      .sort((left: any, right: any) => {
+        const leftTimestamp = new Date(left.orderDate || 0).getTime() || 0;
+        const rightTimestamp = new Date(right.orderDate || 0).getTime() || 0;
+        return rightTimestamp - leftTimestamp;
+      })
+      .slice(safeOffset, safeOffset + safeLimit);
 
     res.json({
       success: true,

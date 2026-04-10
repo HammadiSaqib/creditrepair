@@ -1,20 +1,23 @@
-import React, { useEffect, useMemo } from 'react';
-import { Helmet } from 'react-helmet-async';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { persistAffiliateReferralId } from '@/lib/affiliateReferral';
+import JoinAffiliate from './JoinAffiliate';
 
-const DEFAULT_AFFILIATE_IFRAME_URL = 'https://thescoremachine.com/affiliate/embed';
 const DEFAULT_REGISTER_TITLE = 'Start Your Success Journey';
+const PRODUCTION_AFFILIATE_EMBED_ROOT = 'https://thescoremachine.com/affiliate/embed';
+const AFFILIATE_SLICE_HEIGHT_MESSAGE = 'scoremachine:affiliate-slice-height';
+const DEFAULT_TOP_HEIGHT = 520;
+const DEFAULT_BOTTOM_HEIGHT = 900;
 
-function normalizeAffiliateIframeUrl(rawUrl?: string) {
+function getDefaultAffiliateEmbedRoot() {
+  return PRODUCTION_AFFILIATE_EMBED_ROOT;
+}
+
+function normalizeAffiliateEmbedRoot(rawUrl?: string) {
   const trimmed = String(rawUrl || '').trim();
 
   if (!trimmed) {
-    return DEFAULT_AFFILIATE_IFRAME_URL;
-  }
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
+    return getDefaultAffiliateEmbedRoot();
   }
 
   if (trimmed.startsWith('/')) {
@@ -25,46 +28,70 @@ function normalizeAffiliateIframeUrl(rawUrl?: string) {
     return new URL(trimmed, window.location.origin).toString();
   }
 
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
   return `https://${trimmed}`;
 }
 
-function buildIframeSrc(baseUrl: string, affiliateId?: string, search?: string) {
-  const normalizedAffiliateId = String(affiliateId || '').trim();
-  const normalizedSearch = String(search || '');
-
+function buildAffiliateSliceUrl(embedRoot: string, slice: 'top' | 'bottom', registerTitle?: string) {
   if (typeof window === 'undefined') {
-    return baseUrl;
+    return embedRoot;
   }
 
-  const iframeUrl = new URL(baseUrl, window.location.origin);
-  const normalizedPath = iframeUrl.pathname.replace(/\/+$/, '');
-  if (normalizedPath.endsWith('/affiliate') && !normalizedPath.endsWith('/affiliate/embed')) {
-    iframeUrl.pathname = `${normalizedPath}/embed`;
-  }
-  const currentParams = new URLSearchParams(normalizedSearch);
+  const embedUrl = new URL(embedRoot, window.location.origin);
+  const normalizedPath = embedUrl.pathname.replace(/\/+$/, '');
 
-  if (normalizedAffiliateId) {
-    iframeUrl.searchParams.set('ref', normalizedAffiliateId);
-  }
-
-  currentParams.forEach((value, key) => {
-    if (!iframeUrl.searchParams.has(key)) {
-      iframeUrl.searchParams.set(key, value);
-    }
-  });
-
-  if (!iframeUrl.searchParams.has('register_title')) {
-    iframeUrl.searchParams.set('register_title', DEFAULT_REGISTER_TITLE);
+  if (normalizedPath.endsWith('/affiliate')) {
+    embedUrl.pathname = `${normalizedPath}/embed/${slice}`;
+  } else if (normalizedPath.endsWith('/affiliate/embed')) {
+    embedUrl.pathname = `${normalizedPath}/${slice}`;
+  } else {
+    embedUrl.pathname = `${normalizedPath}/affiliate/embed/${slice}`;
   }
 
-  iframeUrl.searchParams.set('embedded', '1');
+  if (slice === 'top') {
+    embedUrl.searchParams.set('register_title', String(registerTitle || DEFAULT_REGISTER_TITLE));
+  }
 
-  return iframeUrl.toString();
+  return embedUrl.toString();
 }
 
 const AffiliateReferralIframe: React.FC = () => {
   const { affiliateId } = useParams<{ affiliateId?: string }>();
   const location = useLocation();
+  const [topHeight, setTopHeight] = useState(DEFAULT_TOP_HEIGHT);
+  const [bottomHeight, setBottomHeight] = useState(DEFAULT_BOTTOM_HEIGHT);
+
+  const registerTitle = useMemo(() => {
+    const queryTitle = new URLSearchParams(location.search).get('register_title');
+    return String(queryTitle || DEFAULT_REGISTER_TITLE).trim() || DEFAULT_REGISTER_TITLE;
+  }, [location.search]);
+
+  const embedRoot = useMemo(() => {
+    const configuredEmbedRoot = (import.meta as ImportMeta & {
+      env?: Record<string, string | undefined>;
+    }).env?.VITE_AFFILIATE_IFRAME_URL;
+
+    return normalizeAffiliateEmbedRoot(configuredEmbedRoot);
+  }, []);
+
+  const trustedSliceOrigin = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return '';
+    }
+
+    return new URL(embedRoot, window.location.origin).origin;
+  }, [embedRoot]);
+
+  const topSliceSrc = useMemo(() => {
+    return buildAffiliateSliceUrl(embedRoot, 'top', registerTitle);
+  }, [embedRoot, registerTitle]);
+
+  const bottomSliceSrc = useMemo(() => {
+    return buildAffiliateSliceUrl(embedRoot, 'bottom');
+  }, [embedRoot]);
 
   useEffect(() => {
     if (!affiliateId) {
@@ -74,37 +101,63 @@ const AffiliateReferralIframe: React.FC = () => {
     persistAffiliateReferralId(affiliateId);
   }, [affiliateId]);
 
-  const iframeSrc = useMemo(() => {
-    const configuredUrl = (import.meta as ImportMeta & {
-      env?: Record<string, string | undefined>;
-    }).env?.VITE_AFFILIATE_IFRAME_URL;
+  useEffect(() => {
+    if (typeof window === 'undefined' || !trustedSliceOrigin) {
+      return;
+    }
 
-    return buildIframeSrc(
-      normalizeAffiliateIframeUrl(configuredUrl),
-      affiliateId,
-      location.search,
-    );
-  }, [affiliateId, location.search]);
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== trustedSliceOrigin) {
+        return;
+      }
+
+      if (event.data?.type !== AFFILIATE_SLICE_HEIGHT_MESSAGE) {
+        return;
+      }
+
+      const nextHeight = Number(event.data?.height);
+      if (!Number.isFinite(nextHeight) || nextHeight <= 0) {
+        return;
+      }
+
+      if (event.data?.slice === 'top') {
+        setTopHeight(Math.max(Math.ceil(nextHeight), 1));
+        return;
+      }
+
+      if (event.data?.slice === 'bottom') {
+        setBottomHeight(Math.max(Math.ceil(nextHeight), 1));
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [trustedSliceOrigin]);
 
   return (
-    <div className="min-h-screen bg-slate-950">
-      <Helmet>
-        <title>Affiliate Invite | Score Machine</title>
-        <meta
-          name="description"
-          content="Affiliate invite link powered by Score Machine."
-        />
-        <meta name="robots" content="noindex,nofollow" />
-      </Helmet>
-
+    <div className="min-h-screen bg-white">
       <iframe
-        key={iframeSrc}
-        src={iframeSrc}
-        title="Score Machine Affiliate Invite"
-        className="block h-screen w-full border-0"
+        id="affiliate-top"
+        src={topSliceSrc}
+        title="Affiliate Top"
+        className="block w-full border-0"
+        style={{ height: `${topHeight}px` }}
         loading="eager"
         referrerPolicy="strict-origin-when-cross-origin"
-        allow="clipboard-read; clipboard-write"
+      />
+
+      <JoinAffiliate embed forcedReferralAffiliateId={affiliateId} />
+
+      <iframe
+        id="affiliate-bottom"
+        src={bottomSliceSrc}
+        title="Affiliate Bottom"
+        className="block w-full border-0"
+        style={{ height: `${bottomHeight}px` }}
+        loading="eager"
+        referrerPolicy="strict-origin-when-cross-origin"
       />
     </div>
   );

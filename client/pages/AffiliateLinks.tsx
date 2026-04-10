@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Link2, Copy, Edit, Trash2, Eye, BarChart3, ExternalLink, Search, Filter, Calendar, TrendingUp, MousePointer, Users, Share2, Facebook, Twitter, Linkedin, MessageCircle, Check, X, AlertCircle, DollarSign } from "lucide-react";
 import { affiliateApi, authApi } from "@/lib/api";
-import { buildReferralLandingUrl, getHostAlias } from "@/lib/hostRouting";
+import { buildReferralLandingUrl } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -168,20 +168,11 @@ export default function AffiliateLinks() {
         ? String(affiliateInfo.id ?? affiliateInfo.affiliate_id)
         : "";
 
-    if (typeof window === "undefined") {
-      return refValue
-        ? `http://localhost:3001/affiliate?ref=${encodeURIComponent(refValue)}`
-        : "http://localhost:3001/affiliate";
+    if (refValue) {
+      return buildReferralLandingUrl(refValue);
     }
 
-    const currentAlias = getHostAlias(window.location.hostname);
-    const hostname = currentAlias && window.location.hostname.startsWith(`${currentAlias}.`)
-      ? window.location.hostname.slice(currentAlias.length + 1)
-      : window.location.hostname;
-    const portSegment = window.location.port ? `:${window.location.port}` : "";
-    const search = refValue ? `?ref=${encodeURIComponent(refValue)}` : "";
-
-    return `${window.location.protocol}//${hostname}${portSegment}/affiliate${search}`;
+    return buildReferralLandingUrl(`affiliate${Date.now()}`);
   };
 
   const copyPersonalizedLink = async () => {
