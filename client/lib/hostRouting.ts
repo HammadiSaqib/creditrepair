@@ -210,6 +210,13 @@ export function buildReferralLandingUrl(
   return buildPublicAliasUrl(REFERRAL_LANDING_ALIAS, `/${referralId}`, options);
 }
 
+export function buildAffiliateInviteReferralUrl(
+  referralId: string,
+  options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,
+) {
+  return buildAliasUrl("affiliate", `/ref/${referralId}`, options);
+}
+
 export function buildReferralPricingUrl(
   affiliateId?: string | number | null,
   options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,

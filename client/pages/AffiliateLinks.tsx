@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Link2, Copy, Edit, Trash2, Eye, BarChart3, ExternalLink, Search, Filter, Calendar, TrendingUp, MousePointer, Users, Share2, Facebook, Twitter, Linkedin, MessageCircle, Check, X, AlertCircle, DollarSign } from "lucide-react";
 import { affiliateApi, authApi } from "@/lib/api";
-import { buildReferralLandingUrl } from "@/lib/hostRouting";
+import { buildAffiliateInviteReferralUrl, buildReferralLandingUrl } from "@/lib/hostRouting";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -169,10 +169,10 @@ export default function AffiliateLinks() {
         : "";
 
     if (refValue) {
-      return buildReferralLandingUrl(refValue);
+      return buildAffiliateInviteReferralUrl(refValue);
     }
 
-    return buildReferralLandingUrl(`affiliate${Date.now()}`);
+    return buildAffiliateInviteReferralUrl(`affiliate${Date.now()}`);
   };
 
   const copyPersonalizedLink = async () => {
