@@ -14,7 +14,7 @@ export type PublicHostAlias = (typeof PUBLIC_HOST_ALIASES)[number];
 
 type NonAdminPortalAlias = Exclude<PortalAlias, "admin">;
 type KnownSubdomainAlias = PortalAlias | PublicHostAlias;
-const REFERRAL_LANDING_ALIAS: PortalAlias = "affiliate";
+const REFERRAL_LANDING_ALIAS: PublicHostAlias = "ref";
 const REFERRAL_FALLBACK_ALIAS: PortalAlias = "admin";
 
 interface RedirectInput {
@@ -207,7 +207,7 @@ export function buildReferralLandingUrl(
   referralId: string,
   options?: Pick<RedirectInput, "protocol" | "port" | "hostname">,
 ) {
-  return buildAliasUrl(REFERRAL_LANDING_ALIAS, `/ref/${referralId}`, options);
+  return buildPublicAliasUrl(REFERRAL_LANDING_ALIAS, `/${referralId}`, options);
 }
 
 export function buildReferralPricingUrl(
@@ -376,13 +376,9 @@ export function getCanonicalPortalRedirect(input: RedirectInput): PortalRedirect
       };
     }
 
-    if (currentAlias === REFERRAL_LANDING_ALIAS) {
-      return null;
-    }
-
     return {
       type: "host",
-      targetUrl: buildAliasUrl(REFERRAL_LANDING_ALIAS, `/ref${referralPath}`, input),
+      targetUrl: buildPublicAliasUrl(REFERRAL_LANDING_ALIAS, referralPath, input),
     };
   }
 
