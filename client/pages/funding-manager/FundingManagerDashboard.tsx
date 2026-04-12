@@ -107,7 +107,13 @@ export default function FundingManagerDashboard() {
         console.log('API Response:', data);
         
         // Handle different response structures
-        const statsData = data.data || data;
+        const rawStatsData = data.data || data;
+        const statsData = rawStatsData && typeof rawStatsData === 'object'
+          ? {
+              ...rawStatsData,
+              averageTicketSize: rawStatsData.averageTicketSize ?? rawStatsData.avgTicketSize ?? 0,
+            }
+          : rawStatsData;
         console.log('Stats Data:', statsData);
         
         if (statsData && typeof statsData === 'object') {

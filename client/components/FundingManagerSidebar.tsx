@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { isPortalSidebarActive } from "@/lib/hostRouting";
+import { useAuthContext } from "@/contexts/AuthContext";
 import {
   DollarSign,
   LayoutDashboard,
@@ -26,7 +27,7 @@ import {
   HandCoins,
   Building2,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface FundingManagerSidebarProps {
   className?: string;
@@ -35,8 +36,8 @@ interface FundingManagerSidebarProps {
 export default function FundingManagerSidebar({ className = "" }: FundingManagerSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { userProfile } = useAuthContext();
   const [collapsed, setCollapsed] = useState(false);
-  const [userProfile, setUserProfile] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   const navigation = [
@@ -76,19 +77,6 @@ export default function FundingManagerSidebar({ className = "" }: FundingManager
       icon: Settings,
     },
   ];
-
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      try {
-        const response = await authApi.getProfile();
-        setUserProfile(response.data);
-      } catch (error) {
-        console.error("Error fetching user profile:", error);
-      }
-    };
-
-    fetchUserProfile();
-  }, []);
 
   const isActive = (path: string) => {
     return isPortalSidebarActive(location.pathname, path, 'funding-manager');

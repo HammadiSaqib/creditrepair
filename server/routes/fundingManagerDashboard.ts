@@ -206,6 +206,13 @@ export async function getFundingManagerDashboardStats(req: AuthRequest, res: Res
           ticketData?.last_month_avg || 0
         )
       },
+      averageTicketSize: {
+        value: ticketData?.avg_ticket_size || 0,
+        change: calculatePercentageChange(
+          ticketData?.current_month_avg || 0,
+          ticketData?.last_month_avg || 0
+        )
+      },
       successRate: {
         value: successData?.total_requests > 0 
           ? Math.round((successData.approved_requests / successData.total_requests) * 100 * 10) / 10

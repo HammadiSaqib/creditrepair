@@ -27,9 +27,9 @@ import {
   BarChart3,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { authApi } from "@/lib/api";
+import { useAuthContext } from "@/contexts/AuthContext";
 
 interface FundingManagerLayoutProps {
   children: ReactNode;
@@ -43,21 +43,8 @@ export default function FundingManagerLayout({
   description = "Manage funding operations and client portfolios"
 }: FundingManagerLayoutProps) {
   const location = useLocation();
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const { userProfile } = useAuthContext();
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
-
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      try {
-        const response = await authApi.getProfile();
-        setUserProfile(response.data);
-      } catch (error) {
-        console.error("Error fetching user profile:", error);
-      }
-    };
-
-    fetchUserProfile();
-  }, []);
 
   const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
     setTheme(newTheme);
