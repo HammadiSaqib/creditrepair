@@ -2321,6 +2321,7 @@ router.get('/client/:clientId', authenticateToken, async (req, res) => {
     const role = String(user.role || '').toLowerCase();
     const isFundingManager = role === 'funding_manager';
     const isSuperAdmin = role === 'super_admin';
+    const isClient = role === 'client';
     let hasClientAccess = false;
 
     console.log(`🔍 CR-AUTH: normalizedRole='${role}', isFundingManager=${isFundingManager}, isSuperAdmin=${isSuperAdmin}`);
@@ -2328,6 +2329,9 @@ router.get('/client/:clientId', authenticateToken, async (req, res) => {
     if (isFundingManager || isSuperAdmin) {
       hasClientAccess = true;
       console.log(`🔍 CR-AUTH: Granted (privileged role)`);
+    } else if (isClient) {
+      hasClientAccess = Number(user.id) === numericClientId;
+      console.log(`🔍 CR-AUTH: Client self-access=${hasClientAccess} for tokenClientId=${user.id}`);
     } else {
       let baseUserId = Number(user.id);
 

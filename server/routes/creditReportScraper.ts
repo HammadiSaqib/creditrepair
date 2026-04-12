@@ -392,10 +392,13 @@ router.get('/client/:clientId', authenticateToken, async (req, res) => {
     const normalizedRole = String(userRole || '').toLowerCase();
     const isFundingManager = normalizedRole === 'funding_manager';
     const isSuperAdmin = normalizedRole === 'super_admin';
+    const isClient = normalizedRole === 'client';
     let hasClientAccess = false;
 
     if (isFundingManager || isSuperAdmin) {
       hasClientAccess = true;
+    } else if (isClient) {
+      hasClientAccess = Number(userId) === numericClientId;
     } else {
       let baseUserId = Number(userId);
 

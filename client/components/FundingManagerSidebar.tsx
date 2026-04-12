@@ -218,7 +218,7 @@ export default function FundingManagerSidebar({ className = "" }: FundingManager
                 onClick={() => navigate("/funding-manager/clients")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-emerald-500/20 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                className="w-full justify-start border-emerald-500/20 text-emerald-600 dark:hover:bg-emerald-900/20"
               >
                 <Target className="h-4 w-4 mr-2" />
                 Fund Client
@@ -227,7 +227,7 @@ export default function FundingManagerSidebar({ className = "" }: FundingManager
                 onClick={() => navigate("/funding-manager/analytics")}
                 variant="outline"
                 size="sm"
-                className="w-full justify-start border-teal-500/20 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20"
+                className="w-full justify-start border-teal-500/20 text-teal-600 dark:hover:bg-teal-900/20"
               >
                 <PieChart className="h-4 w-4 mr-2" />
                 View Analytics
@@ -262,7 +262,7 @@ export default function FundingManagerSidebar({ className = "" }: FundingManager
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-full justify-start hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+                  className="w-full justify-start dark:hover:bg-emerald-900/20"
                 >
                   <Settings className="h-4 w-4 mr-2" />
                   Settings
@@ -276,7 +276,7 @@ export default function FundingManagerSidebar({ className = "" }: FundingManager
             size="sm"
             className={`${
               collapsed ? "w-full" : ""
-            } hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600`}
+            } dark:hover:bg-red-900/20 text-red-600`}
           >
             <LogOut className="h-4 w-4" />
             {!collapsed && <span className="ml-2">Logout</span>}

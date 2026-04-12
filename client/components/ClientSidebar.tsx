@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { isPortalSidebarActive } from "@/lib/hostRouting";
+import { useAuthContext } from "@/contexts/AuthContext";
 import {
   LayoutDashboard,
   User,
@@ -39,8 +40,8 @@ interface ClientSidebarProps {
 export default function ClientSidebar({ className = "", mobileOpen = false, onCloseMobile }: ClientSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { userProfile } = useAuthContext();
   const [collapsed, setCollapsed] = useState(false);
-  const [userProfile, setUserProfile] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSmallScreen, setIsSmallScreen] = useState(false);
   const navigationSections = [
@@ -64,19 +65,6 @@ export default function ClientSidebar({ className = "", mobileOpen = false, onCl
       ],
     },
   ];
-
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      try {
-        const response = await authApi.getProfile();
-        setUserProfile(response.data);
-      } catch (error) {
-        console.error("Error fetching user profile:", error);
-      }
-    };
-
-  fetchUserProfile();
-  }, []);
 
   // Detect small screens and update state
   useEffect(() => {

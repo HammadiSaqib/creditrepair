@@ -510,6 +510,21 @@ export async function getClients(req: AuthRequest, res: Response) {
 export async function getClient(req: AuthRequest, res: Response) {
   try {
     const { id } = req.params;
+    const requestedClientId = Number(id);
+
+    if (req.user!.role === 'client') {
+      if (!Number.isFinite(requestedClientId) || requestedClientId !== Number(req.user!.id)) {
+        return res.status(403).json({ error: 'Not authorized' });
+      }
+
+      const client = await getQuery('SELECT * FROM clients WHERE id = ?', [requestedClientId]);
+
+      if (!client) {
+        return res.status(404).json({ error: 'Client not found' });
+      }
+
+      return res.json(client);
+    }
     
     // Resolve admin context for employees to allow viewing their admin's client
     let baseUserId: number = req.user!.id;

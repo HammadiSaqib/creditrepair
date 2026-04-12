@@ -11,9 +11,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Bell, Search, Settings, Menu, Moon, Sun, Monitor } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { authApi } from "@/lib/api";
+import { useAuthContext } from "@/contexts/AuthContext";
 
 interface ClientLayoutProps {
   children: ReactNode;
@@ -26,22 +27,9 @@ export default function ClientLayout({
   title = "Client Dashboard",
   description = "Manage your funding journey and track progress"
 }: ClientLayoutProps) {
-  const [userProfile, setUserProfile] = useState<any>(null);
+  const { userProfile } = useAuthContext();
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      try {
-        const response = await authApi.getProfile();
-        setUserProfile(response.data);
-      } catch (error) {
-        console.error("Error fetching user profile:", error);
-      }
-    };
-
-    fetchUserProfile();
-  }, []);
 
   const handleThemeChange = (newTheme: 'light' | 'dark' | 'system') => {
     setTheme(newTheme);
