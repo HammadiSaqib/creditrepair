@@ -175,6 +175,538 @@ const formatFundingTier = (amount?: number | null) => {
   return 'Upper-tier File (101K+)';
 };
 
+type PlannerBureauCode = 'TU' | 'EX' | 'EQ';
+
+type Tradeline = {
+  creditorName: string;
+  normalizedCreditorName?: string;
+  bureau?: PlannerBureauCode | null;
+  maskedAccountNumber?: string;
+  openDate: string;
+  accountType: string;
+  ownershipType: string;
+  status: string;
+};
+
+type UniqueTradeline = {
+  key: string;
+  creditorName: string;
+  normalizedCreditorName: string;
+  maskedAccountNumber?: string;
+  openDate: string;
+  ageMonths: number;
+  accountType: string;
+  ownershipType: string;
+  status: string;
+  bureaus: PlannerBureauCode[];
+};
+
+type GrowthScenario = {
+  targetAverageMonths: number;
+  tradelineAgeMonths: number;
+  tradelinesNeeded: number;
+};
+
+const AGE_GROWTH_TARGET_OPTIONS_YEARS = [7, 8, 9, 10, 11, 12] as const;
+
+const creditorAliasMap: Record<string, string> = {
+  MACYSCBNA: 'MACYS CITIBANK',
+  MACYSCITIBANKNA: 'MACYS CITIBANK',
+  MACYSCITIBANK: 'MACYS CITIBANK',
+  CBNA: 'CITIBANK',
+  CITIBANKNA: 'CITIBANK',
+  CITICARDSCBNA: 'CITICARDS CITIBANK',
+  AMEX: 'AMEX',
+  AMERICANEXPRESS: 'AMEX',
+  JPMCB: 'CHASE',
+  JPMORGANCHASE: 'CHASE',
+  CHASEBANKUSA: 'CHASE',
+  NAVYFEDERALCREDITUNION: 'NAVY FEDERAL CREDIT UNION',
+  NAVYFCU: 'NAVY FEDERAL CREDIT UNION',
+  SYNCHRONYBANK: 'SYNCHRONY',
+  SYNCB: 'SYNCHRONY',
+  CREDITONEBANK: 'CREDIT ONE',
+  CREDITONEBANKNA: 'CREDIT ONE',
+  CAPONE: 'CAPITAL ONE',
+  CAPITALONEBANK: 'CAPITAL ONE',
+  CAPITALONEBANKUSA: 'CAPITAL ONE',
+  DEPTOFED: 'DEPARTMENT OF EDUCATION',
+  DEPARTMENTOFEDUCATION: 'DEPARTMENT OF EDUCATION',
+  USDEPARTMENTOFEDUCATION: 'DEPARTMENT OF EDUCATION',
+  USDEPTEDUCATION: 'DEPARTMENT OF EDUCATION',
+  DEPTEDNELNET: 'DEPARTMENT OF EDUCATION',
+  DEPARTMENTOFEDUCATIONNE: 'DEPARTMENT OF EDUCATION',
+  DEPARTMENTOFEDUCATIONNELNET: 'DEPARTMENT OF EDUCATION',
+  NELNET: 'DEPARTMENT OF EDUCATION',
+  SYNCBAMAZON: 'AMAZON SYNCHRONY',
+  SYNCBAMAZONPLCC: 'AMAZON SYNCHRONY',
+  AMAZONSYNCB: 'AMAZON SYNCHRONY',
+  AMAZONSYNCHRONY: 'AMAZON SYNCHRONY',
+  AMERICANEXPRESSBANKFSB: 'AMEX',
+  AMERICANEXPRESSNATIONALBANK: 'AMEX',
+};
+
+const creditorAliasPatterns: Array<{ pattern: RegExp; canonical: string }> = [
+  {
+    pattern: /(AMERICAN\s*EXPRESS|AMERICANEXPRESS|\bAMEX\b)/,
+    canonical: 'AMEX',
+  },
+  {
+    pattern: /(SYNCB|SYNCHRONY).*(AMAZON|AMZN|PLCC)|(AMAZON|AMZN).*(SYNCB|SYNCHRONY)/,
+    canonical: 'AMAZON SYNCHRONY',
+  },
+  {
+    pattern: /(DEPT\s*OF\s*ED|DEPT\s*OF\s*EDUCATION|DEPARTMENT\s*OF\s*EDUCATION|DEPTED|NELNET|FEDLOAN)/,
+    canonical: 'DEPARTMENT OF EDUCATION',
+  },
+  {
+    pattern: /(JPMCB|JPMORGAN\s*CHASE|CHASE\s*BANK\s*USA)/,
+    canonical: 'CHASE',
+  },
+];
+
+const creditorTokenMap: Record<string, string> = {
+  CBNA: 'CITIBANK',
+  AMEX: 'AMERICAN EXPRESS',
+  JPMCB: 'CHASE',
+  JPM: 'CHASE',
+  SYNCB: 'SYNCHRONY',
+  CAPONE: 'CAPITAL ONE',
+};
+
+const creditorNoiseTokens = new Set([
+  'ACCOUNT',
+  'ACCOUNTS',
+  'AND',
+  'BANK',
+  'BANKCARD',
+  'CARD',
+  'CARDS',
+  'CO',
+  'COMPANY',
+  'CORP',
+  'CORPORATION',
+  'ED',
+  'N',
+  'NA',
+  'NE',
+  'OF',
+  'PLCC',
+  'SERVICES',
+  'SERVICE',
+  'SVCS',
+  'THE',
+  'USA',
+]);
+
+const normalizeCreditorName = (name: string): string => {
+  const raw = String(name || '').toUpperCase().trim();
+  if (!raw) return 'UNKNOWN CREDITOR';
+
+  const condensed = raw.replace(/[^A-Z0-9]/g, '');
+  if (creditorAliasMap[condensed]) {
+    return creditorAliasMap[condensed];
+  }
+
+   for (const { pattern, canonical } of creditorAliasPatterns) {
+    if (pattern.test(raw) || pattern.test(condensed)) {
+      return canonical;
+    }
+  }
+
+  const normalized = raw
+    .replace(/&/g, ' AND ')
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => creditorTokenMap[token] || token)
+    .filter((token) => token !== 'NA');
+
+  const collapsed = normalized.join(' ').trim() || 'UNKNOWN CREDITOR';
+
+  for (const { pattern, canonical } of creditorAliasPatterns) {
+    if (pattern.test(collapsed)) {
+      return canonical;
+    }
+  }
+
+  return collapsed;
+};
+
+const buildCreditorFingerprint = (name: string): string => {
+  const normalized = normalizeCreditorName(name);
+  const tokens = normalized
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .filter((token) => !creditorNoiseTokens.has(token));
+
+  return tokens.join(' ').trim() || normalized;
+};
+
+const buildMonthLevelTradelineKey = (tradeline: Tradeline): string => {
+  const normalizedCreditorName = tradeline.normalizedCreditorName || normalizeCreditorName(tradeline.creditorName);
+  const openDate = normalizeOpenDate(tradeline.openDate);
+  const ownershipType = normalizeOwnershipType(tradeline.ownershipType);
+
+  if (!openDate) return '';
+
+  return `${normalizedCreditorName}|${openDate.slice(0, 7)}|${ownershipType}`;
+};
+
+const calculateStringSimilarity = (left: string, right: string): number => {
+  const a = left.replace(/\s+/g, ' ').trim();
+  const b = right.replace(/\s+/g, ' ').trim();
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const tokensA = new Set(a.split(' ').filter(Boolean));
+  const tokensB = new Set(b.split(' ').filter(Boolean));
+  const intersectionSize = Array.from(tokensA).filter((token) => tokensB.has(token)).length;
+  const tokenScore = (2 * intersectionSize) / (tokensA.size + tokensB.size);
+
+  const makeBigrams = (value: string) => {
+    const compact = value.replace(/\s+/g, '');
+    if (compact.length < 2) return new Set([compact]);
+
+    const result = new Set<string>();
+    for (let index = 0; index < compact.length - 1; index += 1) {
+      result.add(compact.slice(index, index + 2));
+    }
+    return result;
+  };
+
+  const bigramsA = makeBigrams(a);
+  const bigramsB = makeBigrams(b);
+  const bigramIntersection = Array.from(bigramsA).filter((token) => bigramsB.has(token)).length;
+  const bigramScore = (2 * bigramIntersection) / (bigramsA.size + bigramsB.size);
+
+  return Math.max(tokenScore, bigramScore);
+};
+
+const getDateDistanceInDays = (leftDate: string, rightDate: string): number => {
+  const left = new Date(`${normalizeOpenDate(leftDate)}T00:00:00`);
+  const right = new Date(`${normalizeOpenDate(rightDate)}T00:00:00`);
+  if (Number.isNaN(left.getTime()) || Number.isNaN(right.getTime())) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.abs(left.getTime() - right.getTime()) / (1000 * 60 * 60 * 24);
+};
+
+const normalizeMaskedAccountNumber = (value: any): string => {
+  const text = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!text) return '';
+
+  const digits = text.replace(/[^0-9]/g, '');
+  if (digits) return digits.slice(-4);
+
+  return text.slice(-6);
+};
+
+const normalizePlannerBureau = (value: any): PlannerBureauCode | null => {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    if (value === 1) return 'TU';
+    if (value === 2) return 'EX';
+    if (value === 3) return 'EQ';
+    return null;
+  }
+
+  const text = String(value || '').toLowerCase();
+  if (/\btu\b|trans[-\s]?union/.test(text)) return 'TU';
+  if (/\bex\b|experian|xpn/.test(text)) return 'EX';
+  if (/\beq\b|equifax|eqf/.test(text)) return 'EQ';
+  return null;
+};
+
+const normalizeOwnershipType = (value: any): string => {
+  const text = String(value || '').toLowerCase();
+  if (text.includes('joint') || text.includes('co-borrower') || text.includes('co-maker') || text.includes('co signer') || text.includes('co-signer')) {
+    return 'Joint';
+  }
+  if (text.includes('authorized')) {
+    return 'Authorized';
+  }
+  return 'Individual';
+};
+
+const normalizeAccountType = (value: any): string => {
+  const text = String(value || '').toLowerCase();
+  if (text.includes('revolving') || text.includes('credit') || text.includes('charge account')) return 'Revolving';
+  if (text.includes('mortgage') || text.includes('real estate')) return 'Mortgage';
+  if (text.includes('installment') || text.includes('auto') || text.includes('student')) return 'Installment';
+  return 'Other';
+};
+
+const normalizeLifecycleStatus = (value: any): 'OPEN' | 'CLOSED' | 'UNKNOWN' => {
+  const text = String(value || '').toLowerCase();
+  if (!text) return 'UNKNOWN';
+  if (
+    text.includes('open') ||
+    text.includes('current') ||
+    text.includes('active')
+  ) {
+    return 'OPEN';
+  }
+  if (
+    text.includes('closed') ||
+    text.includes('paid') ||
+    text.includes('transferred') ||
+    text.includes('terminated')
+  ) {
+    return 'CLOSED';
+  }
+  return 'UNKNOWN';
+};
+
+const normalizeOpenDate = (dateLike: any): string => {
+  if (!dateLike) return '';
+  const parsed = new Date(String(dateLike));
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+};
+
+const calculateAgeMonths = (openDate: string, asOfDate: Date = new Date()): number => {
+  const normalized = normalizeOpenDate(openDate);
+  if (!normalized) return 0;
+
+  const opened = new Date(`${normalized}T00:00:00`);
+  let months = (asOfDate.getFullYear() - opened.getFullYear()) * 12 + (asOfDate.getMonth() - opened.getMonth());
+  if (asOfDate.getDate() < opened.getDate()) months -= 1;
+  return Math.max(0, months);
+};
+
+const formatAgeMonths = (months: number): string => {
+  if (!Number.isFinite(months) || months <= 0) return '0 months';
+  const rounded = Math.round(months);
+  const years = Math.floor(rounded / 12);
+  const remainder = rounded % 12;
+  const parts: string[] = [];
+  if (years) parts.push(`${years} ${years === 1 ? 'year' : 'years'}`);
+  if (remainder) parts.push(`${remainder} ${remainder === 1 ? 'month' : 'months'}`);
+  return parts.join(', ') || '0 months';
+};
+
+const buildTradelineKey = (tradeline: Tradeline): string => {
+  const normalizedCreditorName = tradeline.normalizedCreditorName || normalizeCreditorName(tradeline.creditorName);
+  const maskedAccountNumber = normalizeMaskedAccountNumber(tradeline.maskedAccountNumber);
+  const openDate = normalizeOpenDate(tradeline.openDate);
+
+  if (!maskedAccountNumber || !openDate) return '';
+
+  return `${normalizedCreditorName}|${maskedAccountNumber}|${openDate}`;
+};
+
+const buildFallbackTradelineKey = (tradeline: Tradeline): string => {
+  const normalizedCreditorName = tradeline.normalizedCreditorName || normalizeCreditorName(tradeline.creditorName);
+  const openDate = normalizeOpenDate(tradeline.openDate);
+  const ownershipType = normalizeOwnershipType(tradeline.ownershipType);
+  const accountType = normalizeAccountType(tradeline.accountType);
+
+  if (!openDate) return '';
+
+  return `${normalizedCreditorName}|${openDate}|${accountType}|${ownershipType}`;
+};
+
+const dedupeTradelines = (tradelines: Tradeline[], asOfDate: Date = new Date()): UniqueTradeline[] => {
+  const uniqueMap = new Map<string, UniqueTradeline & {
+    bureauSet: Set<PlannerBureauCode>;
+    exactKeys: Set<string>;
+    fallbackKey: string;
+    monthLevelKey: string;
+    creditorFingerprint: string;
+  }>();
+  const monthLevelKeyMap = new Map<string, string>();
+
+  tradelines.forEach((tradeline) => {
+    const openDate = normalizeOpenDate(tradeline.openDate);
+    if (!openDate) return;
+
+    const normalizedCreditorName = tradeline.normalizedCreditorName || normalizeCreditorName(tradeline.creditorName);
+    const creditorFingerprint = buildCreditorFingerprint(normalizedCreditorName);
+    const monthLevelKey = buildMonthLevelTradelineKey({ ...tradeline, normalizedCreditorName, openDate });
+    const ageMonths = calculateAgeMonths(openDate, asOfDate);
+    const bureau = tradeline.bureau || null;
+    const maskedAccountNumber = normalizeMaskedAccountNumber(tradeline.maskedAccountNumber);
+    const accountType = normalizeAccountType(tradeline.accountType);
+    const ownershipType = normalizeOwnershipType(tradeline.ownershipType);
+    const lifecycleStatus = normalizeLifecycleStatus(tradeline.status);
+    const fuzzyGroupKey = Array.from(uniqueMap.values()).find((existing) => {
+      if (existing.ownershipType !== ownershipType) return false;
+      if (maskedAccountNumber && existing.maskedAccountNumber && existing.maskedAccountNumber !== maskedAccountNumber) {
+        return false;
+      }
+
+      const dateDistance = getDateDistanceInDays(existing.openDate, openDate);
+      if (dateDistance > 30) return false;
+
+      const sameAccountType = existing.accountType === accountType || existing.accountType === 'Other' || accountType === 'Other';
+      if (!sameAccountType) return false;
+
+      const similarity = calculateStringSimilarity(existing.creditorFingerprint, creditorFingerprint);
+      return similarity >= 0.85;
+    })?.key;
+    const groupKey =
+      (monthLevelKey && monthLevelKeyMap.get(monthLevelKey)) ||
+      fuzzyGroupKey ||
+      monthLevelKey;
+    if (!groupKey) return;
+    const existing = uniqueMap.get(groupKey);
+
+    if (!existing) {
+      const nextGroupKey = groupKey;
+      const nextTradeline = {
+        key: nextGroupKey,
+        creditorName: tradeline.creditorName || 'Unknown Creditor',
+        normalizedCreditorName,
+        maskedAccountNumber: maskedAccountNumber || undefined,
+        openDate,
+        ageMonths,
+        accountType,
+        ownershipType,
+        status: lifecycleStatus === 'UNKNOWN' ? tradeline.status || 'Unknown' : lifecycleStatus,
+        bureaus: bureau ? [bureau] : [],
+        bureauSet: bureau ? new Set<PlannerBureauCode>([bureau]) : new Set<PlannerBureauCode>(),
+        exactKeys: new Set<string>(),
+        fallbackKey: buildFallbackTradelineKey({ ...tradeline, normalizedCreditorName, openDate }),
+        monthLevelKey,
+        creditorFingerprint,
+      };
+      uniqueMap.set(nextGroupKey, nextTradeline);
+      if (monthLevelKey) monthLevelKeyMap.set(monthLevelKey, nextGroupKey);
+      return;
+    }
+
+    if (bureau) existing.bureauSet.add(bureau);
+    if (monthLevelKey) {
+      monthLevelKeyMap.set(monthLevelKey, existing.key);
+    }
+    if (ageMonths > existing.ageMonths) {
+      existing.ageMonths = ageMonths;
+      existing.openDate = openDate;
+    }
+    if (!existing.maskedAccountNumber && maskedAccountNumber) {
+      existing.maskedAccountNumber = maskedAccountNumber;
+    }
+    if (normalizeOpenDate(existing.openDate) > openDate) {
+      existing.openDate = openDate;
+    }
+    if (String(tradeline.creditorName || '').length > String(existing.creditorName || '').length) {
+      existing.creditorName = tradeline.creditorName;
+    }
+    if (existing.status !== 'OPEN' && lifecycleStatus === 'OPEN') {
+      existing.status = 'OPEN';
+    } else if (existing.status === 'UNKNOWN' && lifecycleStatus === 'CLOSED') {
+      existing.status = 'CLOSED';
+    } else if (existing.status === 'UNKNOWN' && String(tradeline.status || '').length > String(existing.status || '').length) {
+      existing.status = tradeline.status;
+    }
+    if (String(creditorFingerprint).length > String(existing.creditorFingerprint).length) {
+      existing.creditorFingerprint = creditorFingerprint;
+    }
+  });
+
+  return Array.from(uniqueMap.values()).map(({ bureauSet, ...tradeline }) => ({
+    ...tradeline,
+    bureaus: Array.from(bureauSet),
+  }));
+};
+
+const calculateAverageAge = (uniqueTradelines: UniqueTradeline[]): number => {
+  if (!uniqueTradelines.length) return 0;
+  const totalAgeMonths = uniqueTradelines.reduce((sum, tradeline) => sum + tradeline.ageMonths, 0);
+  return totalAgeMonths / uniqueTradelines.length;
+};
+
+const calculateTradelinesNeeded = ({
+  currentUniqueCount,
+  currentAverageAgeMonths,
+  targetAverageMonths,
+  addedTradelineAgeMonths,
+}: {
+  currentUniqueCount: number;
+  currentAverageAgeMonths: number;
+  targetAverageMonths: number;
+  addedTradelineAgeMonths: number;
+}): number | null => {
+  if (currentUniqueCount <= 0) return null;
+  if (targetAverageMonths <= currentAverageAgeMonths) return 0;
+  if (addedTradelineAgeMonths <= targetAverageMonths) return null;
+
+  const numerator = currentUniqueCount * (targetAverageMonths - currentAverageAgeMonths);
+  const denominator = addedTradelineAgeMonths - targetAverageMonths;
+  if (denominator <= 0) return null;
+
+  const rawNeeded = numerator / denominator;
+  if (rawNeeded <= 0) return 0;
+  return Math.ceil(rawNeeded - 1e-9);
+};
+
+const generateGrowthScenarios = ({
+  currentUniqueCount,
+  currentAverageAgeMonths,
+  targetAverageMonths,
+  candidateTradelineMonths,
+  maxTradelinesNeeded,
+}: {
+  currentUniqueCount: number;
+  currentAverageAgeMonths: number;
+  targetAverageMonths: number;
+  candidateTradelineMonths: number[];
+  maxTradelinesNeeded?: number;
+}): GrowthScenario[] => {
+  return candidateTradelineMonths
+    .map((tradelineAgeMonths) => {
+      const tradelinesNeeded = calculateTradelinesNeeded({
+        currentUniqueCount,
+        currentAverageAgeMonths,
+        targetAverageMonths,
+        addedTradelineAgeMonths: tradelineAgeMonths,
+      });
+
+      if (tradelinesNeeded === null) return null;
+      if (typeof maxTradelinesNeeded === 'number' && tradelinesNeeded > maxTradelinesNeeded) return null;
+
+      return {
+        targetAverageMonths,
+        tradelineAgeMonths,
+        tradelinesNeeded,
+      };
+    })
+    .filter((scenario): scenario is GrowthScenario => Boolean(scenario))
+    .sort((a, b) => {
+      if (a.tradelinesNeeded !== b.tradelinesNeeded) {
+        return a.tradelinesNeeded - b.tradelinesNeeded;
+      }
+      return b.tradelineAgeMonths - a.tradelineAgeMonths;
+    });
+};
+
+const pickFirstArray = (...values: any[]) => {
+  for (const value of values) {
+    if (Array.isArray(value) && value.length > 0) return value;
+  }
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return [];
+};
+
+const resolveTradelineBureaus = (account: any): PlannerBureauCode[] => {
+  const values = [
+    normalizePlannerBureau(account?.BureauId),
+    normalizePlannerBureau(account?.bureauId),
+    normalizePlannerBureau(account?.Bureau),
+    normalizePlannerBureau(account?.bureau),
+    normalizePlannerBureau(account?.BureauName),
+    normalizePlannerBureau(account?.bureauName),
+  ].filter(Boolean) as PlannerBureauCode[];
+
+  return Array.from(new Set(values));
+};
+
 const DebtConsolidationView = ({ accounts, payoffPlans = [], onSavePlan, clientId }: DebtConsolidationViewProps) => {
   const [targetUtilization, setTargetUtilization] = useState(0);
   const [payoffMonths, setPayoffMonths] = useState(12);
@@ -1765,53 +2297,53 @@ export default function CreditReport() {
     const criteriaFlags = {
       score: [
         getCriteria(1, "score700Plus") || getCriteria(1, "score730Plus"),
-        getCriteria(3, "score700Plus") || getCriteria(3, "score730Plus"),
         getCriteria(2, "score700Plus") || getCriteria(2, "score730Plus"),
+        getCriteria(3, "score700Plus") || getCriteria(3, "score730Plus"),
       ],
       openUtil: [
         getCriteria(1, "openRevolvingUnder30"),
-        getCriteria(3, "openRevolvingUnder30"),
         getCriteria(2, "openRevolvingUnder30"),
+        getCriteria(3, "openRevolvingUnder30"),
       ],
       allUtil: [
         getCriteria(1, "allRevolvingUnder30"),
-        getCriteria(3, "allRevolvingUnder30"),
         getCriteria(2, "allRevolvingUnder30"),
+        getCriteria(3, "allRevolvingUnder30"),
       ],
       openCount: [
         getCriteria(1, "minFiveOpenRevolving"),
-        getCriteria(3, "minFiveOpenRevolving"),
         getCriteria(2, "minFiveOpenRevolving"),
+        getCriteria(3, "minFiveOpenRevolving"),
       ],
       unsecuredRecent: [
         getCriteria(1, "maxFourUnsecuredIn12Months"),
-        getCriteria(3, "maxFourUnsecuredIn12Months"),
         getCriteria(2, "maxFourUnsecuredIn12Months"),
+        getCriteria(3, "maxFourUnsecuredIn12Months"),
       ],
       inquiries: [
         getCriteria(1, "noInquiries"),
-        getCriteria(3, "noInquiries"),
         getCriteria(2, "noInquiries"),
+        getCriteria(3, "noInquiries"),
       ],
       bankruptcies: [
         getCriteria(1, "noBankruptcies"),
-        getCriteria(3, "noBankruptcies"),
         getCriteria(2, "noBankruptcies"),
+        getCriteria(3, "noBankruptcies"),
       ],
       collections: [
         getCriteria(1, "noCollections") || getCriteria(1, "noCollectionsLiensJudgements"),
-        getCriteria(3, "noCollections") || getCriteria(3, "noCollectionsLiensJudgements"),
         getCriteria(2, "noCollections") || getCriteria(2, "noCollectionsLiensJudgements"),
+        getCriteria(3, "noCollections") || getCriteria(3, "noCollectionsLiensJudgements"),
       ],
       chargeOffs: [
         getCriteria(1, "noChargeOffs"),
-        getCriteria(3, "noChargeOffs"),
         getCriteria(2, "noChargeOffs"),
+        getCriteria(3, "noChargeOffs"),
       ],
       latePays: [
         getCriteria(1, "noLatePayments") || getCriteria(1, "noLatePaymentsIn12Months"),
-        getCriteria(3, "noLatePayments") || getCriteria(3, "noLatePaymentsIn12Months"),
         getCriteria(2, "noLatePayments") || getCriteria(2, "noLatePaymentsIn12Months"),
+        getCriteria(3, "noLatePayments") || getCriteria(3, "noLatePaymentsIn12Months"),
       ],
     } as const;
 
@@ -1836,48 +2368,48 @@ export default function CreditReport() {
     const criteriaFlags = {
       score: [
         getCriteria(1, "score700Plus") || getCriteria(1, "score730Plus"),
-        getCriteria(3, "score700Plus") || getCriteria(3, "score730Plus"),
         getCriteria(2, "score700Plus") || getCriteria(2, "score730Plus"),
+        getCriteria(3, "score700Plus") || getCriteria(3, "score730Plus"),
       ],
       openUtil: [
         getCriteria(1, "openRevolvingUnder30"),
-        getCriteria(3, "openRevolvingUnder30"),
         getCriteria(2, "openRevolvingUnder30"),
+        getCriteria(3, "openRevolvingUnder30"),
       ],
       openCount: [
         getCriteria(1, "minFiveOpenRevolving"),
-        getCriteria(3, "minFiveOpenRevolving"),
         getCriteria(2, "minFiveOpenRevolving"),
+        getCriteria(3, "minFiveOpenRevolving"),
       ],
       unsecuredRecent: [
         getCriteria(1, "maxFourUnsecuredIn12Months"),
-        getCriteria(3, "maxFourUnsecuredIn12Months"),
         getCriteria(2, "maxFourUnsecuredIn12Months"),
+        getCriteria(3, "maxFourUnsecuredIn12Months"),
       ],
       inquiries: [
         totalInquiryCountByBureauId(1) < 4,
-        totalInquiryCountByBureauId(3) < 4,
         totalInquiryCountByBureauId(2) < 4,
+        totalInquiryCountByBureauId(3) < 4,
       ],
       bankruptcies: [
         getCriteria(1, "noBankruptcies"),
-        getCriteria(3, "noBankruptcies"),
         getCriteria(2, "noBankruptcies"),
+        getCriteria(3, "noBankruptcies"),
       ],
       collections: [
         getCriteria(1, "noCollections") || getCriteria(1, "noCollectionsLiensJudgements"),
-        getCriteria(3, "noCollections") || getCriteria(3, "noCollectionsLiensJudgements"),
         getCriteria(2, "noCollections") || getCriteria(2, "noCollectionsLiensJudgements"),
+        getCriteria(3, "noCollections") || getCriteria(3, "noCollectionsLiensJudgements"),
       ],
       chargeOffs: [
         getCriteria(1, "noChargeOffs"),
-        getCriteria(3, "noChargeOffs"),
         getCriteria(2, "noChargeOffs"),
+        getCriteria(3, "noChargeOffs"),
       ],
       latePays: [
         getCriteria(1, "noLatePayments"),
-        getCriteria(3, "noLatePayments"),
         getCriteria(2, "noLatePayments"),
+        getCriteria(3, "noLatePayments"),
       ],
     } as const;
 
@@ -2105,6 +2637,139 @@ export default function CreditReport() {
   const paydownTargets = [30, 25, 20, 15, 10, 5, 0];
 
   const [creditBuildBureauFilter, setCreditBuildBureauFilter] = useState<'all' | 'all3' | 'tu' | 'ex' | 'eq'>('all');
+  const [averageAgeTargetYears, setAverageAgeTargetYears] = useState<string>('10');
+  const [averageAgeMaxTradelines, setAverageAgeMaxTradelines] = useState<string>('25');
+  const [averageAgeMinTradelineYears, setAverageAgeMinTradelineYears] = useState<string>('8');
+  const [averageAgeMaxTradelineYears, setAverageAgeMaxTradelineYears] = useState<string>('30');
+
+  const averageAgePlanner = useMemo(() => {
+    const rawAccounts = pickFirstArray(
+      (apiData as any)?.reportData?.reportData?.Accounts,
+      (apiData as any)?.reportData?.Accounts,
+      (apiData as any)?.Accounts,
+      (reportData as any)?.accounts,
+    );
+
+    const tradelines: Tradeline[] = rawAccounts.flatMap((account: any) => {
+      const tradeline: Tradeline = {
+        creditorName: account?.CreditorName || account?.creditor || account?.name || 'Unknown Creditor',
+        normalizedCreditorName: normalizeCreditorName(account?.CreditorName || account?.creditor || account?.name || ''),
+        maskedAccountNumber: account?.MaskAccountNumber || account?.maskAccountNumber || account?.AccountNumber || account?.accountNumber,
+        openDate: account?.DateOpened || account?.OpenDate || account?.opened || account?.dateOpened || account?.DateReported || account?.dateReported || '',
+        accountType: account?.AccountTypeDescription || account?.AccountType || account?.CreditType || account?.type || account?.Industry || 'Other',
+        ownershipType: account?.AccountDesignator || account?.AccountOwnership || account?.Responsibility || account?.ownership || account?.OwnershipType || '',
+        status: account?.AccountStatus || account?.AccountCondition || account?.status || 'Unknown',
+      };
+
+      const bureaus = resolveTradelineBureaus(account);
+      if (!bureaus.length) return [tradeline];
+      return bureaus.map((bureau) => ({ ...tradeline, bureau }));
+    });
+
+    const dedupedTradelines = dedupeTradelines(tradelines);
+    const qualifyingTradelines = dedupedTradelines.filter((tradeline) => {
+      const lifecycleStatus = normalizeLifecycleStatus(tradeline.status);
+      if (lifecycleStatus === 'OPEN') return true;
+      return tradeline.bureaus.length === 3;
+    });
+    const sortedYoungestFirst = qualifyingTradelines
+      .slice()
+      .sort((a, b) => a.ageMonths - b.ageMonths || a.creditorName.localeCompare(b.creditorName));
+    const sortedOldestFirst = qualifyingTradelines
+      .slice()
+      .sort((a, b) => b.ageMonths - a.ageMonths || a.creditorName.localeCompare(b.creditorName));
+
+    const totalAgePoolMonths = qualifyingTradelines.reduce((sum, tradeline) => sum + tradeline.ageMonths, 0);
+    const currentAverageAgeMonths = calculateAverageAge(qualifyingTradelines);
+    const currentUniqueCount = qualifyingTradelines.length;
+    const targetYears = Math.min(12, Math.max(7, Math.round(Number(averageAgeTargetYears) || 0)));
+    const targetAverageMonths = targetYears * 12;
+    const maxTradelinesNeeded = Math.max(1, Math.round(Number(averageAgeMaxTradelines) || 0));
+    const minTradelineYears = Math.max(1, Math.round(Number(averageAgeMinTradelineYears) || 0));
+    const maxTradelineYears = Math.max(minTradelineYears, Math.round(Number(averageAgeMaxTradelineYears) || 0));
+
+    const candidateYearSet = new Set<number>();
+    for (let year = minTradelineYears; year <= maxTradelineYears; year += 1) {
+      candidateYearSet.add(year);
+    }
+    AGE_GROWTH_TARGET_OPTIONS_YEARS.forEach((year) => {
+      if (year >= minTradelineYears && year <= maxTradelineYears) {
+        candidateYearSet.add(year);
+      }
+    });
+
+    const candidateTradelineMonths = Array.from(candidateYearSet)
+      .sort((a, b) => a - b)
+      .map((year) => year * 12);
+
+    const scenarios = targetAverageMonths <= currentAverageAgeMonths
+      ? []
+      : generateGrowthScenarios({
+          currentUniqueCount,
+          currentAverageAgeMonths,
+          targetAverageMonths,
+          candidateTradelineMonths,
+          maxTradelinesNeeded,
+        });
+
+    const notes: string[] = [];
+    notes.push('Closed accounts not reporting on all three bureaus are excluded to ensure accuracy.');
+    if (currentAverageAgeMonths > 0) {
+      notes.push(`Adding tradelines at or below ${formatAgeMonths(currentAverageAgeMonths)} will not raise the file average.`);
+    }
+    if (currentAverageAgeMonths >= 120) {
+      notes.push('This file already has a high average age. Only very old tradelines will materially increase the average.');
+    }
+    if (currentUniqueCount >= 15 && currentAverageAgeMonths >= 96) {
+      notes.push('A mature file with many accounts usually needs older seasoned tradelines to create visible movement.');
+    }
+    if (sortedOldestFirst[0] && sortedOldestFirst[0].ageMonths >= currentAverageAgeMonths * 1.75) {
+      notes.push('Protecting the oldest anchors may be more impactful than adding mid-aged tradelines.');
+    }
+    if (targetAverageMonths - currentAverageAgeMonths >= 48) {
+      notes.push('The selected target is materially above the current file age, so expect a steeper tradeline requirement.');
+    }
+
+    let warning = '';
+    if (!currentUniqueCount) {
+      warning = 'No tradelines found. Add primary accounts to begin building credit history.';
+    } else if (targetAverageMonths <= currentAverageAgeMonths) {
+      warning = 'The current file already meets or exceeds the selected target average age.';
+    } else if (!candidateTradelineMonths.some((months) => months > targetAverageMonths)) {
+      warning = 'The selected tradeline age range cannot mathematically achieve this target. Increase the max tradeline age.';
+    } else if (!scenarios.length) {
+      warning = 'No efficient combinations were found within the selected limits. Raise the tradeline age range or max tradelines threshold.';
+    }
+
+    return {
+      rawTradelineCount: tradelines.length,
+      dedupedTradelineCount: dedupedTradelines.length,
+      uniqueTradelines: qualifyingTradelines,
+      totalAgePoolMonths,
+      currentAverageAgeMonths,
+      currentUniqueCount,
+      targetAverageMonths,
+      targetYears,
+      maxTradelinesNeeded,
+      minTradelineYears,
+      maxTradelineYears,
+      scenarios,
+      ruleNotice: 'Closed accounts not reporting on all three bureaus are excluded to ensure accuracy.',
+      warning,
+      notes,
+      oldestTradeline: sortedOldestFirst[0] || null,
+      youngestTradeline: sortedYoungestFirst[0] || null,
+      draggingTradelines: sortedYoungestFirst.slice(0, 5),
+      anchoringTradelines: sortedOldestFirst.slice(0, 5),
+    };
+  }, [
+    apiData,
+    reportData,
+    averageAgeTargetYears,
+    averageAgeMaxTradelines,
+    averageAgeMinTradelineYears,
+    averageAgeMaxTradelineYears,
+  ]);
 
   const resolveBureauIdFromText = (value: any) => {
     const text = String(value || '').toLowerCase();
@@ -2147,7 +2812,7 @@ export default function CreditReport() {
         realEstateDebt: 0,
         installmentDebt: 0
       },
-      2: { // Equifax
+      2: { // Experian
         openRevolvingBalance: 0,
         openRevolvingLimit: 0,
         allRevolvingBalance: 0,
@@ -2155,7 +2820,7 @@ export default function CreditReport() {
         realEstateDebt: 0,
         installmentDebt: 0
       },
-      3: { // Experian
+      3: { // Equifax
         openRevolvingBalance: 0,
         openRevolvingLimit: 0,
         allRevolvingBalance: 0,
@@ -3680,21 +4345,47 @@ export default function CreditReport() {
               }));
           };
 
+          const isCollectionAccount = (account: any) => {
+            const paymentStatus = String(account?.PaymentStatus || '').toLowerCase();
+            const accountType = String(account?.AccountType || account?.AccountTypeDescription || account?.CreditType || '').toLowerCase();
+            const condition = String(account?.AccountCondition || account?.AccountStatus || '').toLowerCase();
+            const remark = String(account?.Remark || '').toLowerCase();
+
+            return (
+              paymentStatus.includes('collection') ||
+              accountType.includes('collection') ||
+              condition.includes('collection') ||
+              remark.includes('collection account')
+            );
+          };
+
+          const isLatePaymentAccount = (account: any) => {
+            if (isCollectionAccount(account)) return false;
+
+            const payHist = String(account?.PayStatusHistory || '');
+            const paymentStatus = String(account?.PaymentStatus || '').toLowerCase();
+            const worstPayStatus = String(account?.WorstPayStatus || '').toLowerCase();
+            const hasLateInHistory = /[1-5]/.test(payHist);
+            const hasLateInStatus =
+              paymentStatus.includes('late') ||
+              worstPayStatus.includes('late') ||
+              paymentStatus.includes('past due') ||
+              worstPayStatus.includes('past due') ||
+              paymentStatus.includes('delinquent') ||
+              worstPayStatus.includes('delinquent');
+            const hasPastDue = (parseFloat(account?.AmountPastDue) || 0) > 0;
+
+            return hasLateInHistory || hasLateInStatus || hasPastDue;
+          };
+
           // Transform true collection accounts (not just late payments)
           const transformApiCollections = (accounts) => {
             return accounts
               .filter(account => {
-                const paymentStatus = String(account.PaymentStatus || '').toLowerCase();
-                const accountType = String(account.AccountType || account.AccountTypeDescription || account.CreditType || '').toLowerCase();
-                const condition = String(account.AccountCondition || account.AccountStatus || '').toLowerCase();
-                const isCollectionLike =
-                  paymentStatus.includes('collection') ||
-                  accountType.includes('collection') ||
-                  condition.includes('collection');
                 const hasBalance =
                   Number(account.CurrentBalance || 0) > 0 ||
                   Number(account.AmountPastDue || 0) > 0;
-                return isCollectionLike && hasBalance;
+                return isCollectionAccount(account) && hasBalance;
               })
               .map((account, index) => ({
                 id: index + 1,
@@ -3747,7 +4438,7 @@ export default function CreditReport() {
                 realEstateDebt: 0,
                 installmentDebt: 0
               },
-              2: { // Equifax
+              2: { // Experian
                 openRevolvingBalance: 0,
                 openRevolvingLimit: 0,
                 allRevolvingBalance: 0,
@@ -3755,7 +4446,7 @@ export default function CreditReport() {
                 realEstateDebt: 0,
                 installmentDebt: 0
               },
-              3: { // Experian
+              3: { // Equifax
                 openRevolvingBalance: 0,
                 openRevolvingLimit: 0,
                 allRevolvingBalance: 0,
@@ -3852,7 +4543,7 @@ export default function CreditReport() {
                 noChargeOffs: false,
                 noLatePaymentsIn12Months: false
               },
-              2: { // Equifax
+              2: { // Experian
                 score700Plus: false,
                 score730Plus: false,
                 openRevolvingUnder30: false,
@@ -3868,7 +4559,7 @@ export default function CreditReport() {
                 noChargeOffs: false,
                 noLatePaymentsIn12Months: false
               },
-              3: { // Experian
+              3: { // Equifax
                 score700Plus: false,
                 score730Plus: false,
                 openRevolvingUnder30: false,
@@ -3891,8 +4582,8 @@ export default function CreditReport() {
             // Check scores for each bureau - use the scores parameter passed in
             const scoreValues = {
               1: parseInt(scoresData.transunion) || 0,  // TransUnion
-              2: parseInt(scoresData.equifax) || 0,     // Equifax  
-              3: parseInt(scoresData.experian) || 0     // Experian
+              2: parseInt(scoresData.experian) || 0,    // Experian
+              3: parseInt(scoresData.equifax) || 0      // Equifax
             };
 
             [1, 2, 3].forEach(bureauId => {
@@ -4014,26 +4705,11 @@ export default function CreditReport() {
               criteria[bureauId].noCollectionsLiensJudgements = negativeAccounts.length === 0;
 
               // Set individual negative-item criteria used in Basic view
-              const collectionsCount = negativeAccounts.filter((acc: any) => 
-                acc.PaymentStatus?.includes('Collection') || acc.AccountType?.includes('Collection')
-              ).length;
+              const collectionsCount = bureauAccounts.filter((acc: any) => isCollectionAccount(acc)).length;
               const chargeOffsCount = negativeAccounts.filter((acc: any) => 
                 acc.PaymentStatus?.includes('Charge')
               ).length;
-              // Detect late payments from ALL bureau accounts (not just negativeAccounts)
-              // Check PayStatusHistory digits 1-5 (30/60/90/120/150+ days late),
-              // PaymentStatus/WorstPayStatus text, and AmountPastDue
-              const latePaymentsCount = bureauAccounts.filter((acc: any) => {
-                const payHist = String(acc.PayStatusHistory || '');
-                const hasLateInHistory = /[1-5]/.test(payHist);
-                const ps = String(acc.PaymentStatus || '').toLowerCase();
-                const wps = String(acc.WorstPayStatus || '').toLowerCase();
-                const hasLateInStatus = ps.includes('late') || wps.includes('late') ||
-                  ps.includes('past due') || wps.includes('past due') ||
-                  ps.includes('delinquent') || wps.includes('delinquent');
-                const hasPastDue = (parseFloat(acc.AmountPastDue) || 0) > 0;
-                return hasLateInHistory || hasLateInStatus || hasPastDue;
-              }).length;
+              const latePaymentsCount = bureauAccounts.filter((acc: any) => isLatePaymentAccount(acc)).length;
 
               criteria[bureauId].noCollections = collectionsCount === 0;
               criteria[bureauId].noChargeOffs = chargeOffsCount === 0;
@@ -4253,7 +4929,7 @@ export default function CreditReport() {
               noBankruptcies: true,
               noCollectionsLiensJudgements: true
             },
-            2: { // Equifax
+            2: { // Experian
               score700Plus: true,
               score730Plus: true,
               openRevolvingUnder30: true,
@@ -4265,7 +4941,7 @@ export default function CreditReport() {
               noBankruptcies: true,
               noCollectionsLiensJudgements: true
             },
-            3: { // Experian
+            3: { // Equifax
               score700Plus: true,
               score730Plus: true,
               openRevolvingUnder30: true,
@@ -5920,53 +6596,53 @@ export default function CreditReport() {
                   const criteriaFlags = {
                     score: [
                       getCriteriaFlag(1, "score700Plus") || getCriteriaFlag(1, "score730Plus"),
-                      getCriteriaFlag(3, "score700Plus") || getCriteriaFlag(3, "score730Plus"),
                       getCriteriaFlag(2, "score700Plus") || getCriteriaFlag(2, "score730Plus"),
+                      getCriteriaFlag(3, "score700Plus") || getCriteriaFlag(3, "score730Plus"),
                     ],
                     openUtil: [
                       getCriteriaFlag(1, "openRevolvingUnder30"),
-                      getCriteriaFlag(3, "openRevolvingUnder30"),
                       getCriteriaFlag(2, "openRevolvingUnder30"),
+                      getCriteriaFlag(3, "openRevolvingUnder30"),
                     ],
                     allUtil: [
                       getCriteriaFlag(1, "allRevolvingUnder30"),
-                      getCriteriaFlag(3, "allRevolvingUnder30"),
                       getCriteriaFlag(2, "allRevolvingUnder30"),
+                      getCriteriaFlag(3, "allRevolvingUnder30"),
                     ],
                     openCount: [
                       getCriteriaFlag(1, "minFiveOpenRevolving"),
-                      getCriteriaFlag(3, "minFiveOpenRevolving"),
                       getCriteriaFlag(2, "minFiveOpenRevolving"),
+                      getCriteriaFlag(3, "minFiveOpenRevolving"),
                     ],
                     unsecuredRecent: [
                       getCriteriaFlag(1, "maxFourUnsecuredIn12Months"),
-                      getCriteriaFlag(3, "maxFourUnsecuredIn12Months"),
                       getCriteriaFlag(2, "maxFourUnsecuredIn12Months"),
+                      getCriteriaFlag(3, "maxFourUnsecuredIn12Months"),
                     ],
                     inquiries: [
                       getCriteriaFlag(1, "noInquiries"),
-                      getCriteriaFlag(3, "noInquiries"),
                       getCriteriaFlag(2, "noInquiries"),
+                      getCriteriaFlag(3, "noInquiries"),
                     ],
                     bankruptcies: [
                       getCriteriaFlag(1, "noBankruptcies"),
-                      getCriteriaFlag(3, "noBankruptcies"),
                       getCriteriaFlag(2, "noBankruptcies"),
+                      getCriteriaFlag(3, "noBankruptcies"),
                     ],
                     collections: [
                       getCriteriaFlag(1, "noCollections") || getCriteriaFlag(1, "noCollectionsLiensJudgements"),
-                      getCriteriaFlag(3, "noCollections") || getCriteriaFlag(3, "noCollectionsLiensJudgements"),
                       getCriteriaFlag(2, "noCollections") || getCriteriaFlag(2, "noCollectionsLiensJudgements"),
+                      getCriteriaFlag(3, "noCollections") || getCriteriaFlag(3, "noCollectionsLiensJudgements"),
                     ],
                     chargeOffs: [
                       getCriteriaFlag(1, "noChargeOffs"),
-                      getCriteriaFlag(3, "noChargeOffs"),
                       getCriteriaFlag(2, "noChargeOffs"),
+                      getCriteriaFlag(3, "noChargeOffs"),
                     ],
                     latePays: [
                       getCriteriaFlag(1, "noLatePayments"),
-                      getCriteriaFlag(3, "noLatePayments"),
                       getCriteriaFlag(2, "noLatePayments"),
+                      getCriteriaFlag(3, "noLatePayments"),
                     ],
                   } as const;
 
@@ -7515,53 +8191,53 @@ export default function CreditReport() {
                   const criteriaFlags = {
                     score: [
                       getCriteriaFlag(1, "score700Plus") || getCriteriaFlag(1, "score730Plus"),
-                      getCriteriaFlag(3, "score700Plus") || getCriteriaFlag(3, "score730Plus"),
                       getCriteriaFlag(2, "score700Plus") || getCriteriaFlag(2, "score730Plus"),
+                      getCriteriaFlag(3, "score700Plus") || getCriteriaFlag(3, "score730Plus"),
                     ],
                     openUtil: [
                       getCriteriaFlag(1, "openRevolvingUnder30"),
-                      getCriteriaFlag(3, "openRevolvingUnder30"),
                       getCriteriaFlag(2, "openRevolvingUnder30"),
+                      getCriteriaFlag(3, "openRevolvingUnder30"),
                     ],
                     allUtil: [
                       getCriteriaFlag(1, "allRevolvingUnder30"),
-                      getCriteriaFlag(3, "allRevolvingUnder30"),
                       getCriteriaFlag(2, "allRevolvingUnder30"),
+                      getCriteriaFlag(3, "allRevolvingUnder30"),
                     ],
                     openCount: [
                       getCriteriaFlag(1, "minFiveOpenRevolving"),
-                      getCriteriaFlag(3, "minFiveOpenRevolving"),
                       getCriteriaFlag(2, "minFiveOpenRevolving"),
+                      getCriteriaFlag(3, "minFiveOpenRevolving"),
                     ],
                     unsecuredRecent: [
                       getCriteriaFlag(1, "maxFourUnsecuredIn12Months"),
-                      getCriteriaFlag(3, "maxFourUnsecuredIn12Months"),
                       getCriteriaFlag(2, "maxFourUnsecuredIn12Months"),
+                      getCriteriaFlag(3, "maxFourUnsecuredIn12Months"),
                     ],
                     inquiries: [
                       getCriteriaFlag(1, "noInquiries"),
-                      getCriteriaFlag(3, "noInquiries"),
                       getCriteriaFlag(2, "noInquiries"),
+                      getCriteriaFlag(3, "noInquiries"),
                     ],
                     bankruptcies: [
                       getCriteriaFlag(1, "noBankruptcies"),
-                      getCriteriaFlag(3, "noBankruptcies"),
                       getCriteriaFlag(2, "noBankruptcies"),
+                      getCriteriaFlag(3, "noBankruptcies"),
                     ],
                     collections: [
                       getCriteriaFlag(1, "noCollections") || getCriteriaFlag(1, "noCollectionsLiensJudgements"),
-                      getCriteriaFlag(3, "noCollections") || getCriteriaFlag(3, "noCollectionsLiensJudgements"),
                       getCriteriaFlag(2, "noCollections") || getCriteriaFlag(2, "noCollectionsLiensJudgements"),
+                      getCriteriaFlag(3, "noCollections") || getCriteriaFlag(3, "noCollectionsLiensJudgements"),
                     ],
                     chargeOffs: [
                       getCriteriaFlag(1, "noChargeOffs"),
-                      getCriteriaFlag(3, "noChargeOffs"),
                       getCriteriaFlag(2, "noChargeOffs"),
+                      getCriteriaFlag(3, "noChargeOffs"),
                     ],
                     latePays: [
                       getCriteriaFlag(1, "noLatePayments"),
-                      getCriteriaFlag(3, "noLatePayments"),
                       getCriteriaFlag(2, "noLatePayments"),
+                      getCriteriaFlag(3, "noLatePayments"),
                     ],
                   } as const;
 
@@ -7666,10 +8342,10 @@ export default function CreditReport() {
                           if (/^ex$|exper/.test(rawText)) return 'ex';
                           if (/^eq$|equifax|eqf/.test(rawText)) return 'eq';
                         }
-                        // Fall back to ID mapping used elsewhere in this file: 1=TU, 2=EQ, 3=EX
+                        // Fall back to canonical ID mapping used by this page: 1=TU, 2=EX, 3=EQ
                         if (id === 1) return 'tu';
-                        if (id === 2) return 'eq';
-                        if (id === 3) return 'ex';
+                        if (id === 2) return 'ex';
+                        if (id === 3) return 'eq';
                         return null;
                       };
 
@@ -7724,27 +8400,27 @@ export default function CreditReport() {
                         <>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.score700Plus || false,
-                      reportData?.qualificationCriteria?.[3]?.score700Plus || false,
-                      reportData?.qualificationCriteria?.[2]?.score700Plus || false
+                      reportData?.qualificationCriteria?.[2]?.score700Plus || false,
+                      reportData?.qualificationCriteria?.[3]?.score700Plus || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.score700Plus), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.score700Plus), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.score700Plus), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.score700Plus), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.score700Plus), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">
                         {(() => {
                           const tu700 = Boolean(reportData?.qualificationCriteria?.[1]?.score700Plus);
-                          const ex700 = Boolean(reportData?.qualificationCriteria?.[3]?.score700Plus);
-                          const eq700 = Boolean(reportData?.qualificationCriteria?.[2]?.score700Plus);
+                          const ex700 = Boolean(reportData?.qualificationCriteria?.[2]?.score700Plus);
+                          const eq700 = Boolean(reportData?.qualificationCriteria?.[3]?.score700Plus);
 
                           const tu730 = Boolean(reportData?.qualificationCriteria?.[1]?.score730Plus);
-                          const ex730 = Boolean(reportData?.qualificationCriteria?.[3]?.score730Plus);
-                          const eq730 = Boolean(reportData?.qualificationCriteria?.[2]?.score730Plus);
+                          const ex730 = Boolean(reportData?.qualificationCriteria?.[2]?.score730Plus);
+                          const eq730 = Boolean(reportData?.qualificationCriteria?.[3]?.score730Plus);
 
                           const all730 = tu730 && ex730 && eq730;
                           const all700 = tu700 && ex700 && eq700;
@@ -7757,65 +8433,65 @@ export default function CreditReport() {
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30 || false,
-                      reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false,
-                      reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false
+                      reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30 || false,
+                      reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30 || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.openRevolvingUnder30), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.openRevolvingUnder30), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.openRevolvingUnder30), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Under 30% utilization on open revolving accounts</td>
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.minFiveOpenRevolving || false,
-                      reportData?.qualificationCriteria?.[3]?.minFiveOpenRevolving || false,
-                      reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving || false
+                      reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving || false,
+                      reportData?.qualificationCriteria?.[3]?.minFiveOpenRevolving || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.minFiveOpenRevolving), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.minFiveOpenRevolving), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.minFiveOpenRevolving), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.minFiveOpenRevolving), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">minimum five open primary credit cards with two years of good payment history.</td>
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.creditCard3YearsOld5KLimit || false,
-                      reportData?.qualificationCriteria?.[3]?.creditCard3YearsOld5KLimit || false,
-                      reportData?.qualificationCriteria?.[2]?.creditCard3YearsOld5KLimit || false
+                      reportData?.qualificationCriteria?.[2]?.creditCard3YearsOld5KLimit || false,
+                      reportData?.qualificationCriteria?.[3]?.creditCard3YearsOld5KLimit || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.creditCard3YearsOld5KLimit), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.creditCard3YearsOld5KLimit), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.creditCard3YearsOld5KLimit), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.creditCard3YearsOld5KLimit), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.creditCard3YearsOld5KLimit), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Two primary credit cards with at least two years of age and $5,000+ limits.</td>
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.maxFourUnsecuredIn12Months || false,
-                      reportData?.qualificationCriteria?.[3]?.maxFourUnsecuredIn12Months || false,
-                      reportData?.qualificationCriteria?.[2]?.maxFourUnsecuredIn12Months || false
+                      reportData?.qualificationCriteria?.[2]?.maxFourUnsecuredIn12Months || false,
+                      reportData?.qualificationCriteria?.[3]?.maxFourUnsecuredIn12Months || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.maxFourUnsecuredIn12Months), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.maxFourUnsecuredIn12Months), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.maxFourUnsecuredIn12Months), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.maxFourUnsecuredIn12Months), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.maxFourUnsecuredIn12Months), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">No more than 4 unsecured accounts open in the past 12 months</td>
                     </tr>
@@ -7859,65 +8535,65 @@ export default function CreditReport() {
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.noCollections || false,
-                      reportData?.qualificationCriteria?.[3]?.noCollections || false,
-                      reportData?.qualificationCriteria?.[2]?.noCollections || false
+                      reportData?.qualificationCriteria?.[2]?.noCollections || false,
+                      reportData?.qualificationCriteria?.[3]?.noCollections || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.noCollections), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noCollections), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noCollections), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noCollections), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noCollections), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Collections</td>
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.noChargeOffs || false,
-                      reportData?.qualificationCriteria?.[3]?.noChargeOffs || false,
-                      reportData?.qualificationCriteria?.[2]?.noChargeOffs || false
+                      reportData?.qualificationCriteria?.[2]?.noChargeOffs || false,
+                      reportData?.qualificationCriteria?.[3]?.noChargeOffs || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.noChargeOffs), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noChargeOffs), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noChargeOffs), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noChargeOffs), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noChargeOffs), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Charge offs</td>
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.noLatePayments || false,
-                      reportData?.qualificationCriteria?.[3]?.noLatePayments || false,
-                      reportData?.qualificationCriteria?.[2]?.noLatePayments || false
+                      reportData?.qualificationCriteria?.[2]?.noLatePayments || false,
+                      reportData?.qualificationCriteria?.[3]?.noLatePayments || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.noLatePayments), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noLatePayments), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noLatePayments), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noLatePayments), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noLatePayments), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Late payments (all time)</td>
                     </tr>
                     <tr className={`border-b transition-colors ${getRowBgColor(
                       reportData?.qualificationCriteria?.[1]?.noBankruptcies || false,
-                      reportData?.qualificationCriteria?.[3]?.noBankruptcies || false,
-                      reportData?.qualificationCriteria?.[2]?.noBankruptcies || false
+                      reportData?.qualificationCriteria?.[2]?.noBankruptcies || false,
+                      reportData?.qualificationCriteria?.[3]?.noBankruptcies || false
                     )}`}>
                       <td className="text-center py-2 px-4">
                         {renderStatus(Boolean(reportData?.qualificationCriteria?.[1]?.noBankruptcies), isMissingTu)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noBankruptcies), isMissingEx)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noBankruptcies), isMissingEx)}
                       </td>
                       <td className="text-center py-2 px-4">
-                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[2]?.noBankruptcies), isMissingEq)}
+                        {renderStatus(Boolean(reportData?.qualificationCriteria?.[3]?.noBankruptcies), isMissingEq)}
                       </td>
                       <td className="py-2 px-4">Bankruptcy</td>
                     </tr>
@@ -7950,48 +8626,48 @@ export default function CreditReport() {
             const criteriaFlags = {
               score: [
                 getCriteria(1, "score700Plus") || getCriteria(1, "score730Plus"),
-                getCriteria(3, "score700Plus") || getCriteria(3, "score730Plus"),
                 getCriteria(2, "score700Plus") || getCriteria(2, "score730Plus"),
+                getCriteria(3, "score700Plus") || getCriteria(3, "score730Plus"),
               ],
               openUtil: [
                 getCriteria(1, "openRevolvingUnder30"),
-                getCriteria(3, "openRevolvingUnder30"),
                 getCriteria(2, "openRevolvingUnder30"),
+                getCriteria(3, "openRevolvingUnder30"),
               ],
               openCount: [
                 getCriteria(1, "minFiveOpenRevolving"),
-                getCriteria(3, "minFiveOpenRevolving"),
                 getCriteria(2, "minFiveOpenRevolving"),
+                getCriteria(3, "minFiveOpenRevolving"),
               ],
               unsecuredRecent: [
                 getCriteria(1, "maxFourUnsecuredIn12Months"),
-                getCriteria(3, "maxFourUnsecuredIn12Months"),
                 getCriteria(2, "maxFourUnsecuredIn12Months"),
+                getCriteria(3, "maxFourUnsecuredIn12Months"),
               ],
               inquiries: [
                 totalInquiryCountByBureauId(1) < 4,
-                totalInquiryCountByBureauId(3) < 4,
                 totalInquiryCountByBureauId(2) < 4,
+                totalInquiryCountByBureauId(3) < 4,
               ],
               bankruptcies: [
                 getCriteria(1, "noBankruptcies"),
-                getCriteria(3, "noBankruptcies"),
                 getCriteria(2, "noBankruptcies"),
+                getCriteria(3, "noBankruptcies"),
               ],
               collections: [
                 getCriteria(1, "noCollections") || getCriteria(1, "noCollectionsLiensJudgements"),
-                getCriteria(3, "noCollections") || getCriteria(3, "noCollectionsLiensJudgements"),
                 getCriteria(2, "noCollections") || getCriteria(2, "noCollectionsLiensJudgements"),
+                getCriteria(3, "noCollections") || getCriteria(3, "noCollectionsLiensJudgements"),
               ],
               chargeOffs: [
                 getCriteria(1, "noChargeOffs"),
-                getCriteria(3, "noChargeOffs"),
                 getCriteria(2, "noChargeOffs"),
+                getCriteria(3, "noChargeOffs"),
               ],
               latePays: [
                 getCriteria(1, "noLatePayments"),
-                getCriteria(3, "noLatePayments"),
                 getCriteria(2, "noLatePayments"),
+                getCriteria(3, "noLatePayments"),
               ],
             } as const;
 
@@ -17528,7 +18204,7 @@ export default function CreditReport() {
                   accounts = sampleAccounts;
                 }
 
-                const canonicalizeCreditor = (value: any) => String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+                const canonicalizeCreditor = (value: any) => normalizeCreditorName(String(value || ''));
                 const statusPriority = (value: string) => {
                   const lower = String(value || "").toLowerCase();
                   if (lower.includes("open") || lower.includes("current")) return 3;
@@ -17550,13 +18226,12 @@ export default function CreditReport() {
                     const openedValue = acc?.DateOpened || acc?.OpenDate || acc?.opened || acc?.dateOpened;
                     const ageInfo = getAccountAge(openedValue);
                     const creditor = acc?.CreditorName || acc?.creditor || acc?.name || "—";
-                    const rawAccountId = String(
+                    const normalizedAccountId = normalizeMaskedAccountNumber(
                       acc?.AccountNumber ||
                       acc?.accountNumber ||
                       acc?.MaskAccountNumber ||
-                      acc?.maskAccountNumber ||
-                      ""
-                    ).replace(/[^0-9a-z]/gi, "");
+                      acc?.maskAccountNumber
+                    );
                     return {
                       type: classifyAccountType(acc),
                       creditor,
@@ -17567,7 +18242,7 @@ export default function CreditReport() {
                       ageMonths: ageInfo.totalMonths,
                       limit,
                       balance,
-                      rawAccountId,
+                      normalizedAccountId,
                       bureaus: resolveBureausForAccount(acc),
                       accountNumber: maskAccountNumber(acc?.AccountNumber || acc?.accountNumber || acc?.maskAccountNumber)
                     };
@@ -17575,21 +18250,56 @@ export default function CreditReport() {
                   .filter((acc) => acc.limit > 0 || acc.balance > 0);
 
                 const aggregatedMap = new Map<string, any>();
+                const exactAccountMap = new Map<string, string>();
+                const monthLevelAccountMap = new Map<string, string>();
 
                 baseAccounts.forEach((item) => {
                   const parsedOpened = parseDate(item.opened);
                   const openedKey = parsedOpened ? parsedOpened.toISOString().slice(0, 10) : String(item.opened || "");
-                  const key = [item.canonicalCreditor, item.rawAccountId, item.type.toLowerCase(), openedKey].join("|");
+                  const monthLevelOpenedKey = openedKey ? openedKey.slice(0, 7) : '';
+                  const exactKey = item.normalizedAccountId && openedKey
+                    ? [item.canonicalCreditor, item.normalizedAccountId, openedKey].join('|')
+                    : '';
+                  const monthLevelKey = monthLevelOpenedKey
+                    ? [item.canonicalCreditor, monthLevelOpenedKey, item.designator].join('|')
+                    : '';
+                  const creditorFingerprint = buildCreditorFingerprint(item.canonicalCreditor);
+                  const fuzzyKey = Array.from(aggregatedMap.values()).find((existing) => {
+                    if (existing.designator !== item.designator) return false;
+                    if (item.normalizedAccountId && existing.normalizedAccountId && existing.normalizedAccountId !== item.normalizedAccountId) {
+                      return false;
+                    }
+
+                    const sameAccountType = existing.type === item.type || existing.type === 'Other' || item.type === 'Other';
+                    if (!sameAccountType) return false;
+
+                    if (getDateDistanceInDays(existing.opened, item.opened) > 30) return false;
+
+                    return calculateStringSimilarity(existing.creditorFingerprint, creditorFingerprint) >= 0.85;
+                  })?.key;
+                  const key =
+                    (exactKey && exactAccountMap.get(exactKey)) ||
+                    (monthLevelKey && monthLevelAccountMap.get(monthLevelKey)) ||
+                    fuzzyKey ||
+                    exactKey ||
+                    monthLevelKey ||
+                    [item.canonicalCreditor, item.type.toLowerCase(), openedKey].join('|');
                   const existing = aggregatedMap.get(key);
                   if (!existing) {
                     aggregatedMap.set(key, {
                       ...item,
                       bureausSet: new Set(item.bureaus),
+                      key,
+                      creditorFingerprint,
                     });
+                    if (exactKey) exactAccountMap.set(exactKey, key);
+                    if (monthLevelKey) monthLevelAccountMap.set(monthLevelKey, key);
                     return;
                   }
 
                   item.bureaus.forEach((code: string) => existing.bureausSet.add(code));
+                  if (exactKey) exactAccountMap.set(exactKey, existing.key);
+                  if (monthLevelKey) monthLevelAccountMap.set(monthLevelKey, existing.key);
                   existing.limit = Math.max(existing.limit, item.limit);
                   existing.balance = Math.max(existing.balance, item.balance);
                   if (designatorPriority(item.designator) > designatorPriority(existing.designator)) {
@@ -17601,6 +18311,9 @@ export default function CreditReport() {
                   if ((item.ageMonths ?? 0) > (existing.ageMonths ?? 0)) {
                     existing.ageMonths = item.ageMonths ?? 0;
                     existing.opened = item.opened;
+                  }
+                  if (!existing.normalizedAccountId && item.normalizedAccountId) {
+                    existing.normalizedAccountId = item.normalizedAccountId;
                   }
                 });
 
@@ -17691,7 +18404,7 @@ export default function CreditReport() {
                 });
 
                 return (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="flex flex-wrap items-center gap-2">
                       {filterOptions.map((option) => (
                         <Button
@@ -17764,6 +18477,199 @@ export default function CreditReport() {
                         </Table>
                       </div>
                     )}
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/70">
+                      <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                          <h3 className="text-xl font-semibold text-foreground dark:text-white">Average Age Growth Planner</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Deduplicated tradeline math to model how seasoned additions would change the file average age.
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Raw bureau tradelines: {averageAgePlanner.rawTradelineCount} • deduped tradelines: {averageAgePlanner.dedupedTradelineCount} • included in average: {averageAgePlanner.currentUniqueCount}
+                          </p>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Current average: <span className="font-semibold text-foreground dark:text-white">{formatAgeMonths(averageAgePlanner.currentAverageAgeMonths)}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+                        {averageAgePlanner.ruleNotice}
+                      </div>
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                        <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/60">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Unique Tradelines</p>
+                          <p className="mt-2 text-2xl font-semibold text-foreground dark:text-white">{averageAgePlanner.currentUniqueCount}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/60">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Average Age</p>
+                          <p className="mt-2 text-2xl font-semibold text-foreground dark:text-white">{formatAgeMonths(averageAgePlanner.currentAverageAgeMonths)}</p>
+                          <p className="text-xs text-muted-foreground">{Math.round(averageAgePlanner.currentAverageAgeMonths)} months</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/60">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Age Pool</p>
+                          <p className="mt-2 text-2xl font-semibold text-foreground dark:text-white">{Math.round(averageAgePlanner.totalAgePoolMonths).toLocaleString()}</p>
+                          <p className="text-xs text-muted-foreground">{formatAgeMonths(averageAgePlanner.totalAgePoolMonths)}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/60">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Oldest Account</p>
+                          <p className="mt-2 text-sm font-semibold text-foreground dark:text-white">{averageAgePlanner.oldestTradeline?.creditorName || 'N/A'}</p>
+                          <p className="text-xs text-muted-foreground">{averageAgePlanner.oldestTradeline ? formatAgeMonths(averageAgePlanner.oldestTradeline.ageMonths) : 'N/A'}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/60">
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">Youngest Account</p>
+                          <p className="mt-2 text-sm font-semibold text-foreground dark:text-white">{averageAgePlanner.youngestTradeline?.creditorName || 'N/A'}</p>
+                          <p className="text-xs text-muted-foreground">{averageAgePlanner.youngestTradeline ? formatAgeMonths(averageAgePlanner.youngestTradeline.ageMonths) : 'N/A'}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground dark:text-white">Target average age</label>
+                          <Select value={averageAgeTargetYears} onValueChange={setAverageAgeTargetYears}>
+                            <SelectTrigger className="bg-white dark:bg-slate-950/60">
+                              <SelectValue placeholder="Select target" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {AGE_GROWTH_TARGET_OPTIONS_YEARS.map((year) => (
+                                <SelectItem key={year} value={String(year)}>{year} years</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground dark:text-white">Max added tradelines</label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={averageAgeMaxTradelines}
+                            onChange={(event) => setAverageAgeMaxTradelines(event.target.value)}
+                            className="bg-white dark:bg-slate-950/60"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground dark:text-white">Min tradeline age</label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={averageAgeMinTradelineYears}
+                            onChange={(event) => setAverageAgeMinTradelineYears(event.target.value)}
+                            className="bg-white dark:bg-slate-950/60"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-foreground dark:text-white">Max tradeline age</label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={averageAgeMaxTradelineYears}
+                            onChange={(event) => setAverageAgeMaxTradelineYears(event.target.value)}
+                            className="bg-white dark:bg-slate-950/60"
+                          />
+                        </div>
+                      </div>
+
+                      {averageAgePlanner.warning ? (
+                        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                          {averageAgePlanner.warning}
+                        </div>
+                      ) : null}
+
+                      {averageAgePlanner.scenarios.length > 0 ? (
+                        <div className="mt-4 overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="dark:border-slate-700">
+                                <TableHead className="dark:text-white">Target Avg</TableHead>
+                                <TableHead className="dark:text-white">Tradeline Age</TableHead>
+                                <TableHead className="dark:text-white">Tradelines Needed</TableHead>
+                                <TableHead className="dark:text-white">Planning Note</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {averageAgePlanner.scenarios.map((scenario) => (
+                                <TableRow key={`${scenario.targetAverageMonths}-${scenario.tradelineAgeMonths}-${scenario.tradelinesNeeded}`} className="dark:border-slate-700">
+                                  <TableCell className="font-medium text-foreground dark:text-white">{formatAgeMonths(scenario.targetAverageMonths)}</TableCell>
+                                  <TableCell className="text-foreground dark:text-white">{formatAgeMonths(scenario.tradelineAgeMonths)}</TableCell>
+                                  <TableCell className="text-foreground dark:text-white">{scenario.tradelinesNeeded}</TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    {scenario.tradelinesNeeded === 1
+                                      ? 'One seasoned tradeline at this age clears the target.'
+                                      : `${scenario.tradelinesNeeded} tradelines at ${formatAgeMonths(scenario.tradelineAgeMonths)} are required to reach ${formatAgeMonths(scenario.targetAverageMonths)}.`}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ) : null}
+
+                      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/60">
+                          <h4 className="text-sm font-semibold uppercase tracking-wide text-foreground dark:text-white">Accounts Pulling Average Down</h4>
+                          <div className="mt-3 space-y-3">
+                            {averageAgePlanner.draggingTradelines.length > 0 ? (
+                              averageAgePlanner.draggingTradelines.map((tradeline) => (
+                                <div key={`drag-${tradeline.key}`} className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="font-medium text-foreground dark:text-white">{tradeline.creditorName}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Opened {tradeline.openDate} • {tradeline.accountType} • {tradeline.ownershipType}
+                                    </p>
+                                  </div>
+                                  <Badge variant="outline" className="whitespace-nowrap">{formatAgeMonths(tradeline.ageMonths)}</Badge>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No eligible tradelines found.</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/60">
+                          <h4 className="text-sm font-semibold uppercase tracking-wide text-foreground dark:text-white">Accounts Anchoring The File</h4>
+                          <div className="mt-3 space-y-3">
+                            {averageAgePlanner.anchoringTradelines.length > 0 ? (
+                              averageAgePlanner.anchoringTradelines.map((tradeline) => (
+                                <div key={`anchor-${tradeline.key}`} className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <p className="font-medium text-foreground dark:text-white">{tradeline.creditorName}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Opened {tradeline.openDate} • {tradeline.accountType} • {tradeline.ownershipType}
+                                    </p>
+                                  </div>
+                                  <Badge variant="outline" className="whitespace-nowrap">{formatAgeMonths(tradeline.ageMonths)}</Badge>
+                                </div>
+                              ))
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No eligible tradelines found.</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {averageAgePlanner.notes.length > 0 ? (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950/60">
+                          <h4 className="text-sm font-semibold uppercase tracking-wide text-foreground dark:text-white">Strategy Notes</h4>
+                          <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                            {averageAgePlanner.notes.map((note) => (
+                              <li key={note} className="flex gap-2">
+                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+                                <span>{note}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })()}

@@ -182,6 +182,54 @@ function buildReusedClientUpdates(existingClient: any, clientData: z.infer<typeo
   return updates;
 }
 
+function hasMatchingIdentityForMerge(existingClient: any, clientData: z.infer<typeof clientSchema>) {
+  const existingFirstName = normalizeComparableValue(existingClient?.first_name);
+  const existingLastName = normalizeComparableValue(existingClient?.last_name);
+  const incomingFirstName = normalizeComparableValue(clientData.first_name);
+  const incomingLastName = normalizeComparableValue(clientData.last_name);
+
+  if (!existingFirstName || !existingLastName || !incomingFirstName || !incomingLastName) {
+    return false;
+  }
+
+  if (existingFirstName !== incomingFirstName || existingLastName !== incomingLastName) {
+    return false;
+  }
+
+  const comparablePairs: Array<[string, string]> = [
+    [String(existingClient?.ssn_last_four || ''), String(clientData.ssn_last_four || '')],
+    [String(existingClient?.phone || ''), String(clientData.phone || '')],
+    [String(existingClient?.date_of_birth || ''), String(normalizeDateInput(clientData.date_of_birth) || '')],
+  ];
+
+  for (const [existingValue, incomingValue] of comparablePairs) {
+    const normalizedExisting = normalizeComparableValue(existingValue);
+    const normalizedIncoming = normalizeComparableValue(incomingValue);
+    if (normalizedExisting && normalizedIncoming && normalizedExisting !== normalizedIncoming) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function findExistingClientForAdminByEmail(adminId: number, email?: string | null) {
+  const normalizedEmail = normalizeComparableValue(email);
+  if (!adminId || !normalizedEmail) {
+    return null;
+  }
+
+  return getQuery(
+    `SELECT *
+       FROM clients
+      WHERE user_id = ?
+        AND LOWER(TRIM(COALESCE(email, ''))) = ?
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1`,
+    [adminId, normalizedEmail]
+  );
+}
+
 async function getExistingUserColumns(): Promise<Set<string>> {
   const adapter = getDatabaseAdapter();
 
@@ -510,6 +558,7 @@ export async function getClients(req: AuthRequest, res: Response) {
 export async function getClient(req: AuthRequest, res: Response) {
   try {
     const { id } = req.params;
+
     const requestedClientId = Number(id);
 
     if (req.user!.role === 'client') {
@@ -625,6 +674,62 @@ export async function createClient(req: AuthRequest, res: Response) {
           created: false,
         });
       }
+    }
+
+    const emailMatchedClient = await findExistingClientForAdminByEmail(baseUserId, clientData.email);
+    if (emailMatchedClient?.id) {
+      if (!hasMatchingIdentityForMerge(emailMatchedClient, clientData)) {
+        return res.status(409).json({
+          success: false,
+          error: 'Client with this email already exists under a different identity'
+        });
+      }
+
+      const updates = buildReusedClientUpdates(emailMatchedClient, clientData, req.user!.id);
+      const fields = Object.keys(updates);
+
+      if (fields.length > 0) {
+        const setClause = fields.map((field) => `${field} = ?`).join(', ');
+        const values = fields.map((field) => updates[field]);
+        await runQuery(
+          `UPDATE clients SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
+          [...values, emailMatchedClient.id, baseUserId]
+        );
+      }
+
+      const refreshedClient = await getQuery(
+        'SELECT * FROM clients WHERE id = ?',
+        [emailMatchedClient.id]
+      );
+
+      await runQuery(`
+        INSERT INTO activities (user_id, client_id, type, description)
+        VALUES (?, ?, ?, ?)
+      `, [
+        baseUserId,
+        emailMatchedClient.id,
+        'client_merged',
+        `Existing client merged by matching email and identity: ${clientData.first_name} ${clientData.last_name}`
+      ]);
+
+      await runQuery(`
+        INSERT INTO user_activities (user_id, activity_type, resource_type, resource_id, description, ip_address, user_agent, session_id)
+        VALUES (?, 'update', 'client', ?, ?, ?, ?, ?)
+      `, [
+        baseUserId,
+        emailMatchedClient.id,
+        `Existing client merged by matching email and identity: ${clientData.first_name} ${clientData.last_name}`,
+        req.ip,
+        req.get('User-Agent') || null,
+        null
+      ]);
+
+      return res.status(200).json({
+        ...refreshedClient,
+        reusedExisting: true,
+        mergedExisting: true,
+        created: false,
+      });
     }
     
     // Use transaction to prevent race conditions in quota validation
