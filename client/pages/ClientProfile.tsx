@@ -7,9 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { clientsApi, creditReportScraperApi } from "@/lib/api";
+import { clientsApi, creditReportScraperApi, clientDocumentsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import EditClientForm from "@/components/EditClientForm";
+import { DocumentUploadBox } from "@/components/ui/DocumentUploadBox";
+import { US_STATE_OPTIONS, isUsStateOption } from "@shared/usStates";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +28,7 @@ import {
   Phone, 
   MapPin, 
   Calendar,
+  CalendarDays,
   Edit,
   FileText,
   Plus,
@@ -42,7 +45,25 @@ import {
   MessageCircle,
   AlertCircle,
   CheckCircle,
-  Loader2
+  Loader2,
+  ScrollText,
+  Shield,
+  ShieldCheck,
+  Upload,
+  Trash2,
+  Download,
+  Eye,
+  EyeOff,
+  Building,
+  Pencil,
+  Check,
+  AlertTriangle,
+  StickyNote,
+  Globe,
+  Hash,
+  Heart,
+  Lock,
+  Briefcase
 } from "lucide-react";
 
 interface ClientData {
@@ -97,6 +118,74 @@ interface ClientData {
   latestJsonData?: any;
 }
 
+function OtherDocUploadButton({ onUpload }: { onUpload: (files: File[]) => Promise<void> }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const processFiles = async (files: File[]) => {
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'];
+    const validFiles = files.filter(f => validTypes.includes(f.type));
+    if (validFiles.length === 0) return;
+    setUploading(true);
+    try {
+      await onUpload(validFiles);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept=".jpg,.jpeg,.png,.gif,.pdf"
+        multiple
+        onChange={async (e) => {
+          if (!e.target.files || e.target.files.length === 0) return;
+          await processFiles(Array.from(e.target.files));
+        }}
+      />
+      <div
+        className={`w-full border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all ${
+          isDragging
+            ? 'border-blue-500 bg-blue-50'
+            : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50'
+        }`}
+        onClick={() => fileInputRef.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={(e) => { e.preventDefault(); if (e.currentTarget.contains(e.relatedTarget as Node)) return; setIsDragging(false); }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragging(false);
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            await processFiles(Array.from(e.dataTransfer.files));
+          }
+        }}
+      >
+        {uploading ? (
+          <div className="flex flex-col items-center gap-2 py-2">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            <span className="text-sm text-slate-500 font-medium">Uploading...</span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2 py-2">
+            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+              <Upload className="h-5 w-5 text-blue-600" />
+            </div>
+            <p className="text-sm font-medium text-slate-600">Drag files here or click to upload</p>
+            <p className="text-xs text-slate-400">JPG, PNG, PDF — select multiple files</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ClientProfile() {
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
@@ -117,7 +206,32 @@ export default function ClientProfile() {
   const [fundingDialogOpen, setFundingDialogOpen] = useState(false);
   const [selectedFundingType, setSelectedFundingType] = useState<"personal" | "business" | "both" | "">("");
   const [selectedFundingMethod, setSelectedFundingMethod] = useState<"diy" | "dfy" | "">("");
+  const [generatedLetters, setGeneratedLetters] = useState<any[]>([]);
+  const [lettersLoading, setLettersLoading] = useState(false);
+  const [clientDocuments, setClientDocuments] = useState<any>(null);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [viewingLetter, setViewingLetter] = useState<any>(null);
   const [startWithType, setStartWithType] = useState<"personal" | "business">("personal");
+  const [formData, setFormData] = useState<Record<string, any>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [letterHistory, setLetterHistory] = useState<any[]>([]);
+  const [letterHistoryLoading, setLetterHistoryLoading] = useState(false);
+  const [otherDocs, setOtherDocs] = useState<any[]>([]);
+  const [otherDocPreview, setOtherDocPreview] = useState<any>(null);
+  const [equifaxLiveSession, setEquifaxLiveSession] = useState<any>(null);
+  const [equifaxLiveBusy, setEquifaxLiveBusy] = useState(false);
+  const [equifaxPreviewBusy, setEquifaxPreviewBusy] = useState(false);
+  const [equifaxLiveError, setEquifaxLiveError] = useState<string | null>(null);
+  const [equifaxSavedScreenshot, setEquifaxSavedScreenshot] = useState<any>(null);
+  const [securityFreezePinSaveState, setSecurityFreezePinSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const securityFreezePinSaveTimeoutRef = useRef<number | null>(null);
+  const securityFreezePinStatusTimeoutRef = useRef<number | null>(null);
+  const stateOptions = !formData.state || isUsStateOption(formData.state)
+    ? [...US_STATE_OPTIONS]
+    : [formData.state, ...US_STATE_OPTIONS];
 
   useEffect(() => {
     const state = location.state as { openEdit?: boolean } | null;
@@ -534,9 +648,36 @@ export default function ClientProfile() {
           chatHistory: clientData.chat_history || [],
           creditReportHistory: creditReportHistory,
           latestJsonData: latestJsonData || reportData?.raw_data || null,
+          dl_or_id_card: clientData.dl_or_id_card || null,
+          ssc: clientData.ssc || null,
+          poa: clientData.poa || null,
         };
 
         setClient(transformedClient);
+        // Populate formData for inline editing
+        setFormData({
+          first_name: clientData.first_name || '',
+          middle_name: clientData.middle_name || '',
+          last_name: clientData.last_name || '',
+          email: clientData.email || '',
+          phone: clientData.phone || '',
+          status: clientData.status || 'active',
+          date_of_birth: clientData.date_of_birth || clientData.dob || '',
+          street_number_and_name: clientData.street_number_and_name || clientData.address || clientData.address_line1 || '',
+          city: clientData.city || '',
+          state: clientData.state || '',
+          zip_code: clientData.zip_code || clientData.postal_code || '',
+          country: clientData.country || 'United States',
+          employment_status: clientData.employment_status || '',
+          annual_income: clientData.annual_income || '',
+          ssn_last_four: clientData.ssn_last_four || '',
+          ssn_last_six: clientData.ssn_last_six || '',
+          platform: clientData.platform || '',
+          platform_email: clientData.platform_email || '',
+          platform_password: clientData.platform_password || '',
+          notes: clientData.notes || '',
+          security_freeze_pin: clientData.security_freeze_pin || '',
+        });
       } catch (error) {
         console.error("Error fetching client data:", error);
         toast({
@@ -553,6 +694,301 @@ export default function ClientProfile() {
     setShowEditForm(false);
     fetchClientData();
   };
+
+  // --- Profile form helpers ---
+  const updateField = (field: string, value: any) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSaveAll = async () => {
+    if (!clientId) return;
+    setSaving(true);
+    setSaveSuccess(false);
+    try {
+      await clientsApi.updateClient(clientId, formData);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+      toast({ title: "Changes saved successfully" });
+      fetchClientData();
+    } catch (error) {
+      console.error("Error saving profile:", error);
+      toast({ title: "Failed to save changes", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const persistSecurityFreezePin = async (rawValue: string, showFailureToast = false) => {
+    if (!clientId) return;
+    setSecurityFreezePinSaveState('saving');
+    try {
+      await clientsApi.updateClient(clientId, { security_freeze_pin: rawValue });
+      setSecurityFreezePinSaveState('saved');
+      if (securityFreezePinStatusTimeoutRef.current) clearTimeout(securityFreezePinStatusTimeoutRef.current);
+      securityFreezePinStatusTimeoutRef.current = window.setTimeout(() => setSecurityFreezePinSaveState('idle'), 3000);
+    } catch {
+      setSecurityFreezePinSaveState('error');
+      if (showFailureToast) toast({ title: "Failed to save security freeze PIN", variant: "destructive" });
+    }
+  };
+
+  const handleSecurityFreezePinChange = (value: string) => {
+    updateField('security_freeze_pin', value);
+    if (securityFreezePinSaveTimeoutRef.current) clearTimeout(securityFreezePinSaveTimeoutRef.current);
+    securityFreezePinSaveTimeoutRef.current = window.setTimeout(() => persistSecurityFreezePin(value), 700);
+  };
+
+  const handleSecurityFreezePinBlur = () => {
+    if (securityFreezePinSaveTimeoutRef.current) clearTimeout(securityFreezePinSaveTimeoutRef.current);
+    persistSecurityFreezePin(formData.security_freeze_pin || '');
+  };
+
+  const safeJsonParse = (val: any): string[] => {
+    if (Array.isArray(val)) return val.map(String);
+    if (typeof val === 'string') {
+      try { const parsed = JSON.parse(val); return Array.isArray(parsed) ? parsed.map(String) : []; }
+      catch { return []; }
+    }
+    return [];
+  };
+
+  // --- Equifax Settlement helpers ---
+  const hasEquifaxSettlementData = /^\d{6}$/.test(String(formData.ssn_last_six || ''));
+  const equifaxLiveStatus = equifaxLiveSession?.status || 'idle';
+  const hasActiveEquifaxLiveSession = !['idle', 'error'].includes(equifaxLiveStatus);
+  const activeEquifaxPreviewUrl = hasActiveEquifaxLiveSession
+    ? equifaxLiveSession?.screenshotDataUrl || null
+    : null;
+  const equifaxDisplayImageUrl = activeEquifaxPreviewUrl || equifaxSavedScreenshot?.imageUrl || null;
+
+  const securityFreezePinStatusText = securityFreezePinSaveState === 'saving' ? 'Saving…'
+    : securityFreezePinSaveState === 'saved' ? 'Saved ✓'
+    : securityFreezePinSaveState === 'error' ? 'Save failed'
+    : 'Auto-saves on change';
+  const securityFreezePinStatusClassName = securityFreezePinSaveState === 'saving' ? 'text-blue-500'
+    : securityFreezePinSaveState === 'saved' ? 'text-emerald-600'
+    : securityFreezePinSaveState === 'error' ? 'text-red-500'
+    : 'text-slate-400';
+
+  const getEquifaxMissingDataMessage = () => {
+    return 'Save the client last name and Equifax settlement SSN last 6 digits before starting the live preview.';
+  };
+
+  const refreshEquifaxLiveSession = async (quiet = false) => {
+    if (!clientId || !client) return;
+
+    try {
+      const response = await clientsApi.getEquifaxSettlementLivePreview(clientId);
+      if (response?.data?.success) {
+        setEquifaxLiveSession(response.data.data || null);
+        if (!quiet) {
+          setEquifaxLiveError(null);
+        }
+      }
+    } catch (error: any) {
+      if (!quiet) {
+        const description =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Failed to refresh the Equifax live preview';
+        setEquifaxLiveError(description);
+        toast({
+          title: 'Equifax Live Preview Error',
+          description,
+          variant: 'destructive',
+        });
+      }
+    }
+  };
+
+  const fetchEquifaxSavedScreenshot = async (quiet = false) => {
+    if (!clientId || !client) return;
+
+    try {
+      const response = await clientsApi.getEquifaxSettlementSavedScreenshot(clientId);
+      if (response?.data?.success) {
+        setEquifaxSavedScreenshot(response.data.data || null);
+      }
+    } catch (error: any) {
+      if (!quiet) {
+        const description =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Failed to load the saved Equifax screenshot';
+        setEquifaxLiveError(description);
+        toast({
+          title: 'Saved Screenshot Error',
+          description,
+          variant: 'destructive',
+        });
+      }
+    }
+  };
+
+  const startEquifaxLiveBrowser = async () => {
+    if (!clientId || !client) return;
+
+    const hasLastName = Boolean(String(client.last_name || '').trim());
+    const hasSsnLastSix = /^\d{6}$/.test(String(formData.ssn_last_six || ''));
+    if (!hasLastName || !hasSsnLastSix) {
+      const description = getEquifaxMissingDataMessage();
+      setEquifaxLiveError(description);
+      toast({
+        title: 'Missing Client Data',
+        description,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setEquifaxLiveBusy(true);
+    setEquifaxLiveError(null);
+
+    try {
+      const response = await clientsApi.startEquifaxSettlementLiveBrowser(clientId);
+      if (!response?.data?.success || !response.data.data) {
+        throw new Error('Failed to open the live Equifax preview');
+      }
+
+      setEquifaxLiveSession(response.data.data);
+      await refreshEquifaxLiveSession(true);
+      toast({
+        title: 'Live Equifax Preview Opened',
+        description:
+          'The system filled both inputs and loaded the live Equifax preview below. If reCAPTCHA appears, click inside the preview to solve it.',
+      });
+    } catch (error: any) {
+      const description =
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to open the live Equifax preview';
+      setEquifaxLiveError(description);
+      toast({
+        title: 'Equifax Live Preview Failed',
+        description,
+        variant: 'destructive',
+      });
+    } finally {
+      setEquifaxLiveBusy(false);
+    }
+  };
+
+  const saveEquifaxScreenshot = async () => {
+    if (!clientId || !equifaxLiveSession?.screenshotDataUrl) return;
+
+    setEquifaxPreviewBusy(true);
+    setEquifaxLiveError(null);
+    try {
+      const response = await clientsApi.saveEquifaxSettlementScreenshot(clientId);
+      if (response?.data?.success) {
+        setEquifaxSavedScreenshot(response.data.data || null);
+        toast({
+          title: 'Screenshot Saved',
+          description: 'The Equifax screenshot was saved and updated for this client.',
+        });
+      }
+    } catch (error: any) {
+      const description =
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to save the Equifax screenshot';
+      setEquifaxLiveError(description);
+      toast({
+        title: 'Save Screenshot Failed',
+        description,
+        variant: 'destructive',
+      });
+    } finally {
+      setEquifaxPreviewBusy(false);
+    }
+  };
+
+  const handleEquifaxPreviewClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!clientId || !equifaxLiveSession?.screenshotDataUrl || equifaxPreviewBusy) return;
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+
+    const xRatio = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+    const yRatio = Math.max(0, Math.min(1, (event.clientY - bounds.top) / bounds.height));
+
+    setEquifaxPreviewBusy(true);
+    try {
+      const response = await clientsApi.clickEquifaxSettlementLivePreview(clientId, {
+        xRatio,
+        yRatio,
+      });
+      if (response?.data?.success) {
+        setEquifaxLiveSession(response.data.data || null);
+        setEquifaxLiveError(null);
+      }
+    } catch (error: any) {
+      const description =
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to interact with the live Equifax preview';
+      setEquifaxLiveError(description);
+      toast({
+        title: 'Preview Interaction Failed',
+        description,
+        variant: 'destructive',
+      });
+    } finally {
+      setEquifaxPreviewBusy(false);
+    }
+  };
+
+  // Equifax: load/refresh on tab change
+  useEffect(() => {
+    if (activeTab !== 'equifax' || !clientId) return;
+    refreshEquifaxLiveSession(true);
+  }, [activeTab, clientId]);
+
+  // Equifax: fetch saved screenshots
+  useEffect(() => {
+    if (activeTab !== 'equifax' || !clientId) return;
+    fetchEquifaxSavedScreenshot(true);
+  }, [activeTab, clientId]);
+
+  // Equifax: polling for live session updates - 3 second interval
+  useEffect(() => {
+    if (activeTab !== 'equifax' || !clientId) return;
+
+    const currentStatus = equifaxLiveSession?.status;
+    if (!currentStatus || ['idle', 'error', 'result_ready'].includes(currentStatus)) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      refreshEquifaxLiveSession(true);
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeTab, clientId, equifaxLiveSession?.status]);
+
+  // Fetch letter history
+  useEffect(() => {
+    if (activeTab === "letters" && clientId && !letterHistory.length && !letterHistoryLoading) {
+      const fetchLetterHistory = async () => {
+        setLetterHistoryLoading(true);
+        try {
+          const token = localStorage.getItem("token");
+          const res = await fetch(`/api/disputes/letter-history/${clientId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setLetterHistory(Array.isArray(data) ? data : data.data || []);
+          }
+        } catch (err) {
+          console.error("Error fetching letter history:", err);
+        } finally {
+          setLetterHistoryLoading(false);
+        }
+      };
+      fetchLetterHistory();
+    }
+  }, [activeTab, clientId]);
 
   const fetchScoreHistory = async () => {
     if (!clientId) return;
@@ -604,11 +1040,142 @@ export default function ClientProfile() {
     fetchClientData();
   }, [clientId, toast]);
 
+  // Fetch other documents on mount
+  useEffect(() => {
+    if (clientId) {
+      fetchOtherDocs();
+    }
+  }, [clientId]);
+
   useEffect(() => {
     if (activeTab === "scores" && clientId && !scoreHistory.length && !scoreHistoryLoading) {
       fetchScoreHistory();
     }
   }, [activeTab, clientId]);
+
+  // Fetch generated letter history
+  useEffect(() => {
+    if (activeTab === "letters" && clientId && !generatedLetters.length && !lettersLoading) {
+      const fetchLetters = async () => {
+        setLettersLoading(true);
+        try {
+          const token = localStorage.getItem("token");
+          const response = await fetch(`/api/credit-repair/generated-letters?client_id=${clientId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setGeneratedLetters(data.data || []);
+          }
+        } catch (error) {
+          console.error("Error fetching generated letters:", error);
+        } finally {
+          setLettersLoading(false);
+        }
+      };
+      fetchLetters();
+    }
+  }, [activeTab, clientId]);
+
+  // Fetch client documents
+  useEffect(() => {
+    if (activeTab === "documents" && clientId && !clientDocuments && !documentsLoading) {
+      const fetchDocuments = async () => {
+        setDocumentsLoading(true);
+        try {
+          const token = localStorage.getItem("token");
+          const response = await fetch(`/api/client-documents/${clientId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (response.ok) {
+            const data = await response.json();
+            setClientDocuments(data.data || {});
+          }
+        } catch (error) {
+          console.error("Error fetching client documents:", error);
+        } finally {
+          setDocumentsLoading(false);
+        }
+      };
+      fetchDocuments();
+    }
+  }, [activeTab, clientId]);
+
+  const handleDocumentUpload = async (type: string, file: File) => {
+    if (!clientId) return;
+    setUploadingDoc(type);
+    try {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("type", type);
+      const response = await fetch(`/api/client-documents/${clientId}/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error("Upload failed");
+      }
+      // Refresh client data so the new document URL appears
+      fetchClientData();
+    } catch (error) {
+      // Re-throw so DocumentUploadBox shows the error toast
+      throw error;
+    } finally {
+      setUploadingDoc(null);
+    }
+  };
+
+  const handleDocumentDelete = async (type: string) => {
+    if (!clientId) return;
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`/api/client-documents/${clientId}/document/${type}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        toast({ title: "Document deleted successfully" });
+        setClientDocuments(null); // Reset to trigger refetch
+      }
+    } catch (error) {
+      toast({ title: "Error deleting document", variant: "destructive" });
+    }
+  };
+
+  // --- Other Documents helpers ---
+  const fetchOtherDocs = async () => {
+    if (!clientId) return;
+    try {
+      const res = await clientDocumentsApi.getDocuments(clientId);
+      if (res?.data?.success) {
+        setOtherDocs(res.data.data?.other_documents || []);
+      }
+    } catch (error) {
+      console.error("Error fetching other docs:", error);
+    }
+  };
+
+  const handleAdditionalUpload = async (files: File[]) => {
+    if (!clientId) return;
+    try {
+      await clientDocumentsApi.uploadMultipleAdditionalDocuments(clientId, 'other', files);
+      fetchOtherDocs();
+    } catch (error) {
+      toast({ title: "Error uploading documents", variant: "destructive" });
+    }
+  };
+
+  const handleAdditionalDelete = async (docId: number) => {
+    if (!clientId) return;
+    try {
+      await clientDocumentsApi.deleteAdditionalDocument(clientId, docId);
+      setOtherDocs(prev => prev.filter(d => d.id !== docId));
+    } catch (error) {
+      toast({ title: "Error deleting document", variant: "destructive" });
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -816,171 +1383,389 @@ export default function ClientProfile() {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <div className="overflow-x-auto">
-            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 gap-2 min-w-[520px] sm:min-w-0">
+            <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 gap-2 min-w-[700px] sm:min-w-0">
               <TabsTrigger value="info" className="flex items-center space-x-2">
                 <User className="h-4 w-4" />
-                <span>Client Info</span>
+                <span>Profile & Documents</span>
               </TabsTrigger>
               <TabsTrigger value="history" className="flex items-center space-x-2">
                 <History className="h-4 w-4" />
-                <span>Credit Report History</span>
+                <span>Credit Reports</span>
               </TabsTrigger>
               <TabsTrigger value="scores" className="flex items-center space-x-2">
                 <TrendingUp className="h-4 w-4" />
                 <span>Score History</span>
               </TabsTrigger>
+              <TabsTrigger value="letters" className="flex items-center space-x-2">
+                <ScrollText className="h-4 w-4" />
+                <span>Generated Letters</span>
+              </TabsTrigger>
+              <TabsTrigger value="equifax" className="flex items-center space-x-2">
+                <Shield className="h-4 w-4" />
+                <span>Equifax Settlement</span>
+              </TabsTrigger>
               <TabsTrigger value="json" className="flex items-center space-x-2">
                 <Code className="h-4 w-4" />
-                <span>JSON</span>
+                <span>Raw Data</span>
               </TabsTrigger>
             </TabsList>
           </div>
 
-          {/* Client Info Tab */}
-          <TabsContent value="info" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Contact Information */}
-              <Card className="gradient-light border-0">
-                <CardHeader>
-                  <CardTitle className="text-lg">Contact Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">{client.email}</span>
+          {/* Client Info Tab - Profile & Documents */}
+          <TabsContent value="info" className="mt-0 space-y-6">
+                {/* Client Welcome Card */}
+                <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-6 flex items-center gap-5 border border-blue-100">
+                  <div className="flex-shrink-0">
+                    <Avatar className="h-16 w-16 border-2 border-white shadow-md">
+                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-xl font-bold">
+                        {client.name?.split(' ').map((n: string) => n[0]).join('') || '?'}
+                      </AvatarFallback>
+                    </Avatar>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">{client.phone}</span>
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold text-slate-800 truncate">{client.name || 'Client'}</h2>
+                    <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-0.5">
+                      <CalendarDays className="h-3.5 w-3.5" /> Member since {client.joinDate ? new Date(client.joinDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'N/A'}
+                    </p>
                   </div>
-                  <div className="flex items-start space-x-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                    <span className="text-sm">{client.address}</span>
+                  <div className="ml-auto flex-shrink-0">
+                    <Badge
+                      className={`px-3 py-1 text-xs font-semibold rounded-full ${formData.status === 'active' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}
+                    >
+                      {formData.status === 'active' ? '● Active' : '○ Inactive'}
+                    </Badge>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* Funding Eligibility Progress */}
-              <Card className="gradient-light border-0">
-                <CardHeader>
-                  <CardTitle className="text-lg">Funding Eligibility Progress</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="text-center">
-                    <div className={`text-3xl font-bold ${client.fundingEligibility === 'fundable' ? 'text-green-600' : 'text-red-600'}`}>
-                      {client.fundingEligibility === 'fundable' ? 'Fundable' : 'Not Fundable'}
+                {/* Personal Information */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-5 py-3 flex items-center gap-2.5">
+                    <User className="h-4 w-4 text-white" />
+                    <h3 className="text-sm font-semibold text-white tracking-wide">Personal Information</h3>
+                  </div>
+                  <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <User className="h-3 w-3" /> First Name
+                      </label>
+                      <input type="text" value={formData.first_name || ''} onChange={(e) => updateField('first_name', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors" />
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      Current Status
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <User className="h-3 w-3" /> Middle Name
+                      </label>
+                      <input type="text" value={formData.middle_name || ''} onChange={(e) => updateField('middle_name', e.target.value)} placeholder="Optional" className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors placeholder:text-slate-300" />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <User className="h-3 w-3" /> Last Name
+                      </label>
+                      <input type="text" value={formData.last_name || ''} onChange={(e) => updateField('last_name', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors" />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <Mail className="h-3 w-3" /> Email Address
+                      </label>
+                      <input type="email" value={formData.email || ''} onChange={(e) => updateField('email', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors" />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <Phone className="h-3 w-3" /> Phone
+                      </label>
+                      <input type="tel" value={formData.phone || ''} onChange={(e) => updateField('phone', e.target.value)} placeholder="No phone added" className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors placeholder:text-slate-300" />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <Heart className="h-3 w-3" /> Status
+                      </label>
+                      <select value={formData.status || 'active'} onChange={(e) => updateField('status', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <CalendarDays className="h-3 w-3" /> Date of Birth
+                      </label>
+                      <input type="date" value={formData.date_of_birth ? formData.date_of_birth.split('T')[0] : ''} onChange={(e) => updateField('date_of_birth', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-colors" />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <CalendarDays className="h-3 w-3" /> Joined
+                      </label>
+                      <input type="text" value={client.joinDate ? new Date(client.joinDate).toLocaleDateString() : ''} readOnly className="w-full border border-slate-100 rounded-xl px-3.5 py-2.5 text-slate-400 bg-slate-50 cursor-not-allowed" />
                     </div>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Progress: {client.fundingProgress}%</span>
-                    <span>Target: 100%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full ${client.fundingEligibility === 'fundable' ? 'bg-green-500' : 'bg-red-500'}`}
-                      style={{ width: `${Math.min(Math.max(client.fundingProgress, 0), 100)}%` }}
-                    ></div>
-                  </div>
-                </CardContent>
-              </Card>
+                </div>
 
-              {/* Account Status with Chaser Info */}
-              <Card className="gradient-light border-0">
-                <CardHeader>
-                  <CardTitle className="text-lg">Account Status</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Total Paid:</span>
-                    <span className="font-medium">${client.totalPaid.toLocaleString()}</span>
+                {/* Residential Information */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-3 flex items-center gap-2.5">
+                    <MapPin className="h-4 w-4 text-white" />
+                    <h3 className="text-sm font-semibold text-white tracking-wide">Residential Information</h3>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Active Disputes:</span>
-                    <span className="font-medium">{client.disputesActive}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Total Disputes:</span>
-                    <span className="font-medium">{client.disputesTotal}</span>
-                  </div>
-                  {client.nextPayment && (
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Next Payment:</span>
-                      <span className="font-medium">
-                        {new Date(client.nextPayment).toLocaleDateString()}
-                      </span>
+                  <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="md:col-span-2 lg:col-span-3">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <MapPin className="h-3 w-3" /> Street Number and Name
+                      </label>
+                      <input type="text" value={formData.street_number_and_name || ''} onChange={(e) => updateField('street_number_and_name', e.target.value)} placeholder="Enter street number and name..." className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-colors placeholder:text-slate-300" />
                     </div>
-                  )}
-                  {client.chaserInfo && Object.keys(client.chaserInfo).length > 0 && (
-                    <>
-                      <div className="border-t pt-3 mt-3">
-                        <h4 className="text-sm font-medium mb-2">Chaser Information</h4>
-                        {Object.entries(client.chaserInfo).map(([key, value]) => (
-                          <div key={key} className="flex justify-between text-xs">
-                            <span className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}:</span>
-                            <span className="font-medium">{String(value)}</span>
-                          </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <Building className="h-3 w-3" /> City
+                      </label>
+                      <input type="text" value={formData.city || ''} onChange={(e) => updateField('city', e.target.value)} placeholder="Enter city..." className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-colors placeholder:text-slate-300" />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <MapPin className="h-3 w-3" /> State
+                      </label>
+                      <select value={formData.state || ''} onChange={(e) => updateField('state', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-colors">
+                        <option value="">Select state</option>
+                        {stateOptions.map((stateName) => (
+                          <option key={stateName} value={stateName}>{stateName}</option>
                         ))}
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Chat History Section */}
-            {client.chatHistory && client.chatHistory.length > 0 && (
-              <Card className="gradient-light border-0">
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center">
-                    <MessageCircle className="h-5 w-5 mr-2" />
-                    Chat History
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {client.chatHistory.map((chat) => (
-                      <div key={chat.id} className={`flex ${chat.sender === 'admin' ? 'justify-start' : 'justify-end'}`}>
-                        <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                          chat.sender === 'admin' 
-                            ? 'bg-gray-100 text-gray-800' 
-                            : 'bg-blue-500 text-white'
-                        }`}>
-                          <p className="text-sm">{chat.message}</p>
-                          <p className="text-xs opacity-70 mt-1">
-                            {new Date(chat.timestamp).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <Hash className="h-3 w-3" /> Zip
+                      </label>
+                      <input type="text" value={formData.zip_code || ''} onChange={(e) => updateField('zip_code', e.target.value)} placeholder="75001" className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-colors placeholder:text-slate-300" />
+                    </div>
+                    <div className="md:col-span-2 lg:col-span-3">
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <Globe className="h-3 w-3" /> Country
+                      </label>
+                      <input type="text" value={formData.country || ''} onChange={(e) => updateField('country', e.target.value)} placeholder="United States" className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-colors placeholder:text-slate-300" />
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                </div>
 
-            {/* Notes Section */}
-            <Card className="gradient-light border-0">
-              <CardHeader>
-                <CardTitle className="text-lg">Client Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">{client.notes}</p>
-              </CardContent>
-            </Card>
+                {/* Work Information */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3 flex items-center gap-2.5">
+                    <Briefcase className="h-4 w-4 text-white" />
+                    <h3 className="text-sm font-semibold text-white tracking-wide">Work Information</h3>
+                  </div>
+                  <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <Briefcase className="h-3 w-3" /> Employment
+                      </label>
+                      <input type="text" value={formData.employment_status || ''} onChange={(e) => updateField('employment_status', e.target.value)} placeholder="e.g. Full-time, Freelancer..." className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-colors placeholder:text-slate-300" />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <DollarSign className="h-3 w-3" /> Annual Income
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-medium">$</span>
+                        <input type="number" value={formData.annual_income || ''} onChange={(e) => updateField('annual_income', e.target.value)} className="w-full border border-slate-200 rounded-xl pl-7 pr-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-colors" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <ShieldCheck className="h-3 w-3" /> Social Security Number
+                      </label>
+                      <input type="text" value={formData.ssn_last_four || ''} onChange={(e) => updateField('ssn_last_four', e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="Last 4 Digits" maxLength={4} className="w-full border border-orange-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-orange-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition-colors placeholder:text-slate-400 tracking-widest" />
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <ShieldCheck className="h-3 w-3" /> Equifax Settlement SSN
+                      </label>
+                      <input type="text" value={formData.ssn_last_six || ''} onChange={(e) => updateField('ssn_last_six', e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Last 6 Digits" maxLength={6} className="w-full border border-orange-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-orange-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition-colors placeholder:text-slate-400 tracking-widest" />
+                      <p className="mt-1.5 text-xs text-orange-500">Required for the Equifax Data Breach Settlement tab.</p>
+                    </div>
+                  </div>
+                </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row sm:justify-end gap-2 pt-4 border-t">
-              <Button variant="outline" size="sm" onClick={handleEditClient}>
-                <Edit className="h-4 w-4 mr-2" />
-                Edit Client
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleViewReports}>
-                <FileText className="h-4 w-4 mr-2" />
-                View Reports
-              </Button>
-            </div>
+                {/* Platform Information */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-violet-500 to-purple-600 px-5 py-3 flex items-center gap-2.5">
+                    <Globe className="h-4 w-4 text-white" />
+                    <h3 className="text-sm font-semibold text-white tracking-wide">Platform Information</h3>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                          <Globe className="h-3 w-3" /> Platform
+                        </label>
+                        <input type="text" value={formData.platform || ''} onChange={(e) => updateField('platform', e.target.value)} placeholder="e.g. IdentityIQ" className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-colors placeholder:text-slate-300" />
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                          <Mail className="h-3 w-3" /> Platform Email
+                        </label>
+                        <input type="email" value={formData.platform_email || ''} onChange={(e) => updateField('platform_email', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-colors" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <Lock className="h-3 w-3" /> Platform Password
+                      </label>
+                      <div className="relative">
+                        <input type={showPassword ? 'text' : 'password'} value={formData.platform_password || ''} onChange={(e) => updateField('platform_password', e.target.value)} className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 pr-10 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-colors" />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-violet-500 transition-colors">
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
+                        <StickyNote className="h-3 w-3" /> Notes
+                      </label>
+                      <textarea value={formData.notes || ''} onChange={(e) => updateField('notes', e.target.value)} rows={3} placeholder="Any notes about this client..." className="w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 bg-slate-50/50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-colors resize-none placeholder:text-slate-300" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Documents */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-sky-500 to-cyan-500 px-5 py-3 flex items-center gap-2.5">
+                    <FileText className="h-4 w-4 text-white" />
+                    <h3 className="text-sm font-semibold text-white tracking-wide">Identity Documents</h3>
+                  </div>
+                  <div className="p-5">
+                    <p className="text-slate-400 mb-5 text-xs">Upload required identity documents below.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                      <DocumentUploadBox
+                        title="Government ID"
+                        description={"Passport (Recommended)\nState ID Card\nDriver's License"}
+                        documentType="dl_or_id_card"
+                        currentFileUrl={(client as any).dl_or_id_card}
+                        clientId={parseInt(client.id)}
+                        onUpload={(f) => handleDocumentUpload('dl_or_id_card', f)}
+                        onDelete={() => handleDocumentDelete('dl_or_id_card')}
+                      />
+                      <DocumentUploadBox
+                        title="Social Security Number"
+                        description={"Social Security Card (Recommended)\nW-2\nFirst Page of Tax Return"}
+                        documentType="ssc"
+                        currentFileUrl={(client as any).ssc}
+                        clientId={parseInt(client.id)}
+                        onUpload={(f) => handleDocumentUpload('ssc', f)}
+                        onDelete={() => handleDocumentDelete('ssc')}
+                      />
+                      <DocumentUploadBox
+                        title="Proof of Address"
+                        description={"Bank Statement (Recommended)\nUtility Bill\nPhone Bill\nAny Recent Address Proof"}
+                        documentType="poa"
+                        currentFileUrl={(client as any).poa}
+                        clientId={parseInt(client.id)}
+                        onUpload={(f) => handleDocumentUpload('poa', f)}
+                        onDelete={() => handleDocumentDelete('poa')}
+                      />
+                    </div>
+
+                    {/* Other Documents */}
+                    <div className="mt-6 pt-5 border-t border-slate-100">
+                      <h4 className="text-sm font-semibold text-slate-600 mb-3 flex items-center gap-2">
+                        <Plus className="h-4 w-4 text-indigo-500" /> Other Documents
+                      </h4>
+                      <p className="text-xs text-slate-400 mb-4">
+                        Any documents added here will also be included with generated dispute letters.
+                      </p>
+                      {otherDocs.length > 0 && (
+                        <div className="space-y-2 mb-4">
+                          {otherDocs.map((doc: any) => (
+                            <div
+                              key={doc.id}
+                              className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-4 py-3"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                <span className="text-sm font-medium text-slate-700 truncate">
+                                  {doc.original_name || 'Document'}
+                                </span>
+                                <span className="text-xs text-slate-400">
+                                  {new Date(doc.created_at).toLocaleDateString()}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => setOtherDocPreview(doc)}>
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-red-500 hover:text-white"
+                                  onClick={() => handleAdditionalDelete(doc.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <OtherDocUploadButton onUpload={handleAdditionalUpload} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Other Document Preview Dialog */}
+                <Dialog open={Boolean(otherDocPreview)} onOpenChange={(open) => { if (!open) setOtherDocPreview(null); }}>
+                  <DialogContent className="h-[90vh] w-[95vw] max-w-6xl overflow-hidden border-0 bg-slate-950 p-0 shadow-2xl [&>button]:right-5 [&>button]:top-5 [&>button]:bg-white/10 [&>button]:text-white [&>button]:opacity-100 [&>button]:ring-0 [&>button]:hover:bg-white/20 [&>button]:focus:ring-0">
+                    <DialogHeader className="border-b border-white/10 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 px-6 py-4 text-left">
+                      <DialogTitle className="truncate pr-12 text-base font-semibold text-white">
+                        {otherDocPreview?.original_name || 'Document Preview'}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="flex h-[calc(90vh-78px)] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.16),_transparent_42%),linear-gradient(180deg,_#0f172a,_#020617)] p-4">
+                      {otherDocPreview?.file_url && /\.pdf$/i.test(otherDocPreview.file_url) ? (
+                        <iframe
+                          src={`${otherDocPreview.file_url}#toolbar=0`}
+                          title={otherDocPreview.original_name || 'PDF'}
+                          className="h-full w-full rounded-2xl border border-white/10 bg-white shadow-2xl"
+                        />
+                      ) : otherDocPreview?.file_url && /\.(jpe?g|png|gif)$/i.test(otherDocPreview.file_url) ? (
+                        <img
+                          src={otherDocPreview.file_url}
+                          alt={otherDocPreview.original_name || 'Image'}
+                          className="max-h-full max-w-full rounded-2xl border border-white/10 bg-white/5 object-contain p-3 shadow-2xl"
+                        />
+                      ) : (
+                        <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-white/10 bg-white/5 px-8 py-12 text-center shadow-2xl backdrop-blur">
+                          <FileText className="h-10 w-10 text-white mb-4" />
+                          <p className="text-lg font-semibold text-white">Preview unavailable</p>
+                        </div>
+                      )}
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Save Button */}
+                <div className="flex justify-end pt-4">
+                  <Button
+                    onClick={handleSaveAll}
+                    disabled={saving}
+                    className={`h-12 px-10 text-base font-semibold rounded-xl shadow-lg transition-all duration-500 ${
+                      saveSuccess
+                        ? 'bg-emerald-500 hover:bg-emerald-500 text-white scale-105 shadow-emerald-200'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-blue-200'
+                    }`}
+                  >
+                    {saveSuccess ? (
+                      <span className="flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center w-6 h-6 bg-white/20 rounded-full">
+                          <Check className="h-4 w-4" />
+                        </span>
+                        Submitted!
+                      </span>
+                    ) : saving ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-5 w-5 animate-spin" /> Submitting...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <Check className="h-5 w-5" /> Submit Changes
+                      </span>
+                    )}
+                  </Button>
+                </div>
           </TabsContent>
 
           {/* Credit Report History Tab */}
@@ -1249,6 +2034,202 @@ export default function ClientProfile() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Generated Letter History Tab */}
+          <TabsContent value="letters" className="mt-0">
+                <h3 className="text-3xl font-bold text-slate-800 mb-8">
+                  Generated Dispute Letter History
+                </h3>
+                {letterHistoryLoading ? (
+                  <Loader2 className="animate-spin h-10 w-10 mx-auto mt-20 text-blue-500" />
+                ) : letterHistory.length > 0 ? (
+                  <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm overflow-x-auto">
+                    <table className="w-full text-left bg-white">
+                      <thead className="bg-slate-50 text-slate-500 text-sm tracking-widest uppercase">
+                        <tr>
+                          <th className="p-5">ID</th>
+                          <th className="p-5">Generated By</th>
+                          <th className="p-5">Bureau(s)</th>
+                          <th className="p-5">Negative Item Types</th>
+                          <th className="p-5">Dispute Round</th>
+                          <th className="p-5">Source</th>
+                          <th className="p-5">Templates</th>
+                          <th className="p-5">Date & Time</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {letterHistory.map((row: any) => {
+                          const bureaus = safeJsonParse(row.bureaus);
+                          const negItems = safeJsonParse(
+                            row.negative_item_types
+                          );
+                          const tUsed = safeJsonParse(row.templates_used);
+                          return (
+                            <tr
+                              key={row.id}
+                              className="hover:bg-slate-50 transition-colors"
+                            >
+                              <td className="p-5 font-mono text-sm text-slate-500">
+                                {row.id}
+                              </td>
+                              <td className="p-5">
+                                <div className="font-semibold text-slate-800">
+                                  {row.user_first_name || row.user_last_name
+                                    ? `${row.user_first_name || ''} ${row.user_last_name || ''}`.trim()
+                                    : row.user_email ||
+                                      `User #${row.user_id}`}
+                                </div>
+                                {row.user_email && (
+                                  <div className="text-xs text-slate-400">
+                                    {row.user_email}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-5">
+                                <div className="flex flex-wrap gap-1">
+                                  {bureaus.map((b: string, i: number) => (
+                                    <Badge
+                                      key={i}
+                                      variant="outline"
+                                      className="text-xs"
+                                    >
+                                      {b}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="p-5 text-sm text-slate-700">
+                                {negItems.join(', ') || '\u2014'}
+                              </td>
+                              <td className="p-5">
+                                <Badge variant="secondary">
+                                  Round {row.dispute_round || 1}
+                                </Badge>
+                              </td>
+                              <td className="p-5">
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs"
+                                >
+                                  {row.template_source || '\u2014'}
+                                </Badge>
+                              </td>
+                              <td className="p-5 text-sm">
+                                {tUsed.length} used /{' '}
+                                {row.template_count || 0} total
+                              </td>
+                              <td className="p-5 text-sm text-slate-600">
+                                {row.created_at
+                                  ? new Date(
+                                      row.created_at
+                                    ).toLocaleString()
+                                  : '\u2014'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-20 bg-slate-50 rounded-3xl">
+                    <p className="text-2xl font-semibold text-slate-600">
+                      No dispute letters generated yet for this client.
+                    </p>
+                  </div>
+                )}
+          </TabsContent>
+
+          {/* Equifax Data Breach Settlement Tab */}
+          <TabsContent value="equifax" className="mt-0 space-y-6">
+                <div className="flex flex-wrap items-start justify-end gap-3">
+                  <div className="w-full sm:w-[240px]">
+                    <input
+                      type="text"
+                      value={formData.security_freeze_pin || ''}
+                      onChange={(e) => handleSecurityFreezePinChange(e.target.value)}
+                      onBlur={handleSecurityFreezePinBlur}
+                      placeholder="Security Freeze PIN"
+                      autoComplete="off"
+                      className="h-11 w-full rounded-xl border border-orange-200 bg-white px-3.5 text-slate-800 outline-none transition-colors focus:border-orange-400 focus:ring-2 focus:ring-orange-200"
+                    />
+                    <p className={`mt-1 text-xs ${securityFreezePinStatusClassName}`}>
+                      {securityFreezePinStatusText}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => window.open('https://www.innovis.com/securityFreeze/register', '_blank', 'noopener,noreferrer')}
+                    className="h-11 px-5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white"
+                  >
+                      Security Freeze
+                  </button>
+                  <Button
+                    onClick={startEquifaxLiveBrowser}
+                    disabled={equifaxLiveBusy || !client.last_name || !hasEquifaxSettlementData}
+                    className="h-11 px-5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white"
+                  >
+                    {equifaxLiveBusy ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Refresh
+                      </span>
+                    ) : (
+                      'Refresh'
+                    )}
+                  </Button>
+                  <Button
+                    onClick={saveEquifaxScreenshot}
+                    disabled={equifaxLiveBusy || equifaxPreviewBusy || !activeEquifaxPreviewUrl}
+                    className="h-11 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white"
+                  >
+                    {equifaxPreviewBusy ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Save Screenshot
+                      </span>
+                    ) : (
+                      'Save Screenshot'
+                    )}
+                  </Button>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-white overflow-hidden min-h-[420px]">
+                  {!client.last_name || !hasEquifaxSettlementData ? (
+                    <div className="h-full min-h-[420px] flex items-center justify-center text-center px-6 text-slate-500">
+                      Add the client last name and SSN last 6 digits first, then click Refresh.
+                    </div>
+                  ) : equifaxDisplayImageUrl ? (
+                    activeEquifaxPreviewUrl ? (
+                      <button
+                        type="button"
+                        onClick={handleEquifaxPreviewClick}
+                        disabled={equifaxPreviewBusy}
+                        className="block w-full bg-slate-950 cursor-default disabled:cursor-wait"
+                      >
+                        <img
+                          src={equifaxDisplayImageUrl}
+                          alt="Equifax live preview"
+                          className="block w-full h-auto"
+                        />
+                      </button>
+                    ) : (
+                      <img
+                        src={equifaxDisplayImageUrl}
+                        alt="Saved Equifax screenshot"
+                        className="block w-full h-auto"
+                      />
+                    )
+                  ) : (
+                    <div className="h-full min-h-[420px] flex items-center justify-center text-center px-6 text-slate-500">
+                      Click Refresh to start the live preview.
+                    </div>
+                  )}
+                </div>
+
+                {equifaxLiveError && (
+                  <div className="text-sm text-red-600 text-center">{equifaxLiveError}</div>
+                )}
+          </TabsContent>
+
         </Tabs>
       </div>
 

@@ -918,7 +918,7 @@ async function createMySQLTables(): Promise<void> {
       bureau ENUM('experian', 'equifax', 'transunion') NOT NULL,
       account_name VARCHAR(255) NOT NULL,
       dispute_reason TEXT NOT NULL,
-      status ENUM('pending', 'investigating', 'verified', 'deleted', 'updated') NOT NULL DEFAULT 'pending',
+      status ENUM('draft', 'pending', 'investigating', 'verified', 'deleted', 'updated') NOT NULL DEFAULT 'pending',
       filed_date DATE NOT NULL,
       response_date DATE,
       result TEXT,
@@ -1998,6 +1998,132 @@ async function createMySQLTables(): Promise<void> {
       INDEX idx_end_date (end_date),
       FOREIGN KEY (affiliate_id) REFERENCES affiliates(id) ON DELETE CASCADE,
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // ==========================================
+    // CREDIT REPAIR FLOW TABLES
+    // ==========================================
+
+    // Support letter categories (used by dispute templates)
+    `CREATE TABLE IF NOT EXISTS support_letter_categories (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_name (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Support letter templates (for generating dispute letters)
+    `CREATE TABLE IF NOT EXISTS support_letter_templates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      category_id INT NULL,
+      name VARCHAR(255) NOT NULL,
+      bureau VARCHAR(20) NULL,
+      round INT NOT NULL DEFAULT 1,
+      goal VARCHAR(50) NULL DEFAULT 'DELETION',
+      tone VARCHAR(50) NULL DEFAULT 'FIRM',
+      template_type VARCHAR(50) NOT NULL DEFAULT 'DISPUTE_STANDARD',
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      version INT NOT NULL DEFAULT 1,
+      content LONGTEXT NULL,
+      notes TEXT NULL,
+      tags JSON NULL,
+      required_law_tags JSON NULL,
+      constraints_json JSON NULL,
+      placeholders JSON NULL,
+      blocks JSON NULL,
+      created_by INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_category (category_id),
+      INDEX idx_bureau (bureau),
+      INDEX idx_round (round),
+      INDEX idx_status (status),
+      INDEX idx_template_type (template_type),
+      FOREIGN KEY (category_id) REFERENCES support_letter_categories(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Dispute letter content (block-based letter templates by bureau/round)
+    `CREATE TABLE IF NOT EXISTS dispute_letter_content (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      bureau VARCHAR(10) NOT NULL DEFAULT 'ALL',
+      round INT NOT NULL DEFAULT 1,
+      category VARCHAR(100) NOT NULL,
+      \`type\` VARCHAR(32) NOT NULL DEFAULT 'STANDARD',
+      block VARCHAR(50) NOT NULL,
+      block_label VARCHAR(255) NULL,
+      clause_content LONGTEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_bureau_round (bureau, round),
+      INDEX idx_category (category),
+      INDEX idx_block (block),
+      INDEX idx_type (\`type\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Letter categories (for letter management)
+    `CREATE TABLE IF NOT EXISTS letter_categories (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT NULL,
+      created_by INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_name (name)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Letter templates (for letter management)
+    `CREATE TABLE IF NOT EXISTS letter_templates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT NULL,
+      content LONGTEXT NOT NULL,
+      category_id INT NULL,
+      created_by INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_category (category_id),
+      FOREIGN KEY (category_id) REFERENCES letter_categories(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Credit repair generated letters (tracks all generated dispute letters)
+    `CREATE TABLE IF NOT EXISTS credit_repair_generated_letters (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      client_id INT NOT NULL,
+      credit_report_id INT NULL,
+      negative_item_id VARCHAR(255) NULL,
+      bureau VARCHAR(20) NOT NULL,
+      round INT NOT NULL DEFAULT 1,
+      goal VARCHAR(50) NULL,
+      tone VARCHAR(50) NULL,
+      template_id INT NULL,
+      template_version INT NULL,
+      seed_used INT NULL,
+      selected_clause_ids JSON NULL,
+      rendered_letter LONGTEXT NULL,
+      letter_hash VARCHAR(64) NULL,
+      prior_letter_id INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_user (user_id),
+      INDEX idx_client (client_id),
+      INDEX idx_bureau (bureau),
+      INDEX idx_round (round),
+      INDEX idx_negative_item (negative_item_id),
+      INDEX idx_letter_hash (letter_hash)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    // Client additional documents (multi-document support)
+    `CREATE TABLE IF NOT EXISTS client_additional_documents (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      document_type VARCHAR(50) NOT NULL,
+      file_url VARCHAR(500) NOT NULL,
+      original_name VARCHAR(255) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_client_doc (client_id, document_type),
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
   ];
   

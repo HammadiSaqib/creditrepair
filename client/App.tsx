@@ -92,6 +92,7 @@ const SuperAdminCreditReportUpload = React.lazy(() => import("./pages/super-admi
 const SuperAdminTasks = React.lazy(() => import("./pages/super-admin/SuperAdminTasks"));
 const ShopManagement = React.lazy(() => import("./pages/super-admin/ShopManagement"));
 const SuperAdminAffiliateTrialPlans = React.lazy(() => import("./pages/super-admin/SuperAdminAffiliateTrialPlans"));
+const SuperAdminLetterTemplates = React.lazy(() => import("./pages/super-admin/SuperAdminLetterTemplates"));
 const Login = React.lazy(() => import("./pages/Login"));
 const Register = React.lazy(() => import("./pages/Register"));
 const SuperAdminLogin = React.lazy(() => import("./pages/SuperAdminLogin"));
@@ -465,6 +466,14 @@ function getPortalAliasRoutes(alias: NonAdminPortalAlias): PortalAliasRoute[] {
           element: (
             <SuperAdminProtectedRoute>
               <SuperAdminAffiliateTrialPlans />
+            </SuperAdminProtectedRoute>
+          ),
+        },
+        {
+          path: "/letters",
+          element: (
+            <SuperAdminProtectedRoute>
+              <SuperAdminLetterTemplates />
             </SuperAdminProtectedRoute>
           ),
         },

@@ -11,21 +11,38 @@ import { ENV_CONFIG } from '../config/environment.js';
 import { fetchCreditReport } from '../services/scrapers/index.js';
 import { saveCreditReport } from '../database/dbConnection.js';
 import crypto from 'crypto';
+import {
+  captureEquifaxSettlementScreenshot,
+  clickEquifaxSettlementLivePreview,
+  closeEquifaxSettlementLiveSession,
+  focusEquifaxSettlementLiveSession,
+  getEquifaxSettlementLivePreview,
+  getEquifaxSettlementSavedScreenshotFile,
+  getEquifaxSettlementLiveSessionState,
+  saveEquifaxSettlementClientScreenshot,
+  scrollEquifaxSettlementLivePreview,
+  startEquifaxSettlementLiveSession,
+} from '../services/equifaxSettlement.js';
 
 // Validation schemas
 const clientSchema = z.object({
   first_name: z.string().min(1, 'First name is required'),
+  middle_name: z.string().optional(),
   last_name: z.string().min(1, 'Last name is required'),
   email: z.string().email('Invalid email format').optional(),
   phone: z.string().optional(),
   address: z.string().optional(),
+  street_number_and_name: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
   zip_code: z.string().optional(),
+  country: z.string().optional(),
   ssn_last_four: z.string().optional(),
+  ssn_last_six: z.string().optional(),
+  security_freeze_pin: z.string().max(100).optional(),
   date_of_birth: z.string().optional(),
   employment_status: z.string().optional(),
-  annual_income: z.number().optional(),
+  annual_income: z.union([z.number(), z.string()]).optional(),
   status: z.enum(['active', 'inactive', 'pending']).default('active'),
   credit_score: z.number().optional(),
   experian_score: z.number().optional(),
@@ -1451,6 +1468,28 @@ export async function updateClient(req: AuthRequest, res: Response) {
         }
       }
     }
+    // If ssn_last_six is provided, auto-derive ssn_last_four from its last 4 digits
+    if (typeof normalizedUpdates.ssn_last_six === 'string') {
+      const cleaned = normalizedUpdates.ssn_last_six.replace(/\D/g, '').slice(0, 6);
+      normalizedUpdates.ssn_last_six = cleaned || null;
+      if (cleaned && cleaned.length >= 4) {
+        normalizedUpdates.ssn_last_four = cleaned.slice(-4);
+      }
+    }
+    // Trim / nullify security_freeze_pin
+    if (typeof normalizedUpdates.security_freeze_pin === 'string') {
+      const trimmed = normalizedUpdates.security_freeze_pin.trim();
+      normalizedUpdates.security_freeze_pin = trimmed || null;
+    }
+    // Coerce annual_income to number
+    if (typeof normalizedUpdates.annual_income === 'string') {
+      const parsed = parseFloat(normalizedUpdates.annual_income);
+      if (isNaN(parsed)) {
+        delete normalizedUpdates.annual_income;
+      } else {
+        normalizedUpdates.annual_income = parsed;
+      }
+    }
     
     if (Object.keys(normalizedUpdates).length === 0) {
       return res.status(400).json({ error: 'No updates provided' });
@@ -1597,5 +1636,355 @@ export async function getClientStats(req: AuthRequest, res: Response) {
   } catch (error) {
     console.error('Error fetching client stats:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// =============================================================================
+// EQUIFAX SETTLEMENT ROUTES
+// =============================================================================
+
+class ClientInputError extends Error {}
+
+async function getAccessibleEquifaxClient(req: AuthRequest, id: string) {
+  let baseUserId: number = req.user!.id;
+  const isFundingManager = req.user!.role === 'funding_manager';
+  if (!isFundingManager && req.user!.role !== 'admin' && req.user!.role !== 'super_admin') {
+    const employeeLink = await getQuery(
+      'SELECT admin_id FROM employees WHERE user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT 1',
+      [req.user!.id, 'active']
+    );
+    if (employeeLink?.admin_id) {
+      baseUserId = employeeLink.admin_id;
+    }
+  }
+
+  const client = await getQuery(
+    isFundingManager
+      ? 'SELECT id, first_name, last_name, ssn_last_six FROM clients WHERE id = ?'
+      : 'SELECT id, first_name, last_name, ssn_last_six FROM clients WHERE id = ? AND (user_id = ? OR user_id IN (SELECT user_id FROM employees WHERE admin_id = ? AND status = ?))',
+    isFundingManager ? [id] : [id, baseUserId, baseUserId, 'active']
+  );
+
+  return client;
+}
+
+function validateEquifaxClientData(client: any) {
+  const lastName = String(client?.last_name || '').trim();
+  const ssnLastSix = String(client?.ssn_last_six || '').trim();
+
+  if (!lastName) {
+    throw new ClientInputError('Client last name is required before running the Equifax settlement check');
+  }
+
+  if (!/^\d{6}$/.test(ssnLastSix)) {
+    throw new ClientInputError('Client SSN last 6 digits are required before running the Equifax settlement check');
+  }
+
+  return {
+    lastName,
+    ssnLastSix,
+  };
+}
+
+const equifaxPreviewClickSchema = z.object({
+  xRatio: z.number().min(0).max(1),
+  yRatio: z.number().min(0).max(1),
+});
+
+const equifaxPreviewScrollSchema = z.object({
+  deltaY: z.number().min(-2000).max(2000),
+});
+
+export async function getEquifaxSettlementSnapshot(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const { lastName, ssnLastSix } = validateEquifaxClientData(client);
+
+    const snapshot = await captureEquifaxSettlementScreenshot({
+      lastName,
+      ssnLastSix,
+    });
+
+    return res.json({ success: true, data: snapshot });
+  } catch (error: any) {
+    if (error instanceof ClientInputError) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Error capturing Equifax settlement snapshot:', error);
+    return res.status(502).json({
+      error: error?.message || 'Failed to capture Equifax settlement snapshot',
+    });
+  }
+}
+
+export async function startEquifaxSettlementLiveBrowser(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const { lastName, ssnLastSix } = validateEquifaxClientData(client);
+    const data = await startEquifaxSettlementLiveSession({
+      clientId: Number(id),
+      userId: req.user!.id,
+      lastName,
+      ssnLastSix,
+    });
+
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    if (error instanceof ClientInputError) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Error starting Equifax live browser session:', error);
+    return res.status(502).json({
+      error:
+        error?.message ||
+        'Failed to open the live Equifax browser window. This feature works best when the app is running locally on your desktop.',
+    });
+  }
+}
+
+export async function getEquifaxSettlementLiveBrowser(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const data = await getEquifaxSettlementLiveSessionState({
+      clientId: Number(id),
+      userId: req.user!.id,
+    });
+
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    console.error('Error fetching Equifax live browser session:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to fetch Equifax live browser session status',
+    });
+  }
+}
+
+export async function getEquifaxSettlementLiveBrowserPreview(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const data = await getEquifaxSettlementLivePreview({
+      clientId: Number(id),
+      userId: req.user!.id,
+    });
+
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    console.error('Error fetching Equifax live preview:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to fetch the Equifax live preview',
+    });
+  }
+}
+
+export async function clickEquifaxSettlementPreview(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const payload = equifaxPreviewClickSchema.parse(req.body || {});
+    const data = await clickEquifaxSettlementLivePreview({
+      clientId: Number(id),
+      userId: req.user!.id,
+      xRatio: payload.xRatio,
+      yRatio: payload.yRatio,
+    });
+
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: error.errors });
+    }
+    console.error('Error clicking Equifax live preview:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to interact with the Equifax live preview',
+    });
+  }
+}
+
+export async function scrollEquifaxSettlementPreview(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const payload = equifaxPreviewScrollSchema.parse(req.body || {});
+    const data = await scrollEquifaxSettlementLivePreview({
+      clientId: Number(id),
+      userId: req.user!.id,
+      deltaY: payload.deltaY,
+    });
+
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: error.errors });
+    }
+    console.error('Error scrolling Equifax live preview:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to scroll the Equifax live preview',
+    });
+  }
+}
+
+export async function getEquifaxSettlementSavedScreenshot(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const savedScreenshot = getEquifaxSettlementSavedScreenshotFile(Number(id));
+    if (!savedScreenshot) {
+      return res.json({ success: true, data: null });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        fileName: savedScreenshot.fileName,
+        imageUrl: savedScreenshot.imageUrl,
+        updatedAt: savedScreenshot.updatedAt,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error fetching saved Equifax screenshot:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to fetch the saved Equifax screenshot',
+    });
+  }
+}
+
+export async function serveEquifaxSettlementSavedScreenshot(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const savedScreenshot = getEquifaxSettlementSavedScreenshotFile(Number(id));
+    if (!savedScreenshot) {
+      return res.status(404).json({ error: 'Saved screenshot not found' });
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.sendFile(savedScreenshot.absolutePath);
+  } catch (error: any) {
+    console.error('Error serving saved Equifax screenshot:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to serve the saved Equifax screenshot',
+    });
+  }
+}
+
+export async function saveEquifaxSettlementScreenshot(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const data = await saveEquifaxSettlementClientScreenshot({
+      clientId: Number(id),
+      userId: req.user!.id,
+      firstName: String(client.first_name || 'Client'),
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        fileName: data.fileName,
+        imageUrl: data.imageUrl,
+        updatedAt: data.updatedAt,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error saving Equifax screenshot:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to save the Equifax screenshot',
+    });
+  }
+}
+
+export async function focusEquifaxSettlementLiveBrowser(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const data = await focusEquifaxSettlementLiveSession({
+      clientId: Number(id),
+      userId: req.user!.id,
+    });
+
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    console.error('Error focusing Equifax live browser session:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to focus the Equifax live browser window',
+    });
+  }
+}
+
+export async function closeEquifaxSettlementLiveBrowser(req: AuthRequest, res: Response) {
+  try {
+    const { id } = req.params;
+    const client = await getAccessibleEquifaxClient(req, id);
+
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const data = await closeEquifaxSettlementLiveSession({
+      clientId: Number(id),
+      userId: req.user!.id,
+    });
+
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    console.error('Error closing Equifax live browser session:', error);
+    return res.status(500).json({
+      error: error?.message || 'Failed to close the Equifax live browser window',
+    });
   }
 }

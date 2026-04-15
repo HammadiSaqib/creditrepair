@@ -163,6 +163,12 @@ export default function SuperAdminSidebar({ className }: SuperAdminSidebarProps)
       badge: null,
     },
     {
+      name: "Letter Templates",
+      href: "/super-admin/letters",
+      icon: FileText,
+      badge: null,
+    },
+    {
       name: "Settings",
       href: "/super-admin/settings",
       icon: Settings,

@@ -109,6 +109,17 @@ import {
   updateClient,
   deleteClient,
   getClientStats,
+  getEquifaxSettlementSnapshot,
+  startEquifaxSettlementLiveBrowser,
+  getEquifaxSettlementLiveBrowser,
+  getEquifaxSettlementLiveBrowserPreview,
+  clickEquifaxSettlementPreview,
+  scrollEquifaxSettlementPreview,
+  getEquifaxSettlementSavedScreenshot,
+  serveEquifaxSettlementSavedScreenshot,
+  saveEquifaxSettlementScreenshot,
+  focusEquifaxSettlementLiveBrowser,
+  closeEquifaxSettlementLiveBrowser,
 } from "./routes/clients.js";
 
 // Funding request routes
@@ -138,8 +149,22 @@ import {
   updateDispute,
   deleteDispute,
   getDisputeStats,
-  generateDisputeLetter,
 } from "./routes/disputes.js";
+
+// Credit repair letter generation + enhanced dispute letter
+import { generateDisputeLetter, generateCreditRepairLetters, getGeneratedLetterHistory, getDisputeLetterHistory } from "./routes/enhancedDisputeRoutes.js";
+
+// Dispute letter content management
+import disputeLetterContentRoutes from "./routes/disputeLetterContent.js";
+
+// Letter management (categories + templates)
+import letterManagementRoutes from "./routes/letterManagement.js";
+
+// Client documents
+import clientDocumentRoutes from "./routes/clientDocuments.js";
+
+// Support templates
+import supportTemplatesRoutes from "./routes/supportTemplates.js";
 
 // Analytics routes
 import {
@@ -711,6 +736,19 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.put("/api/clients/:id", authenticateToken, updateClient);
   app.delete("/api/clients/:id", authenticateToken, deleteClient);
 
+  // Equifax Settlement
+  app.post("/api/clients/:id/equifax-breach-settlement", authenticateToken, getEquifaxSettlementSnapshot);
+  app.post("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, startEquifaxSettlementLiveBrowser);
+  app.get("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, getEquifaxSettlementLiveBrowser);
+  app.get("/api/clients/:id/equifax-breach-settlement/live/preview", authenticateToken, getEquifaxSettlementLiveBrowserPreview);
+  app.post("/api/clients/:id/equifax-breach-settlement/live/preview/click", authenticateToken, clickEquifaxSettlementPreview);
+  app.post("/api/clients/:id/equifax-breach-settlement/live/preview/scroll", authenticateToken, scrollEquifaxSettlementPreview);
+  app.get("/api/clients/:id/equifax-breach-settlement/saved-screenshot", authenticateToken, getEquifaxSettlementSavedScreenshot);
+  app.get("/api/clients/:id/equifax-breach-settlement/saved-screenshot/file", authenticateToken, serveEquifaxSettlementSavedScreenshot);
+  app.post("/api/clients/:id/equifax-breach-settlement/saved-screenshot", authenticateToken, saveEquifaxSettlementScreenshot);
+  app.post("/api/clients/:id/equifax-breach-settlement/live/focus", authenticateToken, focusEquifaxSettlementLiveBrowser);
+  app.delete("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, closeEquifaxSettlementLiveBrowser);
+
   // Debt Payoff Plans
   app.use("/api/debt-payoff", debtPayoffRoutes);
 
@@ -743,10 +781,35 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.put("/api/disputes/:id", authenticateToken, updateDispute);
   app.delete("/api/disputes/:id", authenticateToken, deleteDispute);
   app.get(
+    "/api/disputes/letter-history/:clientId",
+    authenticateToken,
+    getDisputeLetterHistory,
+  );
+  app.get(
     "/api/disputes/:dispute_id/letter",
     authenticateToken,
     generateDisputeLetter,
   );
+
+  // =============================================================================
+  // CREDIT REPAIR FLOW
+  // =============================================================================
+
+  // Credit repair letter generation
+  app.post("/api/credit-repair/generate-letters", authenticateToken, requireSignedAdminContract, generateCreditRepairLetters);
+  app.get("/api/credit-repair/generated-letters", authenticateToken, getGeneratedLetterHistory);
+
+  // Dispute letter content management (block-based templates)
+  app.use("/api/dispute-letter-content", disputeLetterContentRoutes);
+
+  // Letter management (categories + templates)
+  app.use("/api/letter-management", authenticateToken, letterManagementRoutes);
+
+  // Client documents (upload/delete/view)
+  app.use("/api/client-documents", clientDocumentRoutes);
+
+  // Support templates
+  app.use("/api/support/templates", supportTemplatesRoutes);
 
   // Analytics and Reporting
   app.get("/api/analytics/dashboard", authenticateToken, getDashboardAnalytics);

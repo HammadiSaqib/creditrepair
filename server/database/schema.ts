@@ -479,7 +479,7 @@ async function createTables() {
       bureau TEXT NOT NULL CHECK (bureau IN ('experian', 'equifax', 'transunion')),
       account_name TEXT NOT NULL,
       dispute_reason TEXT NOT NULL,
-      status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'investigating', 'verified', 'deleted', 'updated')),
+      status TEXT DEFAULT 'pending' CHECK (status IN ('draft', 'pending', 'investigating', 'verified', 'deleted', 'updated')),
       filed_date DATE NOT NULL,
       response_date DATE,
       result TEXT,

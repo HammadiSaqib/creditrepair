@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { z } from "zod";
-import { runQuery, getQuery, allQuery } from '../database/databaseAdapter.js';
+import { runQuery, getQuery, allQuery, getDatabaseAdapter } from '../database/databaseAdapter.js';
 import { Dispute } from "../database/schema.js";
 import { AuthRequest } from "../middleware/authMiddleware.js";
 
@@ -15,11 +15,11 @@ const disputeSchema = z.object({
   account_name: z.string().min(1, "Account name is required"),
   dispute_reason: z.string().min(1, "Dispute reason is required"),
   status: z
-    .enum(["pending", "investigating", "verified", "deleted", "updated"])
+    .enum(["draft", "pending", "investigating", "verified", "deleted", "updated"])
     .default("pending"),
   filed_date: z.string().refine((date) => !isNaN(Date.parse(date)), {
     message: "Invalid date format",
-  }),
+  }).default(() => new Date().toISOString()),
   response_date: z.string().optional(),
   result: z.string().optional(),
 });
@@ -135,11 +135,21 @@ export async function createDispute(req: AuthRequest, res: Response) {
   try {
     const validatedData = disputeSchema.parse(req.body);
 
-    // Verify that the client belongs to the authenticated user
-    const clientExists = await getQuery(
-      "SELECT id FROM clients WHERE id = ? AND user_id = ?",
-      [validatedData.client_id, req.user!.id]
-    );
+    // Verify that the client exists and belongs to / is accessible by the authenticated user
+    const userRole = (req.user as any)?.role;
+    let clientExists: any;
+    if (userRole === 'super_admin' || userRole === 'admin') {
+      // Admins can create disputes for any client
+      clientExists = await getQuery(
+        "SELECT id FROM clients WHERE id = ?",
+        [validatedData.client_id]
+      );
+    } else {
+      clientExists = await getQuery(
+        "SELECT id FROM clients WHERE id = ? AND user_id = ?",
+        [validatedData.client_id, req.user!.id]
+      );
+    }
 
     if (!clientExists) {
       return res
@@ -147,39 +157,75 @@ export async function createDispute(req: AuthRequest, res: Response) {
         .json({ error: "Client not found or access denied" });
     }
 
-    const result = await runQuery(`
-      INSERT INTO disputes (
-        client_id, bureau, account_name, dispute_reason, status, filed_date, response_date, result
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      validatedData.client_id,
-      validatedData.bureau,
-      validatedData.account_name,
-      validatedData.dispute_reason,
-      validatedData.status,
-      validatedData.filed_date,
-      validatedData.response_date || null,
-      validatedData.result || null,
-    ]);
+    // Detect db type to handle schema differences
+    const isMysql = getDatabaseAdapter().getType() === 'mysql';
+    
+    // Normalize filed_date to YYYY-MM-DD for DATE column
+    const filedDateNormalized = validatedData.filed_date
+      ? new Date(validatedData.filed_date).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0];
+    const responseDateNormalized = validatedData.response_date
+      ? new Date(validatedData.response_date).toISOString().split('T')[0]
+      : null;
 
-    // Log activity
-    await runQuery(`
-      INSERT INTO activities (user_id, client_id, type, description)
-      VALUES (?, ?, ?, ?)
-    `, [
-      req.user!.id,
-      validatedData.client_id,
-      "dispute_filed",
-      `Dispute filed for ${validatedData.account_name} with ${validatedData.bureau}`,
-    ]);
+    let result: any;
+    if (isMysql) {
+      result = await runQuery(`
+        INSERT INTO disputes (
+          client_id, bureau, account_name, dispute_reason, status, filed_date, response_date, result, created_by, updated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        validatedData.client_id,
+        validatedData.bureau,
+        validatedData.account_name,
+        validatedData.dispute_reason,
+        validatedData.status,
+        filedDateNormalized,
+        responseDateNormalized,
+        validatedData.result || null,
+        req.user!.id,
+        req.user!.id,
+      ]);
+    } else {
+      result = await runQuery(`
+        INSERT INTO disputes (
+          client_id, bureau, account_name, dispute_reason, status, filed_date, response_date, result
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        validatedData.client_id,
+        validatedData.bureau,
+        validatedData.account_name,
+        validatedData.dispute_reason,
+        validatedData.status,
+        filedDateNormalized,
+        responseDateNormalized,
+        validatedData.result || null,
+      ]);
+    }
+
+    // Log activity (non-blocking – don't let this crash dispute creation)
+    try {
+      await runQuery(`
+        INSERT INTO activities (user_id, client_id, type, description)
+        VALUES (?, ?, ?, ?)
+      `, [
+        req.user!.id,
+        validatedData.client_id,
+        "dispute_filed",
+        `Dispute filed for ${validatedData.account_name} with ${validatedData.bureau}`,
+      ]);
+    } catch (activityErr) {
+      console.warn("Could not log activity:", activityErr);
+    }
 
     // Get the created dispute with client info
+    const insertId = isMysql ? result.insertId : result.lastInsertRowid;
     const newDispute = await getQuery(`
       SELECT d.*, c.first_name, c.last_name, c.email as client_email
       FROM disputes d
       JOIN clients c ON d.client_id = c.id
       WHERE d.id = ?
-    `, [result.lastInsertRowid]);
+    `, [insertId]);
 
     res.status(201).json(newDispute);
   } catch (error) {

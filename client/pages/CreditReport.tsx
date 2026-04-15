@@ -1,6 +1,6 @@
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { clientsApi, warMachineApi } from "@/lib/api";
+import { clientsApi, warMachineApi, creditRepairApi, clientDocumentsApi, disputesApi } from "@/lib/api";
 import { toast } from "sonner";
 import {
   Card,
@@ -46,7 +46,7 @@ import BureauScoresChart from "@/components/BureauScoresChart";
 import ScoreChartsCard from "@/components/ScoreChartsCard";
 import NegativeAccountsCard from "@/components/NegativeAccountsCard";
 import { TrialCreditReportWrapper, TrialScoreWrapper, TrialSensitiveWrapper } from "@/components/TrialCreditReportWrapper";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useSearchParams, useNavigate, useParams } from "react-router-dom";
 import { shouldShowField, tabConfig } from "@/utils/fieldCategorization";
 import { calculateAccountUtilization } from "../utils/utilizationCalculator.js";
@@ -120,6 +120,8 @@ import {
   BadgeCheck,
   Settings,
   Gavel,
+  Sparkles,
+  Layers,
 } from "lucide-react";
 import FundingProjectionsCalculator from '../utils/fundingProjections.js';
 import GapAnalyzer from '../utils/gapAnalyzer.js';
@@ -128,6 +130,7 @@ import BusinessCardsDisplay from '../components/BusinessCardsDisplay';
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import { DocumentUploadBox } from "@/components/ui/DocumentUploadBox";
 
 interface DebtConsolidationViewProps {
   accounts: any[];
@@ -1834,6 +1837,74 @@ const detailedReport = {
   ],
 };
 
+// Credit Repair Types & Constants
+type GeneratedLetter = {
+  bureauKey: string;
+  bureauName: string;
+  categoryKey: string;
+  categoryLabel: string;
+  contentType: "STANDARD" | "ENHANCED";
+  contentTypeLabel: string;
+  round: number;
+  toneLevel: number;
+  letterContent: string;
+  lawCitations: string[];
+  accountNumbers: string[];
+  itemLabels: string[];
+  itemRangeLabel: string;
+  pdfUrl: string | null;
+  templateId?: number;
+  templateName?: string;
+  disputeId?: number;
+  batchLabel?: string;
+  batchIndex?: number;
+};
+
+const disputeContentTypeLabels = {
+  STANDARD: "Standard",
+  ENHANCED: "Enhanced",
+} as const;
+
+const FULL_ACCOUNT_LAWSET: Record<string, string[]> = {
+  FCRA: ["§602", "§603", "§604(a–f)", "§605", "§605A", "§605B", "§606", "§607(a)", "§607(b)", "§607(c)", "§609(a)(1)", "§609(a)(2)", "§609(a)(3)", "§611(a–e)", "§615", "§616", "§617", "§623(a)(1)", "§623(a)(2)", "§623(a)(5)", "§623(a)(7)", "§623(b)"],
+  FACTA: ["§112", "§113", "§151", "§153", "§315"],
+  GLBA: ["§501(a)–(b)", "§502(a)–(b)", "§503–§504"],
+  Metro2: ["ALL Metro 2 Account Reporting Standards", "ALL Portfolio Type Standards", "ALL Status and Special Comment Rules", "ALL DOFD and Compliance Condition Rules", "ALL Payment Rating and Current Status Rules"],
+  Regulatory: ["CFPB Accuracy & Integrity Rule", "CFPB Furnisher Rule", "OCC, FDIC, NCUA accuracy guidelines", "FTC Misrepresentation Doctrine"],
+  Other: ["UDAAP", "UCC Article 9 (obligation attachment)", "Bankruptcy Abuse Prevention and Consumer Protection Act"]
+};
+
+const FULL_PUBLIC_RECORD_LAWSET: Record<string, string[]> = {
+  FCRA: ["§602", "§603", "§604(a–f)", "§605", "§605A", "§605B", "§607(a)", "§607(b)", "§609(a)(1)", "§611(a–e)", "§615", "§616", "§617", "§623(a)(1)", "§623(b)"],
+  FACTA: ["§112", "§315", "§151"],
+  GLBA: ["§501(a)–(b)", "§502(a)–(b)", "§503–§504"],
+  Metro2: ["Public Record Reporting Standards", "Consumer Identifier Matching Standards", "Accuracy and Completeness Requirements"],
+  Regulatory: ["CFPB Accuracy & Integrity Rule", "CFPB Furnisher Rule", "FTC Misrepresentation Doctrine"],
+  Other: ["UDAAP", "UCC Article 9", "BAPCPA", "Privacy Act of 1974"]
+};
+
+const FULL_INQUIRY_LAWSET: Record<string, string[]> = {
+  FCRA: ["§604(a–f)", "§607(b)", "§609(a)(1)"],
+  FACTA: ["§112", "§315"],
+  GLBA: ["§501(a)–(b)", "§502(a)–(b)", "§503–§504"],
+  Metro2: ["Inquiry Reporting Standards", "Permissible Purpose Documentation Standards"],
+  Regulatory: ["CFPB Accuracy & Integrity Rule", "FTC Misrepresentation Doctrine"],
+  Other: ["UDAAP", "UCC Article 9"]
+};
+
+const lawTagsFromLawset = (lawset: Record<string, string[]>) =>
+  Object.entries(lawset).flatMap(([cat, items]) => items.map((law) => `${cat} ${law}`));
+
+const supportTemplateBureauCode: Record<string, string> = {
+  experian: "EX",
+  equifax: "EQ",
+  transunion: "TU",
+};
+
+const defaultNegativeItemBureauFilters = ['experian', 'equifax', 'transunion'];
+const defaultNegativeItemCategoryFilters = ['collection', 'account', 'public-record', 'hard-inquiry'];
+const negativeItemBureauOrder = ['Experian', 'Equifax', 'TransUnion'];
+
 export default function CreditReport() {
   const { userProfile, isLoading: authLoading, refreshProfile } = useAuthContext();
   const [affiliateCreditRepairLink, setAffiliateCreditRepairLink] = useState<string | null>(null);
@@ -1850,6 +1921,38 @@ export default function CreditReport() {
   const analysisRef = useRef<HTMLDivElement>(null);
   const [personalInfoMode, setPersonalInfoMode] = useState<'normal' | 'credit_repair'>('normal');
   const [smPiLoading, setSmPiLoading] = useState(false);
+
+  // Credit Repair state
+  const [selectedNegativeKeys, setSelectedNegativeKeys] = useState<string[]>([]);
+  const [letterOutputs, setLetterOutputs] = useState<GeneratedLetter[]>([]);
+  const [letterLoading, setLetterLoading] = useState(false);
+  const [letterError, setLetterError] = useState<string | null>(null);
+  const [letterErrors, setLetterErrors] = useState<string[]>([]);
+  const [letterPreview, setLetterPreview] = useState("");
+  const [letterMeta, setLetterMeta] = useState<{ accountNumbers: string[]; lawCitations: string[] } | null>(null);
+  const [letterPdfUrl, setLetterPdfUrl] = useState<string | null>(null);
+  const [selectedDisputeRound, setSelectedDisputeRound] = useState<string>("1");
+  const [selectedDisputeContentType, setSelectedDisputeContentType] = useState<"STANDARD" | "ENHANCED">("STANDARD");
+  const [confirmRoundOneRegenerate, setConfirmRoundOneRegenerate] = useState(false);
+  const [selectedNegativeIndex, setSelectedNegativeIndex] = useState(0);
+  const [generatedLetterExpandedBureaus, setGeneratedLetterExpandedBureaus] = useState<Record<string, boolean>>({});
+  const [generatedLetterExpandedCategories, setGeneratedLetterExpandedCategories] = useState<Record<string, boolean>>({});
+  const [generatedLetterExpandedTypes, setGeneratedLetterExpandedTypes] = useState<Record<string, boolean>>({});
+  const [clientDocs, setClientDocs] = useState<{ dl_or_id_card: string | null; poa: string | null; ssc: string | null }>({ dl_or_id_card: null, poa: null, ssc: null });
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [selectedBureaus, setSelectedBureaus] = useState<string[]>(['experian', 'equifax', 'transunion']);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(['collection', 'account', 'public-record', 'hard-inquiry']);
+  const [disputeMode, setDisputeMode] = useState<'DIY' | 'AI'>('DIY');
+  const [negativeItemsFullViewOpen, setNegativeItemsFullViewOpen] = useState(false);
+  const [negativeItemsSearchQuery, setNegativeItemsSearchQuery] = useState('');
+  const [negativeItemsShowSelectedOnly, setNegativeItemsShowSelectedOnly] = useState(false);
+  const [negativeItemsRequireLawTags, setNegativeItemsRequireLawTags] = useState(false);
+  const [negativeItemsRequireStatus, setNegativeItemsRequireStatus] = useState(false);
+  const [negativeItemExpandedBureaus, setNegativeItemExpandedBureaus] = useState<Record<string, boolean>>({});
+  const [negativeItemExpandedCategories, setNegativeItemExpandedCategories] = useState<Record<string, boolean>>({});
+  const [letterTemplates, setLetterTemplates] = useState<any[]>([]);
+  const [letterTemplatesLoading, setLetterTemplatesLoading] = useState(false);
+  const [letterTemplatesError, setLetterTemplatesError] = useState<string | null>(null);
   const [smPiResult, setSmPiResult] = useState<any | null>(null);
   const [smPiError, setSmPiError] = useState<string | null>(null);
   const [lawEngineAutoMode, setLawEngineAutoMode] = useState(false);
@@ -1907,6 +2010,833 @@ export default function CreditReport() {
   const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
   const { clientId: urlClientId } = useParams<{ clientId: string }>();
   const clientId = urlClientId || searchParams.get("clientId") || userProfile?.id;
+  const activeClientId = searchParams.get('clientId') || urlClientId || (userProfile?.role === 'client' ? userProfile?.id : undefined);
+
+  // Credit Repair - Document Handlers
+  const handleDocumentUpload = async (type: 'dl_or_id_card' | 'poa' | 'ssc', file: File) => {
+    if (!activeClientId) return;
+    try {
+      const response = await clientDocumentsApi.uploadDocument(activeClientId, type, file);
+      setClientDocs(prev => ({ ...prev, [type]: (response as any).data?.fileUrl }));
+      toast.success("Document uploaded successfully");
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      toast.error("Failed to upload document");
+    }
+  };
+
+  const handleDocumentDelete = async (type: 'dl_or_id_card' | 'poa' | 'ssc') => {
+    if (!activeClientId) return;
+    try {
+      await clientDocumentsApi.deleteDocument(activeClientId, type);
+      setClientDocs(prev => ({ ...prev, [type]: null }));
+      toast.success("Document deleted successfully");
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast.error("Failed to delete document");
+    }
+  };
+
+  // Credit Repair - Tone/Template Helpers
+  const deriveToneLevel = (items: any[]): number => {
+    if (!items || items.length === 0) return 4;
+    const text = items.map((item) => `${item.category} ${item.type} ${item.status}`).join(" ").toLowerCase();
+    const containsChargeOff = text.includes("charge");
+    const lateCounts = items.reduce((acc, item) => {
+      const status = String(item.status || "").toLowerCase();
+      const type = String(item.type || "").toLowerCase();
+      const hasLate = status.includes("late") || type.includes("late");
+      if (hasLate && status.includes("3+")) { acc.severe += 3; }
+      else if (hasLate && (status.includes("2") || status.includes("60") || status.includes("90"))) { acc.severe += 1; }
+      else if (hasLate) { acc.minor += 1; }
+      return acc;
+    }, { severe: 0, minor: 0 });
+    const inquiriesOnly = items.every((item) => String(item?.category || "").toLowerCase() === "hard-inquiry");
+    if (containsChargeOff || lateCounts.severe >= 3) return 5;
+    if (lateCounts.minor > 0 || inquiriesOnly) return 3;
+    return 4;
+  };
+
+  const toneLevelToLabel = (tone: number): string => {
+    if (tone >= 5) return "Escalated";
+    if (tone <= 3) return "Firm";
+    return "Balanced";
+  };
+
+  const mapToneLevelToTemplateTone = (toneLevel: number): string => {
+    if (toneLevel >= 5) return "AGGRESSIVE";
+    if (toneLevel <= 3) return "FIRM";
+    return "NEUTRAL";
+  };
+
+  // Credit Repair - Negative Items Parsing (extracted from IIFE)
+  const negativeItems = useMemo(() => {
+    const accounts = Array.isArray((reportData as any)?.accounts) ? (reportData as any).accounts : [];
+    const collections = Array.isArray((reportData as any)?.collections) ? (reportData as any).collections : [];
+    const inquiries = Array.isArray((reportData as any)?.inquiries) ? (reportData as any).inquiries : [];
+    const publicRecords = Array.isArray((reportData as any)?.publicRecords) ? (reportData as any).publicRecords : [];
+
+    const toText = (v: any) => String(v ?? '').toLowerCase();
+    const digits = (v: any) => String(v ?? '').replace(/\D/g, '');
+    const bureauName = (v: any) => {
+      const num = Number(v);
+      if (Number.isFinite(num)) {
+        if (num === 1) return 'TransUnion';
+        if (num === 2) return 'Experian';
+        if (num === 3) return 'Equifax';
+      }
+      return v || 'Unknown';
+    };
+
+    const items: any[] = [];
+    const seen = new Set<string>();
+    const addItem = (item: any) => {
+      if (!item?.key) return;
+      if (seen.has(item.key)) return;
+      seen.add(item.key);
+      items.push(item);
+    };
+
+    accounts.forEach((account: any, index: number) => {
+      const combined = `${toText(account.status || account.AccountStatus || account.AccountCondition)} ${toText(account.paymentHistory || account.PaymentStatus || account.WorstPayStatus)} ${toText(account.Remark || account.remark)} ${toText(account.AccountCondition || account.accountCondition)}`;
+      const lateCount = Number(account?.latePayments?.total ?? 0);
+      const pastDue = Number(account.AmountPastDue || account.pastDue || 0);
+      const worstNum = Number.parseInt(String(account.WorstPayStatus || account.worstStatus || ''), 10);
+      const historyText = toText(account.payStatusHistory || account.PayStatusHistory);
+      const isNegative = lateCount > 0 || pastDue > 0 || (Number.isFinite(worstNum) && worstNum > 0) || /[1-9]/.test(historyText) || /(late|delinquent|default|charge|collection|repos|foreclos|bankrupt|lien|judg)/.test(combined);
+      if (!isNegative) return;
+      const accountDigits = digits(account.accountNumber || account.AccountNumber || account.id || '');
+      const accountKey = accountDigits ? accountDigits.slice(-4) : `${account.creditor || account.CreditorName || 'account'}-${index}`;
+      addItem({
+        key: `account|${accountKey}`,
+        category: 'account',
+        type: account.type || account.AccountType || 'Account',
+        creditor: account.creditor || account.CreditorName || 'Unknown',
+        bureau: bureauName(account.bureau || account.BureauId),
+        accountNumber: account.accountNumber || account.AccountNumber || account.id,
+        accountDate: account.DateOpened || account.dateOpened || account.opened || account.DateReported || account.dateReported || account.reported,
+        status: account.status || account.AccountStatus || account.AccountCondition || 'Negative',
+        dateOpened: account.DateOpened || account.dateOpened || account.opened || '',
+        dateOfFirstDelinquency: account.PayStatusHistoryStartDate || account.DateOfFirstDelinquency || '',
+        accountStatus: account.AccountStatus || account.accountStatus || account.status || '',
+        currentBalance: account.CurrentBalance || account.currentBalance || account.balance || account.Balance || '',
+        originalLoanAmount: account.HighBalance || account.highBalance || account.OriginalLoanAmount || '',
+        dateOfLastPayment: account.DateReported || account.DateOfLastPayment || '',
+        dateOfLastActivity: account.DateOfLastActivity || account.dateOfLastActivity || '',
+        accountType: account.AccountType || account.accountType || account.type || '',
+        accountResponsibility: account.AccountDesignator || account.AccountResponsibility || '',
+        accountTerms: account.TermType || account.AccountTerms || '',
+        scheduledPaymentAmount: account.AmountPastDue || account.ScheduledPaymentAmount || '',
+        dateClosed: account.DateAccountStatus || account.DateClosed || '',
+        highBalance: account.HighBalance || account.highBalance || '',
+        paymentStatus: account.PaymentStatus || account.paymentStatus || '',
+      });
+    });
+
+    collections.forEach((collection: any, index: number) => {
+      const collectionDigits = digits(collection.accountNumber || collection.id || '');
+      const accountKey = collectionDigits ? collectionDigits.slice(-4) : `${collection.agency || collection.originalCreditor || 'collection'}-${index}`;
+      addItem({
+        key: `collection|${accountKey}`,
+        category: 'collection',
+        type: 'Collection',
+        creditor: collection.agency || collection.originalCreditor || collection.creditor || 'Collection Agency',
+        bureau: bureauName(collection.bureau || collection.BureauId) || 'Multiple',
+        accountNumber: collection.accountNumber || collection.id,
+        accountDate: collection.dateOpened || collection.dateReported || collection.lastActivity,
+        status: collection.status || 'Collection',
+        dateOpened: collection.dateOpened || collection.DateOpened || '',
+        dateOfFirstDelinquency: collection.PayStatusHistoryStartDate || collection.dateOfFirstDelinquency || '',
+        accountStatus: collection.status || collection.AccountStatus || 'Collection',
+        currentBalance: collection.balance || collection.CurrentBalance || collection.currentBalance || '',
+        originalLoanAmount: collection.HighBalance || collection.highBalance || collection.originalAmount || '',
+        dateOfLastPayment: collection.DateReported || collection.dateOfLastPayment || '',
+        dateOfLastActivity: collection.lastActivity || collection.DateOfLastActivity || '',
+        accountType: 'Collection',
+        accountResponsibility: collection.AccountDesignator || collection.responsibility || '',
+        accountTerms: collection.TermType || collection.terms || '',
+        scheduledPaymentAmount: collection.AmountPastDue || collection.monthlyPayment || '',
+        dateClosed: collection.DateAccountStatus || collection.dateClosed || '',
+        highBalance: collection.highBalance || collection.HighBalance || '',
+        paymentStatus: collection.PaymentStatus || collection.paymentStatus || '',
+      });
+    });
+
+    publicRecords.forEach((record: any, index: number) => {
+      const recordDigits = digits(record.caseNumber || record.id || '');
+      const recordKey = recordDigits ? recordDigits.slice(-4) : `${record.type || 'record'}-${index}`;
+      addItem({
+        key: `public|${recordKey}`,
+        category: 'public-record',
+        type: record.type || 'Public Record',
+        creditor: record.creditor || 'Court/Government',
+        bureau: bureauName(record.bureau || record.BureauId) || 'Multiple',
+        accountNumber: record.caseNumber || record.id,
+        accountDate: record.filingDate || record.dischargeDate,
+        status: record.status || 'Public Record',
+      });
+    });
+
+    inquiries.forEach((inquiry: any, index: number) => {
+      const rawType = String(inquiry.type || inquiry.InquiryType || '').toLowerCase();
+      const isHard = rawType === 'hard' || rawType === 'i' || !rawType;
+      if (!isHard) return;
+      const creditor = inquiry.company || inquiry.creditorName || inquiry.CreditorName || '';
+      const date = inquiry.date || inquiry.DateInquiry || '';
+      addItem({
+        key: `inquiry|${creditor}-${date || index}`,
+        category: 'hard-inquiry',
+        type: 'Hard Inquiry',
+        creditor: creditor || 'Inquiry',
+        bureau: bureauName(inquiry.bureau || inquiry.BureauId),
+        accountNumber: '',
+        accountDate: date,
+        status: 'Inquiry',
+      });
+    });
+
+    return items;
+  }, [reportData]);
+
+  // Credit Repair - Law Tags (simplified version - uses fallback law sets)
+  const getLawTagsForItem = (item: any) => {
+    const direct = item.detectedLaws || item.detected_laws || item.laws || item.law_tags || item.lawTags || [];
+    const directTags = Array.isArray(direct) ? direct.map((law: any) => String(law)) : [];
+    if (directTags.length > 0) return Array.from(new Set(directTags));
+    if (item.category === "account" || item.category === "collection") return lawTagsFromLawset(FULL_ACCOUNT_LAWSET);
+    if (item.category === "public-record") return lawTagsFromLawset(FULL_PUBLIC_RECORD_LAWSET);
+    if (item.category === "hard-inquiry") return lawTagsFromLawset(FULL_INQUIRY_LAWSET);
+    const fallback: Record<string, string[]> = {
+      collection: ["FCRA §609", "FCRA §623"],
+      account: ["FCRA §607(b)", "FCRA §611(a)", "FCRA §623"],
+      "public-record": ["FCRA §605", "FCRA §607(b)", "FCRA §611(a)"],
+      "hard-inquiry": ["FCRA §604", "FCRA §607(b)", "FCRA §609(a)(1)"]
+    };
+    return fallback[item.category] || [];
+  };
+
+  // Credit Repair - Selected Items
+  const selectedNegativeItems = useMemo(() =>
+    negativeItems.filter((item) => selectedNegativeKeys.includes(item.key)),
+    [negativeItems, selectedNegativeKeys]
+  );
+
+  // Credit Repair - Computed Values
+  const selectedToneLevelLabel = useMemo(() => {
+    if (selectedNegativeItems.length === 0) return "Balanced";
+    return toneLevelToLabel(deriveToneLevel(selectedNegativeItems));
+  }, [selectedNegativeItems]);
+
+  const roundSummary = useMemo(() => {
+    const roundNumber = Number(selectedDisputeRound || "1");
+    if (roundNumber <= 1) return "Round 1 – Initial (Polite)";
+    if (roundNumber === 2) return "Round 2 – Follow-up (Firm)";
+    if (roundNumber === 3) return "Round 3 – Escalation (Legal)";
+    if (roundNumber === 4) return "Round 4 – Demand (Strict)";
+    if (roundNumber === 5) return "Round 5 – Enforcement (Threatening)";
+    if (roundNumber >= 6) return "Round 6 – Final Notice (Strongest)";
+    return `Round ${roundNumber}`;
+  }, [selectedDisputeRound]);
+
+  const selectedDisputeContentTypeLabel = useMemo(() => {
+    return disputeContentTypeLabels[selectedDisputeContentType];
+  }, [selectedDisputeContentType]);
+
+  const selectedOverviewSummary = useCallback(() => {
+    if (selectedNegativeItems.length === 0) {
+      return `Select negative items to auto-assign the best ${selectedDisputeContentTypeLabel.toLowerCase()} template per bureau.`;
+    }
+    const bureaus = new Set(selectedNegativeItems.map((item) => String(item.bureau || "Unknown").trim()));
+    const categories = new Set(selectedNegativeItems.map((item) => String(item.category || "item").trim()));
+    const bureauText = Array.from(bureaus).join(", ");
+    const categoryText = Array.from(categories).map((c) => c.replace(/-/g, " ")).join(", ");
+    return `Auto-selecting ${selectedDisputeContentTypeLabel.toLowerCase()} templates for ${bureauText} across ${categoryText}.`;
+  }, [selectedDisputeContentTypeLabel, selectedNegativeItems]);
+
+  // Credit Repair - AI Selection
+  useEffect(() => {
+    if (disputeMode === 'AI' && negativeItems.length > 0) {
+      const aiSelectedKeys: string[] = [];
+      negativeItems.forEach(item => {
+        const cat = item.category || '';
+        const status = (item.status || '').toLowerCase();
+        if (cat === 'collection' || status.includes('charge') || status.includes('collection')) {
+          aiSelectedKeys.push(item.key);
+        } else if (status.includes('60') || status.includes('90') || status.includes('120')) {
+          aiSelectedKeys.push(item.key);
+        }
+      });
+      setSelectedNegativeKeys(aiSelectedKeys);
+      toast.success(`AI selected ${aiSelectedKeys.length} high-priority items to dispute.`);
+    }
+  }, [disputeMode, negativeItems]);
+
+  // Credit Repair - Category Meta
+  const negativeItemCategoryMeta = [
+    { key: 'collection', label: 'Collections', icon: AlertTriangle, color: 'text-orange-500', itemBg: 'bg-orange-50/80 dark:bg-orange-950/30', hoverBorder: 'hover:border-orange-300 dark:hover:border-orange-400', selectedBorder: 'border-orange-500', selectedRing: 'ring-orange-400/60', selectedGradient: 'from-orange-100 via-orange-50 to-white dark:from-orange-950/70 dark:via-orange-900/40 dark:to-slate-950' },
+    { key: 'account', label: 'Late Payments', icon: CreditCard, color: 'text-blue-500', itemBg: 'bg-sky-50/80 dark:bg-sky-950/30', hoverBorder: 'hover:border-sky-300 dark:hover:border-sky-400', selectedBorder: 'border-sky-500', selectedRing: 'ring-sky-400/60', selectedGradient: 'from-sky-100 via-sky-50 to-white dark:from-sky-950/70 dark:via-sky-900/40 dark:to-slate-950' },
+    { key: 'public-record', label: 'Public Records', icon: Building2, color: 'text-red-500', itemBg: 'bg-rose-50/80 dark:bg-rose-950/30', hoverBorder: 'hover:border-rose-300 dark:hover:border-rose-400', selectedBorder: 'border-rose-500', selectedRing: 'ring-rose-400/60', selectedGradient: 'from-rose-100 via-rose-50 to-white dark:from-rose-950/70 dark:via-rose-900/40 dark:to-slate-950' },
+    { key: 'hard-inquiry', label: 'Inquiries', icon: Search, color: 'text-purple-500', itemBg: 'bg-violet-50/80 dark:bg-violet-950/30', hoverBorder: 'hover:border-violet-300 dark:hover:border-violet-400', selectedBorder: 'border-violet-500', selectedRing: 'ring-violet-400/60', selectedGradient: 'from-violet-100 via-violet-50 to-white dark:from-violet-950/70 dark:via-violet-900/40 dark:to-slate-950' },
+  ];
+
+  // Credit Repair - Filter Helpers
+  const toggleBureauFilter = (bureau: string) => {
+    setSelectedBureaus(prev => prev.includes(bureau) ? prev.filter(b => b !== bureau) : [...prev, bureau]);
+  };
+  const toggleCategoryFilter = (category: string) => {
+    setSelectedCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]);
+  };
+  const negativeItemsSearchTerm = negativeItemsSearchQuery.trim().toLowerCase();
+  const matchesNegativeItemFullViewFilters = (item: any) => {
+    const lawTags = getLawTagsForItem(item);
+    if (negativeItemsShowSelectedOnly && !selectedNegativeKeys.includes(item.key)) return false;
+    if (negativeItemsRequireLawTags && lawTags.length === 0) return false;
+    if (negativeItemsRequireStatus && !String(item.status || '').trim()) return false;
+    if (!negativeItemsSearchTerm) return true;
+    const searchableValues = [item.creditor, item.accountNumber, item.status, item.type, item.bureau, item.category, ...lawTags].map((value) => String(value || '').toLowerCase());
+    return searchableValues.some((value) => value.includes(negativeItemsSearchTerm));
+  };
+  const compactFilteredNegativeItemsCount = useMemo(() =>
+    negativeItems.filter((item) => {
+      const bureauValue = String(item.bureau || '').toLowerCase();
+      return selectedBureaus.some((bureau) => bureauValue.includes(bureau)) && selectedCategories.includes(item.category);
+    }).length,
+    [negativeItems, selectedBureaus, selectedCategories]
+  );
+  const fullViewFilteredNegativeItemsCount = useMemo(() =>
+    negativeItems.filter((item) => {
+      const bureauValue = String(item.bureau || '').toLowerCase();
+      return selectedBureaus.some((bureau) => bureauValue.includes(bureau)) && selectedCategories.includes(item.category) && matchesNegativeItemFullViewFilters(item);
+    }).length,
+    [negativeItems, selectedBureaus, selectedCategories, negativeItemsSearchTerm, negativeItemsShowSelectedOnly, negativeItemsRequireLawTags, negativeItemsRequireStatus, selectedNegativeKeys]
+  );
+  const resetNegativeItemsFullViewFilters = () => {
+    setNegativeItemsSearchQuery('');
+    setNegativeItemsShowSelectedOnly(false);
+    setNegativeItemsRequireLawTags(false);
+    setNegativeItemsRequireStatus(false);
+    setSelectedBureaus([...defaultNegativeItemBureauFilters]);
+    setSelectedCategories([...defaultNegativeItemCategoryFilters]);
+  };
+
+  // Credit Repair - Render Helpers
+  const renderNegativeItemCard = (item: any, categoryMeta: any, compact = false) => {
+    const isSelected = selectedNegativeKeys.includes(item.key);
+    const roundCount = Math.floor(Math.random() * 3);
+    const lawTags = getLawTagsForItem(item);
+    const visibleLawTags = compact ? lawTags.slice(0, 2) : lawTags.slice(0, 4);
+    const baseCardClasses = compact
+      ? 'group relative flex flex-col gap-2 rounded-xl border p-3 transition-all duration-300 hover:shadow-md cursor-pointer'
+      : 'group relative flex flex-col gap-3 rounded-xl border p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg cursor-pointer';
+    const unselectedClasses = `${categoryMeta.itemBg ?? 'bg-card'} border-border ${categoryMeta.hoverBorder ?? 'hover:border-indigo-200 dark:hover:border-indigo-800'}`;
+    const selectedClasses = `bg-gradient-to-br ${categoryMeta.selectedGradient ?? 'from-indigo-50 to-white dark:from-indigo-950/20 dark:to-card'} ${categoryMeta.selectedBorder ?? 'border-indigo-500'} ring-1 ${categoryMeta.selectedRing ?? 'ring-indigo-500/60'}`;
+    const cardClassName = `${baseCardClasses} ${isSelected ? selectedClasses : unselectedClasses}`;
+
+    return (
+      <div key={item.key} className={cardClassName} onClick={() => {
+        setSelectedNegativeKeys((prev) => prev.includes(item.key) ? prev.filter((key) => key !== item.key) : [...prev, item.key]);
+      }}>
+        <div className="flex justify-between items-start gap-3">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className={`mt-0.5 rounded-full p-0.5 ${isSelected ? 'bg-indigo-500 text-white' : 'text-muted-foreground'}`}>
+              {isSelected ? (<CheckCircle2 className="h-4 w-4" />) : (<div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <h4 className="font-semibold text-sm truncate text-foreground" title={item.creditor}>{item.creditor}</h4>
+                {item.status && (
+                  <Badge variant={isSelected ? 'default' : 'secondary'} className="text-[10px] px-1.5 h-5 font-medium shrink-0">{item.status}</Badge>
+                )}
+              </div>
+              <div className={`text-xs text-muted-foreground ${compact ? 'space-y-1.5' : 'flex items-center gap-3 flex-wrap'}`}>
+                <span className="inline-flex items-center gap-1 bg-muted/50 px-1.5 py-0.5 rounded">
+                  <CreditCard className="h-3 w-3" />
+                  <span className="font-mono">{item.accountNumber || 'N/A'}</span>
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  <span>{item.accountDate ? new Date(item.accountDate).toLocaleDateString() : 'N/A'}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between border-t border-border/50 pt-3 mt-1">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <Gavel className="h-3.5 w-3.5 text-indigo-500" />
+            <span>Round {roundCount}/6</span>
+          </div>
+          <div className="text-[10px] text-muted-foreground">{item.type || 'Item'}</div>
+        </div>
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {visibleLawTags.map((law: string) => (
+            <Badge key={`${item.key}-${law}`} variant="outline" className="text-[10px] h-5 px-2 bg-background/50 border-indigo-200/50 text-indigo-700 dark:text-indigo-300 dark:border-indigo-800">{law}</Badge>
+          ))}
+          {!compact && lawTags.length > visibleLawTags.length && (
+            <Popover>
+              <PopoverTrigger onClick={(e) => e.stopPropagation()} className="p-0 bg-transparent border-0 outline-none hover:bg-transparent focus:ring-0">
+                <Badge variant="secondary" className="text-[10px] h-5 px-1.5 text-muted-foreground hover:text-indigo-600 hover:bg-indigo-50 cursor-pointer transition-colors">+{lawTags.length - visibleLawTags.length} more</Badge>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-xs text-foreground border-b pb-1">Applicable Laws</h4>
+                  <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto">
+                    {lawTags.map((law: string) => (
+                      <Badge key={`popover-${item.key}-${law}`} variant="outline" className="text-[10px] h-5 px-2 border-indigo-200 text-indigo-700 bg-indigo-50/50">{law}</Badge>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          {compact && lawTags.length > visibleLawTags.length && (
+            <Badge variant="secondary" className="text-[10px] h-5 px-1.5 text-muted-foreground">+{lawTags.length - visibleLawTags.length}</Badge>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderNegativeItemsBureauColumn = (bureauName: string, options: { compact?: boolean; includeFullViewFilters?: boolean } = {}) => {
+    const bureauKey = bureauName.toLowerCase();
+    if (!selectedBureaus.includes(bureauKey)) return null;
+    const bureauItems = negativeItems.filter((item) => {
+      const bureauMatches = String(item.bureau || '').toLowerCase().includes(bureauKey);
+      const categoryMatches = selectedCategories.includes(item.category);
+      const fullViewMatches = options.includeFullViewFilters ? matchesNegativeItemFullViewFilters(item) : true;
+      return bureauMatches && categoryMatches && fullViewMatches;
+    });
+    const byCategory: Record<string, any[]> = {
+      collection: bureauItems.filter((item) => item.category === 'collection'),
+      account: bureauItems.filter((item) => item.category === 'account'),
+      'public-record': bureauItems.filter((item) => item.category === 'public-record'),
+      'hard-inquiry': bureauItems.filter((item) => item.category === 'hard-inquiry'),
+    };
+    const compact = options.compact === true;
+    const viewKey = options.includeFullViewFilters ? 'full' : 'compact';
+    const bureauDisclosureKey = `${viewKey}:${bureauName}`;
+    const bureauExpanded = negativeItemExpandedBureaus[bureauDisclosureKey] ?? true;
+
+    return (
+      <div key={`${options.includeFullViewFilters ? 'full' : 'compact'}-${bureauName}`} className="flex flex-col space-y-4 rounded-2xl border border-border/80 bg-background shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between rounded-t-2xl border-b border-border/70 bg-gradient-to-r from-muted/60 via-muted/40 to-muted/60 p-4">
+          <div className="flex items-center gap-2">
+            <div onClick={(event) => event.stopPropagation()}>
+              <Checkbox
+                checked={bureauItems.length > 0 && bureauItems.every((item) => selectedNegativeKeys.includes(item.key))}
+                onCheckedChange={(checked) => {
+                  const ids = bureauItems.map((item) => item.key);
+                  if (checked) { setSelectedNegativeKeys((prev) => [...new Set([...prev, ...ids])]); }
+                  else { setSelectedNegativeKeys((prev) => prev.filter((key) => !ids.includes(key))); }
+                }}
+              />
+            </div>
+            <span className="font-semibold text-foreground">{bureauName}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">{bureauItems.length}</Badge>
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8"
+              onClick={() => setNegativeItemExpandedBureaus((prev) => ({ ...prev, [bureauDisclosureKey]: !(prev[bureauDisclosureKey] ?? true) }))}
+            >
+              <ChevronRight className={`h-4 w-4 transition-transform ${bureauExpanded ? 'rotate-90' : ''}`} />
+            </Button>
+          </div>
+        </div>
+        {bureauExpanded && (
+          <div className={`space-y-4 px-4 pb-4 ${compact ? 'max-h-[680px] overflow-y-auto pr-2' : ''}`}>
+            {negativeItemCategoryMeta.map((categoryMeta) => {
+              const items = byCategory[categoryMeta.key] || [];
+              if (items.length === 0) return null;
+              const Icon = categoryMeta.icon;
+              const categoryDisclosureKey = `${viewKey}:${bureauName}:${categoryMeta.key}`;
+              const categoryExpanded = negativeItemExpandedCategories[categoryDisclosureKey] ?? false;
+              const categoryItemKeys = items.map((item) => item.key);
+              const selectedCategoryItemCount = categoryItemKeys.filter((key) => selectedNegativeKeys.includes(key)).length;
+              const isCategoryChecked = items.length > 0 && selectedCategoryItemCount === items.length;
+              const isCategoryIndeterminate = selectedCategoryItemCount > 0 && selectedCategoryItemCount < items.length;
+
+              return (
+                <div key={`${bureauName}-${categoryMeta.key}`} className="space-y-3 border border-border/70 rounded-xl bg-card/80 shadow-sm overflow-hidden">
+                  <button type="button" className="flex w-full items-center gap-2 rounded-t-xl border-b border-border/60 bg-muted/40 px-4 py-3 text-left"
+                    onClick={() => setNegativeItemExpandedCategories((prev) => ({ ...prev, [categoryDisclosureKey]: !(prev[categoryDisclosureKey] ?? false) }))}
+                  >
+                    <ChevronRight className={`h-4 w-4 transition-transform ${categoryExpanded ? 'rotate-90' : ''}`} />
+                    <div className="flex items-center" onClick={(event) => event.stopPropagation()}>
+                      <Checkbox
+                        checked={isCategoryChecked ? true : isCategoryIndeterminate ? "indeterminate" : false}
+                        onCheckedChange={(checked) => {
+                          if (checked) { setSelectedNegativeKeys((prev) => [...new Set([...prev, ...categoryItemKeys])]); }
+                          else { setSelectedNegativeKeys((prev) => prev.filter((key) => !categoryItemKeys.includes(key))); }
+                        }}
+                      />
+                    </div>
+                    <Icon className={`h-5 w-5 ${categoryMeta.color}`} />
+                    <span className="text-base font-semibold text-foreground tracking-wide">{categoryMeta.label}</span>
+                    <Badge variant="outline" className="ml-auto text-[10px]">{items.length}</Badge>
+                  </button>
+                  {categoryExpanded && (
+                    <div className={`space-y-3 ${compact ? 'px-3 py-3' : 'px-4 py-3'}`}>
+                      {items.map((item) => renderNegativeItemCard(item, categoryMeta, compact))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {bureauItems.length === 0 && (
+              <div className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-xl bg-muted/10">No items match the current filters</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Credit Repair - Dispute Generation
+  const findExistingDisputeId = async (clientIdParam: number, bureau: string, accountName: string) => {
+    const lookupResponse = await disputesApi.getDisputes({ page: 1, limit: 20, search: accountName });
+    const disputes = (lookupResponse as any).data?.data?.disputes || [];
+    const match = disputes.find((dispute: any) => {
+      const status = String(dispute.status || "").toLowerCase();
+      return String(dispute.account_name || "").toLowerCase() === String(accountName).toLowerCase() &&
+        String(dispute.bureau || "").toLowerCase() === String(bureau).toLowerCase() &&
+        status !== "resolved" && status !== "rejected";
+    });
+    return match?.id ? Number(match.id) : null;
+  };
+
+  const handleGenerateDisputeLetter = async () => {
+    const selectedItems = negativeItems.filter((item) => selectedNegativeKeys.includes(item.key));
+    if (!clientId) { setLetterError("No client is associated with this report."); toast.error("No client is associated with this report."); return; }
+    if (selectedItems.length === 0) { setLetterError("Select at least one negative item to build a letter."); toast.error("Select at least one negative item to build a letter."); return; }
+
+    setLetterLoading(true);
+    setLetterError(null);
+    setLetterErrors([]);
+    setLetterMeta(null);
+    setLetterPdfUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    setLetterPreview("");
+    setLetterOutputs([]);
+
+    const templateNameById = new Map<number, string>();
+    letterTemplates.forEach((t) => { if (t?.id) templateNameById.set(Number(t.id), t.name); });
+
+    const normalizeBureauKey = (value: any): string | null => {
+      if (value === null || value === undefined) return null;
+      const text = String(value).trim().toLowerCase();
+      if (!text) return null;
+      if (text === "1" || text === "tu" || text.includes("trans")) return "transunion";
+      if (text === "2" || text === "exp" || text.includes("exper")) return "experian";
+      if (text === "3" || text === "eq" || text === "efx" || text.includes("equifax")) return "equifax";
+      return null;
+    };
+    const bureauLabelFromKey = (key: string) => {
+      if (key === "equifax") return "Equifax";
+      if (key === "transunion") return "TransUnion";
+      return "Experian";
+    };
+    const normalizeNegativeItemCategory = (value: any): string => {
+      const text = String(value || "").trim().toLowerCase();
+      if (!text) return "";
+      if (text.includes("inquir")) return "hard-inquiry";
+      if (text.includes("public")) return "public-record";
+      if (text.includes("collect") || text.includes("charge")) return "collection";
+      if (text.includes("account") || text.includes("late") || text.includes("delinqu")) return "account";
+      return text;
+    };
+    const mapNegativeItemCategoryToLetterCategory = (category: string): string => {
+      switch (normalizeNegativeItemCategory(category)) {
+        case "hard-inquiry": return "Inquiries";
+        case "public-record": return "Public Records";
+        case "collection": return "All Other Charge-Offs/Collections";
+        case "account": return "Late Payments";
+        default: return "";
+      }
+    };
+    const detectCategoryHintFromTradelines = (items: any[]): string => {
+      const batchCategoryText = items.map((item: any) => `${String(item?.category || "")} ${String(item?.type || "")} ${String(item?.status || "")}`.toLowerCase()).join(" ");
+      if (batchCategoryText.includes("inquir")) return "Inquiries";
+      if (batchCategoryText.includes("late payment") || batchCategoryText.includes("late-payment") || /\b(30|60|90|120)\s*day[s]?\s*late\b/.test(batchCategoryText) || /\blate\b/.test(batchCategoryText) || batchCategoryText.includes("delinquen") || batchCategoryText.includes("past due")) return "Late Payments";
+      if (batchCategoryText.includes("collection") || batchCategoryText.includes("charge-off") || batchCategoryText.includes("charge off")) return "All Other Charge-Offs/Collections";
+      if (batchCategoryText.includes("public") || batchCategoryText.includes("bankrupt") || batchCategoryText.includes("lien") || batchCategoryText.includes("judgment")) return "Public Records";
+      return "";
+    };
+
+    const appendLetterQueryParam = (params: URLSearchParams, key: string, value: unknown) => {
+      if (value === undefined || value === null) return;
+      const text = String(value).trim();
+      if (!text) return;
+      params.set(key, text);
+    };
+
+    const selectedBureauKeys = Array.from(new Set(
+      selectedBureaus.map((bureau) => normalizeBureauKey(bureau) ?? String(bureau).toLowerCase()).filter((bureau): bureau is string => Boolean(bureau))
+    ));
+
+    const groups = new Map<string, { bureauKey: string; categoryKey: string; items: any[] }>();
+    const addToGroup = (map: typeof groups, bureauKey: string, categoryKey: string, item: any) => {
+      const key = `${bureauKey}::${categoryKey}`;
+      const existing = map.get(key);
+      if (existing) { existing.items.push(item); return; }
+      map.set(key, { bureauKey, categoryKey, items: [item] });
+    };
+    selectedItems.forEach((item) => {
+      const bureauKey = normalizeBureauKey(item.bureau);
+      if (!bureauKey) return;
+      if (selectedBureauKeys.length && !selectedBureauKeys.includes(bureauKey)) return;
+      const categoryKey = normalizeNegativeItemCategory(item.category) || "account";
+      addToGroup(groups, bureauKey, categoryKey, item);
+    });
+
+    const groupsToGenerate = Array.from(groups.values());
+    const round = Number(selectedDisputeRound) || 1;
+    const disputeContentType = selectedDisputeContentType;
+    const disputeContentTypeLabel = disputeContentTypeLabels[disputeContentType];
+    const results: GeneratedLetter[] = [];
+    const errors: string[] = [];
+
+    for (const group of groupsToGenerate) {
+      const { bureauKey, categoryKey } = group;
+      const selectedTradelines = group.items;
+      if (!selectedTradelines.length) continue;
+
+      const _bureauName = bureauLabelFromKey(bureauKey);
+      const categoryHintBase = mapNegativeItemCategoryToLetterCategory(categoryKey) || detectCategoryHintFromTradelines(selectedTradelines);
+      const categoryLabel = categoryHintBase || "Dispute Items";
+
+      const bureauTradelines = selectedTradelines.map((item) => {
+        const accountNumber = String(item.accountNumber || "").trim();
+        const isInquiry = String(item?.category || "").toLowerCase().includes("inquir");
+        return { ...item, bureau: _bureauName, accountNumber: accountNumber || (isInquiry ? "N/A" : "XXXX") };
+      });
+
+      const MAX_ITEMS_PER_LETTER = 5;
+      const tradelineChunks: (typeof bureauTradelines)[] = [];
+      for (let ci = 0; ci < bureauTradelines.length; ci += MAX_ITEMS_PER_LETTER) {
+        tradelineChunks.push(bureauTradelines.slice(ci, ci + MAX_ITEMS_PER_LETTER));
+      }
+      const totalBatches = tradelineChunks.length;
+      const toneLevel = deriveToneLevel(bureauTradelines);
+
+      const subjectTarget = bureauTradelines.length === 1 ? String(bureauTradelines[0].creditor || "Credit Report Item") : "";
+      const accountName = subjectTarget || `${categoryLabel} Dispute Items`;
+      const accountNumbers = bureauTradelines.map((item) => String(item.accountNumber || "").trim()).filter((val) => Boolean(val) && val.toLowerCase() !== "n/a");
+      const primaryAccountNumber = accountNumbers[0] || undefined;
+
+      const disputeReason = "I am disputing items on my credit report that appear inaccurate, incomplete, or not fully verifiable. Please investigate, verify accuracy, and correct or remove any information that cannot be fully verified in accordance with the Fair Credit Reporting Act.";
+      const specificDisputeReason = "The above-referenced tradelines are reporting information that is inaccurate, incomplete, or not capable of being fully verified under FCRA §607(b). The reporting lacks sufficient evidentiary support and fails to meet the maximum possible accuracy standard required by federal law.";
+
+      // Consumer info from client record
+      const consumerFullName = [clientRecord?.first_name, clientRecord?.last_name].filter(Boolean).join(" ").trim();
+      const consumerAddress = [clientRecord?.address_line1 || clientRecord?.address, clientRecord?.address_line2].filter(Boolean).join(" ").trim();
+      const consumerCityStateZip = [clientRecord?.city, clientRecord?.state, clientRecord?.zip || clientRecord?.postal_code].filter(Boolean).join(", ").trim();
+      const consumerDOB = String((clientRecord as any)?.dob || (clientRecord as any)?.birth_date || "");
+      const consumerSSNLast4 = String((clientRecord as any)?.ssn_last_four || "");
+
+      // Try credit report addresses
+      const selectedBureauId = bureauKey === "transunion" ? 1 : bureauKey === "experian" ? 2 : bureauKey === "equifax" ? 3 : null;
+      const bureauAddresses = Array.isArray((apiData as any)?.Address) ? (apiData as any).Address.filter((a: any) => selectedBureauId == null ? true : a?.BureauId === selectedBureauId) : [];
+      const currentAddr = bureauAddresses.find((a: any) => String(a?.AddressType || a?.Type || "").toLowerCase().includes("current")) || bureauAddresses[0];
+      const crAddr = currentAddr ? [currentAddr.StreetAddress || currentAddr.AddressLine1 || currentAddr.Address1 || "", currentAddr.StreetAddress2 || currentAddr.AddressLine2 || ""].filter(Boolean).join(" ").trim() : "";
+      const crCSZ = currentAddr ? [currentAddr.City || "", currentAddr.State || "", currentAddr.Zip || currentAddr.PostalCode || ""].filter(Boolean).join(", ").trim() : "";
+      const finalConsumerAddress = crAddr || consumerAddress;
+      const finalConsumerCityStateZip = crCSZ || consumerCityStateZip;
+
+      let disputeId: number | null = null;
+      try {
+        const createResponse = await disputesApi.createDispute({
+          client_id: Number(clientId),
+          bureau: bureauKey,
+          account_name: accountName,
+          account_number: primaryAccountNumber,
+          dispute_reason: disputeReason,
+          dispute_type: "inaccurate",
+          status: "draft",
+          priority: "medium",
+        });
+        const dispute = (createResponse as any).data;
+        disputeId = dispute?.id ? Number(dispute.id) : null;
+      } catch (error: any) {
+        const status = error?.response?.status;
+        const message = error?.response?.data?.error;
+        if (status === 409 && typeof message === "string" && message.toLowerCase().includes("active dispute")) {
+          if (round === 1 && !confirmRoundOneRegenerate) {
+            errors.push(`${_bureauName}: Active dispute exists. Enable Round 1 regenerate to continue.`);
+            continue;
+          }
+          disputeId = await findExistingDisputeId(Number(clientId), bureauKey, accountName);
+        } else { throw error; }
+      }
+      if (!disputeId) { errors.push(`${_bureauName}: Unable to create or locate dispute.`); continue; }
+
+      for (let batchIdx = 0; batchIdx < tradelineChunks.length; batchIdx++) {
+        const batchTradelines = tradelineChunks[batchIdx];
+        const batchLabel = `${categoryHintBase ? ` · ${categoryHintBase}` : ""}${totalBatches > 1 ? ` (${batchIdx + 1}/${totalBatches})` : ""}`;
+        const bSubjectTarget = batchTradelines.length === 1 ? String(batchTradelines[0].creditor || "Credit Report Item") : "";
+        const bAccountNumbers = batchTradelines.map((item: any) => String(item.accountNumber || "").trim()).filter((val: string) => Boolean(val) && val.toLowerCase() !== "n/a");
+        const bPrimaryAccountNumber = bAccountNumbers[0] || undefined;
+        const bNegativeItemType = batchTradelines.length === 1 ? String(batchTradelines[0]?.type || batchTradelines[0]?.category || "Item") : categoryLabel;
+        const bCreditorName = batchTradelines.length === 1 ? String(batchTradelines[0]?.creditor || "Creditor") : "Multiple Creditors";
+        const bNegativeItemDate = batchTradelines.length === 1 ? String(batchTradelines[0]?.accountDate || "") : "";
+        const bAccountOrInquiryType = batchTradelines.length === 1 ? String(batchTradelines[0]?.type || batchTradelines[0]?.category || "Account") : categoryLabel;
+        const bTradelineList = batchTradelines.map((item: any) => {
+          const cred = item.creditor || "Unknown Creditor";
+          const acctType = item.type || "Item";
+          const acctNum = String(item.accountNumber || "");
+          const dateStr = item.accountDate ? String(item.accountDate).trim() : "";
+          const datePart = dateStr ? `, Date: ${dateStr}` : "";
+          return `- ${cred} – ${acctType} (Account ${acctNum}, ${_bureauName}${datePart})`;
+        }).join("\n");
+        const bAccountNumberList = batchTradelines.map((item: any, i: number) => `${i + 1}. ${String(item.accountNumber || "")}`).join("\n");
+        const categoryHint = categoryHintBase || detectCategoryHintFromTradelines(batchTradelines);
+        const primaryTradeline = batchTradelines[0] || {} as any;
+        const batchItemPayloads = batchTradelines.map((item: any) => {
+          const itemAccountNumber = String(item.accountNumber || "").trim();
+          return {
+            creditor_name: String(item.creditor || "Creditor"),
+            negative_item_type: String(item.type || item.category || categoryLabel || "Item"),
+            account_or_inquiry_type: String(item.type || item.category || categoryLabel || "Account"),
+            negative_item_date: String(item.accountDate || item.dateOpened || item.dateReported || item.lastActivity || ""),
+            account_number: itemAccountNumber,
+            account_number_masked: itemAccountNumber,
+            amount: String(item.currentBalance || item.balance || ""),
+            date_opened: String(item.dateOpened || ""),
+            date_of_first_delinquency: String(item.dateOfFirstDelinquency || ""),
+            account_status: String(item.accountStatus || item.status || ""),
+            current_balance: String(item.currentBalance || item.balance || ""),
+            original_loan_amount: String(item.originalLoanAmount || ""),
+            date_of_last_payment: String(item.dateOfLastPayment || ""),
+            date_of_last_activity: String(item.dateOfLastActivity || item.lastActivity || ""),
+            account_type: String(item.accountType || item.type || ""),
+            account_responsibility: String(item.accountResponsibility || ""),
+            account_status_date: String(item.accountStatusDate || ""),
+            account_terms: String(item.accountTerms || ""),
+            scheduled_payment_amount: String(item.scheduledPaymentAmount || ""),
+            date_closed: String(item.dateClosed || ""),
+            high_balance: String(item.highBalance || ""),
+            payment_status: String(item.paymentStatus || item.status || ""),
+          };
+        });
+        const serializedBatchItems = JSON.stringify(batchItemPayloads);
+
+        const letterPayload = {
+          tone_level: toneLevel,
+          round,
+          content_type: disputeContentType,
+          template_source: "auto",
+          bureau_name: _bureauName,
+          subject_target: bSubjectTarget,
+          negative_item_type: bNegativeItemType,
+          creditor_name: bCreditorName,
+          account_or_inquiry_type: bAccountOrInquiryType,
+          negative_item_date: bNegativeItemDate,
+          account_number: bPrimaryAccountNumber,
+          account_number_masked: bPrimaryAccountNumber,
+          consumer_full_name: consumerFullName,
+          consumer_address: finalConsumerAddress,
+          consumer_city_state_zip: finalConsumerCityStateZip,
+          consumer_dob: consumerDOB,
+          consumer_ssn_last4: consumerSSNLast4,
+          today_date: new Date().toLocaleDateString("en-US"),
+          specific_dispute_reason: specificDisputeReason,
+          tradeline_list: bTradelineList,
+          account_number_list: bAccountNumberList,
+          category_hint: categoryHint || undefined,
+          date_opened: String(primaryTradeline.dateOpened || ""),
+          date_of_first_delinquency: String(primaryTradeline.dateOfFirstDelinquency || ""),
+          account_status: String(primaryTradeline.accountStatus || ""),
+          current_balance: String(primaryTradeline.currentBalance || ""),
+          original_loan_amount: String(primaryTradeline.originalLoanAmount || ""),
+          date_of_last_payment: String(primaryTradeline.dateOfLastPayment || ""),
+          date_of_last_activity: String(primaryTradeline.dateOfLastActivity || ""),
+          account_type: String(primaryTradeline.accountType || ""),
+          account_responsibility: String(primaryTradeline.accountResponsibility || ""),
+          account_status_date: String(primaryTradeline.accountStatusDate || ""),
+          account_terms: String(primaryTradeline.accountTerms || ""),
+          scheduled_payment_amount: String(primaryTradeline.scheduledPaymentAmount || ""),
+          date_closed: String(primaryTradeline.dateClosed || ""),
+          high_balance: String(primaryTradeline.highBalance || ""),
+          payment_status: String(primaryTradeline.paymentStatus || ""),
+          tradeline_items: serializedBatchItems,
+        };
+
+        try {
+          const letterResponse = await disputesApi.generateLetter(disputeId, letterPayload);
+          const letter = (letterResponse as any).data?.data?.letter;
+          if (!letter?.content) { errors.push(`${_bureauName}: Letter engine returned no content.`); continue; }
+
+          let pdfUrl: string | null = null;
+          try {
+            const token = localStorage.getItem("auth_token");
+            if (!token) throw new Error("Authentication required to generate PDF.");
+            const params = new URLSearchParams();
+            params.set("format", "pdf");
+            Object.entries(letterPayload).forEach(([key, value]) => {
+              appendLetterQueryParam(params, key, value);
+            });
+            const pdfResponse = await fetch(`/api/disputes/${disputeId}/letter?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
+            if (!pdfResponse.ok) throw new Error(`PDF request failed (${pdfResponse.status})`);
+            const blob = await pdfResponse.blob();
+            if (!blob.size) throw new Error("PDF response was empty.");
+            pdfUrl = URL.createObjectURL(blob);
+          } catch (pdfError: any) {
+            console.error(pdfError);
+            errors.push(`${_bureauName}: Failed to generate PDF preview.`);
+          }
+
+          const templateId = letter.template_id ?? letter.templateId ?? letter.template?.id ?? null;
+          const toneCode = mapToneLevelToTemplateTone(toneLevel);
+          const fallbackTemplateName = (() => {
+            const bureauCode = supportTemplateBureauCode[bureauKey as keyof typeof supportTemplateBureauCode];
+            return letterTemplates.find((t) => t.bureau === bureauCode && Number(t.round) === round && (t.tone ? t.tone === toneCode : true))?.name;
+          })();
+          const adminTemplateName = (templateId != null ? templateNameById.get(Number(templateId)) || null : null) || fallbackTemplateName || null;
+          const templateName = adminTemplateName || "System Default";
+
+          const itemRangeStart = batchIdx * MAX_ITEMS_PER_LETTER + 1;
+          const itemRangeEnd = itemRangeStart + batchTradelines.length - 1;
+          const itemRangeLabel = itemRangeStart === itemRangeEnd ? `Item ${itemRangeStart}` : `Items ${itemRangeStart}-${itemRangeEnd}`;
+          results.push({
+            bureauKey: `${bureauKey}-${categoryKey}-${disputeContentType}${totalBatches > 1 ? `-batch${batchIdx}` : ""}`,
+            bureauName: _bureauName, categoryKey, categoryLabel: categoryHintBase || categoryLabel,
+            contentType: disputeContentType, contentTypeLabel: disputeContentTypeLabel,
+            round, toneLevel, batchLabel, batchIndex: batchIdx,
+            letterContent: String(letter.content),
+            lawCitations: Array.isArray(letter.law_citations) ? letter.law_citations : [],
+            accountNumbers: bAccountNumbers,
+            itemLabels: batchTradelines.map((item: any) => String(item.creditor || item.accountNumber || item.type || 'Item')),
+            itemRangeLabel, pdfUrl, disputeId,
+            templateName: templateName || undefined,
+            templateId: templateId ?? undefined,
+          });
+        } catch (err: any) {
+          const data = err?.response?.data || {};
+          const description = data?.error || err?.message || "Letter generation failed.";
+          errors.push(`${_bureauName}${batchLabel}: ${description}`);
+        }
+      } // end batch loop
+    }
+
+    if (results.length > 0) {
+      setLetterOutputs(results);
+      const [first] = results;
+      setLetterPreview(first.letterContent);
+      setLetterMeta({ accountNumbers: first.accountNumbers, lawCitations: first.lawCitations });
+      setLetterPdfUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return first.pdfUrl; });
+      toast.success(`Generated ${results.length} dispute letter${results.length > 1 ? "s" : ""}.`);
+    } else {
+      setLetterPreview("");
+      setLetterOutputs([]);
+    }
+    if (errors.length > 0) {
+      setLetterError(`Completed with ${errors.length} issue${errors.length > 1 ? "s" : ""}.`);
+      setLetterErrors(errors);
+      errors.forEach((msg) => toast.error(msg));
+    } else {
+      setLetterError(null);
+      setLetterErrors([]);
+    }
+    setLetterLoading(false);
+  };
 
   const getMissingBureaus = (reportData: any) => {
     const bureauIds = [1, 2, 3];
@@ -4186,6 +5116,12 @@ export default function CreditReport() {
           const clientResp = await clientsApi.getClient(clientId);
           dbSSNLastFour = clientResp?.data?.ssn_last_four || null;
           setClientRecord(clientResp?.data || null);
+          // Initialise document boxes from the client row so they survive page refresh
+          setClientDocs({
+            dl_or_id_card: clientResp?.data?.dl_or_id_card || null,
+            poa: clientResp?.data?.poa || null,
+            ssc: clientResp?.data?.ssc || null,
+          });
           const shouldShowAudit = !clientResp?.data?.fundable_status
             || searchParams.get('newReport') === 'true'
             || searchParams.get('fresh') === 'true';
@@ -5489,6 +6425,35 @@ export default function CreditReport() {
                     Automated Credit Analysis
                   </div>
                   <div className="text-xs text-muted-foreground">Automated Analysis</div>
+                </div>
+              </div>
+
+              {/* Connector */}
+              <div className="flex-1 h-0.5 bg-border mx-4">
+                <div className={`h-full bg-primary transition-all duration-500 ${
+                  ['creditRepair', 'debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
+                }`}></div>
+              </div>
+
+              {/* Credit Repair */}
+              <div className="flex items-center">
+                <button
+                  onClick={() => setActiveTab('creditRepair')}
+                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                    activeTab === 'creditRepair'
+                      ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
+                      : ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab)
+                      ? 'bg-red-500 border-red-500 text-white'
+                      : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
+                  }`}
+                >
+                  <AlertTriangle className="w-5 h-5" />
+                </button>
+                <div className="ml-3 hidden lg:block">
+                  <div className={`text-sm font-semibold ${activeTab === 'creditRepair' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                    Credit Repair
+                  </div>
+                  <div className="text-xs text-muted-foreground">Negative Items</div>
                 </div>
               </div>
 
@@ -21256,8 +22221,429 @@ export default function CreditReport() {
           ) : null}
           </TrialCreditReportWrapper>
         </TabsContent>
-      </Tabs>
 
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* ═══════════  CREDIT REPAIR – NEGATIVE ITEMS  ═══════════ */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <TabsContent value="creditRepair" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+                Credit Repair — Negative Items
+              </CardTitle>
+              <CardDescription>Select negative items to dispute from your credit report</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-8">
+                <div className="rounded-2xl border border-border/70 bg-muted/10 p-4 md:p-5">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-foreground">
+                        <Filter className="h-4 w-4 text-primary" />
+                        <h3 className="text-lg font-semibold">Negative Items Preview</h3>
+                      </div>
+                      <p className="text-sm text-muted-foreground max-w-2xl">
+                        Each bureau now opens into category folders, and each category opens into its exact items. Open Full View for search, bureau filters, category filters, and extra tick-button filters.
+                      </p>
+                      {disputeMode === 'AI' && (
+                        <div className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-600">
+                          <Zap className="h-3 w-3" />
+                          AI selected items with high dispute success probability. You can manually adjust selections.
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-3 xl:items-end">
+                      <div className="flex items-center gap-2 bg-background p-1 rounded-lg border self-start xl:self-auto">
+                        <Button variant={disputeMode === 'DIY' ? 'default' : 'ghost'} size="sm" onClick={() => setDisputeMode('DIY')} className="text-xs">DIY Mode</Button>
+                        <Button variant={disputeMode === 'AI' ? 'default' : 'ghost'} size="sm" onClick={() => setDisputeMode('AI')} className="text-xs flex items-center gap-1">
+                          <Zap className="h-3 w-3" /> AI Mode
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{compactFilteredNegativeItemsCount} filtered</Badge>
+                        <Badge variant="outline">{selectedNegativeKeys.length} selected</Badge>
+                        <Button type="button" variant="outline" className="gap-2" onClick={() => setNegativeItemsFullViewOpen(true)}>
+                          <Eye className="h-4 w-4" /> Full View
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                  {negativeItemBureauOrder.map((bName) => renderNegativeItemsBureauColumn(bName, { compact: true }))}
+                </div>
+
+                <Dialog open={negativeItemsFullViewOpen} onOpenChange={setNegativeItemsFullViewOpen}>
+                  <DialogContent className="flex h-[92vh] max-h-[92vh] w-[96vw] max-w-[96vw] flex-col overflow-hidden p-0">
+                    <div className="flex min-h-0 flex-1 flex-col bg-background">
+                      <DialogHeader className="border-b border-border/70 px-6 py-5 text-left">
+                        <DialogTitle className="flex items-center gap-2 text-xl">
+                          <Eye className="h-5 w-5 text-primary" /> Negative Items Full View
+                        </DialogTitle>
+                        <DialogDescription>
+                          Search negative items, adjust bureau and category filters, and use the extra tick filters without crowding the main screen.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="border-b border-border/70 px-6 py-4 space-y-4 bg-muted/10">
+                        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                          <div className="relative flex-1 max-w-2xl">
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input value={negativeItemsSearchQuery} onChange={(e) => setNegativeItemsSearchQuery(e.target.value)} placeholder="Search creditors, account numbers, laws, status, or bureau" className="pl-9" />
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="outline">{fullViewFilteredNegativeItemsCount} matching</Badge>
+                            <Badge variant="outline">{selectedNegativeKeys.length} selected</Badge>
+                            <Button type="button" variant="outline" onClick={resetNegativeItemsFullViewFilters}>Reset Filters</Button>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Bureaus</p>
+                          <div className="flex flex-wrap gap-2">
+                            {defaultNegativeItemBureauFilters.map((bureau) => {
+                              const active = selectedBureaus.includes(bureau);
+                              return (
+                                <Button key={bureau} type="button" size="sm" variant={active ? 'default' : 'outline'} className="gap-2" onClick={() => toggleBureauFilter(bureau)}>
+                                  {active && <CheckCircle2 className="h-3.5 w-3.5" />}
+                                  {bureau === 'transunion' ? 'TransUnion' : bureau.charAt(0).toUpperCase() + bureau.slice(1)}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Categories</p>
+                          <div className="flex flex-wrap gap-2">
+                            {negativeItemCategoryMeta.map((categoryMeta) => {
+                              const active = selectedCategories.includes(categoryMeta.key);
+                              return (
+                                <Button key={categoryMeta.key} type="button" size="sm" variant={active ? 'default' : 'outline'} className="gap-2" onClick={() => toggleCategoryFilter(categoryMeta.key)}>
+                                  {active && <CheckCircle2 className="h-3.5 w-3.5" />}
+                                  {categoryMeta.label}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Extra Filters</p>
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" size="sm" variant={negativeItemsShowSelectedOnly ? 'default' : 'outline'} className="gap-2" onClick={() => setNegativeItemsShowSelectedOnly((prev) => !prev)}>
+                              {negativeItemsShowSelectedOnly && <CheckCircle2 className="h-3.5 w-3.5" />} Selected Only
+                            </Button>
+                            <Button type="button" size="sm" variant={negativeItemsRequireLawTags ? 'default' : 'outline'} className="gap-2" onClick={() => setNegativeItemsRequireLawTags((prev) => !prev)}>
+                              {negativeItemsRequireLawTags && <CheckCircle2 className="h-3.5 w-3.5" />} With Law Tags
+                            </Button>
+                            <Button type="button" size="sm" variant={negativeItemsRequireStatus ? 'default' : 'outline'} className="gap-2" onClick={() => setNegativeItemsRequireStatus((prev) => !prev)}>
+                              {negativeItemsRequireStatus && <CheckCircle2 className="h-3.5 w-3.5" />} With Status
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                        {fullViewFilteredNegativeItemsCount > 0 ? (
+                          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                            {negativeItemBureauOrder.map((bName) => renderNegativeItemsBureauColumn(bName, { includeFullViewFilters: true }))}
+                          </div>
+                        ) : (
+                          <div className="flex h-full min-h-[320px] items-center justify-center rounded-2xl border border-dashed border-border/80 bg-muted/10 text-center">
+                            <div className="space-y-2 px-6">
+                              <h3 className="text-lg font-semibold text-foreground">No negative items match these filters</h3>
+                              <p className="text-sm text-muted-foreground">Try clearing the search, re-enabling a bureau or category, or turning off one of the extra filter buttons.</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                {/* Dispute Configuration Panel */}
+                <div className="rounded-xl border border-border bg-muted/10 p-6">
+                  <div className="flex flex-col xl:flex-row gap-6">
+                    <div className="flex-1 space-y-4">
+                      <div>
+                        <h3 className="text-lg font-semibold mb-1">Dispute Configuration</h3>
+                        <p className="text-sm text-muted-foreground">Configure your dispute letter settings. {selectedNegativeKeys.length} items selected.</p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Template Strategy</Label>
+                            <div className="rounded-lg border bg-background/80 px-3 py-2 text-sm text-foreground">
+                              <div className="font-semibold">Automatic Selection</div>
+                              <p className="text-xs text-muted-foreground">ScoreMachine picks the best template for each bureau/round/category/type.</p>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Dispute Type</Label>
+                            <div className="rounded-lg border bg-background/80 px-3 py-3 text-sm text-foreground">
+                              <RadioGroup value={selectedDisputeContentType} onValueChange={(value) => setSelectedDisputeContentType(value as "STANDARD" | "ENHANCED")} className="space-y-2">
+                                <div className="flex items-start space-x-2">
+                                  <RadioGroupItem value="STANDARD" id="dispute-type-standard" />
+                                  <div>
+                                    <Label htmlFor="dispute-type-standard" className="font-semibold cursor-pointer">Standard</Label>
+                                    <p className="text-xs text-muted-foreground">Default wording for shared dispute flows.</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-start space-x-2">
+                                  <RadioGroupItem value="ENHANCED" id="dispute-type-enhanced" />
+                                  <div>
+                                    <Label htmlFor="dispute-type-enhanced" className="font-semibold cursor-pointer">Enhanced</Label>
+                                    <p className="text-xs text-muted-foreground">Use the enhanced wording path for stronger letters.</p>
+                                  </div>
+                                </div>
+                              </RadioGroup>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Tone Level</Label>
+                            <div className="rounded-lg border bg-background/80 px-3 py-2 text-sm">
+                              <div className="font-semibold">Auto ({selectedToneLevelLabel})</div>
+                              <p className="text-xs text-muted-foreground">Adjusts based on severity of selected items.</p>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs uppercase tracking-wide text-muted-foreground">Dispute Round</Label>
+                            <Select value={selectedDisputeRound} onValueChange={(value) => setSelectedDisputeRound(value)}>
+                              <SelectTrigger className="rounded-lg border bg-background/80 px-3 py-2 text-sm">
+                                <SelectValue placeholder="Choose round" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1">Round 1 – Initial (Polite)</SelectItem>
+                                <SelectItem value="2">Round 2 – Follow-up (Firm)</SelectItem>
+                                <SelectItem value="3">Round 3 – Escalation (Legal)</SelectItem>
+                                <SelectItem value="4">Round 4 – Demand (Strict)</SelectItem>
+                                <SelectItem value="5">Round 5 – Enforcement (Threatening)</SelectItem>
+                                <SelectItem value="6">Round 6 – Final Notice (Strongest)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">{roundSummary}</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="rounded-lg border bg-background/60 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div>
+                                <p className="text-xs uppercase tracking-wide text-muted-foreground">Template Coverage</p>
+                                <p className="text-sm text-foreground">{selectedOverviewSummary()}</p>
+                                <p className="text-xs text-muted-foreground mt-1">Current path: All Bureaus / Round {selectedDisputeRound} / Category / {selectedDisputeContentTypeLabel}</p>
+                              </div>
+                              {letterTemplatesLoading ? (
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground"><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Checking templates…</div>
+                              ) : letterTemplatesError ? (
+                                <div className="text-xs text-red-600">{letterTemplatesError}</div>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {selectedDisputeRound === "1" && (
+                          <div className="flex items-center space-x-2 pt-2">
+                            <Checkbox checked={confirmRoundOneRegenerate} onCheckedChange={(value) => setConfirmRoundOneRegenerate(value === true)} />
+                            <Label className="text-xs text-muted-foreground font-normal">Allow regeneration of Round 1 if active dispute exists</Label>
+                          </div>
+                        )}
+                        <Label className="text-xs uppercase tracking-wide text-muted-foreground">Template Selection</Label>
+                        <div className="rounded-lg border bg-background/80 p-3 text-sm text-muted-foreground">
+                          Templates are auto-selected per bureau, category, and selected type. Choose Standard or Enhanced to switch the content path.
+                        </div>
+                        <div className="rounded-lg border bg-card">
+                          <button className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition rounded-t-lg focus:outline-none" onClick={() => setDocsOpen((open) => !open)} aria-expanded={docsOpen} aria-controls="client-documents-section">
+                            <span className="font-semibold text-sm">Client Documents</span>
+                            <ChevronRight className={`h-5 w-5 ml-2 transition-transform ${docsOpen ? 'rotate-90' : ''}`} />
+                          </button>
+                          <div id="client-documents-section" className={`border-t px-4 py-4 flex flex-row gap-4 ${docsOpen ? '' : 'hidden'}`}>
+                            <div className="flex-1 min-w-0">
+                              <DocumentUploadBox title="Photo Identification" description="Government-issued photo ID" documentType="dl_or_id_card" currentFileUrl={clientDocs.dl_or_id_card} clientId={activeClientId ? parseInt(activeClientId.toString()) : undefined} onUpload={(file) => handleDocumentUpload('dl_or_id_card', file)} onDelete={() => handleDocumentDelete('dl_or_id_card')} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <DocumentUploadBox title="Proof of Legal ID" description="SSN Card or proof of SSN" documentType="ssc" currentFileUrl={clientDocs.ssc} clientId={activeClientId ? parseInt(activeClientId.toString()) : undefined} onUpload={(file) => handleDocumentUpload('ssc', file)} onDelete={() => handleDocumentDelete('ssc')} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <DocumentUploadBox title="Proof of Address" description="Utility bill, bank statement, etc." documentType="poa" currentFileUrl={clientDocs.poa} clientId={activeClientId ? parseInt(activeClientId.toString()) : undefined} onUpload={(file) => handleDocumentUpload('poa', file)} onDelete={() => handleDocumentDelete('poa')} />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="w-full xl:w-80 space-y-4">
+                      <div className="rounded-lg border bg-card p-4 space-y-4">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Items Selected:</span>
+                          <span className="font-medium">{selectedNegativeKeys.length}</span>
+                        </div>
+                        <Button className="w-full" size="lg" onClick={() => handleGenerateDisputeLetter()} disabled={letterLoading || selectedNegativeKeys.length === 0}>
+                          {letterLoading ? (<><RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Generating...</>) : (<><FileText className="mr-2 h-4 w-4" /> Generate Dispute Letter</>)}
+                        </Button>
+                        {letterError && (
+                          <div className="text-xs text-red-600 bg-red-50 p-2 rounded border border-red-100">{letterError}</div>
+                        )}
+                        {letterErrors.length > 0 && (
+                          <div className="text-xs text-amber-700 bg-amber-50 p-2 rounded border border-amber-200 space-y-1">
+                            <div className="font-medium">How to fix</div>
+                            <ul className="list-disc pl-4 space-y-1">
+                              {letterErrors.map((msg, i) => (<li key={`letter-err-${i}`}>{msg}</li>))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Inline Preview Area */}
+                {letterPreview && letterOutputs.length === 0 && !letterPdfUrl && (
+                  <div className="mt-6 p-4 border rounded-lg bg-background">
+                    <h4 className="font-semibold mb-2">Text Preview</h4>
+                    <pre className="whitespace-pre-wrap text-xs text-muted-foreground font-mono max-h-60 overflow-y-auto">{letterPreview}</pre>
+                  </div>
+                )}
+
+                {/* Generated Letters Tree */}
+                {letterOutputs.length > 0 && (
+                  <div className="mt-10 space-y-6">
+                    <div className="rounded-xl border border-border/80 bg-card/80 p-6 shadow-sm">
+                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg font-semibold">Generated Letters</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {letterOutputs.length === 1 ? "Review the generated dispute letter folder." : `Review all ${letterOutputs.length} generated letter folders grouped by bureau, category, and type.`}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="text-[12px] px-3 py-1">{letterOutputs.length} PDF{letterOutputs.length > 1 ? "s" : ""}</Badge>
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const bureauGroups = new Map<string, Map<string, { categoryLabel: string; typeGroups: Map<string, { typeLabel: string; outputs: GeneratedLetter[] }> }>>();
+                      letterOutputs.forEach((output) => {
+                        if (!bureauGroups.has(output.bureauName)) bureauGroups.set(output.bureauName, new Map());
+                        const categoryGroups = bureauGroups.get(output.bureauName)!;
+                        if (!categoryGroups.has(output.categoryKey)) categoryGroups.set(output.categoryKey, { categoryLabel: output.categoryLabel, typeGroups: new Map() });
+                        const categoryGroup = categoryGroups.get(output.categoryKey)!;
+                        if (!categoryGroup.typeGroups.has(output.contentType)) categoryGroup.typeGroups.set(output.contentType, { typeLabel: output.contentTypeLabel, outputs: [] });
+                        categoryGroup.typeGroups.get(output.contentType)!.outputs.push(output);
+                      });
+                      return (
+                        <div className="space-y-4">
+                          {Array.from(bureauGroups.entries()).map(([bName, categoryGroups]) => {
+                            const bureauExpanded = generatedLetterExpandedBureaus[bName] ?? true;
+                            const bureauOutputCount = Array.from(categoryGroups.values()).reduce((count, group) => count + Array.from(group.typeGroups.values()).reduce((typeCount, typeGroup) => typeCount + typeGroup.outputs.length, 0), 0);
+                            return (
+                              <div key={bName} className="rounded-xl border border-border/70 bg-background shadow-sm overflow-hidden">
+                                <button type="button" className="flex w-full items-center justify-between gap-3 border-b border-border/60 bg-muted/40 px-4 py-4 text-left"
+                                  onClick={() => setGeneratedLetterExpandedBureaus((prev) => ({ ...prev, [bName]: !(prev[bName] ?? true) }))}
+                                >
+                                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                                    <ChevronRight className={`h-4 w-4 transition-transform ${bureauExpanded ? 'rotate-90' : ''}`} />
+                                    <Sparkles className="h-4 w-4 text-primary" /> {bName}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className="text-[10px]">{categoryGroups.size} categor{categoryGroups.size === 1 ? 'y' : 'ies'}</Badge>
+                                    <Badge variant="outline" className="text-[10px]">{bureauOutputCount} PDF{bureauOutputCount === 1 ? '' : 's'}</Badge>
+                                  </div>
+                                </button>
+                                {bureauExpanded && (
+                                  <div className="space-y-4 px-4 py-4">
+                                    {Array.from(categoryGroups.entries()).map(([categoryKey, categoryGroup]) => {
+                                      const categoryDisclosureKey = `${bName}:${categoryKey}`;
+                                      const categoryExpanded = generatedLetterExpandedCategories[categoryDisclosureKey] ?? false;
+                                      const categoryOutputCount = Array.from(categoryGroup.typeGroups.values()).reduce((count, group) => count + group.outputs.length, 0);
+                                      return (
+                                        <div key={categoryDisclosureKey} className="rounded-xl border border-border/60 bg-card/70 shadow-sm overflow-hidden">
+                                          <button type="button" className="flex w-full items-center justify-between gap-3 border-b border-border/60 bg-background/70 px-4 py-3 text-left"
+                                            onClick={() => setGeneratedLetterExpandedCategories((prev) => ({ ...prev, [categoryDisclosureKey]: !(prev[categoryDisclosureKey] ?? false) }))}
+                                          >
+                                            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                                              <ChevronRight className={`h-4 w-4 transition-transform ${categoryExpanded ? 'rotate-90' : ''}`} />
+                                              {categoryGroup.categoryLabel}
+                                            </div>
+                                            <Badge variant="outline" className="text-[10px]">{categoryOutputCount} item folder{categoryOutputCount === 1 ? '' : 's'}</Badge>
+                                          </button>
+                                          {categoryExpanded && (
+                                            <div className="space-y-4 px-4 py-4">
+                                              {Array.from(categoryGroup.typeGroups.entries()).map(([contentType, typeGroup]) => {
+                                                const typeDisclosureKey = `${bName}:${categoryKey}:${contentType}`;
+                                                const typeExpanded = generatedLetterExpandedTypes[typeDisclosureKey] ?? true;
+                                                return (
+                                                  <div key={typeDisclosureKey} className="rounded-xl border border-border/60 bg-background/70 shadow-sm overflow-hidden">
+                                                    <button type="button" className="flex w-full items-center justify-between gap-3 border-b border-border/60 bg-background/70 px-4 py-3 text-left"
+                                                      onClick={() => setGeneratedLetterExpandedTypes((prev) => ({ ...prev, [typeDisclosureKey]: !(prev[typeDisclosureKey] ?? true) }))}
+                                                    >
+                                                      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                                                        <ChevronRight className={`h-4 w-4 transition-transform ${typeExpanded ? 'rotate-90' : ''}`} />
+                                                        <Layers className="h-4 w-4 text-primary" /> {typeGroup.typeLabel}
+                                                      </div>
+                                                      <Badge variant="outline" className="text-[10px]">{typeGroup.outputs.length} item folder{typeGroup.outputs.length === 1 ? '' : 's'}</Badge>
+                                                    </button>
+                                                    {typeExpanded && (
+                                                      <div className="space-y-4 px-4 py-4">
+                                                        {typeGroup.outputs.map((output) => (
+                                                          <div key={`letter-output-${output.bureauKey}-${output.disputeId}`} className="rounded-xl border border-border/70 bg-background shadow-sm overflow-hidden">
+                                                            <div className="flex flex-col gap-3 border-b border-border/60 bg-muted/30 px-4 py-4">
+                                                              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                                                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                                                                  <FileText className="h-4 w-4 text-primary" /> {output.itemRangeLabel} — Round {output.round}
+                                                                </div>
+                                                                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                                                  <Badge variant="secondary" className="text-[10px]">{output.contentTypeLabel}</Badge>
+                                                                  <Badge variant="secondary" className="text-[10px]">Template: {output.templateName ?? 'Unknown'}</Badge>
+                                                                  <span>Tone Level {output.toneLevel}</span>
+                                                                  {output.lawCitations.length > 0 && (<Badge variant="secondary" className="text-[10px]">{output.lawCitations.length} citations</Badge>)}
+                                                                </div>
+                                                              </div>
+                                                              <div className="flex flex-wrap gap-2">
+                                                                {output.itemLabels.map((label, index) => (<Badge key={`${output.bureauKey}-item-${index}`} variant="outline" className="text-[10px]">{label}</Badge>))}
+                                                              </div>
+                                                            </div>
+                                                            <div className="flex flex-col gap-3 px-4 py-4">
+                                                              <div className="flex items-center justify-between gap-2">
+                                                                <div className="text-xs text-muted-foreground">Dispute ID: {output.disputeId ?? 'Pending'}</div>
+                                                                {output.pdfUrl ? (
+                                                                  <Button variant="outline" size="sm" onClick={() => window.open(output.pdfUrl!, '_blank')}>
+                                                                    <ExternalLink className="mr-2 h-4 w-4" /> Open PDF
+                                                                  </Button>
+                                                                ) : (
+                                                                  <Badge variant="destructive" className="text-[11px]">PDF unavailable</Badge>
+                                                                )}
+                                                              </div>
+                                                              {output.pdfUrl ? (
+                                                                <iframe title={`${output.bureauName} ${output.categoryLabel} ${output.contentTypeLabel} ${output.itemRangeLabel}`} src={output.pdfUrl} className="h-[420px] w-full rounded-lg border border-border/70 bg-white" />
+                                                              ) : (
+                                                                <pre className="max-h-64 overflow-y-auto rounded border border-border/60 bg-muted/30 p-3 font-mono text-xs whitespace-pre-wrap text-muted-foreground">{output.letterContent}</pre>
+                                                              )}
+                                                            </div>
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+      </Tabs>
       {/* Funding Application Modal */}
       <Dialog open={showFundingModal} onOpenChange={setShowFundingModal}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">

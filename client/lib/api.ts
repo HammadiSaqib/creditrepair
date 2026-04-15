@@ -328,6 +328,37 @@ export const clientsApi = {
   getClientIntakeConfig: (params: { token?: string; slug?: string }) => api.get('/api/clients/intake-config', { params }),
   submitClientIntake: (data: { token?: string; slug?: string; platform: string; email: string; password: string; ssnLast4?: string }) =>
     api.post('/api/clients/intake', data),
+
+  // Equifax Settlement
+  getEquifaxSettlementSnapshot: (id: string) =>
+    api.post(`/api/clients/${id}/equifax-breach-settlement`),
+
+  startEquifaxSettlementLiveBrowser: (id: string) =>
+    api.post(`/api/clients/${id}/equifax-breach-settlement/live`),
+
+  getEquifaxSettlementLiveBrowser: (id: string) =>
+    api.get(`/api/clients/${id}/equifax-breach-settlement/live`),
+
+  getEquifaxSettlementLivePreview: (id: string) =>
+    api.get(`/api/clients/${id}/equifax-breach-settlement/live/preview`),
+
+  getEquifaxSettlementSavedScreenshot: (id: string) =>
+    api.get(`/api/clients/${id}/equifax-breach-settlement/saved-screenshot`),
+
+  saveEquifaxSettlementScreenshot: (id: string) =>
+    api.post(`/api/clients/${id}/equifax-breach-settlement/saved-screenshot`),
+
+  clickEquifaxSettlementLivePreview: (id: string, payload: { xRatio: number; yRatio: number }) =>
+    api.post(`/api/clients/${id}/equifax-breach-settlement/live/preview/click`, payload),
+
+  scrollEquifaxSettlementLivePreview: (id: string, payload: { deltaY: number }) =>
+    api.post(`/api/clients/${id}/equifax-breach-settlement/live/preview/scroll`, payload),
+
+  focusEquifaxSettlementLiveBrowser: (id: string) =>
+    api.post(`/api/clients/${id}/equifax-breach-settlement/live/focus`),
+
+  closeEquifaxSettlementLiveBrowser: (id: string) =>
+    api.delete(`/api/clients/${id}/equifax-breach-settlement/live`),
 };
 
 // Disputes API
@@ -343,6 +374,54 @@ export const disputesApi = {
     api.put(`/api/disputes/${id}`, disputeData),
   
   deleteDispute: (id: string) => api.delete(`/api/disputes/${id}`),
+
+  generateLetter: (disputeId: number, payload: any) => {
+    // Must be GET (not POST) — matches source route: app.get("/api/disputes/:dispute_id/letter")
+    return api.get(`/api/disputes/${disputeId}/letter`, { params: payload });
+  },
+};
+
+// Credit Repair API
+export const creditRepairApi = {
+  generateLetters: (payload: any) =>
+    api.post('/api/credit-repair/generate-letters', payload),
+  
+  getGeneratedLetters: (clientId: string | number) =>
+    api.get(`/api/credit-repair/generated-letters?clientId=${clientId}`),
+};
+
+// Client Documents API
+export const clientDocumentsApi = {
+  getDocuments: (clientId: string | number) =>
+    api.get(`/api/client-documents/${clientId}`),
+  
+  uploadDocument: (clientId: string | number, type: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type);
+    return api.post(`/api/client-documents/${clientId}/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  
+  deleteDocument: (clientId: string | number, type: string) =>
+    api.delete(`/api/client-documents/${clientId}/document/${type}`),
+
+  // Additional documents (multi-doc support for "Other Documents")
+  uploadMultipleAdditionalDocuments: (clientId: string | number, type: string, files: File[]) => {
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+    formData.append('type', type);
+    return api.post(`/api/client-documents/${clientId}/additional/upload-multiple`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+
+  getAdditionalDocuments: (clientId: string | number) =>
+    api.get(`/api/client-documents/${clientId}/additional`),
+
+  deleteAdditionalDocument: (clientId: string | number, docId: number) =>
+    api.delete(`/api/client-documents/${clientId}/additional/${docId}`),
 };
 
 // Contracts API
