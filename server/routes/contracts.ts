@@ -21,6 +21,16 @@ const templateCreateSchema = z.object({
 
 const templateUpdateSchema = templateCreateSchema.partial();
 
+const tsmEliteCreateSchema = z.object({
+  name: z.string().min(1, 'Template name is required'),
+  description: z.string().optional(),
+  content_html: z.string().optional(),
+  content_text: z.string().optional(),
+  status: z.enum(['draft', 'active']).default('active'),
+});
+
+const tsmEliteUpdateSchema = tsmEliteCreateSchema.partial();
+
 const contractCreateSchema = z.object({
   client_id: z.number().int(),
   admin_id: z.number().int(), // Assigned normal admin
@@ -51,6 +61,18 @@ function getInsertedId(result: any): number | null {
   if (typeof result.lastID === 'number') return result.lastID;
   return null;
 }
+
+const tsmEliteSelectFields = `SELECT
+  id,
+  admin_id,
+  name,
+  description,
+  content_html,
+  content_text,
+  status,
+  created_at,
+  updated_at
+ FROM tsm_elite`;
 
 // =====================
 // Templates
@@ -194,6 +216,108 @@ router.delete('/templates/:id', requireRole('admin', 'super_admin'), async (req:
   } catch (error) {
     console.error('Error deleting template:', error);
     res.status(500).json({ success: false, error: 'Failed to delete template' });
+  }
+});
+
+router.get('/tsm-elite/templates', requireRole('super_admin'), async (_req: Request, res: Response) => {
+  try {
+    const rows = await allQuery(`${tsmEliteSelectFields} ORDER BY created_at DESC`);
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error fetching TSM Elite templates:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch TSM Elite templates' });
+  }
+});
+
+router.post('/tsm-elite/templates', requireRole('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const payload = tsmEliteCreateSchema.parse(req.body);
+    const adminId = Number((req as any).user.id);
+    const insertResult = await runQuery(
+      `INSERT INTO tsm_elite (admin_id, name, description, content_html, content_text, status, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        adminId,
+        payload.name,
+        payload.description ?? null,
+        payload.content_html ?? '',
+        payload.content_text ?? '',
+        payload.status ?? 'active',
+        adminId,
+        adminId,
+      ]
+    );
+
+    const id = getInsertedId(insertResult);
+    const row = await getQuery(`${tsmEliteSelectFields} WHERE id = ?`, [id]);
+    res.status(201).json({ success: true, data: row });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Validation error', details: error.errors });
+    }
+    console.error('Error creating TSM Elite template:', error);
+    res.status(500).json({ success: false, error: 'Failed to create TSM Elite template' });
+  }
+});
+
+router.put('/tsm-elite/templates/:id', requireRole('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const payload = tsmEliteUpdateSchema.parse(req.body);
+    const { id } = req.params;
+    const adminId = Number((req as any).user.id);
+    const fields: string[] = [];
+    const params: any[] = [];
+
+    if (typeof payload.name !== 'undefined') {
+      fields.push('name = ?');
+      params.push(payload.name);
+    }
+    if (typeof payload.description !== 'undefined') {
+      fields.push('description = ?');
+      params.push(payload.description);
+    }
+    if (typeof payload.content_html !== 'undefined') {
+      fields.push('content_html = ?');
+      params.push(payload.content_html);
+    }
+    if (typeof payload.content_text !== 'undefined') {
+      fields.push('content_text = ?');
+      params.push(payload.content_text);
+    }
+    if (typeof payload.status !== 'undefined') {
+      fields.push('status = ?');
+      params.push(payload.status);
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ success: false, error: 'No fields to update' });
+    }
+
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    fields.push('updated_by = ?');
+    params.push(adminId, id);
+
+    await runQuery(`UPDATE tsm_elite SET ${fields.join(', ')} WHERE id = ?`, params);
+
+    const row = await getQuery(`${tsmEliteSelectFields} WHERE id = ?`, [id]);
+    res.json({ success: true, data: row });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Validation error', details: error.errors });
+    }
+    console.error('Error updating TSM Elite template:', error);
+    res.status(500).json({ success: false, error: 'Failed to update TSM Elite template' });
+  }
+});
+
+router.delete('/tsm-elite/templates/:id', requireRole('super_admin'), async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await runQuery('DELETE FROM tsm_elite WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting TSM Elite template:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete TSM Elite template' });
   }
 });
 

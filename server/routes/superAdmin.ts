@@ -595,6 +595,46 @@ const updateAdminProfileSchema = z.object({
   notes: z.string().optional()
 });
 
+const parseAdminPermissions = (permissions: unknown): string[] => {
+  if (Array.isArray(permissions)) {
+    return permissions.filter((permission): permission is string => typeof permission === 'string');
+  }
+
+  if (typeof permissions === 'string') {
+    try {
+      const parsed = JSON.parse(permissions);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((permission): permission is string => typeof permission === 'string');
+      }
+
+      if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { permissions?: unknown }).permissions)) {
+        return (parsed as { permissions: unknown[] }).permissions.filter((permission): permission is string => typeof permission === 'string');
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
+const mapAdminUiAccessLevelToDb = (accessLevel?: 'full' | 'limited' | 'read-only'): 'admin' | 'manager' | 'support' => {
+  switch (accessLevel) {
+    case 'limited':
+      return 'manager';
+    case 'read-only':
+      return 'support';
+    case 'full':
+    default:
+      return 'admin';
+  }
+};
+
+const getWriteResultRowCount = (result: any): number => {
+  const count = Number(result?.affectedRows ?? result?.changes ?? 0);
+  return Number.isFinite(count) ? count : 0;
+};
+
 
 
 const createAdminSubscriptionSchema = z.object({
@@ -1788,11 +1828,47 @@ router.get('/admins', authenticateToken, requireSuperAdmin, async (req: Request,
       }
     }
 
-    // Parse permissions JSON for each admin (default empty permissions)
-    const adminsWithPermissions = admins.map(admin => ({
-      ...admin,
-      permissions: {}
-    }));
+    let profilesByUserId = new Map<number, any>();
+
+    if (Array.isArray(admins) && admins.length > 0) {
+      try {
+        const adminIds = admins
+          .map((admin: any) => Number(admin.id))
+          .filter((adminId) => Number.isFinite(adminId));
+
+        if (adminIds.length > 0) {
+          const placeholders = adminIds.map(() => '?').join(', ');
+          const profileRows = await db.allQuery(
+            `SELECT user_id, permissions, access_level, department, title, phone, emergency_contact, notes, is_active
+             FROM admin_profiles
+             WHERE user_id IN (${placeholders})`,
+            adminIds
+          );
+
+          profilesByUserId = new Map(
+            (Array.isArray(profileRows) ? profileRows : []).map((profile: any) => [Number(profile.user_id), profile])
+          );
+        }
+      } catch (profileError) {
+        console.warn('⚠️ Failed to hydrate admin profile permissions for admin list:', profileError);
+      }
+    }
+
+    const adminsWithPermissions = admins.map((admin: any) => {
+      const profile = profilesByUserId.get(Number(admin.id));
+
+      return {
+        ...admin,
+        access_level: profile?.access_level || admin.access_level,
+        department: profile?.department || admin.department,
+        title: profile?.title || admin.title,
+        phone: profile?.phone || admin.phone,
+        emergency_contact: profile?.emergency_contact || admin.emergency_contact,
+        notes: profile?.notes || admin.notes,
+        is_active: profile?.is_active ?? admin.is_active,
+        permissions: parseAdminPermissions(profile?.permissions ?? admin.permissions)
+      };
+    });
 
     res.json({
       success: true,
@@ -1820,20 +1896,20 @@ router.get('/admins/:id', authenticateToken, requireAdmin, async (req: Request, 
     const statusColumn = dbType === 'mysql' ? 'u.status' : 'CASE WHEN u.is_active = 1 THEN "active" ELSE "inactive" END as status';
     
     let admin;
-    const queryWithAudit = `SELECT u.*, 'admin' as access_level, 'General' as department,
-              'Admin User' as title, '{}' as permissions, 1 as is_active,
+        const queryWithAudit = `SELECT u.*, u.role as access_level, 'General' as department,
+        CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title, '{}' as permissions, 1 as is_active,
               u.created_at as user_created_at,
               u1.first_name as created_by_name, u1.last_name as created_by_lastname,
               u2.first_name as updated_by_name, u2.last_name as updated_by_lastname
        FROM users u
        LEFT JOIN users u1 ON u.created_by = u1.id
        LEFT JOIN users u2 ON u.updated_by = u2.id
-       WHERE u.id = ? AND u.role = 'admin'`;
-    const queryWithoutAudit = `SELECT u.*, 'admin' as access_level, 'General' as department,
-              'Admin User' as title, '{}' as permissions, 1 as is_active,
+      WHERE u.id = ? AND (u.role = 'admin' OR u.role = 'super_admin')`;
+        const queryWithoutAudit = `SELECT u.*, u.role as access_level, 'General' as department,
+        CASE WHEN u.role = 'super_admin' THEN 'Super Administrator' ELSE 'Admin User' END as title, '{}' as permissions, 1 as is_active,
               u.created_at as user_created_at
        FROM users u
-       WHERE u.id = ? AND u.role = 'admin'`;
+      WHERE u.id = ? AND (u.role = 'admin' OR u.role = 'super_admin')`;
 
     try {
       admin = await db.getQuery(queryWithAudit, [adminId]);
@@ -1852,11 +1928,30 @@ router.get('/admins/:id', authenticateToken, requireAdmin, async (req: Request, 
       return res.status(404).json({ success: false, error: 'Admin profile not found' });
     }
 
+    let adminProfile = null;
+    try {
+      adminProfile = await db.getQuery(
+        `SELECT permissions, access_level, department, title, phone, emergency_contact, notes, is_active
+         FROM admin_profiles
+         WHERE user_id = ?`,
+        [adminId]
+      );
+    } catch (profileError) {
+      console.warn('⚠️ Failed to hydrate admin profile details:', profileError);
+    }
+
     res.json({
       success: true,
       data: {
         ...admin,
-        permissions: JSON.parse(admin.permissions)
+        access_level: adminProfile?.access_level || admin.access_level,
+        department: adminProfile?.department || admin.department,
+        title: adminProfile?.title || admin.title,
+        phone: adminProfile?.phone || admin.phone,
+        emergency_contact: adminProfile?.emergency_contact || admin.emergency_contact,
+        notes: adminProfile?.notes || admin.notes,
+        is_active: adminProfile?.is_active ?? admin.is_active,
+        permissions: parseAdminPermissions(adminProfile?.permissions ?? admin.permissions)
       }
     });
   } catch (error) {
@@ -1865,41 +1960,369 @@ router.get('/admins/:id', authenticateToken, requireAdmin, async (req: Request, 
   }
 });
 
+router.get('/admins/:id/agreements', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(adminId)) {
+      return res.status(400).json({ success: false, error: 'Invalid admin id' });
+    }
+
+    const db = getDatabaseAdapter();
+    const dbType = db.getType();
+
+    const adminUser = await db.getQuery(
+      `SELECT id FROM users WHERE id = ? AND (role = 'admin' OR role = 'super_admin')`,
+      [adminId]
+    );
+
+    if (!adminUser) {
+      return res.status(404).json({ success: false, error: 'Admin profile not found' });
+    }
+
+    const rows = dbType === 'mysql'
+      ? await db.allQuery(
+          `SELECT
+             c.id AS contract_id,
+             c.title,
+             c.body,
+             c.status,
+             c.created_at,
+             c.signed_at AS contract_signed_at,
+             t.name AS template_name,
+             t.content AS content,
+             cs.id AS signature_id,
+             cs.signature_data,
+             cs.ip_address,
+             cs.signed_at AS signature_signed_at
+           FROM contracts c
+           LEFT JOIN contract_templates t ON c.template_id = t.id
+           LEFT JOIN contract_signatures cs ON cs.id = (
+             SELECT cs2.id
+             FROM contract_signatures cs2
+             WHERE cs2.contract_id = c.id
+               AND cs2.signer_type = 'user'
+               AND cs2.signer_user_id = ?
+             ORDER BY cs2.signed_at DESC, cs2.id DESC
+             LIMIT 1
+           )
+           WHERE c.user_id = ?
+           ORDER BY COALESCE(cs.signed_at, c.signed_at, c.created_at) DESC, c.id DESC`,
+          [adminId, adminId]
+        )
+      : await db.allQuery(
+          `SELECT
+             c.id AS contract_id,
+             c.title,
+             c.status,
+             c.created_at,
+             c.signed_at AS contract_signed_at,
+             t.name AS template_name,
+             COALESCE(t.content_html, t.content_text, '') AS content,
+             cs.id AS signature_id,
+             cs.signature_text,
+             cs.signature_image_url,
+             cs.ip_address,
+             cs.signed_at AS signature_signed_at
+           FROM contracts c
+           LEFT JOIN contract_templates t ON c.template_id = t.id
+           LEFT JOIN contract_signatures cs ON cs.id = (
+             SELECT cs2.id
+             FROM contract_signatures cs2
+             WHERE cs2.contract_id = c.id
+               AND cs2.signer_type = 'admin'
+               AND cs2.signer_id = ?
+             ORDER BY cs2.signed_at DESC, cs2.id DESC
+             LIMIT 1
+           )
+           WHERE c.admin_id = ?
+           ORDER BY COALESCE(cs.signed_at, c.signed_at, c.created_at) DESC, c.id DESC`,
+          [adminId, adminId]
+        );
+
+    const agreements = (rows || []).map((row: any) => {
+      let signatureText = row.signature_text ?? null;
+      let signatureImageUrl = row.signature_image_url ?? null;
+
+      if (dbType === 'mysql') {
+        try {
+          const parsed = row.signature_data ? JSON.parse(row.signature_data) : {};
+          signatureText = parsed?.signature_text ?? null;
+          signatureImageUrl = parsed?.signature_image_url ?? null;
+        } catch {
+          signatureText = null;
+          signatureImageUrl = null;
+        }
+      }
+
+      const content = String(row.content ?? row.body ?? '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<li>/gi, '• ')
+        .replace(/<[^>]*>/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      const normalizedStatus = row.status === 'sent'
+        ? 'pending_signature'
+        : row.status === 'cancelled'
+          ? 'void'
+          : row.status;
+
+      return {
+        id: row.contract_id,
+        title: row.title || row.template_name || `Agreement #${row.contract_id}`,
+        content,
+        status: normalizedStatus,
+        created_at: row.created_at ?? null,
+        signed_at: row.signature_signed_at ?? row.contract_signed_at ?? null,
+        signature_id: row.signature_id ?? null,
+        signature_text: signatureText,
+        signature_image_url: signatureImageUrl,
+        ip_address: row.ip_address ?? null,
+      };
+    });
+
+    res.json({ success: true, data: agreements });
+  } catch (error) {
+    console.error('Error fetching admin agreements:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch admin agreements' });
+  }
+});
+
+router.get('/admins/:id/tsm-elite-agreements', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
+  try {
+    const adminId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(adminId)) {
+      return res.status(400).json({ success: false, error: 'Invalid admin id' });
+    }
+
+    const db = getDatabaseAdapter();
+    const adminUser = await db.getQuery(
+      `SELECT id FROM users WHERE id = ? AND (role = 'admin' OR role = 'super_admin')`,
+      [adminId]
+    );
+
+    if (!adminUser) {
+      return res.status(404).json({ success: false, error: 'Admin profile not found' });
+    }
+
+    const rows = await db.allQuery(
+      `SELECT
+         t.id AS template_id,
+         t.name,
+         t.description,
+         t.content_html,
+         t.content_text,
+         t.status AS template_status,
+         t.created_at,
+         t.updated_at,
+         s.id AS signature_id,
+         s.signature_text,
+         s.signature_image_url,
+         s.ip_address,
+         s.user_agent,
+         s.signed_at
+       FROM tsm_elite t
+       LEFT JOIN tsm_elite_signatures s ON s.id = (
+         SELECT s2.id
+         FROM tsm_elite_signatures s2
+         WHERE s2.template_id = t.id AND s2.admin_id = ?
+         ORDER BY s2.signed_at DESC, s2.id DESC
+         LIMIT 1
+       )
+       ORDER BY COALESCE(s.signed_at, t.updated_at, t.created_at) DESC, t.id DESC`,
+      [adminId]
+    );
+
+    const agreements = (rows || []).map((row: any) => {
+      const content = String(row.content_html ?? row.content_text ?? '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<li>/gi, '• ')
+        .replace(/<[^>]*>/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      const normalizedStatus = row.signature_image_url
+        ? 'signed'
+        : row.template_status === 'active'
+          ? 'pending_signature'
+          : row.template_status;
+
+      return {
+        id: row.template_id,
+        title: row.name || 'The Score Machine Elite Agreement',
+        description: row.description ?? null,
+        content,
+        status: normalizedStatus,
+        created_at: row.created_at ?? null,
+        signed_at: row.signed_at ?? null,
+        signature_id: row.signature_id ?? null,
+        signature_image_url: row.signature_image_url ?? null,
+        ip_address: row.ip_address ?? null,
+        history_type: 'score-machine-elite'
+      };
+    });
+
+    res.json({ success: true, data: agreements });
+  } catch (error) {
+    console.error('Error fetching admin Score Machine Elite agreements:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch admin Score Machine Elite agreements' });
+  }
+});
+
 router.get('/admins/:id/agreement.pdf', authenticateToken, requireSuperAdmin, async (req: Request, res: Response) => {
   try {
     const adminId = parseInt(req.params.id);
     const db = getDatabaseAdapter();
     const dbType = db.getType();
+    const agreementType = String(req.query.type || 'admin-contracts');
+    const contractId = req.query.contractId ? parseInt(String(req.query.contractId), 10) : null;
+    const templateId = req.query.templateId ? parseInt(String(req.query.templateId), 10) : null;
 
     const adminUser = await db.getQuery(
-      `SELECT id, first_name, last_name, email FROM users WHERE id = ? AND role = 'admin'`,
+      `SELECT id, first_name, last_name, email FROM users WHERE id = ? AND (role = 'admin' OR role = 'super_admin')`,
       [adminId]
     );
     if (!adminUser) {
       return res.status(404).json({ success: false, error: 'Admin profile not found' });
     }
 
+    if (agreementType === 'score-machine-elite') {
+      const template = templateId
+        ? await db.getQuery(
+            `SELECT id, name, description, content_html, content_text, status, created_at, updated_at
+             FROM tsm_elite
+             WHERE id = ?
+             LIMIT 1`,
+            [templateId]
+          )
+        : await db.getQuery(
+            `SELECT id, name, description, content_html, content_text, status, created_at, updated_at
+             FROM tsm_elite
+             ORDER BY COALESCE(updated_at, created_at) DESC, id DESC
+             LIMIT 1`
+          );
+
+      if (!template) {
+        return res.status(404).json({ success: false, error: 'No Score Machine Elite agreement found' });
+      }
+
+      const signatureRow = await db.getQuery(
+        `SELECT id, signature_text, signature_image_url, ip_address, signed_at
+         FROM tsm_elite_signatures
+         WHERE admin_id = ? AND template_id = ?
+         ORDER BY signed_at DESC, id DESC
+         LIMIT 1`,
+        [adminId, template.id]
+      );
+
+      const contentText = String(template.content_html ?? template.content_text ?? '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n\n')
+        .replace(/<\/div>/gi, '\n')
+        .replace(/<\/li>/gi, '\n')
+        .replace(/<li>/gi, '• ')
+        .replace(/<[^>]*>/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      const signatureImageUrl = signatureRow?.signature_image_url ?? null;
+      const signatureIp = signatureRow?.ip_address ?? null;
+      const signatureSignedAt = signatureRow?.signed_at ?? null;
+      const templateStatus = signatureImageUrl
+        ? 'signed'
+        : template.status === 'active'
+          ? 'pending_signature'
+          : template.status;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="admin-${adminId}-score-machine-elite-agreement.pdf"`);
+
+      const doc = new PDFDocument({ size: 'A4', margin: 50 });
+      doc.pipe(res);
+
+      const adminName = [adminUser.first_name, adminUser.last_name].filter(Boolean).join(' ').trim();
+
+      doc.fontSize(20).text('Score Machine Elite Agreement', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(11);
+      doc.text(`Admin: ${adminName || adminUser.email || `#${adminId}`}`);
+      if (adminUser.email) doc.text(`Email: ${adminUser.email}`);
+      doc.text(`Template: ${template.name || 'The Score Machine Elite Agreement'}`);
+      doc.text(`Status: ${templateStatus}`);
+      if (template.created_at) doc.text(`Created: ${new Date(template.created_at).toISOString()}`);
+      if (signatureSignedAt) doc.text(`Signed At: ${new Date(signatureSignedAt).toISOString()}`);
+      if (signatureIp) doc.text(`IP: ${signatureIp}`);
+      doc.moveDown(1);
+
+      doc.fontSize(11).text(contentText || '(No agreement content found)', { align: 'left' });
+      doc.moveDown(1);
+
+      doc.fontSize(14).text('Signature');
+      doc.moveDown(0.5);
+      doc.fontSize(11);
+      if (signatureImageUrl) {
+        const match = String(signatureImageUrl).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+        if (match?.[2]) {
+          const buf = Buffer.from(match[2], 'base64');
+          const y = doc.y;
+          doc.image(buf, doc.x, y, { fit: [300, 120] });
+          doc.moveDown(6);
+        } else {
+          doc.text('Saved signature image could not be rendered.');
+        }
+      } else {
+        doc.text('No signature on file.');
+      }
+
+      doc.end();
+      return;
+    }
+
     let contract: any = null;
     if (dbType === 'mysql') {
-      contract = await db.getQuery(
-        `SELECT c.*, t.content AS template_content
-         FROM contracts c
-         LEFT JOIN contract_templates t ON c.template_id = t.id
-         WHERE c.user_id = ?
-         ORDER BY c.created_at DESC
-         LIMIT 1`,
-        [adminId]
-      );
+      contract = contractId
+        ? await db.getQuery(
+            `SELECT c.*, t.content AS template_content
+             FROM contracts c
+             LEFT JOIN contract_templates t ON c.template_id = t.id
+             WHERE c.user_id = ? AND c.id = ?
+             LIMIT 1`,
+            [adminId, contractId]
+          )
+        : await db.getQuery(
+            `SELECT c.*, t.content AS template_content
+             FROM contracts c
+             LEFT JOIN contract_templates t ON c.template_id = t.id
+             WHERE c.user_id = ?
+             ORDER BY c.created_at DESC
+             LIMIT 1`,
+            [adminId]
+          );
     } else {
-      contract = await db.getQuery(
-        `SELECT c.*, t.content_text AS template_content_text, t.content_html AS template_content_html
-         FROM contracts c
-         LEFT JOIN contract_templates t ON c.template_id = t.id
-         WHERE c.admin_id = ?
-         ORDER BY c.created_at DESC
-         LIMIT 1`,
-        [adminId]
-      );
+      contract = contractId
+        ? await db.getQuery(
+            `SELECT c.*, t.content_text AS template_content_text, t.content_html AS template_content_html
+             FROM contracts c
+             LEFT JOIN contract_templates t ON c.template_id = t.id
+             WHERE c.admin_id = ? AND c.id = ?
+             LIMIT 1`,
+            [adminId, contractId]
+          )
+        : await db.getQuery(
+            `SELECT c.*, t.content_text AS template_content_text, t.content_html AS template_content_html
+             FROM contracts c
+             LEFT JOIN contract_templates t ON c.template_id = t.id
+             WHERE c.admin_id = ?
+             ORDER BY c.created_at DESC
+             LIMIT 1`,
+            [adminId]
+          );
     }
 
     if (!contract) {
@@ -1942,10 +2365,21 @@ router.get('/admins/:id/agreement.pdf', authenticateToken, requireSuperAdmin, as
         .trim();
     }
 
-    const signatureRow = await db.getQuery(
-      `SELECT * FROM contract_signatures WHERE contract_id = ? ORDER BY signed_at DESC LIMIT 1`,
-      [contract.id]
-    );
+    const signatureRow = dbType === 'mysql'
+      ? await db.getQuery(
+          `SELECT * FROM contract_signatures
+           WHERE contract_id = ? AND signer_type = 'user' AND signer_user_id = ?
+           ORDER BY signed_at DESC, id DESC
+           LIMIT 1`,
+          [contract.id, adminId]
+        )
+      : await db.getQuery(
+          `SELECT * FROM contract_signatures
+           WHERE contract_id = ? AND signer_type = 'admin' AND signer_id = ?
+           ORDER BY signed_at DESC, id DESC
+           LIMIT 1`,
+          [contract.id, adminId]
+        );
 
     let signatureText: string | null = null;
     let signatureImageUrl: string | null = null;
@@ -2239,7 +2673,7 @@ router.post('/admins', authenticateToken, requireSuperAdmin, async (req: Request
         [
           newUserId,
           JSON.stringify(adminData.permissions),
-          adminData.accessLevel === 'full' ? 'admin' : adminData.accessLevel === 'limited' ? 'manager' : 'support',
+          mapAdminUiAccessLevelToDb(adminData.accessLevel),
           adminData.department || 'General',
           adminData.title || 'Admin User',
           adminData.phone || null,
@@ -2406,20 +2840,20 @@ router.put('/admins/:id', authenticateToken, requireSuperAdmin, async (req: Requ
     try {
       const profileUpdates = [];
       const profileValues = [];
+      const normalizedPermissions = parseAdminPermissions(adminData.permissions);
+      const mappedAccessLevel = mapAdminUiAccessLevelToDb(adminData.accessLevel);
+      const profileIsActive = adminData.status === undefined
+        ? existingAdmin.status === 'active' ? 1 : 0
+        : adminData.status === 'active' ? 1 : 0;
 
       if (adminData.permissions) {
         profileUpdates.push('permissions = ?');
-        profileValues.push(JSON.stringify(adminData.permissions));
+        profileValues.push(JSON.stringify(normalizedPermissions));
       }
 
       if (adminData.accessLevel) {
-        const accessLevelMap = {
-          'full': 'admin',
-          'limited': 'manager',
-          'read-only': 'support'
-        };
         profileUpdates.push('access_level = ?');
-        profileValues.push(accessLevelMap[adminData.accessLevel] || 'admin');
+        profileValues.push(mappedAccessLevel);
       }
 
       if (adminData.department) {
@@ -2455,9 +2889,10 @@ router.put('/admins/:id', authenticateToken, requireSuperAdmin, async (req: Requ
       if (profileUpdates.length > 0) {
         const profileUpdatesWithAudit = [...profileUpdates, 'updated_by = ?', 'updated_at = CURRENT_TIMESTAMP'];
         const profileValuesWithAudit = [...profileValues, userId, adminId];
+        let profileUpdateResult;
         
         try {
-          await db.executeQuery(
+          profileUpdateResult = await db.executeQuery(
             `UPDATE admin_profiles SET ${profileUpdatesWithAudit.join(', ')} WHERE user_id = ?`,
             profileValuesWithAudit
           );
@@ -2468,12 +2903,63 @@ router.put('/admins/:id', authenticateToken, requireSuperAdmin, async (req: Requ
             console.warn('⚠️  admin_profiles.updated_by missing; updating without audit column');
             const profileUpdatesWithoutAudit = [...profileUpdates, 'updated_at = CURRENT_TIMESTAMP'];
             const profileValuesWithoutAudit = [...profileValues, adminId];
-            await db.executeQuery(
+            profileUpdateResult = await db.executeQuery(
               `UPDATE admin_profiles SET ${profileUpdatesWithoutAudit.join(', ')} WHERE user_id = ?`,
               profileValuesWithoutAudit
             );
           } else {
             throw profileUpdateErr;
+          }
+        }
+
+        if (getWriteResultRowCount(profileUpdateResult) === 0) {
+          const defaultProfileValues = [
+            adminId,
+            JSON.stringify(normalizedPermissions),
+            mappedAccessLevel,
+            adminData.department || 'General',
+            adminData.title || 'Admin User',
+            adminData.phone ?? existingAdmin.phone ?? null,
+            adminData.emergency_contact || null,
+            adminData.notes || null,
+            profileIsActive,
+            userId,
+            userId
+          ];
+
+          try {
+            await db.executeQuery(
+              `INSERT INTO admin_profiles (user_id, permissions, access_level, department, title, phone, emergency_contact, notes, is_active, created_by, updated_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+              defaultProfileValues
+            );
+          } catch (profileInsertErr: any) {
+            const msg: string = profileInsertErr?.sqlMessage || profileInsertErr?.message || '';
+            const code: string = profileInsertErr?.code || '';
+
+            if (
+              code === 'ER_BAD_FIELD_ERROR' ||
+              msg.includes("Unknown column 'created_by'") ||
+              msg.includes("Unknown column 'updated_by'")
+            ) {
+              await db.executeQuery(
+                `INSERT INTO admin_profiles (user_id, permissions, access_level, department, title, phone, emergency_contact, notes, is_active, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                [
+                  adminId,
+                  JSON.stringify(normalizedPermissions),
+                  mappedAccessLevel,
+                  adminData.department || 'General',
+                  adminData.title || 'Admin User',
+                  adminData.phone ?? existingAdmin.phone ?? null,
+                  adminData.emergency_contact || null,
+                  adminData.notes || null,
+                  profileIsActive
+                ]
+              );
+            } else {
+              throw profileInsertErr;
+            }
           }
         }
       }

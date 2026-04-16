@@ -35,6 +35,8 @@ interface UserProfile {
   funding_override_enabled?: boolean;
   funding_override_signature_text?: string | null;
   funding_override_signed_at?: string | null;
+  permissions?: string[];
+  is_subscription_exempt?: boolean;
 }
 
 interface AuthContextType {

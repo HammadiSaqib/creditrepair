@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { authApi, clientsApi, creditReportScraperApi } from "@/lib/api";
+import { authApi, clientsApi, contractsApi, creditReportScraperApi } from "@/lib/api";
 import {
   clearPortalReturnContext,
   getPortalReturnContext,
@@ -9,6 +9,7 @@ import { buildAliasUrl } from "@/lib/hostRouting";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import ScoreMachineElitePrompt from "@/components/ScoreMachineElitePrompt";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { usePagePermissions } from "@/hooks/usePagePermissions";
@@ -57,10 +58,82 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
   const [clientCount, setClientCount] = useState<number>(0);
   const [reportCount, setReportCount] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isScoreMachineEliteOpen, setIsScoreMachineEliteOpen] = useState(false);
   const subscriptionStatus = useSubscriptionStatus();
   const { userProfile } = useAuthContext();
-  const { hasPermission } = usePagePermissions();
+  const { hasPermission, isLoading: pagePermissionsLoading } = usePagePermissions();
   const portalReturnContext = getPortalReturnContext();
+  const hasScoreMachineEliteAccess = userProfile?.role === 'admin' && (
+    hasPermission('score-machine-elite') ||
+    (Array.isArray(userProfile?.permissions) && userProfile.permissions.includes('score_machine_elite'))
+  );
+  const [isScoreMachineEliteStatusLoading, setIsScoreMachineEliteStatusLoading] = useState(false);
+  const [hasScoreMachineEliteAgreementAvailable, setHasScoreMachineEliteAgreementAvailable] = useState(false);
+  const [hasCompletedScoreMachineEliteAgreement, setHasCompletedScoreMachineEliteAgreement] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (userProfile?.role !== 'admin') {
+      setHasScoreMachineEliteAgreementAvailable(false);
+      setHasCompletedScoreMachineEliteAgreement(false);
+      setIsScoreMachineEliteStatusLoading(false);
+      return;
+    }
+
+    if (pagePermissionsLoading) {
+      return;
+    }
+
+    if (!hasScoreMachineEliteAccess) {
+      setHasScoreMachineEliteAgreementAvailable(false);
+      setHasCompletedScoreMachineEliteAgreement(false);
+      setIsScoreMachineEliteStatusLoading(false);
+      return;
+    }
+
+    const loadScoreMachineEliteStatus = async () => {
+      try {
+        setIsScoreMachineEliteStatusLoading(true);
+        const response = await contractsApi.getLatestTsmEliteAgreement();
+        const agreement = response?.data?.data;
+        const isSigned = String(agreement?.status || '').trim().toLowerCase() === 'signed';
+
+        if (!cancelled) {
+          setHasScoreMachineEliteAgreementAvailable(!!agreement);
+          setHasCompletedScoreMachineEliteAgreement(isSigned);
+        }
+      } catch (error: any) {
+        const status = error?.response?.status;
+
+        if (!cancelled) {
+          setHasScoreMachineEliteAgreementAvailable(false);
+          setHasCompletedScoreMachineEliteAgreement(false);
+        }
+
+        if (status !== 403 && status !== 404) {
+          console.error('Sidebar: failed to load Score Machine Elite agreement status', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsScoreMachineEliteStatusLoading(false);
+        }
+      }
+    };
+
+    loadScoreMachineEliteStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasScoreMachineEliteAccess, pagePermissionsLoading, userProfile?.role, userProfile?.id]);
+
+  const shouldShowScoreMachineElitePrompt =
+    hasScoreMachineEliteAccess &&
+    !pagePermissionsLoading &&
+    !isScoreMachineEliteStatusLoading &&
+    hasScoreMachineEliteAgreementAvailable &&
+    !hasCompletedScoreMachineEliteAgreement;
 
   const openAffiliatePortal = (pathname: string = "/dashboard") => {
     const normalizedPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
@@ -637,6 +710,23 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
           </div>
         )}
 
+        {!collapsed && isSmallScreen && shouldShowScoreMachineElitePrompt && (
+          <div className="mt-2 p-3 rounded-lg border border-amber-200/60 dark:border-amber-600/40 bg-white dark:bg-slate-900 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Crown className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+              <span className="text-xs font-medium">Score Machine Elite</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-600 dark:text-amber-300 dark:hover:bg-amber-900/20"
+              onClick={() => setIsScoreMachineEliteOpen(true)}
+            >
+              Get
+            </Button>
+          </div>
+        )}
+
         {/* Full Admin Status for larger screens */}
         {!collapsed && !isSmallScreen && (
           <div className="mt-3 p-4 bg-gradient-to-br from-cyan-50 via-teal-50 to-emerald-50 dark:from-slate-800/50 dark:via-slate-700/50 dark:to-slate-800/50 rounded-xl border-2 border-cyan-200/60 dark:border-cyan-600/40 shadow-lg">
@@ -663,6 +753,35 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
             >
               <Share2 className="h-3 w-3 mr-1 shrink-0" />
               <span className="truncate">Go to Affiliate Pro Dashboard</span>
+            </Button>
+          </div>
+        )}
+
+        {!collapsed && !isSmallScreen && shouldShowScoreMachineElitePrompt && (
+          <div className="mt-3 p-4 bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 dark:from-amber-900/20 dark:via-orange-900/20 dark:to-rose-900/20 rounded-xl border-2 border-amber-200/60 dark:border-amber-600/40 shadow-lg">
+            <div className="flex items-center space-x-2 mb-3">
+              <div className="p-1 bg-gradient-to-r from-amber-100 to-orange-100 dark:from-amber-800/80 dark:to-orange-800/80 rounded-full">
+                <Crown className="h-4 w-4 text-amber-600 dark:text-amber-300" />
+              </div>
+              <span className="text-sm font-bold text-amber-700 dark:text-amber-300">
+                Score Machine Elite
+              </span>
+            </div>
+            <div className="mb-3">
+              <div className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                Elite Access Ready
+              </div>
+              <div className="text-xs text-orange-600 dark:text-orange-300 mt-1">
+                Review the Score Machine Elite agreement to get started.
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="w-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-600 hover:via-orange-600 hover:to-rose-600 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all duration-200"
+              onClick={() => setIsScoreMachineEliteOpen(true)}
+            >
+              <Crown className="h-3 w-3 mr-1" />
+              Get
             </Button>
           </div>
         )}
@@ -795,6 +914,17 @@ export default function Sidebar({ className, onAddClient }: SidebarProps) {
           </nav>
         ),
         document.body
+      )}
+
+      {hasScoreMachineEliteAccess && (
+        <ScoreMachineElitePrompt
+          open={isScoreMachineEliteOpen}
+          onOpenChange={setIsScoreMachineEliteOpen}
+          onAgreementCompleted={() => {
+            setHasScoreMachineEliteAgreementAvailable(true);
+            setHasCompletedScoreMachineEliteAgreement(true);
+          }}
+        />
       )}
     </>
   );

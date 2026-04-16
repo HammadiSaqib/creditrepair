@@ -27,6 +27,7 @@ const ADMIN_PAGES = [
   { id: 'ai-coach', name: 'AI Coach', path: '/ai-coach', description: 'AI coaching features' },
   { id: 'school', name: 'School', path: '/school', description: 'Educational content' },
   { id: 'analytics', name: 'Analytics', path: '/analytics', description: 'Analytics and insights' },
+  { id: 'score-machine-elite', name: 'Score Machine Elite', path: '/score-machine-elite', description: 'Score Machine Elite access' },
   { id: 'affiliate', name: 'Affiliate', path: '/affiliate', description: 'Affiliate program management' },
   { id: 'support', name: 'Support', path: '/support', description: 'Customer support and help desk' },
   { id: 'settings', name: 'Settings', path: '/settings', description: 'Account and system settings' }

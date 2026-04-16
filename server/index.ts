@@ -18,6 +18,7 @@ import { initializeDatabaseAdapter } from "./database/databaseAdapter.js";
 import { loadEnvironmentConfig } from "./config/environment.js";
 import { authenticateToken, requireRole } from "./middleware/authMiddleware.js";
 import { requireSignedAdminContract } from "./middleware/contractGuard.js";
+import { requireSignedScoreMachineEliteAgreement } from "./middleware/scoreMachineEliteGuard.js";
 import { jsonErrorHandler, generalErrorHandler } from "./middleware/errorHandlingMiddleware.js";
 import authRoutes from "./routes/authRoutes.js";
 import blogRoutes, { fetchBlogPostBySlug } from "./routes/blog.js";
@@ -737,17 +738,17 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.delete("/api/clients/:id", authenticateToken, deleteClient);
 
   // Equifax Settlement
-  app.post("/api/clients/:id/equifax-breach-settlement", authenticateToken, getEquifaxSettlementSnapshot);
-  app.post("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, startEquifaxSettlementLiveBrowser);
-  app.get("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, getEquifaxSettlementLiveBrowser);
-  app.get("/api/clients/:id/equifax-breach-settlement/live/preview", authenticateToken, getEquifaxSettlementLiveBrowserPreview);
-  app.post("/api/clients/:id/equifax-breach-settlement/live/preview/click", authenticateToken, clickEquifaxSettlementPreview);
-  app.post("/api/clients/:id/equifax-breach-settlement/live/preview/scroll", authenticateToken, scrollEquifaxSettlementPreview);
-  app.get("/api/clients/:id/equifax-breach-settlement/saved-screenshot", authenticateToken, getEquifaxSettlementSavedScreenshot);
-  app.get("/api/clients/:id/equifax-breach-settlement/saved-screenshot/file", authenticateToken, serveEquifaxSettlementSavedScreenshot);
-  app.post("/api/clients/:id/equifax-breach-settlement/saved-screenshot", authenticateToken, saveEquifaxSettlementScreenshot);
-  app.post("/api/clients/:id/equifax-breach-settlement/live/focus", authenticateToken, focusEquifaxSettlementLiveBrowser);
-  app.delete("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, closeEquifaxSettlementLiveBrowser);
+  app.post("/api/clients/:id/equifax-breach-settlement", authenticateToken, requireSignedScoreMachineEliteAgreement, getEquifaxSettlementSnapshot);
+  app.post("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, requireSignedScoreMachineEliteAgreement, startEquifaxSettlementLiveBrowser);
+  app.get("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, requireSignedScoreMachineEliteAgreement, getEquifaxSettlementLiveBrowser);
+  app.get("/api/clients/:id/equifax-breach-settlement/live/preview", authenticateToken, requireSignedScoreMachineEliteAgreement, getEquifaxSettlementLiveBrowserPreview);
+  app.post("/api/clients/:id/equifax-breach-settlement/live/preview/click", authenticateToken, requireSignedScoreMachineEliteAgreement, clickEquifaxSettlementPreview);
+  app.post("/api/clients/:id/equifax-breach-settlement/live/preview/scroll", authenticateToken, requireSignedScoreMachineEliteAgreement, scrollEquifaxSettlementPreview);
+  app.get("/api/clients/:id/equifax-breach-settlement/saved-screenshot", authenticateToken, requireSignedScoreMachineEliteAgreement, getEquifaxSettlementSavedScreenshot);
+  app.get("/api/clients/:id/equifax-breach-settlement/saved-screenshot/file", authenticateToken, requireSignedScoreMachineEliteAgreement, serveEquifaxSettlementSavedScreenshot);
+  app.post("/api/clients/:id/equifax-breach-settlement/saved-screenshot", authenticateToken, requireSignedScoreMachineEliteAgreement, saveEquifaxSettlementScreenshot);
+  app.post("/api/clients/:id/equifax-breach-settlement/live/focus", authenticateToken, requireSignedScoreMachineEliteAgreement, focusEquifaxSettlementLiveBrowser);
+  app.delete("/api/clients/:id/equifax-breach-settlement/live", authenticateToken, requireSignedScoreMachineEliteAgreement, closeEquifaxSettlementLiveBrowser);
 
   // Debt Payoff Plans
   app.use("/api/debt-payoff", debtPayoffRoutes);
@@ -783,6 +784,7 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   app.get(
     "/api/disputes/letter-history/:clientId",
     authenticateToken,
+    requireSignedScoreMachineEliteAgreement,
     getDisputeLetterHistory,
   );
   app.get(
@@ -796,8 +798,8 @@ app.use("/api/commission-payments", commissionPaymentsRoutes);
   // =============================================================================
 
   // Credit repair letter generation
-  app.post("/api/credit-repair/generate-letters", authenticateToken, requireSignedAdminContract, generateCreditRepairLetters);
-  app.get("/api/credit-repair/generated-letters", authenticateToken, getGeneratedLetterHistory);
+  app.post("/api/credit-repair/generate-letters", authenticateToken, requireSignedAdminContract, requireSignedScoreMachineEliteAgreement, generateCreditRepairLetters);
+  app.get("/api/credit-repair/generated-letters", authenticateToken, requireSignedAdminContract, requireSignedScoreMachineEliteAgreement, getGeneratedLetterHistory);
 
   // Dispute letter content management (block-based templates)
   app.use("/api/dispute-letter-content", disputeLetterContentRoutes);

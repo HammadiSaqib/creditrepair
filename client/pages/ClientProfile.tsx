@@ -7,9 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
-import { clientsApi, creditReportScraperApi, clientDocumentsApi } from "@/lib/api";
+import { clientsApi, creditReportScraperApi, clientDocumentsApi, contractsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuthContext } from "@/contexts/AuthContext";
+import { usePagePermissions } from "@/hooks/usePagePermissions";
 import EditClientForm from "@/components/EditClientForm";
+import ClientProfileStandard from "@/pages/ClientProfileStandard";
 import { DocumentUploadBox } from "@/components/ui/DocumentUploadBox";
 import { US_STATE_OPTIONS, isUsStateOption } from "@shared/usStates";
 import {
@@ -118,6 +121,115 @@ interface ClientData {
   latestJsonData?: any;
 }
 
+export default function ClientProfile() {
+  const { userProfile, isLoading: authLoading } = useAuthContext();
+  const { hasPermission, isLoading: pagePermissionsLoading } = usePagePermissions();
+  const [isScoreMachineEliteAgreementSigned, setIsScoreMachineEliteAgreementSigned] = useState(false);
+  const [isScoreMachineEliteAgreementLoading, setIsScoreMachineEliteAgreementLoading] = useState(false);
+
+  const isAdminUser = userProfile?.role === "admin";
+  const isSuperAdminUser = userProfile?.role === "super_admin";
+  const hasDirectScoreMachineElitePermission = Array.isArray(userProfile?.permissions)
+    ? userProfile.permissions.includes("score_machine_elite")
+    : false;
+  const hasPlanScoreMachineElitePermission = hasPermission("score-machine-elite");
+  const requiresPlanPermissionResolution = isAdminUser && !isSuperAdminUser && !hasDirectScoreMachineElitePermission;
+  const hasScoreMachineEliteEntitlement =
+    isSuperAdminUser || hasDirectScoreMachineElitePermission || hasPlanScoreMachineElitePermission;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (authLoading) {
+      return;
+    }
+
+    if (isSuperAdminUser) {
+      setIsScoreMachineEliteAgreementSigned(true);
+      setIsScoreMachineEliteAgreementLoading(false);
+      return;
+    }
+
+    if (!isAdminUser) {
+      setIsScoreMachineEliteAgreementSigned(false);
+      setIsScoreMachineEliteAgreementLoading(false);
+      return;
+    }
+
+    if (requiresPlanPermissionResolution && pagePermissionsLoading) {
+      return;
+    }
+
+    if (!hasScoreMachineEliteEntitlement) {
+      setIsScoreMachineEliteAgreementSigned(false);
+      setIsScoreMachineEliteAgreementLoading(false);
+      return;
+    }
+
+    const loadAgreementStatus = async () => {
+      try {
+        setIsScoreMachineEliteAgreementLoading(true);
+        const response = await contractsApi.getLatestTsmEliteAgreement();
+        if (!cancelled) {
+          setIsScoreMachineEliteAgreementSigned(response.data?.data?.status === "signed");
+        }
+      } catch (error) {
+        const status =
+          typeof error === "object" && error !== null && "response" in error
+            ? (error as { response?: { status?: number } }).response?.status
+            : undefined;
+
+        if (!cancelled) {
+          setIsScoreMachineEliteAgreementSigned(false);
+        }
+
+        if (status !== 403 && status !== 404) {
+          console.error("Failed to load Score Machine Elite agreement status:", error);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsScoreMachineEliteAgreementLoading(false);
+        }
+      }
+    };
+
+    loadAgreementStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authLoading,
+    hasScoreMachineEliteEntitlement,
+    isAdminUser,
+    isSuperAdminUser,
+    pagePermissionsLoading,
+    requiresPlanPermissionResolution,
+  ]);
+
+  const isClientProfileVariantLoading =
+    authLoading ||
+    (isAdminUser && (
+      (requiresPlanPermissionResolution && pagePermissionsLoading) ||
+      (hasScoreMachineEliteEntitlement && isScoreMachineEliteAgreementLoading)
+    ));
+
+  if (isClientProfileVariantLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const showEnhancedClientProfile =
+    isSuperAdminUser || (isAdminUser && hasScoreMachineEliteEntitlement && isScoreMachineEliteAgreementSigned);
+
+  return showEnhancedClientProfile ? <EnhancedClientProfile /> : <ClientProfileStandard />;
+}
+
 function OtherDocUploadButton({ onUpload }: { onUpload: (files: File[]) => Promise<void> }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -186,7 +298,7 @@ function OtherDocUploadButton({ onUpload }: { onUpload: (files: File[]) => Promi
   );
 }
 
-export default function ClientProfile() {
+function EnhancedClientProfile() {
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
   const location = useLocation();

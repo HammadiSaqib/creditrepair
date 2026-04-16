@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Plus, Edit, Trash2, CheckCircle2, Eye } from "lucide-react";
 
 type TemplateStatus = "draft" | "active" | "archived";
+type ContractsTab = "admin" | "tsm-elite";
 
 interface ContractTemplate {
   id: number;
@@ -43,8 +44,56 @@ const emptyForm: TemplateForm = {
   status: "draft",
 };
 
+const getEmptyForm = (tab: ContractsTab): TemplateForm => ({
+  ...emptyForm,
+  status: tab === "tsm-elite" ? "active" : "draft",
+});
+
+const ADMIN_STATUS_OPTIONS: TemplateStatus[] = ["draft", "active", "archived"];
+const TSM_ELITE_STATUS_OPTIONS: Array<Extract<TemplateStatus, "draft" | "active">> = ["active", "draft"];
+
+const getHeading = (tab: ContractsTab) =>
+  tab === "tsm-elite" ? "Score Machine Elite" : "Admin Contracts";
+
+const getDescription = (tab: ContractsTab) =>
+  tab === "tsm-elite"
+    ? "Create and edit Score Machine Elite contract templates"
+    : "Create and edit contract templates for admins";
+
+const getCreateButtonLabel = (tab: ContractsTab) =>
+  tab === "tsm-elite" ? "Create TSM Elite Contract" : "New Template";
+
+const getTableTitle = (tab: ContractsTab) =>
+  tab === "tsm-elite" ? "TSM Elite Contracts" : "Contract Templates";
+
+const getTableDescription = (tab: ContractsTab) =>
+  tab === "tsm-elite"
+    ? "Manage reusable Score Machine Elite contract templates"
+    : "Manage reusable admin contract templates";
+
+const getTemplateStatusOptions = (tab: ContractsTab) =>
+  tab === "tsm-elite" ? TSM_ELITE_STATUS_OPTIONS : ADMIN_STATUS_OPTIONS;
+
+const normalizeTemplatePayload = (tab: ContractsTab, form: TemplateForm) => ({
+  name: form.name.trim(),
+  description: form.description?.trim() || "",
+  content_html: form.content_html || "",
+  content_text: form.content_text || "",
+  status: tab === "tsm-elite" ? (form.status === "draft" ? "draft" : "active") : form.status,
+});
+
+const normalizeTsmElitePayload = (form: TemplateForm) => ({
+  name: form.name.trim(),
+  description: form.description?.trim() || "",
+  content_html: form.content_html || "",
+  content_text: form.content_text || "",
+  status: (form.status === "draft" ? "draft" : "active") as "draft" | "active",
+});
+
 export default function ContractsManagement() {
-  const [templates, setTemplates] = useState<ContractTemplate[]>([]);
+  const [activeTab, setActiveTab] = useState<ContractsTab>("admin");
+  const [adminTemplates, setAdminTemplates] = useState<ContractTemplate[]>([]);
+  const [tsmEliteTemplates, setTsmEliteTemplates] = useState<ContractTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TemplateStatus | "all">("all");
@@ -52,6 +101,7 @@ export default function ContractsManagement() {
   const [editing, setEditing] = useState<ContractTemplate | null>(null);
   const [form, setForm] = useState<TemplateForm>(emptyForm);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState<ContractTemplate | null>(null);
 
   const looksLikeHtml = (s?: string | null) => {
     if (!s) return false;
@@ -59,12 +109,38 @@ export default function ContractsManagement() {
     return /<[^>]+>/.test(s);
   };
 
+  const loadTemplatesForTab = async (tab: ContractsTab): Promise<ContractTemplate[]> => {
+    const response = tab === "tsm-elite"
+      ? await contractsApi.getTsmEliteTemplates()
+      : await contractsApi.getTemplates();
+
+    const data = (response.data?.data ?? response.data ?? []) as ContractTemplate[];
+    return Array.isArray(data) ? data : [];
+  };
+
   const loadTemplates = async () => {
     try {
       setLoading(true);
-      const res = await contractsApi.getTemplates();
-      const data = (res.data?.data ?? res.data ?? []) as ContractTemplate[];
-      setTemplates(Array.isArray(data) ? data : []);
+      const [adminResult, tsmEliteResult] = await Promise.allSettled([
+        loadTemplatesForTab("admin"),
+        loadTemplatesForTab("tsm-elite"),
+      ]);
+
+      if (adminResult.status === "fulfilled") {
+        setAdminTemplates(adminResult.value);
+      } else {
+        console.error("Failed to load admin contract templates", adminResult.reason);
+      }
+
+      if (tsmEliteResult.status === "fulfilled") {
+        setTsmEliteTemplates(tsmEliteResult.value);
+      } else {
+        console.error("Failed to load TSM Elite templates", tsmEliteResult.reason);
+      }
+
+      if (adminResult.status === "rejected" || tsmEliteResult.status === "rejected") {
+        toast.error("Failed to load one or more contract template lists");
+      }
     } catch (err) {
       console.error("Failed to load templates", err);
       toast.error("Failed to load contract templates");
@@ -77,18 +153,43 @@ export default function ContractsManagement() {
     loadTemplates();
   }, []);
 
+  const currentTemplates = activeTab === "tsm-elite" ? tsmEliteTemplates : adminTemplates;
+
   const filteredTemplates = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return templates.filter((t) => {
+    return currentTemplates.filter((t) => {
       const matchesSearch = !q || t.name.toLowerCase().includes(q) || (t.description || "").toLowerCase().includes(q);
       const matchesStatus = statusFilter === "all" || t.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [templates, search, statusFilter]);
+  }, [currentTemplates, search, statusFilter]);
+
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setEditing(null);
+    setForm(getEmptyForm(activeTab));
+  };
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    setPreviewTemplate(null);
+  };
+
+  const handleTabChange = (value: string) => {
+    const nextTab = value as ContractsTab;
+    setActiveTab(nextTab);
+    setSearch("");
+    setStatusFilter("all");
+    setEditing(null);
+    setPreviewTemplate(null);
+    setDialogOpen(false);
+    setPreviewOpen(false);
+    setForm(getEmptyForm(nextTab));
+  };
 
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyForm);
+    setForm(getEmptyForm(activeTab));
     setDialogOpen(true);
   };
 
@@ -110,158 +211,201 @@ export default function ContractsManagement() {
         toast.error("Template name is required");
         return;
       }
+
       if (editing) {
-        await contractsApi.updateTemplate(editing.id, form);
-        toast.success("Template updated");
+        if (activeTab === "tsm-elite") {
+          await contractsApi.updateTsmEliteTemplate(editing.id, normalizeTsmElitePayload(form));
+          toast.success("TSM Elite template updated");
+        } else {
+          await contractsApi.updateTemplate(editing.id, normalizeTemplatePayload(activeTab, form));
+          toast.success("Template updated");
+        }
       } else {
-        await contractsApi.createTemplate(form);
-        toast.success("Template created");
+        if (activeTab === "tsm-elite") {
+          await contractsApi.createTsmEliteTemplate(normalizeTsmElitePayload(form));
+          toast.success("TSM Elite template created");
+        } else {
+          await contractsApi.createTemplate(normalizeTemplatePayload(activeTab, form));
+          toast.success("Template created");
+        }
       }
-      setDialogOpen(false);
-      setEditing(null);
-      setForm(emptyForm);
+      closeDialog();
       await loadTemplates();
     } catch (err) {
       console.error("Save template failed", err);
-      toast.error("Failed to save template");
+      toast.error(activeTab === "tsm-elite" ? "Failed to save TSM Elite template" : "Failed to save template");
     }
   };
 
   const deleteTemplate = async (id: number) => {
     try {
       if (!confirm("Delete this template?")) return;
-      await contractsApi.deleteTemplate(id);
-      toast.success("Template deleted");
+      if (activeTab === "tsm-elite") {
+        await contractsApi.deleteTsmEliteTemplate(id);
+        toast.success("TSM Elite template deleted");
+      } else {
+        await contractsApi.deleteTemplate(id);
+        toast.success("Template deleted");
+      }
       await loadTemplates();
     } catch (err) {
       console.error("Delete template failed", err);
-      toast.error("Failed to delete template");
+      toast.error(activeTab === "tsm-elite" ? "Failed to delete TSM Elite template" : "Failed to delete template");
     }
   };
 
   const setActive = async (t: ContractTemplate) => {
     try {
-      await contractsApi.updateTemplate(t.id, { status: "active" });
-      toast.success("Template activated");
+      if (activeTab === "tsm-elite") {
+        await contractsApi.updateTsmEliteTemplate(t.id, { status: "active" });
+        toast.success("TSM Elite template activated");
+      } else {
+        await contractsApi.updateTemplate(t.id, { status: "active" });
+        toast.success("Template activated");
+      }
       await loadTemplates();
     } catch (err) {
       console.error("Activate template failed", err);
-      toast.error("Failed to activate template");
+      toast.error(activeTab === "tsm-elite" ? "Failed to activate TSM Elite template" : "Failed to activate template");
     }
   };
+
+  const statusOptions = getTemplateStatusOptions(activeTab);
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Admin Contracts</h2>
-          <p className="text-muted-foreground">Create and edit contract templates for admins</p>
+          <h2 className="text-2xl font-bold tracking-tight">{getHeading(activeTab)}</h2>
+          <p className="text-muted-foreground">{getDescription(activeTab)}</p>
         </div>
         <Button onClick={openCreate}>
           <Plus className="mr-2 h-4 w-4" />
-          New Template
+          {getCreateButtonLabel(activeTab)}
         </Button>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-          <CardDescription>Search and filter templates</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <Input
-              placeholder="Search by name or description"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="archived">Archived</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="admin">Admin Contracts</TabsTrigger>
+          <TabsTrigger value="tsm-elite">Score Machine Elite</TabsTrigger>
+        </TabsList>
 
-      {/* Templates table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Contract Templates ({filteredTemplates.length})</CardTitle>
-          <CardDescription>Manage reusable admin contract templates</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Updated</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTemplates.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell>
-                      <div className="font-medium">{t.name}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={t.status === "active" ? "default" : t.status === "archived" ? "secondary" : "outline"}>
-                        {t.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[360px] truncate text-muted-foreground">
-                      {t.description || ""}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {new Date(t.updated_at).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => { setEditing(t); setPreviewOpen(true); }}>
-                          <Eye className="h-4 w-4 mr-1" /> Preview
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => openEdit(t)}>
-                          <Edit className="h-4 w-4 mr-1" /> Edit
-                        </Button>
-                        {t.status !== "active" && (
-                          <Button variant="outline" size="sm" onClick={() => setActive(t)}>
-                            <CheckCircle2 className="h-4 w-4 mr-1" /> Activate
-                          </Button>
-                        )}
-                        <Button variant="destructive" size="sm" onClick={() => deleteTemplate(t.id)}>
-                          <Trash2 className="h-4 w-4 mr-1" /> Delete
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+        <TabsContent value={activeTab} className="space-y-6 mt-6">
+          {/* Filters */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Filters</CardTitle>
+              <CardDescription>
+                {activeTab === "tsm-elite"
+                  ? "Search and filter Score Machine Elite templates"
+                  : "Search and filter templates"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-4">
+                <Input
+                  placeholder="Search by name or description"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as TemplateStatus | "all")}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {statusOptions.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Templates table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{getTableTitle(activeTab)} ({filteredTemplates.length})</CardTitle>
+              <CardDescription>{getTableDescription(activeTab)}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="flex justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Updated</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTemplates.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell>
+                          <div className="font-medium">{t.name}</div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={t.status === "active" ? "default" : t.status === "archived" ? "secondary" : "outline"}>
+                            {t.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-[360px] truncate text-muted-foreground">
+                          {t.description || ""}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {new Date(t.updated_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setPreviewTemplate(t);
+                                setPreviewOpen(true);
+                              }}
+                            >
+                              <Eye className="h-4 w-4 mr-1" /> Preview
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => openEdit(t)}>
+                              <Edit className="h-4 w-4 mr-1" /> Edit
+                            </Button>
+                            {t.status !== "active" && (
+                              <Button variant="outline" size="sm" onClick={() => setActive(t)}>
+                                <CheckCircle2 className="h-4 w-4 mr-1" /> Activate
+                              </Button>
+                            )}
+                            <Button variant="destructive" size="sm" onClick={() => deleteTemplate(t.id)}>
+                              <Trash2 className="h-4 w-4 mr-1" /> Delete
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Create/Edit dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeDialog())}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Template" : "New Template"}</DialogTitle>
+            <DialogTitle>{editing ? "Edit Template" : getCreateButtonLabel(activeTab)}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -276,9 +420,11 @@ export default function ContractsManagement() {
                     <SelectValue placeholder="Choose status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="draft">Draft</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="archived">Archived</SelectItem>
+                    {getTemplateStatusOptions(activeTab).map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -308,21 +454,21 @@ export default function ContractsManagement() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={saveTemplate}>{editing ? "Save Changes" : "Create Template"}</Button>
+            <Button variant="outline" onClick={closeDialog}>Cancel</Button>
+            <Button onClick={saveTemplate}>{editing ? "Save Changes" : getCreateButtonLabel(activeTab)}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Preview dialog */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+      <Dialog open={previewOpen} onOpenChange={(open) => (open ? setPreviewOpen(true) : closePreview())}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Preview: {editing?.name}</DialogTitle>
+            <DialogTitle>Preview: {previewTemplate?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {(() => {
-              const content = editing?.content_html || editing?.content_text || "";
+              const content = previewTemplate?.content_html || previewTemplate?.content_text || "";
               if (!content) {
                 return <p className="text-muted-foreground">No content to preview</p>;
               }
@@ -354,7 +500,7 @@ export default function ContractsManagement() {
             })()}
           </div>
           <DialogFooter>
-            <Button onClick={() => setPreviewOpen(false)}>Close</Button>
+            <Button onClick={closePreview}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -650,11 +650,13 @@ const appendClientDocumentsToPdf = async (basePdf: Buffer, documents: Array<{ la
 };
 
 // ─── Round / tone helpers ───────────────────────────────────────────────────
+const MAX_DISPUTE_ROUND = 6;
+
 function resolveRound(raw: string | undefined): number {
   if (!raw) return 1;
   const parsed = parseInt(raw, 10);
   if (Number.isNaN(parsed)) return 1;
-  return Math.max(1, Math.min(4, parsed));
+  return Math.max(1, Math.min(MAX_DISPUTE_ROUND, parsed));
 }
 
 function resolveToneLevel(raw: string | undefined, userRole?: string): { applied: ToneLevel; requested?: number } {
@@ -670,7 +672,9 @@ function getRoundStrategy(round: number): { label: string; objective: string; es
   if (round === 1) return { label: 'Round 1 – Initial Investigation Request', objective: 'Establish a clear, documented FCRA dispute of the tradeline.', escalation: 'This dispute is submitted for initial review and prompt correction of any inaccuracies.' };
   if (round === 2) return { label: 'Round 2 – Follow-Up Reinvestigation', objective: 'Reaffirm the dispute and highlight any ongoing inaccuracy or incompleteness.', escalation: 'This matter has been previously disputed and remains unresolved.' };
   if (round === 3) return { label: 'Round 3 – Escalated Accuracy Challenge', objective: 'Stress the pattern of unresolved reporting issues and demand a careful review.', escalation: 'Failure to correct these reporting deficiencies may leave me no choice but to pursue additional remedies available under federal law.' };
-  return { label: 'Round 4 – Final Accuracy and Verification Notice', objective: 'Document a firm request for compliance with FCRA dispute obligations.', escalation: 'Clarifies that the tradeline should not continue to be reported if it cannot be fully verified and reported accurately.' };
+  if (round === 4) return { label: 'Round 4 – Final Accuracy and Verification Notice', objective: 'Document a firm request for compliance with FCRA dispute obligations.', escalation: 'Clarifies that the tradeline should not continue to be reported if it cannot be fully verified and reported accurately.' };
+  if (round === 5) return { label: 'Round 5 – Enforcement and Noncompliance Notice', objective: 'Escalate the dispute with a firm enforcement posture and highlight repeated noncompliance.', escalation: 'States that continued inaccurate reporting after prior disputes demonstrates a failure to meet reinvestigation and accuracy duties under federal law.' };
+  return { label: 'Round 6 – Final Notice Before Additional Remedies', objective: 'Issue a final demand for correction or deletion before pursuing additional enforcement channels.', escalation: 'Warns that unresolved inaccurate reporting may be escalated through formal complaints or other remedies if the bureau still cannot verify the tradeline.' };
 }
 
 // Enhanced validation schemas

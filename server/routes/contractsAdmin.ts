@@ -2,6 +2,10 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { authenticateToken, requireRole } from '../middleware/authMiddleware.js';
 import { getDatabaseAdapter } from '../database/databaseAdapter.js';
+import {
+  getLatestActiveTsmEliteTemplate,
+  getScoreMachineEliteAccessStatus,
+} from '../utils/scoreMachineEliteAccess.js';
 
 const router = Router();
 
@@ -11,6 +15,10 @@ router.use(requireRole('admin', 'super_admin'));
 const signSchema = z.object({
   signature_text: z.string().optional(),
   signature_image_url: z.string().url().optional(),
+});
+
+const tsmEliteSignSchema = z.object({
+  signature_image_url: z.string().trim().regex(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, 'Drawn signature is required'),
 });
 
 // Get the latest contract for the current admin
@@ -200,6 +208,104 @@ router.post('/latest/sign', async (req: Request, res: Response) => {
     }
     console.error('Error signing latest admin contract:', error);
     res.status(500).json({ success: false, error: 'Failed to sign admin contract' });
+  }
+});
+
+router.get('/tsm-elite/latest', async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (user?.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Only admins can access Score Machine Elite agreements' });
+    }
+
+    const eligibility = await getScoreMachineEliteAccessStatus(Number(user.id));
+    if (!eligibility.hasAccess) {
+      return res.status(403).json({ success: false, error: 'Score Machine Elite is not enabled for this admin' });
+    }
+
+    const template = await getLatestActiveTsmEliteTemplate();
+    if (!template) {
+      return res.status(404).json({ success: false, error: 'No active Score Machine Elite agreement found' });
+    }
+
+    const adapter = getDatabaseAdapter();
+    const signature = await adapter.getQuery(
+      `SELECT id, signature_text, signature_image_url, signed_at
+       FROM tsm_elite_signatures
+       WHERE admin_id = ? AND template_id = ?
+       ORDER BY signed_at DESC, id DESC
+       LIMIT 1`,
+      [user.id, template.id]
+    );
+
+    const content = template.content_html || template.content_text || null;
+
+    res.json({
+      success: true,
+      data: {
+        id: template.id,
+        template_id: template.id,
+        status: signature?.signature_image_url ? 'signed' : 'pending_signature',
+        title: 'The Score Machine Elite Agreement',
+        content,
+        signature_image_url: signature?.signature_image_url ?? null,
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching latest Score Machine Elite agreement:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch Score Machine Elite agreement' });
+  }
+});
+
+router.post('/tsm-elite/latest/sign', async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (user?.role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'Only admins can sign Score Machine Elite agreements' });
+    }
+
+    const eligibility = await getScoreMachineEliteAccessStatus(Number(user.id));
+    if (!eligibility.hasAccess) {
+      return res.status(403).json({ success: false, error: 'Score Machine Elite is not enabled for this admin' });
+    }
+
+    const payload = tsmEliteSignSchema.parse(req.body);
+    const template = await getLatestActiveTsmEliteTemplate();
+    if (!template) {
+      return res.status(404).json({ success: false, error: 'No active Score Machine Elite agreement found' });
+    }
+
+    const adapter = getDatabaseAdapter();
+    const existingSignature = await adapter.getQuery(
+      'SELECT id FROM tsm_elite_signatures WHERE admin_id = ? AND template_id = ? LIMIT 1',
+      [user.id, template.id]
+    );
+
+    const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    if (existingSignature?.id) {
+      await adapter.executeQuery(
+        `UPDATE tsm_elite_signatures
+         SET signature_text = ?, signature_image_url = ?, ip_address = ?, user_agent = ?, signed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        ['', payload.signature_image_url, ipAddress, userAgent, existingSignature.id]
+      );
+    } else {
+      await adapter.executeQuery(
+        `INSERT INTO tsm_elite_signatures (template_id, admin_id, signature_text, signature_image_url, ip_address, user_agent, signed_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [template.id, user.id, '', payload.signature_image_url, ipAddress, userAgent]
+      );
+    }
+
+    res.status(201).json({ success: true, message: 'Score Machine Elite agreement signed' });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ success: false, error: 'Validation error', details: error.errors });
+    }
+    console.error('Error signing latest Score Machine Elite agreement:', error);
+    res.status(500).json({ success: false, error: 'Failed to sign Score Machine Elite agreement' });
   }
 });
 

@@ -1319,6 +1319,44 @@ async function createMySQLTables(): Promise<void> {
       FOREIGN KEY (updated_by) REFERENCES users(id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
+    `CREATE TABLE IF NOT EXISTS tsm_elite (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      admin_id INT NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      content_html LONGTEXT,
+      content_text LONGTEXT,
+      status ENUM('draft', 'active') NOT NULL DEFAULT 'active',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      created_by INT NOT NULL,
+      updated_by INT NOT NULL,
+      INDEX idx_admin_id (admin_id),
+      INDEX idx_status (status),
+      INDEX idx_name (name),
+      FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id),
+      FOREIGN KEY (updated_by) REFERENCES users(id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+    `CREATE TABLE IF NOT EXISTS tsm_elite_signatures (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      template_id INT NOT NULL,
+      admin_id INT NOT NULL,
+      signature_text TEXT NULL,
+      signature_image_url TEXT NULL,
+      ip_address VARCHAR(45),
+      user_agent TEXT,
+      signed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_admin_template (admin_id, template_id),
+      INDEX idx_template_id (template_id),
+      INDEX idx_admin_id (admin_id),
+      FOREIGN KEY (template_id) REFERENCES tsm_elite(id) ON DELETE CASCADE,
+      FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
     // Contracts table
     `CREATE TABLE IF NOT EXISTS contracts (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -2671,6 +2709,20 @@ async function createMySQLTables(): Promise<void> {
       console.log('ℹ️  funding_override_signed_at column already exists');
     } else {
       console.log('⚠️  Error adding funding_override_signed_at column:', error.message);
+    }
+  }
+
+  try {
+    await executeQuery(`
+      ALTER TABLE tsm_elite_signatures
+      ADD COLUMN signature_image_url TEXT NULL
+    `);
+    console.log('✅ Added signature_image_url column to tsm_elite_signatures table');
+  } catch (error: any) {
+    if (error.code === 'ER_DUP_FIELDNAME') {
+      console.log('ℹ️  signature_image_url column already exists on tsm_elite_signatures');
+    } else {
+      console.log('⚠️  Error adding signature_image_url column to tsm_elite_signatures:', error.message);
     }
   }
 

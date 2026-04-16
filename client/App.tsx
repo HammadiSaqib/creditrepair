@@ -11,7 +11,6 @@ import {
   Routes,
   Route,
   Navigate,
-  matchPath,
   useLocation,
   useNavigate,
 } from "react-router-dom";
@@ -951,16 +950,8 @@ function getPortalAliasRoutes(alias: NonAdminPortalAlias): PortalAliasRoute[] {
   }
 }
 
-function PortalAliasRouter({ alias }: { alias: NonAdminPortalAlias }) {
+function PortalAliasFallback() {
   const location = useLocation();
-  const aliasRoutes = getPortalAliasRoutes(alias);
-  const matchedRoute = aliasRoutes.find((route) =>
-    matchPath({ path: route.path, end: true }, location.pathname),
-  );
-
-  if (matchedRoute) {
-    return matchedRoute.element;
-  }
 
   const legacyTarget = getLegacyPortalTarget(location.pathname, {
     allowExactSupportAffiliate: true,
@@ -970,6 +961,17 @@ function PortalAliasRouter({ alias }: { alias: NonAdminPortalAlias }) {
   }
 
   return <NotFound />;
+}
+
+function renderPortalAliasRoutes(alias: NonAdminPortalAlias) {
+  return (
+    <>
+      {getPortalAliasRoutes(alias).map((route) => (
+        <Route key={`${alias}:${route.path}`} path={route.path} element={route.element} />
+      ))}
+      <Route path="*" element={<PortalAliasFallback />} />
+    </>
+  );
 }
 
 function PublicHostRootRoute() {
@@ -1065,7 +1067,7 @@ const App = ({ router, routerProps, helmetContext, blogSsrData }: AppProps) => {
                 <Suspense fallback={<LoadingScreen />}>
                   <Routes>
           {shouldUsePortalAliasRouter ? (
-            <Route path="*" element={<PortalAliasRouter alias={hostAlias as NonAdminPortalAlias} />} />
+            renderPortalAliasRoutes(hostAlias as NonAdminPortalAlias)
           ) : (
             <>
           <Route path="/" element={<PublicHostRootRoute />} />

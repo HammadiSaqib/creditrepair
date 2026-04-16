@@ -1,6 +1,6 @@
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { clientsApi, warMachineApi, creditRepairApi, clientDocumentsApi, disputesApi } from "@/lib/api";
+import { clientsApi, warMachineApi, creditRepairApi, clientDocumentsApi, disputesApi, contractsApi } from "@/lib/api";
 import { toast } from "sonner";
 import {
   Card,
@@ -127,6 +127,7 @@ import FundingProjectionsCalculator from '../utils/fundingProjections.js';
 import GapAnalyzer from '../utils/gapAnalyzer.js';
 import PersonalCardsDisplay from '../components/PersonalCardsDisplay';
 import BusinessCardsDisplay from '../components/BusinessCardsDisplay';
+import { usePagePermissions } from "@/hooks/usePagePermissions";
 import { useSubscriptionStatus } from "@/hooks/useSubscriptionStatus";
 import { useAuthContext } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
@@ -1907,6 +1908,7 @@ const negativeItemBureauOrder = ['Experian', 'Equifax', 'TransUnion'];
 
 export default function CreditReport() {
   const { userProfile, isLoading: authLoading, refreshProfile } = useAuthContext();
+  const { hasPermission, isLoading: pagePermissionsLoading } = usePagePermissions();
   const [affiliateCreditRepairLink, setAffiliateCreditRepairLink] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1961,9 +1963,25 @@ export default function CreditReport() {
   const [metro2ExpandedRows, setMetro2ExpandedRows] = useState<Record<string, boolean>>({});
   const [fundingAuditNoticeOpen, setFundingAuditNoticeOpen] = useState(false);
   const [pendingFundingAuditTab, setPendingFundingAuditTab] = useState<string | null>(null);
+  const [isScoreMachineEliteAgreementSigned, setIsScoreMachineEliteAgreementSigned] = useState(false);
+  const [isScoreMachineEliteAgreementLoading, setIsScoreMachineEliteAgreementLoading] = useState(false);
   const creditReportTabs = ['overview', 'personal', 'inquiries', 'public', 'accounts'] as const;
   type CreditReportTab = (typeof creditReportTabs)[number];
   const isLawEngineView = lawEngineAutoMode && (creditReportTabs as readonly string[]).includes(activeTab);
+  const isAdminUser = userProfile?.role === 'admin';
+  const hasDirectScoreMachineElitePermission = Array.isArray(userProfile?.permissions)
+    ? userProfile.permissions.includes('score_machine_elite')
+    : false;
+  const hasPlanScoreMachineElitePermission = hasPermission('score-machine-elite');
+  const hasScoreMachineEliteEntitlement = hasDirectScoreMachineElitePermission || hasPlanScoreMachineElitePermission;
+  const isCreditRepairAccessResolved =
+    !authLoading && (!isAdminUser || (!pagePermissionsLoading && !isScoreMachineEliteAgreementLoading));
+  const canAccessCreditRepairTab =
+    isCreditRepairAccessResolved && (!isAdminUser || (hasScoreMachineEliteEntitlement && isScoreMachineEliteAgreementSigned));
+  const shouldHideCreditRepairAccountTabs = authLoading || (isAdminUser && !canAccessCreditRepairTab);
+  const visibleAccountDetailTabs = shouldHideCreditRepairAccountTabs
+    ? tabConfig.filter((tab) => tab.id !== 'credit-repair')
+    : tabConfig;
 
   const requestEnableLawEngine = (tab?: CreditReportTab) => {
     const nextTab = tab ?? ((creditReportTabs as readonly string[]).includes(activeTab as any) ? (activeTab as any) : 'overview');
@@ -1994,6 +2012,9 @@ export default function CreditReport() {
   };
 
   const handleActiveTabChange = (nextTab: string) => {
+    if (nextTab === 'creditRepair' && !canAccessCreditRepairTab) {
+      return;
+    }
     if (nextTab === 'funding') {
       requestOpenFundingAudit();
       return;
@@ -2006,6 +2027,69 @@ export default function CreditReport() {
       setLawEngineAutoMode(false);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (authLoading || !isAdminUser) {
+      setIsScoreMachineEliteAgreementSigned(false);
+      setIsScoreMachineEliteAgreementLoading(false);
+      return;
+    }
+
+    if (pagePermissionsLoading) {
+      return;
+    }
+
+    if (!hasScoreMachineEliteEntitlement) {
+      setIsScoreMachineEliteAgreementSigned(false);
+      setIsScoreMachineEliteAgreementLoading(false);
+      return;
+    }
+
+    const loadScoreMachineEliteAgreementStatus = async () => {
+      try {
+        setIsScoreMachineEliteAgreementLoading(true);
+        const response = await contractsApi.getLatestTsmEliteAgreement();
+        if (!cancelled) {
+          setIsScoreMachineEliteAgreementSigned(response.data?.data?.status === 'signed');
+        }
+      } catch (error) {
+        const status =
+          typeof error === 'object' && error !== null && 'response' in error
+            ? (error as { response?: { status?: number } }).response?.status
+            : undefined;
+
+        if (!cancelled) {
+          setIsScoreMachineEliteAgreementSigned(false);
+        }
+
+        if (status !== 403 && status !== 404) {
+          console.error('Failed to load Score Machine Elite agreement status:', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsScoreMachineEliteAgreementLoading(false);
+        }
+      }
+    };
+
+    loadScoreMachineEliteAgreementStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, hasScoreMachineEliteEntitlement, isAdminUser, pagePermissionsLoading]);
+
+  useEffect(() => {
+    if (!isAdminUser || !isCreditRepairAccessResolved) {
+      return;
+    }
+
+    if (!canAccessCreditRepairTab && activeTab === 'creditRepair') {
+      setActiveTab('overview');
+    }
+  }, [activeTab, canAccessCreditRepairTab, isAdminUser, isCreditRepairAccessResolved]);
   
   const [payoffPlans, setPayoffPlans] = useState<any[]>([]);
   const { clientId: urlClientId } = useParams<{ clientId: string }>();
@@ -3396,14 +3480,19 @@ export default function CreditReport() {
   
   // Helper function to get or set default tab for an account group
   const getActiveTab = (accountKey: string) => {
-    return bureauTabs[accountKey] || 'all';
+    const currentTab = bureauTabs[accountKey] || 'all';
+    if (shouldHideCreditRepairAccountTabs && currentTab === 'credit-repair') {
+      return 'all';
+    }
+    return currentTab;
   };
   
   // Helper function to set active tab for an account group
   const setActiveTabForAccount = (accountKey: string, tab: string) => {
+    const safeTab = shouldHideCreditRepairAccountTabs && tab === 'credit-repair' ? 'all' : tab;
     setBureauTabs(prev => ({
       ...prev,
-      [accountKey]: tab
+      [accountKey]: safeTab
     }));
   };
   
@@ -6428,41 +6517,55 @@ export default function CreditReport() {
                 </div>
               </div>
 
-              {/* Connector */}
-              <div className="flex-1 h-0.5 bg-border mx-4">
-                <div className={`h-full bg-primary transition-all duration-500 ${
-                  ['creditRepair', 'debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
-                }`}></div>
-              </div>
-
-              {/* Credit Repair */}
-              <div className="flex items-center">
-                <button
-                  onClick={() => setActiveTab('creditRepair')}
-                  className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
-                    activeTab === 'creditRepair'
-                      ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
-                      : ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab)
-                      ? 'bg-red-500 border-red-500 text-white'
-                      : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
-                  }`}
-                >
-                  <AlertTriangle className="w-5 h-5" />
-                </button>
-                <div className="ml-3 hidden lg:block">
-                  <div className={`text-sm font-semibold ${activeTab === 'creditRepair' ? 'text-red-600' : 'text-muted-foreground'}`}>
-                    Credit Repair
+              {canAccessCreditRepairTab ? (
+                <>
+                  {/* Connector */}
+                  <div className="flex-1 h-0.5 bg-border mx-4">
+                    <div className={`h-full bg-primary transition-all duration-500 ${
+                      ['creditRepair', 'debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
+                    }`}></div>
                   </div>
-                  <div className="text-xs text-muted-foreground">Negative Items</div>
-                </div>
-              </div>
 
-              {/* Connector */}
-              <div className="flex-1 h-0.5 bg-border mx-4">
-                <div className={`h-full bg-primary transition-all duration-500 ${
-                  ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
-                }`}></div>
-              </div>
+                  {/* Credit Repair */}
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => {
+                        if (canAccessCreditRepairTab) {
+                          setActiveTab('creditRepair');
+                        }
+                      }}
+                      className={`step-indicator flex items-center justify-center w-12 h-12 rounded-full border-2 transition-all duration-300 ${
+                        activeTab === 'creditRepair'
+                          ? 'bg-red-500 border-red-500 text-white shadow-lg scale-110'
+                          : ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab)
+                          ? 'bg-red-500 border-red-500 text-white'
+                          : 'bg-card border-border text-muted-foreground hover:border-red-300 hover:text-red-500'
+                      }`}
+                    >
+                      <AlertTriangle className="w-5 h-5" />
+                    </button>
+                    <div className="ml-3 hidden lg:block">
+                      <div className={`text-sm font-semibold ${activeTab === 'creditRepair' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                        Credit Repair
+                      </div>
+                      <div className="text-xs text-muted-foreground">Negative Items</div>
+                    </div>
+                  </div>
+
+                  {/* Connector */}
+                  <div className="flex-1 h-0.5 bg-border mx-4">
+                    <div className={`h-full bg-primary transition-all duration-500 ${
+                      ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
+                    }`}></div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 h-0.5 bg-border mx-4">
+                  <div className={`h-full bg-primary transition-all duration-500 ${
+                    ['debtConsolidation', 'funding', 'fundingApplications'].includes(activeTab) ? 'w-full' : 'w-0'
+                  }`}></div>
+                </div>
+              )}
 
               {/* Debt Consolidation */}
               <div className="flex items-center">
@@ -12147,7 +12250,7 @@ export default function CreditReport() {
                       {/* Tabs for filtering fields */}
                       <div className="mb-4 border-b border-gray-200 dark:border-slate-700">
                         <div className="flex space-x-1">
-                          {tabConfig.map((tab) => (
+                          {visibleAccountDetailTabs.map((tab) => (
                             <button
                               key={tab.id}
                               onClick={() => setActiveTabForAccount(accountKey, tab.id)}
@@ -22225,6 +22328,7 @@ export default function CreditReport() {
         {/* ═══════════════════════════════════════════════════════════ */}
         {/* ═══════════  CREDIT REPAIR – NEGATIVE ITEMS  ═══════════ */}
         {/* ═══════════════════════════════════════════════════════════ */}
+        {canAccessCreditRepairTab && (
         <TabsContent value="creditRepair" className="space-y-6">
           <Card>
             <CardHeader>
@@ -22642,6 +22746,7 @@ export default function CreditReport() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
       </Tabs>
       {/* Funding Application Modal */}

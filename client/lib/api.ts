@@ -433,6 +433,14 @@ export const contractsApi = {
   updateTemplate: (id: number, data: Partial<{ name: string; description?: string; content_html?: string; content_text?: string; status?: 'draft' | 'active' | 'archived' }>) =>
     api.put(`/api/contracts/templates/${id}`, data),
   deleteTemplate: (id: number) => api.delete(`/api/contracts/templates/${id}`),
+  getTsmEliteTemplates: () => api.get('/api/contracts/tsm-elite/templates'),
+  createTsmEliteTemplate: (data: { name: string; description?: string; content_html?: string; content_text?: string; status?: 'draft' | 'active' }) =>
+    api.post('/api/contracts/tsm-elite/templates', data),
+  updateTsmEliteTemplate: (id: number, data: Partial<{ name: string; description?: string; content_html?: string; content_text?: string; status?: 'draft' | 'active' }>) =>
+    api.put(`/api/contracts/tsm-elite/templates/${id}`, data),
+  deleteTsmEliteTemplate: (id: number) => api.delete(`/api/contracts/tsm-elite/templates/${id}`),
+  getLatestTsmEliteAgreement: () => api.get('/api/contracts-admin/tsm-elite/latest'),
+  signLatestTsmEliteAgreement: (data: { signature_image_url: string }) => api.post('/api/contracts-admin/tsm-elite/latest/sign', data),
 
   // Contracts
   getContracts: (params?: { clientId?: number }) => api.get('/api/contracts', { params }),
@@ -723,8 +731,8 @@ export const superAdminApi = {
   getPlans: (params?: { page?: number; limit?: number; search?: string; is_active?: boolean | string }) =>
     api.get('/api/super-admin/plans', { params }),
   createPlan: (data: any) => api.post('/api/super-admin/plans', data),
-  updatePlan: (id: string, data: any) => api.put(`/api/super-admin/plans/${id}`, data),
-  deletePlan: (id: string) => api.delete(`/api/super-admin/plans/${id}`),
+  updatePlan: (id: string | number, data: any) => api.put(`/api/super-admin/plans/${id}`, data),
+  deletePlan: (id: string | number) => api.delete(`/api/super-admin/plans/${id}`),
   getInvitations: (params?: { page?: number; limit?: number }) =>
     api.get('/api/super-admin/invitations', { params }),
   sendInvitation: (data: { email: string; role: string }) =>
@@ -734,6 +742,8 @@ export const superAdminApi = {
   getAdminProfiles: (params?: { page?: number; limit?: number; search?: string; is_active?: string; access_level?: string }) =>
     api.get('/api/super-admin/admins', { params }),
   getAdminProfile: (id: string | number) => api.get(`/api/super-admin/admins/${id}`),
+  getAdminAgreements: (id: string | number) => api.get(`/api/super-admin/admins/${id}/agreements`),
+  getAdminTsmEliteAgreements: (id: string | number) => api.get(`/api/super-admin/admins/${id}/tsm-elite-agreements`),
   createAdminProfile: (data: any) => api.post('/api/super-admin/admins', data),
   updateAdminProfile: (id: string | number, data: any) => api.put(`/api/super-admin/admins/${id}`, data),
   deleteAdminProfile: (id: string | number) => api.delete(`/api/super-admin/admins/${id}`),

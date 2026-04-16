@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
 (async () => {
-  const c = await mysql.createConnection({ host: 'localhost', user: 'root', password: '', database: 'creditrepair_db1' });
+  const c = await mysql.createConnection({ host: 'localhost', user: 'root', password: '', database: 'creditrepair_db' });
   
   await c.query(`CREATE TABLE IF NOT EXISTS dispute_letter_history (
     id INT AUTO_INCREMENT PRIMARY KEY,

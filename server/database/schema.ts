@@ -285,6 +285,10 @@ async function createTables() {
   } catch (err) {
   }
   try {
+    await runQuery(`ALTER TABLE tsm_elite_signatures ADD COLUMN signature_image_url TEXT`);
+  } catch (err) {
+  }
+  try {
     await runQuery(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_onboarding_slug ON users (onboarding_slug)`);
   } catch (err) {
   }
@@ -583,6 +587,43 @@ async function createTables() {
     )
   `);
 
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS tsm_elite (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      content_html TEXT,
+      content_text TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('draft', 'active')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_by INTEGER NOT NULL,
+      updated_by INTEGER NOT NULL,
+      FOREIGN KEY (admin_id) REFERENCES users (id),
+      FOREIGN KEY (created_by) REFERENCES users (id),
+      FOREIGN KEY (updated_by) REFERENCES users (id)
+    )
+  `);
+
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS tsm_elite_signatures (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      template_id INTEGER NOT NULL,
+      admin_id INTEGER NOT NULL,
+      signature_text TEXT,
+      signature_image_url TEXT,
+      ip_address TEXT,
+      user_agent TEXT,
+      signed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (template_id) REFERENCES tsm_elite (id) ON DELETE CASCADE,
+      FOREIGN KEY (admin_id) REFERENCES users (id) ON DELETE CASCADE,
+      UNIQUE(admin_id, template_id)
+    )
+  `);
+
   // Contracts table
   await runQuery(`
     CREATE TABLE IF NOT EXISTS contracts (
@@ -765,6 +806,18 @@ async function createTables() {
   // Contracts-related indexes
   await runQuery(`
     CREATE INDEX IF NOT EXISTS idx_contract_templates_admin_id ON contract_templates(admin_id)
+  `);
+  await runQuery(`
+    CREATE INDEX IF NOT EXISTS idx_tsm_elite_admin_id ON tsm_elite(admin_id)
+  `);
+  await runQuery(`
+    CREATE INDEX IF NOT EXISTS idx_tsm_elite_status ON tsm_elite(status)
+  `);
+  await runQuery(`
+    CREATE INDEX IF NOT EXISTS idx_tsm_elite_signatures_template_id ON tsm_elite_signatures(template_id)
+  `);
+  await runQuery(`
+    CREATE INDEX IF NOT EXISTS idx_tsm_elite_signatures_admin_id ON tsm_elite_signatures(admin_id)
   `);
   await runQuery(`
     CREATE INDEX IF NOT EXISTS idx_contracts_client_id ON contracts(client_id)

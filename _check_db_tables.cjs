@@ -1,6 +1,6 @@
 const mysql = require('mysql2/promise');
 (async () => {
-  const c = await mysql.createConnection({ host: 'localhost', user: 'root', password: '', database: 'creditrepair_db1' });
+  const c = await mysql.createConnection({ host: 'localhost', user: 'root', password: '', database: 'creditrepair_db' });
   
   const tables = ['support_letter_categories', 'dispute_letter_history', 'dispute_letter_content'];
   for (const t of tables) {

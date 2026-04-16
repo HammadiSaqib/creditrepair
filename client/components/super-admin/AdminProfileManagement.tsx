@@ -99,9 +99,58 @@ const STATUS_OPTIONS = [
     { id: 'analytics_view', label: 'Analytics View', category: 'Reports' },
     { id: 'system_settings', label: 'System Settings', category: 'System' },
     { id: 'admin_management', label: 'Admin Management', category: 'Admin' },
+    { id: 'score_machine_elite', label: 'Allow Score Machine Elite', category: 'Admin' },
     { id: 'billing_management', label: 'Billing Management', category: 'Billing' },
     { id: 'support_management', label: 'Support Management', category: 'Support' }
   ];
+
+const normalizeAccessLevel = (accessLevel?: string): 'full' | 'limited' | 'read-only' => {
+  switch (accessLevel) {
+    case 'full':
+    case 'admin':
+    case 'super_admin':
+      return 'full';
+    case 'read-only':
+    case 'read_only':
+    case 'readonly':
+    case 'support':
+      return 'read-only';
+    case 'limited':
+    case 'manager':
+    default:
+      return 'limited';
+  }
+};
+
+const normalizePermissions = (permissions: unknown): string[] => {
+  if (Array.isArray(permissions)) {
+    return permissions.filter((permission): permission is string => typeof permission === 'string');
+  }
+
+  if (typeof permissions === 'string') {
+    try {
+      const parsed = JSON.parse(permissions);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((permission): permission is string => typeof permission === 'string');
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
+const getAccessLevelLabel = (accessLevel?: string): string => {
+  const normalizedAccessLevel = normalizeAccessLevel(accessLevel);
+  return ACCESS_LEVELS.find((level) => level.value === normalizedAccessLevel)?.label || 'Limited Access';
+};
+
+const normalizeAdminProfile = (admin: AdminProfile): AdminProfile => ({
+  ...admin,
+  access_level: admin.access_level || admin.role,
+  permissions: normalizePermissions(admin.permissions)
+});
 
 // AdminForm component moved outside to prevent re-renders
 const AdminForm = React.memo(({ 
@@ -350,11 +399,15 @@ const AdminProfileManagement: React.FC = () => {
       
       // Handle different response structures
       if (response.data?.success && response.data?.data) {
-        setAdminProfiles(Array.isArray(response.data.data) ? response.data.data : []);
+        const admins = Array.isArray(response.data.data)
+          ? response.data.data.map((admin: AdminProfile) => normalizeAdminProfile(admin))
+          : [];
+        setAdminProfiles(admins);
         setTotalPages(response.data.pagination?.pages || 1);
       } else if (Array.isArray(response.data)) {
-        setAdminProfiles(response.data);
-        setTotalPages(Math.ceil((response.total || response.data.length) / itemsPerPage));
+        const admins = response.data.map((admin: AdminProfile) => normalizeAdminProfile(admin));
+        setAdminProfiles(admins);
+        setTotalPages(Math.max(1, Math.ceil(admins.length / itemsPerPage)));
       } else {
         setAdminProfiles([]);
         setTotalPages(1);
@@ -429,6 +482,8 @@ const AdminProfileManagement: React.FC = () => {
     try {
       const adminData = {
         ...formData,
+        accessLevel: normalizeAccessLevel(formData.accessLevel),
+        permissions: normalizePermissions(formData.permissions),
         name: formData.name.trim(),
         email: formData.email.trim().toLowerCase()
       };
@@ -441,6 +496,13 @@ const AdminProfileManagement: React.FC = () => {
         console.log('🔵 Frontend - Calling updateAdminProfile with ID:', selectedAdmin.id);
         const response = await superAdminApi.updateAdminProfile(selectedAdmin.id, adminData);
         console.log('🟢 Frontend - Update response:', response);
+        const updatedAdmin = response.data?.data ? normalizeAdminProfile(response.data.data as AdminProfile) : null;
+        if (updatedAdmin) {
+          setAdminProfiles((prev) => prev.map((admin) => (
+            admin.id === updatedAdmin.id ? updatedAdmin : admin
+          )));
+        }
+        await fetchAdminProfiles();
         toast({
           title: "Success",
           description: "Admin profile updated successfully"
@@ -450,6 +512,7 @@ const AdminProfileManagement: React.FC = () => {
         console.log('🔵 Frontend - Calling createAdminProfile');
         const response = await superAdminApi.createAdminProfile(adminData);
         console.log('🟢 Frontend - Create response:', response);
+        await fetchAdminProfiles();
         toast({
           title: "Success",
           description: "Admin profile created successfully"
@@ -458,7 +521,6 @@ const AdminProfileManagement: React.FC = () => {
       }
       
       resetForm();
-      fetchAdminProfiles();
     } catch (error) {
       console.error('🔴 Frontend - Error saving admin profile:', error);
       toast({
@@ -549,14 +611,15 @@ const AdminProfileManagement: React.FC = () => {
   };
 
   const openEditDialog = (admin: AdminProfile) => {
-    setSelectedAdmin(admin);
+    const normalizedAdmin = normalizeAdminProfile(admin);
+    setSelectedAdmin(normalizedAdmin);
     setFormData({
-      name: `${admin.first_name} ${admin.last_name}`,
-      email: admin.email,
-      role: admin.role,
-      accessLevel: admin.access_level as 'full' | 'limited' | 'read-only',
-      status: admin.status,
-      permissions: Array.isArray(admin.permissions) ? admin.permissions : [],
+      name: `${normalizedAdmin.first_name} ${normalizedAdmin.last_name}`,
+      email: normalizedAdmin.email,
+      role: normalizedAdmin.role,
+      accessLevel: normalizeAccessLevel(normalizedAdmin.access_level),
+      status: normalizedAdmin.status,
+      permissions: normalizePermissions(normalizedAdmin.permissions),
       password: ''
     });
     setIsEditDialogOpen(true);
@@ -566,7 +629,7 @@ const AdminProfileManagement: React.FC = () => {
     setFormData(prev => ({
       ...prev,
       permissions: checked
-        ? [...prev.permissions, permissionId]
+        ? Array.from(new Set([...prev.permissions, permissionId]))
         : prev.permissions.filter(p => p !== permissionId)
     }));
   }, []);
@@ -750,7 +813,7 @@ const AdminProfileManagement: React.FC = () => {
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">
-                            {admin.access_level}
+                            {getAccessLevelLabel(admin.access_level)}
                           </Badge>
                         </TableCell>
                         <TableCell>

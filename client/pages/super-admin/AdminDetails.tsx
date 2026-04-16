@@ -6,7 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Download } from 'lucide-react';
+
+type AgreementHistoryTab = 'admin-contracts' | 'score-machine-elite';
 
 function toCsv(filename: string, headers: string[], rows: Array<Record<string, any>>) {
   const lines = [headers.join(',')].concat(
@@ -22,107 +25,106 @@ function toCsv(filename: string, headers: string[], rows: Array<Record<string, a
 }
 
 export default function AdminDetails() {
-  const [agreements, setAgreements] = useState<any[]>([]);
-  const [showAgreementModal, setShowAgreementModal] = useState(false);
-  const [editingAgreement, setEditingAgreement] = useState<any | null>(null);
-  const [agreementForm, setAgreementForm] = useState({ title: '', content: '' });
-  const [agreementLoading, setAgreementLoading] = useState(false);
-  const [showAgreementsDropdown, setShowAgreementsDropdown] = useState(false);
-  const [selectedAgreement, setSelectedAgreement] = useState<any | null>(null);
-  const [showDefaultTemplateModal, setShowDefaultTemplateModal] = useState(false);
-  const [defaultTemplateLoading, setDefaultTemplateLoading] = useState(false);
-  const [defaultTemplateSaving, setDefaultTemplateSaving] = useState(false);
-  const [defaultTemplateForm, setDefaultTemplateForm] = useState({ name: '', description: '', content: '' });
-
-  useEffect(() => {
-    fetchAgreements();
-  }, []);
-
-  async function fetchAgreements() {
-    try {
-      const res = await fetch('/api/contract-agreements');
-      const data = await res.json();
-      setAgreements(Array.isArray(data) ? data : []);
-    } catch {
-      setAgreements([]);
-    }
-  }
-
-  function onEditAgreement(agreement: any) {
-    setEditingAgreement(agreement);
-    setAgreementForm({ title: agreement.title, content: agreement.content });
-    setShowAgreementModal(true);
-  }
-
-  async function handleAgreementSave(e: React.FormEvent) {
-    e.preventDefault();
-    setAgreementLoading(true);
-    try {
-      const method = editingAgreement ? 'PUT' : 'POST';
-      const url = editingAgreement ? `/api/contract-agreements/${editingAgreement.id}` : '/api/contract-agreements';
-      await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(agreementForm),
-      });
-      setShowAgreementModal(false);
-      setEditingAgreement(null);
-      setAgreementForm({ title: '', content: '' });
-      fetchAgreements();
-    } finally {
-      setAgreementLoading(false);
-    }
-  }
-
-  async function onDeleteAgreement(id: number) {
-    if (!window.confirm('Delete this agreement?')) return;
-    setAgreementLoading(true);
-    try {
-      await fetch(`/api/contract-agreements/${id}`, { method: 'DELETE' });
-      fetchAgreements();
-    } finally {
-      setAgreementLoading(false);
-    }
-  }
-
-  async function openDefaultTemplateModal() {
-    setShowDefaultTemplateModal(true);
-    setDefaultTemplateLoading(true);
-    try {
-      const resp = await superAdminApi.getDefaultContractTemplate();
-      const tpl = resp.data?.data || resp.data;
-      setDefaultTemplateForm({
-        name: tpl?.name || 'Default Agreement',
-        description: tpl?.description || 'Default master agreement',
-        content: tpl?.content || '',
-      });
-    } catch (error) {
-      console.error('Failed to load default template', error);
-      setDefaultTemplateForm({ name: 'Default Agreement', description: 'Default master agreement', content: '' });
-    } finally {
-      setDefaultTemplateLoading(false);
-    }
-  }
-
-  async function saveDefaultTemplate(e: React.FormEvent) {
-    e.preventDefault();
-    setDefaultTemplateSaving(true);
-    try {
-      await superAdminApi.updateDefaultContractTemplate(defaultTemplateForm);
-      setShowDefaultTemplateModal(false);
-    } finally {
-      setDefaultTemplateSaving(false);
-    }
-  }
-
   const { id } = useParams();
   const adminId = Number(id);
+  const [activeAgreementTab, setActiveAgreementTab] = useState<AgreementHistoryTab>('admin-contracts');
+  const [adminAgreements, setAdminAgreements] = useState<any[]>([]);
+  const [tsmEliteAgreements, setTsmEliteAgreements] = useState<any[]>([]);
+  const [showAgreementsDropdown, setShowAgreementsDropdown] = useState(false);
+  const [selectedAdminAgreement, setSelectedAdminAgreement] = useState<any | null>(null);
+  const [selectedTsmEliteAgreement, setSelectedTsmEliteAgreement] = useState<any | null>(null);
   const [admin, setAdmin] = useState<any>(null);
+  const [adminError, setAdminError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingAgreement, setDownloadingAgreement] = useState(false);
+
+  const getAgreementStatusLabel = (status?: string | null) => {
+    switch (status) {
+      case 'pending_signature':
+        return 'Pending Signature';
+      case 'void':
+        return 'Void';
+      case 'signed':
+        return 'Signed';
+      case 'draft':
+        return 'Draft';
+      case 'expired':
+        return 'Expired';
+      default:
+        return status ? status.replace(/_/g, ' ') : 'Unknown';
+    }
+  };
+
+  const getAgreementTimestampLabel = (agreement: any) => {
+    if (agreement?.signed_at) {
+      return `Signed ${new Date(agreement.signed_at).toLocaleString()}`;
+    }
+    if (agreement?.created_at) {
+      return `Created ${new Date(agreement.created_at).toLocaleDateString()}`;
+    }
+    return 'No timestamp';
+  };
+
+  const currentAgreements = activeAgreementTab === 'admin-contracts' ? adminAgreements : tsmEliteAgreements;
+  const currentSelectedAgreement = activeAgreementTab === 'admin-contracts' ? selectedAdminAgreement : selectedTsmEliteAgreement;
+  const currentAgreementPdfLabel = activeAgreementTab === 'admin-contracts' ? 'Admin Contract PDF' : 'Score Machine Elite PDF';
+
+  const selectAgreement = (agreement: any) => {
+    if (activeAgreementTab === 'admin-contracts') {
+      setSelectedAdminAgreement(agreement);
+      return;
+    }
+
+    setSelectedTsmEliteAgreement(agreement);
+  };
+
+  const getEmptyAgreementHistoryMessage = () => {
+    if (activeAgreementTab === 'score-machine-elite') {
+      return 'No Score Machine Elite history found for this admin yet.';
+    }
+
+    return 'No admin contract history found for this admin yet.';
+  };
+
+  const renderAgreementSignaturePreview = (agreement: any) => {
+    if (agreement?.signature_image_url) {
+      return (
+        <div className="grid gap-2 pt-1">
+          <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Signature Preview</div>
+          <div className="w-fit rounded-md border bg-white p-2">
+            <img
+              src={agreement.signature_image_url}
+              alt={`${agreement.title || 'Agreement'} signature`}
+              className="max-h-24 w-auto object-contain"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    if (agreement?.signature_text) {
+      return (
+        <div className="grid gap-2 pt-1">
+          <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Signature Preview</div>
+          <div className="rounded-md border bg-white px-3 py-2 text-sm text-gray-700">
+            {agreement.signature_text}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid gap-2 pt-1">
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">Signature Preview</div>
+        <div className="rounded-md border border-dashed bg-white px-3 py-2 text-sm text-gray-500">
+          No signature preview available for this agreement.
+        </div>
+      </div>
+    );
+  };
 
   const exportTransactions = () => {
     const headers = ['Date', 'Status', 'Amount', 'Method', 'Plan'];
@@ -161,16 +163,25 @@ export default function AdminDetails() {
   const downloadAgreementPdf = async () => {
     try {
       setDownloadingAgreement(true);
-      let url = `/api/super-admin/admins/${adminId}/agreement.pdf`;
-      if (selectedAgreement?.id) {
-        url += `?agreementId=${selectedAgreement.id}`;
+      const params = new URLSearchParams();
+      if (activeAgreementTab === 'score-machine-elite') {
+        params.set('type', 'score-machine-elite');
+        if (currentSelectedAgreement?.id) {
+          params.set('templateId', String(currentSelectedAgreement.id));
+        }
+      } else if (currentSelectedAgreement?.id) {
+        params.set('contractId', String(currentSelectedAgreement.id));
       }
+
+      const url = `/api/super-admin/admins/${adminId}/agreement.pdf${params.toString() ? `?${params.toString()}` : ''}`;
       const resp = await api.get(url, { responseType: 'blob' });
       const blob = new Blob([resp.data], { type: 'application/pdf' });
       const urlObj = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = urlObj;
-      a.download = `admin_${adminId}_agreement.pdf`;
+      a.download = activeAgreementTab === 'score-machine-elite'
+        ? `admin_${adminId}_score_machine_elite_agreement.pdf`
+        : `admin_${adminId}_agreement.pdf`;
       a.click();
       URL.revokeObjectURL(urlObj);
     } finally {
@@ -179,25 +190,115 @@ export default function AdminDetails() {
   };
 
   useEffect(() => {
+    setShowAgreementsDropdown(false);
+  }, [activeAgreementTab]);
+
+  useEffect(() => {
+    let isActive = true;
+
     (async () => {
+      if (!Number.isFinite(adminId)) {
+        if (isActive) {
+          setAdmin(null);
+          setAdminError('Invalid admin id.');
+            setAdminAgreements([]);
+            setTsmEliteAgreements([]);
+            setSelectedAdminAgreement(null);
+            setSelectedTsmEliteAgreement(null);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         setLoading(true);
-        const [adminRes, txnRes, clientsRes, logsRes] = await Promise.all([
-          superAdminApi.getAdminProfile(adminId),
+        setAdminError(null);
+
+        try {
+          const adminRes = await superAdminApi.getAdminProfile(adminId);
+          if (!isActive) return;
+          setAdmin(adminRes.data?.data || adminRes.data || null);
+        } catch (adminFetchError) {
+          console.error('Failed to load admin details:', adminFetchError);
+          if (!isActive) return;
+          setAdmin(null);
+          setAdminError('Failed to load admin details.');
+        }
+
+        const [agreementsRes, tsmEliteAgreementsRes, txnRes, clientsRes, logsRes] = await Promise.allSettled([
+          superAdminApi.getAdminAgreements(adminId),
+          superAdminApi.getAdminTsmEliteAgreements(adminId),
           superAdminApi.getBillingTransactions({ user_id: String(adminId), limit: 50 }),
           superAdminApi.getClients({ page: 1, limit: 50, user_id: String(adminId) }),
           superAdminApi.getUserActivity(adminId, { page: 1, limit: 50 })
         ]);
-        setAdmin(adminRes.data?.data || adminRes.data);
-        setTransactions(Array.isArray(txnRes.data?.transactions) ? txnRes.data.transactions : []);
-        const clientData = clientsRes.data?.data || clientsRes.data; 
-        setClients(Array.isArray(clientData) ? clientData : []);
-        const logsData = logsRes.data?.data || logsRes.data;
-        setActivities(Array.isArray(logsData) ? logsData : []);
+
+        if (!isActive) return;
+
+        if (agreementsRes.status === 'fulfilled') {
+          const agreementData = agreementsRes.value.data?.data || agreementsRes.value.data;
+          const nextAgreements = Array.isArray(agreementData) ? agreementData : [];
+          setAdminAgreements(nextAgreements);
+          setSelectedAdminAgreement((currentAgreement: any) => {
+            if (!currentAgreement) {
+              return nextAgreements[0] || null;
+            }
+            return nextAgreements.find((agreement: any) => agreement.id === currentAgreement.id) || nextAgreements[0] || null;
+          });
+        } else {
+          console.error('Failed to load admin agreements:', agreementsRes.reason);
+          setAdminAgreements([]);
+          setSelectedAdminAgreement(null);
+        }
+
+        if (tsmEliteAgreementsRes.status === 'fulfilled') {
+          const agreementData = tsmEliteAgreementsRes.value.data?.data || tsmEliteAgreementsRes.value.data;
+          const nextAgreements = Array.isArray(agreementData) ? agreementData : [];
+          setTsmEliteAgreements(nextAgreements);
+          setSelectedTsmEliteAgreement((currentAgreement: any) => {
+            if (!currentAgreement) {
+              return nextAgreements[0] || null;
+            }
+            return nextAgreements.find((agreement: any) => agreement.id === currentAgreement.id) || nextAgreements[0] || null;
+          });
+        } else {
+          console.error('Failed to load admin Score Machine Elite agreements:', tsmEliteAgreementsRes.reason);
+          setTsmEliteAgreements([]);
+          setSelectedTsmEliteAgreement(null);
+        }
+
+        if (txnRes.status === 'fulfilled') {
+          setTransactions(Array.isArray(txnRes.value.data?.transactions) ? txnRes.value.data.transactions : []);
+        } else {
+          console.error('Failed to load billing transactions:', txnRes.reason);
+          setTransactions([]);
+        }
+
+        if (clientsRes.status === 'fulfilled') {
+          const clientData = clientsRes.value.data?.data || clientsRes.value.data;
+          setClients(Array.isArray(clientData) ? clientData : []);
+        } else {
+          console.error('Failed to load admin clients:', clientsRes.reason);
+          setClients([]);
+        }
+
+        if (logsRes.status === 'fulfilled') {
+          const logsData = logsRes.value.data?.data || logsRes.value.data;
+          setActivities(Array.isArray(logsData) ? logsData : []);
+        } else {
+          console.error('Failed to load user activity:', logsRes.reason);
+          setActivities([]);
+        }
       } finally {
-        setLoading(false);
+        if (isActive) {
+          setLoading(false);
+        }
       }
     })();
+
+    return () => {
+      isActive = false;
+    };
   }, [adminId]);
 
   return (
@@ -220,33 +321,33 @@ export default function AdminDetails() {
                       <Button
                         variant="outline"
                         onClick={downloadAgreementPdf}
-                        disabled={downloadingAgreement || !adminId}
+                        disabled={downloadingAgreement || !adminId || currentAgreements.length === 0}
                         className="rounded-r-none"
                       >
                         <Download className="h-4 w-4 mr-1" />
-                        {downloadingAgreement ? 'Downloading…' : 'Agreement PDF'}
+                        {downloadingAgreement ? 'Downloading…' : currentAgreementPdfLabel}
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
                         className="rounded-l-none px-2"
-                        disabled={agreements.length === 0}
+                        disabled={currentAgreements.length === 0}
                         onClick={() => setShowAgreementsDropdown((v: boolean) => !v)}
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 9l-7 7-7-7" /></svg>
                       </Button>
                     </div>
-                    {showAgreementsDropdown && agreements.length > 0 && (
+                    {showAgreementsDropdown && currentAgreements.length > 0 && (
                       <div
                         className="absolute right-0 mt-2 w-56 max-h-64 overflow-auto bg-white border rounded shadow-lg z-50"
                         style={{ top: '100%', minWidth: 200 }}
                       >
-                        {agreements.map((agreement) => (
+                        {currentAgreements.map((agreement) => (
                           <div
                             key={agreement.id}
-                            className={`px-4 py-2 hover:bg-gray-100 cursor-pointer ${selectedAgreement?.id === agreement.id ? 'bg-gray-100 font-semibold' : ''}`}
+                            className={`px-4 py-2 hover:bg-gray-100 cursor-pointer ${currentSelectedAgreement?.id === agreement.id ? 'bg-gray-100 font-semibold' : ''}`}
                             onClick={() => {
-                              setSelectedAgreement(agreement);
+                              selectAgreement(agreement);
                               setShowAgreementsDropdown(false);
                             }}
                           >
@@ -260,137 +361,79 @@ export default function AdminDetails() {
                   {admin.plan_name && <Badge variant="secondary">{admin.plan_name} {admin.plan_type ? `(${admin.plan_type})` : ''}</Badge>}
                 </div>
               </div>
-            ) : (
+            ) : loading ? (
               <div className="text-gray-500">Loading admin…</div>
+            ) : (
+              <div className="text-red-600">{adminError || 'Admin not found.'}</div>
             )}
           </CardContent>
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-  {/* Agreements Management Card */}
+  {/* Agreement History Card */}
   <Card className="lg:col-span-2">
-    <CardHeader className="flex flex-row items-center justify-between gap-3">
-      <CardTitle>Agreements Management</CardTitle>
-      <div className="flex items-center gap-2">
-        <Button variant="destructive" onClick={openDefaultTemplateModal}>
-          Set Default Agreement
-        </Button>
-        <Button variant="outline" onClick={() => setShowAgreementModal(true)}>
-          Add Agreement
-        </Button>
-      </div>
+    <CardHeader>
+      <CardTitle>Agreement History</CardTitle>
     </CardHeader>
     <CardContent>
-      <div className="space-y-3">
-        {agreements.length === 0 && (
-          <div className="text-gray-500">No agreements yet.</div>
-        )}
-        {agreements.map((agreement) => (
-          <div key={agreement.id} className="flex items-center justify-between border rounded p-3">
-            <div>
-              <div className="font-semibold">{agreement.title}</div>
-              <div className="text-gray-600 text-sm line-clamp-2 max-w-xl">{agreement.content}</div>
+      <Tabs value={activeAgreementTab} onValueChange={(value) => setActiveAgreementTab(value as AgreementHistoryTab)} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="admin-contracts">Admin Contracts</TabsTrigger>
+          <TabsTrigger value="score-machine-elite">Score Machine Elite</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="admin-contracts" className="space-y-3">
+          {adminAgreements.length === 0 && (
+            <div className="text-gray-500">{getEmptyAgreementHistoryMessage()}</div>
+          )}
+          {adminAgreements.map((agreement) => (
+            <div
+              key={agreement.id}
+              className={`flex items-start justify-between gap-4 border rounded p-3 ${selectedAdminAgreement?.id === agreement.id ? 'border-gray-900 bg-gray-50' : ''}`}
+            >
+              <div className="space-y-2">
+                <div className="font-semibold">{agreement.title}</div>
+                <div className="text-gray-600 text-sm line-clamp-2 max-w-xl">{agreement.content || 'No agreement content stored for this contract.'}</div>
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Badge variant="outline" className="capitalize">{getAgreementStatusLabel(agreement.status)}</Badge>
+                  <span>{getAgreementTimestampLabel(agreement)}</span>
+                </div>
+                {selectedAdminAgreement?.id === agreement.id && renderAgreementSignaturePreview(agreement)}
+              </div>
+              <Button variant={selectedAdminAgreement?.id === agreement.id ? 'default' : 'outline'} onClick={() => setSelectedAdminAgreement(agreement)}>
+                {selectedAdminAgreement?.id === agreement.id ? 'Selected' : 'Select'}
+              </Button>
             </div>
-            <div className="flex gap-2">
-              <Button size="icon" variant="ghost" onClick={() => onEditAgreement(agreement)}><span className="sr-only">Edit</span><svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-2.828 0L9 13z"></path></svg></Button>
-              <Button size="icon" variant="ghost" onClick={() => onDeleteAgreement(agreement.id)}><span className="sr-only">Delete</span><svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3M4 7h16"></path></svg></Button>
+          ))}
+        </TabsContent>
+
+        <TabsContent value="score-machine-elite" className="space-y-3">
+          {tsmEliteAgreements.length === 0 && (
+            <div className="text-gray-500">{getEmptyAgreementHistoryMessage()}</div>
+          )}
+          {tsmEliteAgreements.map((agreement) => (
+            <div
+              key={agreement.id}
+              className={`flex items-start justify-between gap-4 border rounded p-3 ${selectedTsmEliteAgreement?.id === agreement.id ? 'border-gray-900 bg-gray-50' : ''}`}
+            >
+              <div className="space-y-2">
+                <div className="font-semibold">{agreement.title}</div>
+                <div className="text-gray-600 text-sm line-clamp-2 max-w-xl">{agreement.content || 'No agreement content stored for this Score Machine Elite template.'}</div>
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <Badge variant="outline" className="capitalize">{getAgreementStatusLabel(agreement.status)}</Badge>
+                  <span>{getAgreementTimestampLabel(agreement)}</span>
+                </div>
+                {selectedTsmEliteAgreement?.id === agreement.id && renderAgreementSignaturePreview(agreement)}
+              </div>
+              <Button variant={selectedTsmEliteAgreement?.id === agreement.id ? 'default' : 'outline'} onClick={() => setSelectedTsmEliteAgreement(agreement)}>
+                {selectedTsmEliteAgreement?.id === agreement.id ? 'Selected' : 'Select'}
+              </Button>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </TabsContent>
+      </Tabs>
     </CardContent>
   </Card>
-
-  {/* Agreement Modal */}
-  {showAgreementModal && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-      <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-xl relative">
-        <h2 className="text-xl font-semibold mb-4">{editingAgreement ? 'Edit Agreement' : 'Add Agreement'}</h2>
-        <form onSubmit={handleAgreementSave} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Title</label>
-            <input
-              type="text"
-              className="w-full border rounded px-3 py-2"
-              value={agreementForm.title}
-              onChange={e => setAgreementForm(f => ({ ...f, title: e.target.value }))}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Content</label>
-            <textarea
-              className="w-full border rounded px-3 py-2 resize-y min-h-[80px] max-h-[400px]"
-              value={agreementForm.content}
-              onChange={e => setAgreementForm(f => ({ ...f, content: e.target.value }))}
-              required
-              style={{ minHeight: 80, maxHeight: 400 }}
-            />
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button type="button" variant="outline" onClick={() => { setShowAgreementModal(false); setEditingAgreement(null); setAgreementForm({ title: '', content: '' }); }}>Cancel</Button>
-            <Button type="submit" disabled={agreementLoading}>{agreementLoading ? 'Saving…' : 'Save'}</Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )}
-  {/* Default Template Modal */}
-  {showDefaultTemplateModal && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30">
-      <div className="bg-white rounded-lg p-6 w-full max-w-3xl shadow-xl relative">
-        <h2 className="text-xl font-semibold mb-4">Edit Default Agreement</h2>
-        <form onSubmit={saveDefaultTemplate} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Name</label>
-              <input
-                type="text"
-                className="w-full border rounded px-3 py-2"
-                value={defaultTemplateForm.name}
-                onChange={e => setDefaultTemplateForm(f => ({ ...f, name: e.target.value }))}
-                required
-                disabled={defaultTemplateLoading}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Description</label>
-              <input
-                type="text"
-                className="w-full border rounded px-3 py-2"
-                value={defaultTemplateForm.description}
-                onChange={e => setDefaultTemplateForm(f => ({ ...f, description: e.target.value }))}
-                disabled={defaultTemplateLoading}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Content (HTML)</label>
-            <textarea
-              className="w-full border rounded px-3 py-2 resize-y min-h-[200px]"
-              value={defaultTemplateForm.content}
-              onChange={e => setDefaultTemplateForm(f => ({ ...f, content: e.target.value }))}
-              required
-              disabled={defaultTemplateLoading}
-            />
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => { setShowDefaultTemplateModal(false); setDefaultTemplateLoading(false); }}
-              disabled={defaultTemplateSaving}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={defaultTemplateSaving || defaultTemplateLoading}>
-              {defaultTemplateSaving ? 'Saving…' : 'Save Default'}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle>Transactions</CardTitle>

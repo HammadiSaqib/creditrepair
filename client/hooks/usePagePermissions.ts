@@ -29,7 +29,8 @@ export const AVAILABLE_PAGES = [
   { id: 'settings', name: 'Settings', path: '/settings' },
   { id: 'support', name: 'Support', path: '/support' },
   { id: 'subscription', name: 'Subscription', path: '/subscription' },
-  { id: 'feature-requests', name: 'Feature Requests', path: '/admin/feature-requests' }
+  { id: 'feature-requests', name: 'Feature Requests', path: '/admin/feature-requests' },
+  { id: 'score-machine-elite', name: 'Score Machine Elite', path: '/score-machine-elite' }
 ];
 
 // 根据路径获取页面ID
